@@ -383,7 +383,7 @@ def test_auth_filter_keeps_client_reply_auth_on_server_path():
     }
 
 
-def test_auth_filter_keeps_server_job_credentials_until_the_server_boundary():
+def test_auth_filter_strips_server_job_credentials_on_direct_client_reply():
     server = _make_running_cell(f"server.{_unique_fqcn('job')}")
     client = _make_running_cell(_unique_fqcn("client"))
     set_add_auth_headers_filters(server, "server-job", "tok-server", "sig-server", "ssid-server")
@@ -397,12 +397,25 @@ def test_auth_filter_keeps_server_job_credentials_until_the_server_boundary():
 
     assert reply.payload == "pong"
     assert reply.get_header(MessageHeaderKey.ORIGIN) == server.get_fqcn()
-    assert _auth_header_values(reply) == {
-        CellMessageAuthHeaderKey.CLIENT_NAME: "server-job",
-        CellMessageAuthHeaderKey.TOKEN: "tok-server",
-        CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "sig-server",
-        CellMessageAuthHeaderKey.SSID: "ssid-server",
-    }
+    assert _auth_header_values(reply) == {key: None for key in AUTH_HEADERS}
+
+
+@pytest.mark.parametrize("msg_type", [MessageType.REQ, MessageType.REPLY])
+@pytest.mark.parametrize("next_hop", ["server", "site-a", "site-a.job"])
+def test_server_job_credentials_are_only_attached_for_the_root_boundary(msg_type, next_hop):
+    from nvflare.fuel.sec.authn import add_authentication_headers, add_server_path_reply_authentication_headers
+
+    message = _make_routed_message("site-a.job", msg_type, origin="server.job", with_auth=True)
+    message.set_header(MessageHeaderKey.TO_CELL, next_hop)
+    message.set_header(CellMessageAuthHeaderKey.SSID, "old-ssid")
+    add = add_authentication_headers if msg_type == MessageType.REQ else add_server_path_reply_authentication_headers
+    add(message, "server_job", "job-token", "job-signature", "ssid")
+    if next_hop == "server":
+        assert _auth_header_values(message) == dict(
+            zip(AUTH_HEADERS, ["server_job", "job-token", "job-signature", "ssid"])
+        )
+    else:
+        assert _auth_header_values(message) == {key: None for key in AUTH_HEADERS}
 
 
 def test_auth_filter_keeps_cross_site_reply_auth_when_routed_via_local_parent():

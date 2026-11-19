@@ -114,6 +114,19 @@ def add_authentication_headers(msg: Message, client_name: str, auth_token, token
     Returns:
 
     """
+    origin = msg.get_header(MessageHeaderKey.ORIGIN)
+    destination = msg.get_header(MessageHeaderKey.DESTINATION)
+    if (
+        _is_server_fqcn(origin)
+        and destination
+        and not _is_server_fqcn(destination)
+        and msg.get_header(MessageHeaderKey.TO_CELL) != FQCN.ROOT_SERVER
+    ):
+        # A server job may have an authenticated ad-hoc connection to a client.
+        # Its reusable token is only for validation at the root server boundary.
+        strip_authentication_headers(msg)
+        return
+
     if client_name:
         msg.set_header(CellMessageAuthHeaderKey.CLIENT_NAME, client_name)
 

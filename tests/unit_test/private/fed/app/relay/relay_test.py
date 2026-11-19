@@ -259,6 +259,22 @@ def test_relay_retries_failed_registration_after_reconnect(relay_auth):
     assert not relay_auth.registration_needed.is_set()
 
 
+def test_relay_retries_reconnect_when_server_challenge_is_temporarily_unavailable(relay_auth):
+    endpoint = Endpoint("server")
+    endpoint.state = EndpointState.READY
+    relay_auth.state_change(endpoint)
+    relay_auth.authenticator.challenge_server.side_effect = [(None, None), ("nonce", relay_auth.auth_result[3])]
+    relay_auth.authenticator.authenticate.return_value = relay_auth.auth_result
+    relay_auth.refresh()
+    assert relay_auth.registration_needed.is_set()
+    assert relay_auth.refresh_needed.is_set()
+    relay_auth.authenticator.authenticate.assert_not_called()
+    relay_auth.refresh()
+    relay_auth.authenticator.authenticate.assert_called_once()
+    assert not relay_auth.registration_needed.is_set()
+    assert not relay_auth.refresh_needed.is_set()
+
+
 def test_nested_relay_renews_binding_without_parent_reconnect_or_key_change(relay_auth, monkeypatch):
     import nvflare.private.fed.app.relay.relay as relay_module
     from nvflare.private.fed.server.auth_registry import NonRegularAuthRegistry

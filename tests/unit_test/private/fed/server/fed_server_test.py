@@ -39,7 +39,7 @@ from nvflare.fuel.f3.cellnet.defs import CellChannelTopic, MessageHeaderKey, Mes
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.defs import (
@@ -713,25 +713,35 @@ class TestFederatedServer:
         reply = server._validate_auth_headers(request)
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
 
-    def test_non_secure_server_registers_transit_header_sanitizer(self):
+    @pytest.mark.parametrize("secure", [False, True])
+    def test_server_registers_auth_or_transit_filter_and_secure_disconnect_cleanup(self, secure):
         server = object.__new__(FederatedServer)
         server.lock = MagicMock()
         server.cell = MagicMock()
         server.engine = MagicMock()
         server._register_cellnet_cbs = MagicMock()
+        server._non_regular_auth_clients = NonRegularAuthRegistry()
 
         with patch("nvflare.private.fed.server.fed_server.BaseServer.deploy"):
             server.deploy(
                 args=MagicMock(),
                 grpc_args={"service": {"target": "localhost:8002"}},
-                secure_train=False,
+                secure_train=secure,
             )
 
         server.cell.core_cell.add_incoming_filter.assert_called_once_with(
             channel="*",
             topic="*",
-            cb=server._strip_peer_transit_headers,
+            cb=server._validate_auth_headers if secure else server._strip_peer_transit_headers,
         )
+        if secure:
+            monitor = server.cell.core_cell.communicator.register_monitor.call_args.args[0]
+            peer = Endpoint("relay-1")
+            monitor.register("relay-1", "live", peer.name, peer)
+            assert monitor.resolve("relay-1", "live") == peer.name
+            peer.state = EndpointState.DISCONNECTED
+            monitor.state_change(peer)
+            assert monitor.resolve("relay-1", "live") is None
 
     def test_create_job_cell_allows_missing_server_config_for_non_secure_cell(self):
         server = object.__new__(FederatedServer)
@@ -1450,7 +1460,8 @@ def test_unmapped_signed_token_cannot_authorize_application_traffic(auth_server,
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
 
 
-def test_registration_reply_retains_live_delegated_token():
+@pytest.mark.parametrize("disconnected", [False, True])
+def test_registration_reply_retains_live_token_or_rejects_disconnected_transport(disconnected):
     server = object.__new__(FederatedServer)
     server.logger = MagicMock()
     server.engine = MagicMock()
@@ -1467,11 +1478,19 @@ def test_registration_reply_retains_live_delegated_token():
     server._non_regular_auth_clients = NonRegularAuthRegistry()
     peer = Endpoint("relay-1")
     server._non_regular_auth_clients.register("relay-1", "live-token", "relay-1", peer)
+    if disconnected:
+        peer.state = EndpointState.DISCONNECTED
+        server._non_regular_auth_clients.state_change(peer)
     request = new_cell_message(
         {CellMessageHeaderKeys.CLIENT_NAME: "relay-1", CellMessageHeaderKeys.CLIENT_TYPE: ClientType.RELAY}, Shareable()
     )
     request.set_prop(MessagePropKey.ENDPOINT, peer)
     result = server.register_client(request)
+    if disconnected:
+        assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+        server.sign_auth_token.assert_not_called()
+        assert server._non_regular_auth_clients.resolve("relay-1", "live-token") is None
+        return
     assert result[CellMessageHeaderKeys.TOKEN] == "live-token"
     server.sign_auth_token.assert_called_once_with("relay-1", "live-token")
     assert server._non_regular_auth_clients.resolve("relay-1", "live-token") == "relay-1"

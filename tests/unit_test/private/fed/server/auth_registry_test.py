@@ -16,6 +16,16 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.private.fed.server.auth_registry import NonRegularAuthRegistry
 
 
+def test_transient_endpoint_states_do_not_retire_a_live_binding():
+    registry = NonRegularAuthRegistry()
+    peer = Endpoint("relay-1")
+    registry.register("relay-1", "live", peer.name, peer)
+    for state in (EndpointState.IDLE, EndpointState.CLOSING, EndpointState.ERROR):
+        peer.state = state
+        registry.state_change(peer)
+        assert registry.resolve("relay-1", "live") == peer.name
+
+
 def test_live_renewal_keeps_in_flight_token_and_separate_admin_sessions():
     registry = NonRegularAuthRegistry()
     first, second = Endpoint("_admin_first"), Endpoint("_admin_second")

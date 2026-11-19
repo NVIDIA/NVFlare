@@ -29,6 +29,8 @@ def test_command_recovers_reconnected_admin_before_sending(reconnected, login_ok
     api = AdminAPI.__new__(AdminAPI)
     api.in_logout = False
     api._cell_reconnect_lock = threading.RLock()
+    api._cell_recovery_needed = False
+    api._cell_recovery_in_progress = False
     api._cell_auth_monitor = _AdminCellReconnectMonitor()
     if reconnected:
         api._cell_auth_monitor.reconnected.set()
@@ -91,6 +93,8 @@ def test_do_client_command_preserves_command_props():
 
 def test_user_login_sends_study_header(monkeypatch):
     api = AdminAPI.__new__(AdminAPI)
+    api._cell_reconnect_lock = threading.RLock()
+    api._cell_recovery_in_progress = False
     api.client_key = "client.key"
     api.client_cert = "client.crt"
     api.user_name = "admin@nvidia.com"
@@ -129,6 +133,8 @@ def test_user_login_sends_study_header(monkeypatch):
 
 def test_user_login_defaults_study_header(monkeypatch):
     api = AdminAPI.__new__(AdminAPI)
+    api._cell_reconnect_lock = threading.RLock()
+    api._cell_recovery_in_progress = False
     api.client_key = "client.key"
     api.client_cert = "client.crt"
     api.user_name = "admin@nvidia.com"
@@ -163,6 +169,8 @@ def test_user_login_defaults_study_header(monkeypatch):
 
 def test_user_login_parses_structured_reject_code(monkeypatch):
     api = AdminAPI.__new__(AdminAPI)
+    api._cell_reconnect_lock = threading.RLock()
+    api._cell_recovery_in_progress = False
     api.client_key = "client.key"
     api.client_cert = "client.crt"
     api.user_name = "admin@nvidia.com"
@@ -194,3 +202,73 @@ def test_user_login_parses_structured_reject_code(monkeypatch):
     assert result["status"] == APIStatus.ERROR_AUTHENTICATION
     assert result["details"] == "user 'admin@nvidia.com' is not mapped to study 'cancer-research'"
     assert result[ResultKey.AUTH_CODE] == "AUTH_STUDY_USER_NOT_MAPPED"
+
+
+@pytest.mark.parametrize("failure", ["cert-login", "command-list", "exception"])
+def test_ordinary_command_retries_failed_recovery_with_a_new_unset_monitor(monkeypatch, failure):
+    from nvflare.fuel.hci.client import api as api_module
+
+    api = AdminAPI.__new__(AdminAPI)
+    api.in_logout = False
+    api.server_sess_active = True
+    api._cell_reconnect_lock = threading.RLock()
+    api._cell_recovery_needed = False
+    api._cell_recovery_in_progress = False
+    api._cell_auth_monitor = _AdminCellReconnectMonitor()
+    api._cell_auth_monitor.reconnected.set()
+    api.cell = object()
+    api.ensure_client_cert_valid = lambda: None
+    api.client_key, api.client_cert, api.user_name, api.study = "key", "cert", "admin", DEFAULT_STUDY
+    api.debug = lambda message: None
+    api._get_command_detail = lambda command: (api_module._CMD_TYPE_SERVER, "check_status", [], [None])
+    api._new_command_context = lambda *args: CommandContext()
+    api.server_cmd_reg = SimpleNamespace(mapped_cmds=[])
+    api.client_cmd_reg = SimpleNamespace(finalize=lambda cb: None)
+    api.cmd_modules = []
+    attempts, commands = [], []
+
+    def reset():
+        api.cell = None
+        api._cell_auth_monitor = None
+        api.server_sess_active = False
+        api.token = None
+
+    def connect():
+        api.cell = object()
+        api._cell_auth_monitor = _AdminCellReconnectMonitor()
+
+    def send(ctx):
+        command = ctx.get_command()
+        if command.startswith("_cert_login"):
+            attempts.append(command)
+            if len(attempts) == 1 and failure == "exception":
+                raise ConnectionError("transport unavailable during login")
+            if len(attempts) == 1 and failure == "cert-login":
+                return  # CERT_LOGIN timed out after Cell registration succeeded.
+            api.login_result = "OK"
+        else:
+            commands.append(command)
+        ctx.set_command_result({ResultKey.STATUS: APIStatus.SUCCESS})
+
+    api._reset_cell, api.connect, api._try_command = reset, connect, send
+    api._get_command_list_from_server = lambda: not (len(attempts) == 1 and failure == "command-list")
+    monkeypatch.setattr(
+        api_module,
+        "IdentityAsserter",
+        lambda **kwargs: SimpleNamespace(cert_data="cert", sign_common_name=lambda nonce: "signature"),
+    )
+    if failure == "exception":
+        with pytest.raises(ConnectionError):
+            api.do_command("check_status server")
+    else:
+        assert api.do_command("check_status server")[ResultKey.STATUS] == APIStatus.ERROR_RUNTIME
+    assert not api.server_sess_active
+    assert not api._cell_auth_monitor.reconnected.is_set()
+    assert api._cell_recovery_needed
+    assert not commands
+
+    assert api.do_command("check_status server")[ResultKey.STATUS] == APIStatus.SUCCESS
+    assert len(attempts) == 2
+    assert commands == ["check_status server"]
+    assert api.server_sess_active
+    assert not api._cell_recovery_needed

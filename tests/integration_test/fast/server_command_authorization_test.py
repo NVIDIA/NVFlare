@@ -27,9 +27,11 @@ import pytest
 import yaml
 
 import nvflare
+from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.flare_api.api_spec import AuthorizationError
 from nvflare.fuel.flare_api.flare_api import new_secure_session
+from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.job_config.api import FedJob
 from nvflare.lighter.prov_utils import prepare_builders
@@ -50,11 +52,12 @@ def wait_for(check, description, timeout=60):
 
 
 @pytest.fixture(
-    params=[(0, "mtls"), (1, "mtls"), (2, "mtls"), (0, "tls"), (1, "tls"), (2, "tls")],
-    ids=["direct-mtls", "relay-mtls", "nested-mtls", "direct-tls", "relay-tls", "nested-tls"],
+    params=[(0, "mtls"), (1, "mtls"), (2, "mtls"), (0, "tls"), (1, "tls"), (2, "tls"), (0, "mtls", True)],
+    ids=["direct-mtls", "relay-mtls", "nested-mtls", "direct-tls", "relay-tls", "nested-tls", "adhoc-mtls"],
 )
 def federation(tmp_path, monkeypatch, request):
-    via_relay, connection_security = request.param
+    via_relay, connection_security = request.param[:2]
+    adhoc = len(request.param) == 3
     repo = Path(__file__).resolve().parents[3]
     monkeypatch.syspath_prepend(str(repo / "tests/integration_test/data/server_command"))
     module = importlib.import_module("control_job")
@@ -101,7 +104,13 @@ def federation(tmp_path, monkeypatch, request):
     Provisioner(str(tmp_path), prepare_builders(project)).provision(prepare_project(project))
     kits = tmp_path / project["name"] / "prod_00"
     for name in ["localhost", "site-1", "site-2"]:
-        internal = json.loads((kits / name / "local/comm_config.json").read_text())["internal"]
+        comm_path = kits / name / "local/comm_config.json"
+        comm_config = json.loads(comm_path.read_text())
+        if adhoc:
+            comm_config["allow_adhoc_conns"] = True
+            comm_config["adhoc"] = {"scheme": "stcp", "resources": {"connection_security": "mtls"}}
+            comm_path.write_text(json.dumps(comm_config))
+        internal = comm_config["internal"]
         assert internal["scheme"] == "stcp"
         assert internal["resources"]["connection_security"] == connection_security
     update_storage_locations(str(kits / "localhost/local"), str(tmp_path))
@@ -150,7 +159,7 @@ def federation(tmp_path, monkeypatch, request):
             command, workspace, stream = server_launch
             processes.start(command, cwd=workspace, env=env, stdout=stream, stderr=subprocess.STDOUT)
 
-        yield kits, module, victim, attacker, via_relay, restart_server
+        yield kits, module, victim, attacker, via_relay, restart_server, adhoc
     finally:
         try:
             processes.close()
@@ -193,13 +202,15 @@ def nested_relay_peers(session):
 
 
 @pytest.mark.timeout(300)
-def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
-    kits, module, victim_session, attacker_session, via_relay, restart_server = federation
+def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path, monkeypatch):
+    kits, module, victim_session, attacker_session, via_relay, restart_server, adhoc = federation
     if via_relay == 2:
         assert nested_relay_peers(victim_session), "nested relay must answer root's NetAgent query before restart"
     victim = submit(kits, module, victim_session, "victim", "site-2")
     run = holding(kits, victim, victim_session)
     peer_run = holding(kits, victim, victim_session, "site-1")
+    if adhoc:
+        assert json.loads((run / "adhoc_auth.json").read_text()) == {"request_no_auth": True, "reply_no_auth": True}
     local_calls_before = json.loads((peer_run / "collab_calls.json").read_text())
     assert sorted(json.loads((run / "collab_calls.json").read_text())) == ["server", "site-1"]
     evidence = {
@@ -286,6 +297,15 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     reconnect = victim_session.api._cell_auth_monitor.reconnected
     old_cell.core_cell.communicator.remove_endpoint("server")
     wait_for(reconnect.is_set, "admin reconnection after transport loss")
+    # Registration and CERT_LOGIN succeed, but simulate one missing command-list
+    # reply. An ordinary retry must recover even with the new monitor unset and
+    # server_sess_active false, without another transport READY event.
+    with monkeypatch.context() as patcher:
+        patcher.setattr(victim_session.api, "_get_command_list_from_server", lambda: False)
+        failed = victim_session.api.do_command(f"{AdminCommandNames.CHECK_STATUS} server")
+        assert failed["status"] == APIStatus.ERROR_RUNTIME
+    assert not victim_session.api.server_sess_active
+    assert not victim_session.api._cell_auth_monitor.reconnected.is_set()
     assert len(victim_session.get_system_info().client_info) == 2
     assert victim_session.api.cell is not old_cell
     # Same-key restart loses server-side token registrations. Existing admin

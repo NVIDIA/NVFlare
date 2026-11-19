@@ -391,6 +391,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.cell = None
         self._cell_auth_monitor = None
         self._cell_reconnect_lock = threading.RLock()
+        self._cell_recovery_needed = False
+        self._cell_recovery_in_progress = False
         self.aux_runner = None
         self.object_streamer = None
         self.fl_ctx_mgr = FLContextManager(
@@ -778,6 +780,20 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         return self.server_sess_active
 
     def _user_login(self):
+        # Explicit login and automatic recovery share the same guard so their
+        # CERT_LOGIN/GET_CMD_LIST commands cannot recursively start recovery.
+        with self._cell_reconnect_lock:
+            was_in_progress = self._cell_recovery_in_progress
+            self._cell_recovery_in_progress = True
+            try:
+                result = self._login_user_session()
+                if result.get(ResultKey.STATUS) == APIStatus.SUCCESS:
+                    self._cell_recovery_needed = False
+                return result
+            finally:
+                self._cell_recovery_in_progress = was_in_progress
+
+    def _login_user_session(self):
         """Login user
 
         Returns:
@@ -1038,6 +1054,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             return self._do_client_command(command=command, args=args, ent=ent, props=props)
 
         # server command
+        recovery_error = self._recover_cell_session()
+        if recovery_error:
+            return recovery_error
         if not self.server_sess_active:
             return {
                 ResultKey.STATUS: APIStatus.ERROR_INACTIVE_SESSION,
@@ -1046,20 +1065,32 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         return self.server_execute(command, cmd_entry=ent, props=props)
 
+    def _recover_cell_session(self):
+        with self._cell_reconnect_lock:
+            monitor = self._cell_auth_monitor
+            needed = self._cell_recovery_needed or (monitor and monitor.reconnected.is_set())
+            if not needed or self.in_logout or self._cell_recovery_in_progress:
+                return
+            # Keep this independent of the monitor: _user_login replaces it and
+            # clears server_sess_active, even if CERT_LOGIN or GET_CMD_LIST fails.
+            self._cell_recovery_needed = True
+            self._cell_recovery_in_progress = True
+            try:
+                result = self._user_login()
+                if result.get(ResultKey.STATUS) == APIStatus.SUCCESS:
+                    self._cell_recovery_needed = False
+                    return
+                return result
+            finally:
+                self._cell_recovery_in_progress = False
+
     def server_execute(self, command, reply_processor=None, cmd_entry=None, cmd_ctx=None, props=None, headers=None):
         if self.in_logout and command != InternalCommands.LOGOUT:
             return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "session is logging out"}
 
-        with self._cell_reconnect_lock:
-            monitor = self._cell_auth_monitor
-            if monitor and monitor.reconnected.is_set() and not self.in_logout:
-                # Recover on the command thread: transport callbacks cannot wait
-                # for authentication replies. Login also restores the HCI session
-                # after a server restart. The reentrant lock permits login's own
-                # commands and prevents concurrent commands using the retired Cell.
-                result = self._user_login()
-                if result.get(ResultKey.STATUS) != APIStatus.SUCCESS:
-                    return result
+        recovery_error = self._recover_cell_session()
+        if recovery_error:
+            return recovery_error
 
         args = split_to_args(command)
         if cmd_ctx:

@@ -38,7 +38,8 @@ from nvflare.collab.runtime.defs import (
     ObjectCallKey,
 )
 from nvflare.collab.runtime.dispatch import prepare_for_remote_call
-from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessagePropKey, ReturnCode
+from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.private.defs import CellMessageHeaderKeys, new_cell_message
 
@@ -84,6 +85,15 @@ class CollabProbe:
         return "mutated"
 
     @publish
+    def check_direct_auth(self):
+        caller = get_call_context().caller
+        target = next(fqcn for fqcn, name in self.participants.items() if name == caller)
+        reply = self.cell.core_cell.send_request("auth_probe", "inspect", target, Message(), timeout=5)
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+        assert reply.payload["peer"] == self.cell.get_fqcn()
+        return not reply.payload["has_auth"]
+
+    @publish
     def roundtrip(self):
         caller = get_call_context().caller
         target = next(fqcn for fqcn, name in self.participants.items() if name == caller)
@@ -93,6 +103,24 @@ class CollabProbe:
 
 
 def prepare_probe(cell, fl_ctx, participants, executor):
+    cell.core_cell.register_request_cb(
+        "auth_probe",
+        "inspect",
+        lambda msg: Message(
+            payload={
+                "peer": msg.get_prop(MessagePropKey.ENDPOINT).name,
+                "has_auth": any(
+                    msg.get_header(key)
+                    for key in (
+                        CellMessageHeaderKeys.CLIENT_NAME,
+                        CellMessageHeaderKeys.TOKEN,
+                        CellMessageHeaderKeys.TOKEN_SIGNATURE,
+                        CellMessageHeaderKeys.SSID,
+                    )
+                ),
+            }
+        ),
+    )
     probe = CollabProbe(cell, fl_ctx, participants)
     app = ClientApp(probe)
     app.name = participants[cell.get_fqcn()]
@@ -194,6 +222,31 @@ class ControlExecutor(Executor):
                 cell, f"server.{fl_ctx.get_job_id()}", "server", fl_ctx.get_identity_name(), "roundtrip"
             )
             assert reply.payload[CallReplyKey.RESULT] == "roundtrip"
+            if cell.core_cell.connector_manager.adhoc_allowed:
+                server_job = f"server.{fl_ctx.get_job_id()}"
+                deadline = time.monotonic() + 30
+                while True:
+                    agent = cell.core_cell.agents.get(server_job)
+                    if agent and agent.endpoint.name == server_job:
+                        break
+                    assert time.monotonic() < deadline, "ad-hoc server-job connection not established"
+                    time.sleep(0.1)
+                direct_reply = cell.core_cell.send_request("auth_probe", "inspect", server_job, Message(), timeout=5)
+                assert direct_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+                assert direct_reply.get_prop(MessagePropKey.ENDPOINT).name == server_job
+                assert not any(
+                    direct_reply.get_header(key)
+                    for key in (
+                        CellMessageHeaderKeys.CLIENT_NAME,
+                        CellMessageHeaderKeys.TOKEN,
+                        CellMessageHeaderKeys.TOKEN_SIGNATURE,
+                        CellMessageHeaderKeys.SSID,
+                    )
+                )
+                checked = collab_call(cell, server_job, "server", fl_ctx.get_identity_name(), "check_direct_auth")
+                assert checked.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
+                assert checked.payload[CallReplyKey.RESULT] is True
+                record(fl_ctx, "adhoc_auth.json", {"request_no_auth": True, "reply_no_auth": True})
             if shareable.get("peer") and fl_ctx.get_identity_name() == "site-1":
                 target = next(fqcn for fqcn, name in shareable["participants"].items() if name == "site-2")
                 deadline = time.monotonic() + 30

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from threading import RLock
 from types import SimpleNamespace
 
 import pytest
@@ -177,6 +178,8 @@ def test_user_login_builds_command_after_identity_renewal(monkeypatch):
             return b"signature"
 
     api = object.__new__(AdminAPI)
+    api._cell_reconnect_lock = RLock()
+    api._cell_recovery_in_progress = False
     api.user_name = "alice@nvidia.com"
     api.client_key = "client.key"
     api.client_cert = "client.crt"
@@ -221,6 +224,8 @@ def test_user_login_reconnects_when_cell_is_missing_or_registration_was_lost(mon
             return b"signature"
 
     api = object.__new__(AdminAPI)
+    api._cell_reconnect_lock = RLock()
+    api._cell_recovery_in_progress = False
     api.user_name = "alice@nvidia.com"
     api.client_key = "client.key"
     api.client_cert = "client.crt"
