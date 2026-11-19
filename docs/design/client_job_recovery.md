@@ -200,7 +200,7 @@ stateDiagram-v2
     MONITORING --> LAUNCHING: Replace a completed CJ
     MONITORING --> OBSERVATION_PENDING: Observation fails
     OBSERVATION_PENDING --> MONITORING: Observation and result recover
-    OBSERVATION_PENDING --> CLEANUP_PENDING: Abort requested
+    OBSERVATION_PENDING --> CLEANUP_PENDING: Stop starts after any ordinary abort grace
     CANCELLING --> RELEASED: Cleanup confirmed within caller bound
     CANCELLING --> CLEANUP_PENDING: Cleanup remains unresolved
     MONITORING --> CLEANUP_PENDING: Tracked cancellation still running
@@ -229,7 +229,9 @@ that call and the monitor are already running. Ordinary abort, saved abort and
 failed launch cleanup use the same cancellation record for each handle. The
 executor registers the stop under its ownership lock before waiting for it, so a
 stop begun before an observation failure is visible to later retries and to the
-release check. The normal teardown grace for a started or stopped CJ still applies.
+release check. A started or stopped CJ in `OBSERVATION_PENDING` gets the ordinary
+10-second teardown grace before the first backend stop. Once the stop starts,
+the run enters `CLEANUP_PENDING` and later retries can use the same stop record.
 Query failures do not themselves request cancellation. A healthy run
 uses OBSERVATION_PENDING during an observation outage, preserving heartbeat
 abort handling and normal CJ recovery once observation succeeds. This is distinct

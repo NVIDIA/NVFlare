@@ -53,7 +53,7 @@ from nvflare.private.fed.client.client_executor import (
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.communicator import Communicator
 from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
-from tests.timing_utils import ThreadGroup, isolate_time, join_thread, wait_for
+from tests.timing_utils import ManualClock, ObservedLock, ThreadGroup, isolate_time, join_thread, wait_for
 
 _start_thread = threading.Thread.start
 
@@ -717,6 +717,59 @@ def test_start_app_can_abort_published_runtime_before_launcher_returns(
     job_handle.terminate.assert_called_once_with()
     client.cell.fire_and_forget.assert_not_called()
     assert fl_ctx.get_prop(FLContextKey.JOB_HANDLE_CALLBACK) is None
+
+
+def test_saved_abort_cannot_be_overtaken_during_handle_publication(tmp_path):
+    job_id = "job-1"
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    executor.lock = ObservedLock(executor.lock)
+    engine = SimpleNamespace(client_executor=executor)
+    accepted = MagicMock(spec=JobHandleSpec)
+    stops = []
+    accepted.terminate.side_effect = lambda: stops.append("admin")
+    accepted._terminate_for_heartbeat_cleanup = Mock(side_effect=lambda: stops.append("heartbeat"))
+    attached = threading.Event()
+    finish_publication = threading.Event()
+    admin_returned = threading.Event()
+    attach = _PendingJobHandle.attach
+
+    def pause_after_attach(pending, handle):
+        saved = attach(pending, handle)
+        if saved is not None:
+            attached.set()
+            finish_publication.wait()
+        return saved
+
+    def launch(_meta, context):
+        ClientEngine.abort_app(engine, job_id, heartbeat_cleanup=True)
+        publish_job_handle(accepted, context)
+        return accepted
+
+    def start():
+        executor.start_app(
+            client, job_id, meta, SimpleNamespace(workspace=str(tmp_path), set=[]), None, None, None, ctx
+        )
+
+    def abort():
+        ClientEngine.abort_app(engine, job_id)
+        admin_returned.set()
+
+    launcher = MagicMock()
+    launcher.launch_job.side_effect = launch
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(_PendingJobHandle, "attach", pause_after_attach),
+        patch.object(threading.Thread, "start", _skip_completion_monitor),
+        ThreadGroup(finish_publication) as threads,
+    ):
+        threads.start(start)
+        assert attached.wait(5)
+        threads.start(abort)
+        wait_for(lambda: executor.lock.blocked.is_set() or admin_returned.is_set())
+        assert executor.lock.blocked.is_set(), "admin abort overtook the saved stop during publication"
+        assert not stops
+    assert stops[0] == "heartbeat"
 
 
 def test_start_app_removes_pending_handle_when_launch_fails(tmp_path):
@@ -1868,7 +1921,7 @@ def test_cleanup_control_start_failure_cannot_skip_observation_or_drop_owner(
         accepted.wait.assert_not_called()
 
 
-def test_admin_abort_after_monitor_error_still_cancels_and_observes(tmp_path):
+def test_admin_abort_after_monitor_error_still_cancels_and_observes(tmp_path, monkeypatch):
     meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
     client.cell.get_fqcn.return_value = "site-1"
     executor = JobExecutor(client, workspace.get_startup_kit_dir())
@@ -1887,6 +1940,8 @@ def test_admin_abort_after_monitor_error_still_cancels_and_observes(tmp_path):
     assert executor.check_status("job-1").startswith("observation pending (age ")
     assert executor.get_status("job-1") == ClientStatus.STARTED
     accepted.terminate.assert_not_called()
+    clock = isolate_time(monkeypatch, "nvflare.private.fed.client.client_executor")
+    clock.time = Mock(side_effect=[0.0, 11.0])
     executor.abort_app("job-1")
     assert client.cell.fire_and_forget.call_args.kwargs["topic"] == AdminCommandNames.ABORT
     accepted.terminate.assert_called_once()
@@ -2801,22 +2856,34 @@ def test_finalizing_job_stays_in_heartbeat_until_outcome_report_returns(tmp_path
     client.send_request_before_shutdown.assert_called_once()
 
 
-def test_transient_observation_error_preserves_normal_cj_recovery(tmp_path):
+def test_transient_observation_error_preserves_normal_cj_recovery(tmp_path, caplog, monkeypatch):
     observed = []
+    clock = ManualClock()
+    monkeypatch.setattr("nvflare.private.fed.client.client_executor.time", clock)
+    replacement_reports = []
 
-    def observe(_executor, index, _handle):
+    def observe(executor, index, _handle):
         observed.append(index)
         if len(observed) == 1:
             raise RuntimeError("transient backend observation failure")
+        if observed == [0, 0, 1]:
+            clock.advance(301)
+            replacement_reports.extend(executor.get_run_processes_keys())
+            raise RuntimeError("first observation failure on replacement")
 
     launcher, client, _ = _run_recovery(tmp_path, [(True, 104), (True, 0)], on_wait=observe)
-    assert observed == [0, 0, 1]
+    assert observed == [0, 0, 1, 1]
     assert launcher.launch_job.call_count == 2
+    assert replacement_reports == ["job-1"]
+    assert "still pending (age" not in caplog.text
+    assert "cannot observe CJ completion: RuntimeError: first observation failure on replacement" in caplog.text
     assert client.send_request_before_shutdown.call_args.kwargs["request"].payload[JobOutcomeMsgKey.CODE] == 0
 
 
-def test_transient_observation_error_does_not_disable_heartbeat_abort(tmp_path):
+@pytest.mark.parametrize("heartbeat_cleanup", [False, True], ids=["admin-abort", "heartbeat-abort"])
+def test_transient_observation_error_preserves_abort_grace(tmp_path, monkeypatch, heartbeat_cleanup):
     meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    client.cell.get_fqcn.return_value = "site-1"
     executor = JobExecutor(client, workspace.get_startup_kit_dir())
     accepted = MagicMock(spec=JobHandleSpec)
     accepted.poll.return_value = JobReturnCode.SUCCESS
@@ -2826,6 +2893,12 @@ def test_transient_observation_error_does_not_disable_heartbeat_abort(tmp_path):
     resources = MagicMock()
     launcher = MagicMock()
     launcher.launch_job.return_value = accepted
+    clock = isolate_time(monkeypatch, "nvflare.private.fed.client.client_executor")
+    now = [0.0]
+    clock.time = lambda: now[0]
+    clock.sleep = lambda _: now.__setitem__(0, 10.1)
+    events = []
+    client.cell.fire_and_forget.side_effect = lambda **_: events.append(("abort", now[0]))
 
     def observe():
         attempts.append(threading.get_ident())
@@ -2834,8 +2907,13 @@ def test_transient_observation_error_does_not_disable_heartbeat_abort(tmp_path):
         second_wait.set()
         release_wait.wait()
 
+    def terminate():
+        events.append(("stop", now[0]))
+        release_wait.set()
+
     accepted.wait.side_effect = observe
-    accepted._terminate_for_heartbeat_cleanup = MagicMock(side_effect=release_wait.set)
+    accepted.terminate.side_effect = terminate
+    accepted._terminate_for_heartbeat_cleanup = MagicMock(side_effect=terminate)
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
         try:
             executor.start_app(
@@ -2849,11 +2927,14 @@ def test_transient_observation_error_does_not_disable_heartbeat_abort(tmp_path):
                 ctx,
             )
             state = executor.run_processes["job-1"][_RUN_STATE_KEY]
+            executor.notify_job_status("job-1", ClientStatus.STARTED)
             assert second_wait.wait(5)
-            executor.abort_app("job-1", heartbeat_cleanup=True)
+            assert state.phase == _RunPhase.OBSERVATION_PENDING
+            executor.abort_app("job-1", heartbeat_cleanup=heartbeat_cleanup)
             assert release_wait.wait(5)
-            accepted._terminate_for_heartbeat_cleanup.assert_called_once()
-            accepted.terminate.assert_not_called()
+            assert events == [("abort", 0.0), ("stop", 10.1)]
+            assert accepted._terminate_for_heartbeat_cleanup.call_count == int(heartbeat_cleanup)
+            assert accepted.terminate.call_count == int(not heartbeat_cleanup)
             assert len(set(attempts)) == 1
         finally:
             release_wait.set()
@@ -3258,6 +3339,7 @@ def test_heartbeat_reuses_ordinary_abort_across_observation_error(tmp_path, clea
     resources = MagicMock()
     first_stop = threading.Event()
     finish_first_stop = threading.Event()
+    ordinary_abort_returned = threading.Event()
     observing_again = threading.Event()
     cleanup_deadlines.cancel_pending = first_stop
 
@@ -3280,6 +3362,11 @@ def test_heartbeat_reuses_ordinary_abort_across_observation_error(tmp_path, clea
     clock = isolate_time(monkeypatch, "nvflare.private.fed.client.client_executor")
     clock.time = Mock(side_effect=[0.0, 11.0])  # Expire the normal teardown grace.
     engine = SimpleNamespace(client_executor=executor)
+
+    def ordinary_abort():
+        ClientEngine.abort_app(engine, "job-1")
+        ordinary_abort_returned.set()
+
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
         executor.start_app(
             client,
@@ -3295,7 +3382,9 @@ def test_heartbeat_reuses_ordinary_abort_across_observation_error(tmp_path, clea
         executor.notify_job_status("job-1", status)
         try:
             with ThreadGroup(first_stop, finish_first_stop, adapter.exited) as threads:
-                threads.start(ClientEngine.abort_app, engine, "job-1")
+                threads.start(ordinary_abort)
+                assert first_stop.wait(5)
+                assert ordinary_abort_returned.wait(5), "ordinary abort waited past its stop-call budget"
                 assert observing_again.wait(5)
                 cleanup_deadlines.cancel_pending = None
                 ClientEngine.abort_app(engine, "job-1", heartbeat_cleanup=True)

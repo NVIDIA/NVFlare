@@ -519,8 +519,6 @@ class JobExecutor(ClientExecutor):
             if not retry:
                 state.phase = _RunPhase.CANCELLING
                 state.launch_failed = True
-            elif state.phase == _RunPhase.OBSERVATION_PENDING:
-                state.phase = _RunPhase.CLEANUP_PENDING
             cancel = pending_handle.start_cancel(heartbeat_cleanup, retry_completed=retry)
 
         # A replacement is already on the monitor thread. It will observe the new
@@ -815,10 +813,8 @@ class JobExecutor(ClientExecutor):
                 )
                 job_handle = process.get(RunProcessKey.JOB_HANDLE) if process else None
                 state = process.get(_RUN_STATE_KEY) if process else None
-                cleanup_pending = state is not None and state.phase in (
-                    _RunPhase.CLEANUP_PENDING,
-                    _RunPhase.OBSERVATION_PENDING,
-                )
+                # An observation outage alone still gets ordinary teardown grace.
+                cleanup_pending = state is not None and state.phase == _RunPhase.CLEANUP_PENDING
             if cleanup_pending:
                 with self.lock:
                     if self.run_processes.get(job_id) is not process or state.retry_active:
@@ -932,6 +928,10 @@ class JobExecutor(ClientExecutor):
             if process is None or process.get(RunProcessKey.JOB_HANDLE) is not job_handle:
                 return
             cancel = job_handle.start_cancel(heartbeat_cleanup)
+            state = process.get(_RUN_STATE_KEY)
+            if cancel is not None and state and state.phase == _RunPhase.OBSERVATION_PENDING:
+                state.phase = _RunPhase.CLEANUP_PENDING
+                state.wake.set()
         if cancel is not None:
             if not cancel.done.wait(self.job_launch_cleanup_timeout):
                 self.logger.warning(f"job {job_id}: cancellation still running after caller timeout")

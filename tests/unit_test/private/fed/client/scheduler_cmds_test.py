@@ -126,8 +126,17 @@ def test_start_failure_frees_only_resources_not_owned_by_executor(retained):
         resource_manager.free_resources.assert_called_once_with(resources={"gpu": 1}, token="token-1", fl_ctx=ANY)
 
 
-@pytest.mark.parametrize("status", [ClientStatus.STARTING, ClientStatus.READY, ClientStatus.STOPPED])
-def test_repeat_start_rejects_retained_job_and_frees_only_retry_allocation(tmp_path, status):
+@pytest.mark.parametrize(
+    "status, observation_only",
+    [
+        (ClientStatus.STARTING, False),
+        (ClientStatus.READY, False),
+        (ClientStatus.STOPPED, False),
+        (ClientStatus.READY, True),
+    ],
+    ids=["starting", "ready", "stopped", "observation-pending"],
+)
+def test_repeat_start_rejects_retained_job_and_frees_only_retry_allocation(tmp_path, status, observation_only):
     for name in ("startup", "local"):
         (tmp_path / name).mkdir()
     resource_manager = MagicMock(spec=ResourceManagerSpec)
@@ -145,7 +154,7 @@ def test_repeat_start_rejects_retained_job_and_frees_only_retry_allocation(tmp_p
     }
     executor.run_processes["job-1"] = owner
     executor.notify_job_status("job-1", status)
-    executor._retain_cleanup_owner("job-1")
+    executor._retain_cleanup_owner("job-1", observation_only=observation_only)
     if status == ClientStatus.READY:
         assert executor.get_status("job-1") == ClientStatus.STARTED
     run_dir = tmp_path / "job-1"
