@@ -110,6 +110,10 @@ def _is_zero_step_result(result: FLModel) -> bool:
     return _get_num_steps_weight(result) == 0.0
 
 
+def _without_zero_step_results(results: List[FLModel]) -> List[FLModel]:
+    return [r for r in results if not _is_zero_step_result(r)]
+
+
 def _make_unchanged_model_result(current_round) -> FLModel:
     return FLModel(
         params={},
@@ -131,7 +135,7 @@ def _aggregate_fl_model_metrics(results: List[FLModel]) -> Optional[Dict[str, An
     predictions across all clients.
     """
     aggr_metrics_helper = WeightedAggregationHelper()
-    for _result in results:
+    for _result in _without_zero_step_results(results):
         if _result.metrics is None:
             return None
         aggregatable = filter_aggregatable_metrics(_result.metrics)
@@ -223,6 +227,10 @@ class BaseFedAvg(ModelController):
         """
         if not results:
             raise ValueError("received empty results for aggregation.")
+        kept_results = _without_zero_step_results(results)
+        if not kept_results:
+            return _make_unchanged_model_result(results[0].current_round)
+        results = kept_results
 
         aggr_helper = WeightedAggregationHelper()
         for _result in results:
@@ -320,15 +328,12 @@ class BaseFedAvg(ModelController):
             self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
 
     def _drop_zero_step_results(self, results: List[FLModel]) -> List[FLModel]:
-        kept = []
         for _result in results:
             if _is_zero_step_result(_result):
                 self.warning(
                     f"Skipping result from client {_get_client_name(_result)} at round {self.current_round}: 0 steps."
                 )
-            else:
-                kept.append(_result)
-        return kept
+        return _without_zero_step_results(results)
 
     def _set_metrics_aggregation_info(self, aggr_result: FLModel):
         if not isinstance(aggr_result, FLModel):

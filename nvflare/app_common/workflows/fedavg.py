@@ -162,6 +162,7 @@ class FedAvg(BaseFedAvg):
         self._received_count: int = 0
         self._expected_count: int = 0
         self._zero_step_count: int = 0
+        self._rejected_count: int = 0
         self._params_type = None  # Only store params_type, not full result
         self._site_metric_weights: Dict[str, Dict[str, Any]] = {}
 
@@ -224,6 +225,7 @@ class FedAvg(BaseFedAvg):
                 self._received_count = 0
                 self._expected_count = len(clients)
                 self._zero_step_count = 0
+                self._rejected_count = 0
                 self._params_type = None
                 self._site_metric_weights = {}
 
@@ -311,15 +313,15 @@ class FedAvg(BaseFedAvg):
 
     def _aggregate_one_result(self, result: FLModel) -> bool:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
-        if not result.params:
-            client_name = _get_client_name(result)
-            self.warning(f"Empty result from client {client_name}, skipping.")
-            return False
-
         client_name = _get_client_name(result)
         if _is_zero_step_result(result):
             self.warning(f"Skipping result from client {client_name} at round {self.current_round}: 0 steps.")
             self._zero_step_count += 1
+            return False
+
+        if not result.params:
+            self.warning(f"Empty result from client {client_name}, skipping.")
+            self._rejected_count += 1
             return False
 
         if self.aggregator:
@@ -349,6 +351,7 @@ class FedAvg(BaseFedAvg):
                     self._aggr_metrics_helper.validate_shapes(aggregatable, client_name, self.current_round)
             except AggregationShapeError as e:
                 self.warning(f"Discarding result from client {client_name}: {e}")
+                self._rejected_count += 1
                 return False
 
             # Do not recover errors here: parameters may already have changed when metrics
@@ -390,7 +393,7 @@ class FedAvg(BaseFedAvg):
         return True
 
     def _all_results_zero_step(self) -> bool:
-        return self._received_count == 0 and self._zero_step_count > 0
+        return self._received_count == 0 and self._rejected_count == 0 and self._zero_step_count > 0
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""

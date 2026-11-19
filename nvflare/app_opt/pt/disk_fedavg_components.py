@@ -40,6 +40,7 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.workflows.base_fedavg import (
     _get_client_name,
     _get_num_steps_weight,
+    _is_zero_step_result,
     make_fedavg_metrics_aggregation_info,
 )
 from nvflare.fuel.utils import fobs
@@ -101,14 +102,22 @@ class DiskFedAvgAggregator(ModelAggregator):
         self._metrics.reset_stats()
 
     def accept_model(self, model):
+        if _is_zero_step_result(model):
+            self.warning(f"Skipping result from client {_get_client_name(model)}: 0 steps.")
+            self._release(model)
+            return
         try:
             self._accept_model(model)
         except Exception:
-            if isinstance(model.params, dict):
-                for ref in model.params.values():
-                    if isinstance(ref, _LazyRef):
-                        ref.release()
+            self._release(model)
             raise
+
+    @staticmethod
+    def _release(model):
+        if isinstance(model.params, dict):
+            for ref in model.params.values():
+                if isinstance(ref, _LazyRef):
+                    ref.release()
 
     def _accept_model(self, model):
         if model.params_type not in (ParamsType.FULL, ParamsType.DIFF):

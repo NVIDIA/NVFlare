@@ -30,6 +30,8 @@ from nvflare.app_common.workflows.base_fedavg import (
     _aggregate_fl_model_metrics,
     _get_client_name,
     _get_num_steps_weight,
+    _make_unchanged_model_result,
+    _without_zero_step_results,
     make_fedavg_metrics_aggregation_info,
 )
 from nvflare.app_common.workflows.lr.np_persistor import LRModelPersistor
@@ -158,6 +160,10 @@ class FedAvgLR(BaseFedAvg):
                 contains values to be aggregated: the gradient and hessian.
         """
         self.info("received results from clients: {}".format(results))
+        kept_results = _without_zero_step_results(results)
+        if results and not kept_results:
+            return _make_unchanged_model_result(results[0].current_round)
+        results = kept_results
 
         # On client side the `NUM_STEPS_CURRENT_ROUND` key
         # is used to track the number of samples for each client.
