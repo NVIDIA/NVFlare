@@ -12,7 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.fuel.hci.cmd_arg_utils import parse_command_line, split_to_args
+import pytest
+
+from nvflare.fuel.hci.cmd_arg_utils import (
+    parse_command_line,
+    split_to_args,
+    validate_file_string,
+    validate_text_file_name,
+)
 
 
 class TestCmdArgUtils:
@@ -45,3 +52,35 @@ class TestCmdArgUtils:
         assert line == "list_job"
         assert args == ["list_job"]
         assert props == "test_prop=value"
+
+    @pytest.mark.parametrize(
+        "file_name",
+        [
+            "audit.jsonl",
+            "job-1/audit.jsonl",
+            "audit.jsonl.1",
+            "log.txt",
+            "server.log",
+            "config.json",
+            "metrics.csv",
+            "startup.sh",
+            "site.config",
+            "job.py",
+        ],
+    )
+    def test_text_file_names_include_jsonl(self, file_name):
+        assert validate_text_file_name(file_name) == ""
+        assert validate_file_string(file_name) == file_name
+
+    @pytest.mark.parametrize("file_name", ["audit.bin", "audit.jsonl.exe"])
+    def test_non_text_file_names_remain_rejected(self, file_name):
+        error = validate_text_file_name(file_name)
+        assert "Only files with the following extensions" in error
+        assert ".jsonl," in error
+        with pytest.raises(SyntaxError):
+            validate_file_string(file_name)
+
+    @pytest.mark.parametrize("file_name", ["/audit.jsonl", "../audit.jsonl", "job/../audit.jsonl", "audit.jsonl;pwd"])
+    def test_jsonl_extension_does_not_bypass_path_checks(self, file_name):
+        with pytest.raises(SyntaxError):
+            validate_file_string(file_name)

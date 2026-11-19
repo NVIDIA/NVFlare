@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import AdminCommandNames, WorkspaceConstants
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.network_utils import get_open_ports
@@ -168,6 +168,17 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         own_marker = json.loads((evidence["site-1"] / "ready.json").read_text())["marker"]
         assert marker != own_marker
         assert marker in admin.cat_target("site-2", file="peer-marker.txt")
+        # Inspect the actual fresh-install audit files through the authenticated
+        # admin API and real server/client command execution, not just a listing.
+        for target in ("server", "site-2"):
+            for command in ("cat", "head", "tail", "grep"):
+                kwargs = {"file": WorkspaceConstants.AUDIT_LOG}
+                if command == "grep":
+                    kwargs["pattern"] = "event_id"
+                output = getattr(admin, f"{command}_target")(target, **kwargs)
+                records = [json.loads(line) for line in output.splitlines()]
+                assert records, (target, command, output)
+                assert all("event_id" in record and "timestamp" in record for record in records), output
         cases = [
             {"name": "omit_authorization"},
             {
