@@ -28,7 +28,19 @@ import pytest
 def research(monkeypatch):
     folder = Path(__file__).resolve().parents[3] / "research" / "fedrevive"
     monkeypatch.syspath_prepend(str(folder))
-    names = ("client", "data", "fedrevive", "job", "model", "schedule", "server", "storage", "update", "workflow")
+    names = (
+        "client",
+        "data",
+        "dfkd",
+        "fedrevive",
+        "job",
+        "model",
+        "schedule",
+        "server",
+        "storage",
+        "update",
+        "workflow",
+    )
     saved = {name: sys.modules.pop(name, None) for name in names}
     try:
         yield lambda name: importlib.import_module(name)
@@ -37,6 +49,36 @@ def research(monkeypatch):
             sys.modules.pop(name, None)
             if previous is not None:
                 sys.modules[name] = previous
+
+
+@pytest.mark.parametrize(
+    ("label", "eligible", "distinct"),
+    [
+        pytest.param(0, range(6), True, id="enough-images"),
+        pytest.param(1, range(6, 8), False, id="scarce-class"),
+        pytest.param(2, range(8), False, id="missing-class"),
+    ],
+)
+def test_synthetic_pool_plans_class_aware_kd_batches(research, label, eligible, distinct):
+    torch = pytest.importorskip("torch")
+    pool = research("dfkd").SyntheticPool(max_images=8)
+    images = torch.arange(8).reshape(8, 1)
+    pool.add(images, torch.tensor([0, 0, 0, 0, 0, 0, 1, 1]))
+    distribution = torch.eye(3)[label]
+
+    with torch.random.fork_rng(devices=[]):
+        torch.random.default_generator.manual_seed(41)
+        batches = pool.sample_batch_indices(distribution, batch_size=3, num_batches=2)
+        torch.random.default_generator.manual_seed(41)
+        assert batches == pool.sample_batch_indices(distribution, batch_size=3, num_batches=2)
+
+    assert len(batches) == 2 and all(len(batch) == 3 for batch in batches)
+    indices = [index for batch in batches for index in batch]
+    assert set(indices).issubset(eligible)
+    if distinct:
+        assert len(set(indices)) == len(indices)
+    for batch in batches:
+        torch.testing.assert_close(pool.load_batch(batch), images[batch])
 
 
 @pytest.mark.parametrize(

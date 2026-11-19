@@ -19,8 +19,6 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 
-import kornia.augmentation as K
-import kornia.enhance as KE
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -275,6 +273,9 @@ class DFKDReviver:
     """
 
     def __init__(self, device: torch.device, output_dir: str | None = None, config: DFKDConfig | None = None):
+        import kornia.augmentation as K
+        import kornia.enhance as KE
+
         self.config = config or DFKDConfig()
         self.device = device
         self.generator = DFKDGenerator(
