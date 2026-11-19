@@ -100,8 +100,16 @@ class DiskFedAvgAggregator(ModelAggregator):
         self._skipped = set()
         self._params_type = None
         self._zero_step_skipped = False
+        self._rejected_nonzero = False
         self._all_metrics = True
         self._metrics.reset_stats()
+
+    def accept(self, shareable, fl_ctx):
+        try:
+            return super().accept(shareable, fl_ctx)
+        except Exception:
+            self._rejected_nonzero = True
+            raise
 
     def accept_model(self, model):
         if _is_zero_step_result(model):
@@ -112,6 +120,7 @@ class DiskFedAvgAggregator(ModelAggregator):
         try:
             self._accept_model(model)
         except Exception:
+            self._rejected_nonzero = True
             _release_params(model)
             raise
 
@@ -201,7 +210,7 @@ class DiskFedAvgAggregator(ModelAggregator):
         next_path = current + ".next"
         try:
             if not self._contributions:
-                if not self._zero_step_skipped:
+                if not self._zero_step_skipped or self._rejected_nonzero:
                     raise RuntimeError("no accepted contributions to aggregate")
                 self.warning("All results reported 0 steps, keeping the global model.")
                 self._params_type = ParamsType.DIFF
