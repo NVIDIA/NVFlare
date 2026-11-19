@@ -36,8 +36,10 @@ from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_common.workflows.fedavg import FedAvg
+from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt.lazy_tensor_dict import _TempDirRef, safetensors_refs
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.app_opt.pt.recipes.fedprox import FedProxRecipe
@@ -461,6 +463,80 @@ def test_existing_controller_keeps_saved_model_when_every_site_reports_zero_step
 
     assert load_file(tmp_path / disk.SAVED_MODEL)["w"].item() == 2.0
     assert any("keeping the global model" in call.args[0] for call in ctl.warning.call_args_list)
+    assert not (tmp_path / "1-site-1").exists()
+    assert not (tmp_path / "1-site-2").exists()
+
+
+def test_existing_controller_all_zero_rounds_count_against_patience(tmp_path):
+    save_file({"w": torch.zeros(1)}, tmp_path / "initial.safetensors")
+    ctx = context(tmp_path)
+    aggr = disk.DiskFedAvgAggregator()
+    aggr.fl_ctx = ctx
+    ctl = FedAvg(
+        num_clients=1, num_rounds=5, aggregator=aggr, stop_cond="loss <= 0", patience=2, enable_tensor_disk_offload=True
+    )
+    ctl.persistor = disk.DiskFedAvgPersistor(str(tmp_path / "initial.safetensors"))
+    ctl.engine = ctx.get_engine()
+    ctl.fl_ctx = ctx
+    ctl.abort_signal = ctx.get_run_abort_signal()
+    ctl.event = lambda event: None
+    ctl.fire_event_with_data = lambda *args: None
+    ctl.info = lambda *_: None
+    ctl.warning = MagicMock()
+    ctl.sample_clients = lambda _: ["site-1"]
+    ctl.get_num_standing_tasks = lambda: 0
+    ctl._accept_train_result = lambda **_: True
+    rounds = []
+
+    def send(task_name, targets, data, callback):
+        rounds.append(ctl.current_round)
+        task = Task(task_name, FLModelUtils.to_shareable(data))
+        task.set_prop(AppConstants.TASK_PROP_CALLBACK, callback)
+        task.set_prop(AppConstants.META_DATA, {})
+        params = refs(tmp_path, f"{ctl.current_round}-site-1", {"w": torch.ones(1)})
+        ct = ClientTask(Client("site-1", "site-1"), task)
+        ct.result = FLModelUtils.to_shareable(model(params, steps=0, kind=ParamsType.DIFF))
+        ctl._process_result(ct, ctx)
+
+    ctl.send_model = send
+    ctl.run()
+
+    assert rounds == [0, 1]
+
+
+def test_scatter_and_gather_keeps_checkpoint_on_all_zero_round(tmp_path):
+    save_file({"w": torch.zeros(1)}, tmp_path / "initial.safetensors")
+    ctx = context(tmp_path)
+    aggr = disk.DiskFedAvgAggregator()
+    aggr.fl_ctx = ctx
+    persistor = disk.DiskFedAvgPersistor(str(tmp_path / "initial.safetensors"))
+    sag = ScatterAndGather(min_clients=1, num_rounds=3)
+    sag.aggregator = aggr
+    sag.persistor = persistor
+    sag.shareable_gen = FullModelShareableGenerator()
+    sag._engine = SimpleNamespace(
+        get_clients=lambda: ["site-1"], get_cell=lambda: None, persist_components=lambda *_, **__: None
+    )
+    sag._global_weights = persistor.load(ctx)
+    sag.fire_event = lambda *_: None
+    sag.fire_event_with_data = lambda *_: None
+    sag.log_info = lambda *_: None
+    sag.system_panic = MagicMock()
+    values, steps, accepted = [1.0, 1.0, 2.0], [1, 0, 1], []
+
+    def broadcast_and_wait(task, fl_ctx, **_):
+        r = sag._current_round
+        params = refs(tmp_path, f"r{r}", {"w": torch.full((1,), values[r])})
+        accepted.append(aggr.accept(FLModelUtils.to_shareable(model(params, steps=steps[r])), fl_ctx))
+
+    sag.broadcast_and_wait = broadcast_and_wait
+    sag.control_flow(Signal(), ctx)
+
+    sag.system_panic.assert_not_called()
+    assert sag._current_round == 3
+    assert accepted == [True, False, True]
+    assert load_file(tmp_path / disk.SAVED_MODEL)["w"].item() == 2.0
+    assert not (tmp_path / "r1").exists()
 
 
 @pytest.mark.parametrize("recipe_cls", [FedAvgRecipe, FedProxRecipe])

@@ -720,3 +720,12 @@ def test_update_model_keeps_model_when_every_site_reports_zero_steps():
     updated = controller.update_model(model, _make_unchanged_model_result(0))
 
     np.testing.assert_array_equal(updated.params[NPConstants.NUMPY_KEY], [1.0, 2.0, 3.0])
+
+
+def test_update_model_empty_nonzero_update_still_raises():
+    controller = FedAvgLR(damping_factor=0.5, epsilon=1.0, n_features=2)
+    model = FLModel(params={NPConstants.NUMPY_KEY: np.array([1.0, 2.0, 3.0])}, meta={})
+    update = FLModel(params={}, params_type=ParamsType.DIFF, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 5})
+
+    with pytest.raises(KeyError, match="newton_raphson_updates"):
+        controller.update_model(model, update)

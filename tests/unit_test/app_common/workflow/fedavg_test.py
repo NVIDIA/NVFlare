@@ -2535,6 +2535,13 @@ def _streaming_fedavg():
     controller._aggr_metrics_helper = WeightedAggregationHelper()
     controller.current_round = 0
     controller.warning = MagicMock()
+    aggregate_one_result = controller._aggregate_one_result
+
+    def receive_reply(result):
+        controller._reply_count += 1
+        return aggregate_one_result(result)
+
+    controller._aggregate_one_result = receive_reply
     return controller
 
 
@@ -2720,3 +2727,79 @@ class TestZeroStepResults:
 
         assert aggr_result.params == {}
         assert aggr_result.meta.get(AlgorithmConstants.SCAFFOLD_CTRL_DIFF, {}) == {}
+
+
+def _process_reply(controller, shareable, client="site-1"):
+    task = Task("train", Shareable())
+    task.set_prop(AppConstants.TASK_PROP_CALLBACK, controller._aggregate_one_result)
+    task.set_prop(AppConstants.META_DATA, {})
+    client_task = ClientTask(Client(client, client), task)
+    client_task.result = shareable
+    controller._process_result(client_task, controller.fl_ctx)
+
+
+def _process_ready_fedavg(**kwargs):
+    controller = _streaming_fedavg()
+    del controller._aggregate_one_result
+    controller.fl_ctx = FLContext()
+    controller.event = lambda _: None
+    controller.info = MagicMock()
+    controller._accept_train_result = lambda **_: True
+    for key, value in kwargs.items():
+        setattr(controller, key, value)
+    return controller
+
+
+class TestZeroStepReviewFollowUps:
+    def test_reply_failing_conversion_is_not_a_zero_step_skip(self):
+        from nvflare.apis.dxo import MetaKey, from_shareable
+
+        controller = _process_ready_fedavg()
+        _process_reply(controller, FLModelUtils.to_shareable(_steps_result("site-1", 1.0, 0)))
+        dxo = from_shareable(FLModelUtils.to_shareable(_steps_result("site-2", 3.0, 5)))
+        dxo.meta[MetaKey.INITIAL_METRICS] = 0.8
+        _process_reply(controller, dxo.to_shareable(), client="site-2")
+
+        assert not controller._all_results_zero_step()
+        with pytest.raises(RuntimeError, match="no accepted contributions"):
+            controller._get_aggregated_result()
+
+    def test_reply_rejected_by_return_code_is_not_a_zero_step_skip(self):
+        controller = _process_ready_fedavg()
+        _process_reply(controller, FLModelUtils.to_shareable(_steps_result("site-1", 1.0, 0)))
+        controller._accept_train_result = lambda **_: False
+        _process_reply(controller, Shareable(), client="site-2")
+
+        assert not controller._all_results_zero_step()
+
+    def test_streaming_zero_step_result_releases_lazy_refs(self):
+        controller = _streaming_fedavg()
+        ref = MagicMock()
+        result = _steps_result("site-1", 1.0, 0)
+        result.params = {"w": ref}
+
+        controller._aggregate_one_result(result)
+
+        ref.release.assert_called_once()
+
+    def test_base_aggregate_zero_step_result_releases_lazy_refs(self):
+        controller = _base_fedavg()
+        ref = MagicMock()
+        skipped = _steps_result("site-1", 1.0, 0)
+        skipped.params = {"w": ref}
+
+        controller.aggregate([skipped, _steps_result("site-2", 3.0, 2)])
+
+        ref.release.assert_called_once()
+
+    def test_update_model_keeps_meta_and_metrics_on_unchanged_result(self):
+        from nvflare.app_common.workflows.base_fedavg import _make_unchanged_model_result
+
+        controller = _base_fedavg()
+        model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, metrics={"acc": 0.9}, meta={"k": 1})
+
+        updated = controller.update_model(model, _make_unchanged_model_result(0))
+
+        assert updated.metrics == {"acc": 0.9}
+        assert updated.meta["k"] == 1
+        assert updated.params["w"] == pytest.approx([5.0])

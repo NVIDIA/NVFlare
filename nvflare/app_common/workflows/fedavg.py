@@ -40,8 +40,10 @@ from .base_fedavg import (
     BaseFedAvg,
     _get_client_name,
     _get_num_steps_weight,
+    _is_unchanged_model_result,
     _is_zero_step_result,
     _make_unchanged_model_result,
+    _release_params,
     make_fedavg_metrics_aggregation_info,
     make_key_metric_info_from_stop_condition,
 )
@@ -65,7 +67,8 @@ class FedAvg(BaseFedAvg):
     still fail the round because they may have partially changed its state.
     ``NUM_STEPS_CURRENT_ROUND`` is the number of optimizer steps a client completed this round:
     a positive value is its weight, a missing or ``None`` value (count unknown) gets weight 1, and
-    ``0`` skips the result. If every result reports ``0``, the global model is kept unchanged and not saved.
+    ``0`` skips the result, including its metrics. If every received reply reports ``0``, the global
+    model is kept unchanged and not saved, and the round counts as one without improvement for ``patience``.
 
     Supports custom aggregators via the ModelAggregator interface.
 
@@ -162,7 +165,8 @@ class FedAvg(BaseFedAvg):
         self._received_count: int = 0
         self._expected_count: int = 0
         self._zero_step_count: int = 0
-        self._rejected_count: int = 0
+        self._reply_count: int = 0
+        self._reply_lock = Lock()
         self._params_type = None  # Only store params_type, not full result
         self._site_metric_weights: Dict[str, Dict[str, Any]] = {}
 
@@ -225,7 +229,7 @@ class FedAvg(BaseFedAvg):
                 self._received_count = 0
                 self._expected_count = len(clients)
                 self._zero_step_count = 0
-                self._rejected_count = 0
+                self._reply_count = 0
                 self._params_type = None
                 self._site_metric_weights = {}
 
@@ -277,7 +281,12 @@ class FedAvg(BaseFedAvg):
                     AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggregate_results
                 )
 
-                if self._all_results_zero_step():
+                if _is_unchanged_model_result(aggregate_results):
+                    if self.stop_condition:
+                        self.num_fl_rounds_without_improvement += 1
+                        if self.patience and self.patience <= self.num_fl_rounds_without_improvement:
+                            self.info(f"Exceeded the number of FL rounds ({self.patience}) without improvements")
+                            break
                     self._maybe_cleanup_memory()
                     continue
 
@@ -317,11 +326,11 @@ class FedAvg(BaseFedAvg):
         if _is_zero_step_result(result):
             self.warning(f"Skipping result from client {client_name} at round {self.current_round}: 0 steps.")
             self._zero_step_count += 1
+            _release_params(result)
             return False
 
         if not result.params:
             self.warning(f"Empty result from client {client_name}, skipping.")
-            self._rejected_count += 1
             return False
 
         if self.aggregator:
@@ -351,7 +360,6 @@ class FedAvg(BaseFedAvg):
                     self._aggr_metrics_helper.validate_shapes(aggregatable, client_name, self.current_round)
             except AggregationShapeError as e:
                 self.warning(f"Discarding result from client {client_name}: {e}")
-                self._rejected_count += 1
                 return False
 
             # Do not recover errors here: parameters may already have changed when metrics
@@ -392,8 +400,13 @@ class FedAvg(BaseFedAvg):
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
         return True
 
+    def _process_result(self, client_task, fl_ctx) -> None:
+        with self._reply_lock:
+            self._reply_count += 1
+        super()._process_result(client_task, fl_ctx)
+
     def _all_results_zero_step(self) -> bool:
-        return self._received_count == 0 and self._rejected_count == 0 and self._zero_step_count > 0
+        return self._zero_step_count > 0 and self._zero_step_count == self._reply_count
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
