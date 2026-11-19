@@ -380,6 +380,29 @@ Impact:
   ``nvflare poc config --pw <dir>``.
 - ``nvflare job submit`` looks only for ``meta.json`` and ``config_fed_*.json``.
 
+Tensor Streaming Removed
+------------------------
+
+The tensor streaming feature is removed: ``TensorServerStreamer`` and
+``TensorClientStreamer`` (``nvflare.app_opt.tensor_stream``),
+``Recipe.enable_tensor_streaming()``, and the ``tensor-stream`` example.
+
+Impact:
+
+- Jobs and scripts that reference these classes or call
+  ``enable_tensor_streaming()`` fail. Remove the calls and the streamer
+  components from job configurations.
+- The tensor downloader and disk offload (``enable_tensor_disk_offload``) are
+  not affected.
+
+Flower Integration Requires Flower 1.43 or Later
+------------------------------------------------
+
+Flower 1.40 removed the gRPC adapter protocol buffers that the previous
+integration used. The integration now uses the Flower HTTP Fleet API and
+requires ``flwr>=1.43``. Upgrade Flower on the server and clients before
+running Flower jobs. ``FlowerRecipe`` usage is unchanged.
+
 Legacy Client API Stack Removal
 -------------------------------
 

@@ -186,6 +186,11 @@ persisted as safetensors.
 - A deliberate download cancellation during workflow finalization is now
   distinguished from a genuine transfer failure, so a late cancelled download
   no longer terminates the server job.
+- Disk-backed model distribution reuses one ``pread`` reader per backing file
+  for the length of a download instead of reopening the file and parsing its
+  header for every tensor. This requires ``safetensors>=0.8.0``.
+- Offload files are no longer left in the temporary directory when a server job
+  exits abnormally, such as after an interrupted upload.
 
 Disk-Backed Task-Worker Payloads
 --------------------------------
@@ -228,6 +233,15 @@ workspace; application code restores its checkpoint.
 - On Kubernetes, recovery needs the persistent jobs volume; resident Client
   Jobs use an ``emptyDir`` workspace unless ``persist_resident_workspaces`` is
   enabled.
+- Task-lifetime jobs recover from a lost task worker. On Kubernetes, a
+  confirmed worker crash or scheduler timeout exits the Client Job through the
+  same recovery path. On Slurm, a worker allocation that ends in timeout,
+  preemption, out-of-memory, node failure, boot failure, or a signal kill is
+  treated as retryable, and the replacement continues the same assignment. A
+  plain nonzero exit, an operator ``scancel``, and application errors keep
+  their existing outcomes, and a valid result always takes precedence. Recovery
+  proceeds only after the Client Parent has confirmed that the old Client Job
+  and every worker allocation have stopped.
 - Process recovery is not available for an ``external_process`` trainer.
 - ``max_cj_restart_failures`` (default three consecutive failed replacement
   initializations; a successful one resets the count) bounds retries.
@@ -257,7 +271,33 @@ Developer Experience
 - **Recipes, Simulator, and POC.** Clearer Recipe script arguments and
   simulation status, a warning when export flags are not declared by the
   script, per-deployment POC workspace isolation, bounded POC readiness
-  checks, and an optional sampling seed for client selection.
+  checks, and an optional sampling seed for client selection. Invalid logging
+  options are reported before the simulator workspace is created, and a
+  simulator run is reported as failed when a client stops on a fatal system
+  error before sending a result.
+- **Download only a job's outputs.** ``nvflare job download --outputs-only``,
+  ``run.get_result(outputs_only=True)``, and
+  ``Session.download_job_result(outputs_only=True)`` return only the files the
+  job produced, such as the global model and metrics, and leave out the
+  deployed app, custom code, and logs. The server stores the outputs apart from
+  the rest of the workspace when the job ends. A failed job, or a job that
+  finished before this change, returns the whole job as before.
+- **Lightning step-level sync.** ``flare.patch(trainer,
+  sync_every_n_steps=N)`` exchanges the model with the server every N optimizer
+  steps within one ``trainer.fit()``, loading each global model in place so the
+  optimizer, learning-rate scheduler, AMP scaler, and data position carry over.
+  The server's ``num_rounds`` decides how long training runs. Any trainer
+  callback can define the ``on_fl_receive``, ``on_fl_model_loaded``, and
+  ``on_fl_before_send`` hooks, in both modes. The default keeps one round per
+  ``fit()``.
+- **Task filters for ``FLModel``.** ``ModelFilter`` is an opt-in
+  ``DXOFilter`` whose ``process_model(model, fl_ctx)`` callback works on an
+  ``FLModel``, so applications that use ``FLModel`` need not rebuild model
+  fields from DXO payloads.
+- **Data partitioning.** ``nvflare.utils.data`` adds NumPy-only deterministic
+  splits for simulating sites: ``dirichlet_label_partition``,
+  ``iid_partition``, and ``quantity_skew_partition``. Each takes a seed, and the
+  returned ``PartitionResult`` can be saved to and loaded from JSON.
 
 Security and Identity
 =====================
@@ -316,6 +356,18 @@ Per-Job Credentials and Studies
   registry stays authoritative for study existence and site enrollment.
 - **Study environment settings.** Process jobs apply the selected study's
   ``env`` and ``secret_env`` from ``local/study_runtime.yaml``.
+- **Client study allow-list.** A client's ``local/study_runtime.yaml`` is also
+  the list of studies that site runs. When the file lists at least one study,
+  the client rejects a job for any unlisted study, including ``default``, at
+  its resource check, and an ``@ALL`` job still runs on the other sites. With
+  no file or an empty ``studies`` map, the site accepts every study, so default
+  deployments are unchanged. A study entry may be empty (``default: {}``).
+- **Audit records.** Audit events are written as JSON Lines with UTC
+  timestamps, to ``audit.jsonl`` by default, using the fields ``event_id``,
+  ``reference``, ``timestamp``, ``user``, ``action``, ``job``, ``scope``, and
+  ``message``. Administrators can inspect the file with ``cat``, ``head``,
+  ``tail``, and ``grep``. This applies to new installations; there is no
+  conversion of existing audit files.
 
 Provisioning and Certificates
 -----------------------------
@@ -328,6 +380,26 @@ Hardening
 ---------
 
 - Dashboard role self-assignment and client property injection are blocked.
+  Org Admin signup is restored with explicit approval: participants request a
+  role and organization, the project administrator approves them, and
+  self-service role and organization changes are locked once set or approved.
+- The Dashboard validates organization, client, server, and user names against
+  the provisioning naming rules before saving, and returns a field-level
+  error instead of failing later when a startup kit is generated. The legacy
+  ``cc_mode`` project field is no longer exposed or writable.
+- Server-parent commands are authorized by job and caller role, so a client job
+  can no longer address another job's ID to obtain its participant objects or
+  change its status.
+- Job credentials are rejected as package signers, and a certificate from the
+  job CA cannot impersonate a site to replace its connection: the job CA is
+  restricted to valid job and workspace-transfer scopes before endpoint
+  replacement.
+- Workflow model and checkpoint paths are confined to the job's output
+  directories: ``FedAvg`` model files, cross-site model and validation-result
+  output, ``PTFileModelPersistor`` checkpoint paths, and metadata sidecars.
+- ZIP extraction refuses a destination that is a hard link, so it cannot
+  overwrite another linked file.
+- ``certifi>=2026.10.19`` and ``uv>=0.13.6,<0.14.0`` are required.
 - PSI no longer logs site sizes or identities, and no longer echoes duplicate
   item values in validation errors.
 - ``netrc`` can no longer override example API tokens.
@@ -345,6 +417,14 @@ Networking and Deployment
   manager, so concurrent jobs no longer receive the same GPUs. Passthrough
   clients keep their previous behavior.
 - Lightweight per-peer payload byte counters in CellNet.
+- **Flower integration.** The integration uses the Flower HTTP Fleet API and
+  requires ``flwr>=1.43``, because Flower 1.40 removed the gRPC adapter
+  protocol buffers the previous integration used. ``FlowerRecipe``, the TIE
+  controller and executor, and the metric relay are unchanged.
+- **Confidential computing.** The 2.9 confidential-computing implementation is
+  carried into 2.10: CVM Builder, CoCo and Azure provisioning, deployment
+  scripts, examples, and documentation. The ``cc_provision`` example is
+  replaced by ``cvm_builder``.
 - **Optional Dashboard dependencies.** Flask and the other Dashboard web
   dependencies are no longer installed with the base package. Install
   ``nvflare[dashboard]`` for the Dashboard and ``nvflare[edge-http]`` for HTTP
@@ -394,11 +474,35 @@ Aggregation and Workflows
 - Client API rank resolution is shared by Hugging Face, Lightning, and plain
   PyTorch distributed clients, invalid ranks are rejected, and Hugging Face
   rejects a conflicting single-process rank marker on a nonzero rank.
+- Swarm no longer aggregates before its last contribution is accepted, which
+  could finish a job with an incorrect model. A late result after the round
+  closes is acknowledged and never forwarded to the aggregator.
+- Hierarchical edge updates honor the configured update interval instead of
+  polling every 0.1 seconds, which inflated update traffic.
+- A result-submission timeout that starts a second download while the server is
+  still receiving the first no longer causes a premature end-of-file that fails
+  the server job.
 
 Networking and Infrastructure
 -----------------------------
 
-- Relay authentication refreshes after a server key replacement.
+- Relay authentication refreshes after a server key replacement, and endpoint
+  notifications refresh after connection handshakes.
+- The HTTP (WebSocket) client accepts messages up to the same size as the
+  server. Previously a bundled checkpoint larger than 4 MiB could disconnect
+  the client and time out job deployment.
+- Reliable F3 receive cleanup uses one shared deadline scheduler instead of one
+  timer thread per retained task, so thread usage no longer grows with stream
+  throughput.
+- Certificate issuers keep the full CA subject, so a CA with an organization or
+  other non-CN attribute no longer produces kits that fail chain validation.
+  The ``nvflare cert`` command reference describes recovery for affected
+  certificates.
+- A Confidential Computing client's registration context is set before the
+  registration handler runs, so the server accepts a registering client that
+  passed attestation.
+- Recipe admin sessions are closed after status, abort, monitoring, and result
+  operations, including on exceptions.
 - Slurm multi-node GPU step allocation.
 - Transport startup and shutdown lifecycle handling, and async TCP and gRPC
   scheme handling in client startup URLs (``use_aio: true`` provisioning).
@@ -477,6 +581,12 @@ Research
   demonstrated on a 39-site retinal cohort.
 - **Client drift monitoring.** The externally maintained telltale example is
   listed in the research README.
+- **decent-vla.** Federated fine-tuning of vision-language-action robot
+  policies (SmolVLA, pi0.5, and GR00T N1.7) on LIBERO.
+- **TRAP.** An experimental workflow with reference-based token penalties and
+  local model-leakage audits for federated fine-tuning, built on
+  ``ModelFilter``.
+- **FDS.** The externally maintained project is listed in the research README.
 
 Upgrade and Compatibility
 =========================
@@ -506,5 +616,26 @@ below, see the :ref:`migration_guide`.
   outcome; the previous constants, class, and wire value remain as aliases.
 - Process jobs now apply ``local/study_runtime.yaml`` (previously ignored).
   Review existing files before upgrading.
+- A client whose ``local/study_runtime.yaml`` lists studies now rejects jobs for
+  unlisted studies, including ``default``. List every study the site should
+  run.
+- The legacy ``local/study_data.yaml`` and the Kubernetes launcher argument
+  ``study_data_pvc_file_path`` are removed. Docker, Kubernetes, and Slurm
+  launchers refuse to launch while the file exists. Move the datasets into
+  ``local/study_runtime.yaml``.
+- Removed: job templates and ``nvflare job create``, ``job list-templates``, and
+  ``job show-variables``; HOCON and OmegaConf configuration (FLARE configs are
+  JSON only, and the CLI settings file moves to ``~/.nvflare/config.json``); and
+  tensor streaming (``TensorServerStreamer``, ``TensorClientStreamer``, and
+  ``Recipe.enable_tensor_streaming()``). The tensor downloader and disk offload
+  are unchanged.
+- ``MultiProcessExecutor`` and ``PTMultiProcessExecutor`` are deprecated. Use
+  the Client API with ``launch_external_process=True`` and ``torchrun``.
+- The Flower integration requires ``flwr>=1.43``, and disk-backed model
+  distribution requires ``safetensors>=0.8.0``.
+- Source builds and editable installs are named ``nvflare`` (and
+  ``nvflare-light``) instead of the ``-nightly`` distributions. Migrate from an
+  overlapping legacy install through a fresh environment, or remove both
+  distributions before installing.
 - Task-lifetime PyTorch jobs: unfiltered Client Job input hooks receive tensor
   references (see Memory and Large Models).
