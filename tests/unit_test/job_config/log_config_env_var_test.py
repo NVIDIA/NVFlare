@@ -41,6 +41,7 @@ class TestSimulatorRunnerFlLogLevel:
                 assert run_simulator(args) == 0
 
         assert mock_runner.call_args.kwargs["log_config"] == LogMode.CONCISE
+        assert mock_runner.call_args.kwargs["simulation_plan"] is None
 
     def test_env_var_used_when_no_param(self, tmp_path):
         job_folder = str(tmp_path / "job")

@@ -1,0 +1,316 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""A local distillation loop over caller-supplied input batches."""
+
+from contextlib import ExitStack, contextmanager
+from copy import deepcopy
+from functools import partial
+from itertools import chain, islice
+
+import torch
+from torch import nn
+from torch.nn.parameter import is_lazy
+
+from .losses import kl_divergence
+from .teachers import _snapshot_state
+
+
+def _model(value):
+    model = value if isinstance(value, nn.Module) else value()
+    if not isinstance(model, nn.Module):
+        raise TypeError("model instances/factories must produce torch.nn.Module")
+    return model
+
+
+def _iter_batches(batches):
+    if isinstance(batches, torch.Tensor):
+        raise TypeError("batches must be an iterable of batches. For one tensor batch, use fit([tensor]).")
+    iterator = iter(batches)
+    try:
+        first = next(iterator)
+    except StopIteration:
+        raise ValueError("no batches were supplied") from None
+    return chain((first,), iterator)
+
+
+@torch.no_grad()
+def _validate_lazy_state(current, state):
+    if current.keys() != state.keys():
+        raise RuntimeError("checkpoint keys must match the model with uninitialized tensors")
+    for name, target in current.items():
+        if not isinstance(target, torch.Tensor):
+            continue
+        value = state[name]
+        if not isinstance(value, torch.Tensor) or is_lazy(value):
+            raise RuntimeError(f"checkpoint entry {name} must be an initialized tensor")
+        if is_lazy(target):
+            probe = torch.empty(value.shape, device=target.device, dtype=target.dtype)
+        else:
+            if value.shape != target.shape:
+                raise RuntimeError(f"size mismatch for {name}: checkpoint {value.shape}, model {target.shape}")
+            probe = torch.empty_like(target)
+        probe.copy_(value)
+
+
+def _load_checkpoint(components):
+    # Capture serialized state without copying modules or their live attributes.
+    ready, lazy, applied = [], [], []
+    for component, state in components:
+        current = component.state_dict()
+        if isinstance(component, nn.Module):
+            pending = [name for name, value in current.items() if is_lazy(value)]
+            if pending:
+                # Materializing a lazy tensor changes it in place. Check what can
+                # be checked ahead of time and apply lazy modules last.
+                _validate_lazy_state(current, state)
+                for name in pending:
+                    del current[name]
+            rollback = partial(component.load_state_dict, _snapshot_state(current), strict=not pending)
+            (lazy if pending else ready).append((component, state, rollback))
+        else:
+            ready.append((component, state, partial(component.load_state_dict, deepcopy(current))))
+    try:
+        for component, state, rollback in ready + lazy:
+            applied.append(rollback)
+            component.load_state_dict(state)
+    except BaseException:
+        rollback_error = None
+        for rollback in reversed(applied):
+            try:
+                rollback()
+            except Exception as error:
+                rollback_error = error
+        if rollback_error is not None:
+            raise RuntimeError("checkpoint rollback could not restore all component state") from rollback_error
+        raise
+
+
+def _prepare_inputs(batch, batch_adapter, device):
+    inputs = batch_adapter(batch) if batch_adapter else batch
+    if not isinstance(inputs, torch.Tensor) or inputs.ndim < 1 or not inputs.shape[0]:
+        raise ValueError("batch_adapter must return a nonempty batched input tensor")
+    inputs = inputs.detach().to(device)
+    if (inputs.is_floating_point() or inputs.is_complex()) and not torch.isfinite(inputs).all():
+        raise ValueError("batch_adapter must return finite inputs")
+    return inputs
+
+
+@contextmanager
+def _restore_student_buffers_on_error(student):
+    # Train-mode forwards can change buffers before the loss has been checked.
+    snapshots = {}
+
+    def snapshot_initialized(buffers):
+        has_lazy_buffers = False
+        for buffer in buffers:
+            if is_lazy(buffer):
+                has_lazy_buffers = True
+            elif id(buffer) not in snapshots:
+                snapshots[id(buffer)] = (buffer, buffer.detach().clone())
+        return has_lazy_buffers
+
+    def after_lazy_init(module, _):
+        snapshot_initialized(module.buffers(recurse=False))
+
+    with ExitStack() as cleanup:
+        if snapshot_initialized(student.buffers()):
+            for module in student.modules():
+                if any(is_lazy(buffer) for buffer in module.buffers(recurse=False)):
+                    # PyTorch's own pre-hook materializes buffers before this hook.
+                    handle = module.register_forward_pre_hook(after_lazy_init)
+                    cleanup.callback(handle.remove)
+        try:
+            yield
+        except BaseException:
+            with torch.no_grad():
+                for buffer, snapshot in snapshots.values():
+                    buffer.copy_(snapshot)
+            raise
+
+
+class DistillationTrainer:
+    """Native implementation of Distiller, using the mean per-teacher loss.
+
+    student and teachers accept modules or zero-argument factories. The student
+    is moved to device and updated in place, retaining its supplied weights;
+    factories define initialization explicitly. Teachers are independently copied
+    once, moved to device, frozen and put in eval mode. Originals are untouched.
+
+    batch_adapter extracts a single input tensor from each supplied batch.
+    Output adapters prepare model outputs for loss_fn. The default KL expects
+    aligned [batch, classes] logits; other tasks can supply a different loss.
+    Wrap a model for multiple inputs or different per-teacher output conventions.
+    loss_fn(student_output, teacher_output) must return a scalar batch-mean loss.
+    Use functools.partial(kl_divergence, temperature=...) to configure KD, or
+    supply another loss. Multiple teachers contribute equally; logits are not
+    averaged. No synthetic data, class weighting or optimizer reset is implicit.
+
+    Example::
+
+        from functools import partial
+        import torch
+        from torch import nn
+        from nvflare.app_opt.pt.distillation import DistillationTrainer
+
+        trainer = DistillationTrainer(
+            student=nn.Linear(4, 3),
+            teachers=[nn.Sequential(nn.Linear(4, 8), nn.ReLU(), nn.Linear(8, 3))],
+            optimizer_factory=partial(torch.optim.SGD, lr=0.1),
+        )
+        try:
+            metrics = trainer.fit([torch.randn(8, 4)], max_steps=1)
+            student_state = trainer.export_student_state()
+        finally:
+            trainer.close()
+    """
+
+    def __init__(
+        self,
+        student,
+        teachers,
+        optimizer_factory,
+        device="cpu",
+        batch_adapter=None,
+        student_output_adapter=None,
+        teacher_output_adapter=None,
+        loss_fn=kl_divergence,
+    ):
+        teachers = list(teachers)
+        if not teachers:
+            raise ValueError("at least one teacher is required")
+        self.device = torch.device(device)
+        # Copy before moving/training the student, even if a supplied teacher
+        # instance aliases that student.
+        self.teachers = [deepcopy(_model(value)).to(self.device).eval().requires_grad_(False) for value in teachers]
+        self.student = _model(student).to(self.device)
+        self.optimizer = optimizer_factory(self.student.parameters())
+        if not isinstance(self.optimizer, torch.optim.Optimizer):
+            raise TypeError("optimizer_factory must return a torch optimizer")
+        self.batch_adapter = batch_adapter
+        self.student_output_adapter = student_output_adapter
+        self.teacher_output_adapter = teacher_output_adapter
+        self.loss_fn = loss_fn
+        self.num_steps = 0
+        self._closed = False
+
+    def fit(self, batches, max_steps: int | None = None) -> dict:
+        """Consume one pass, optionally capped, returning loss/steps/samples.
+
+        Input tensors are detached and moved to device. Labels are unused.
+        The student runs in train mode and remains there; teacher copies stay
+        frozen in eval mode. Teachers run first, retaining their targets before
+        building the student's autograd graph. Shared RNG, input mutation or
+        stateful forwards/adapters can make ordering observable; equivalence to
+        student-first is only expected for independent deterministic forwards.
+        max_steps never cycles or consumes an extra batch.
+        Empty or non-finite input and non-finite/non-scalar losses raise.
+        A failed student step restores in-place changes to registered student
+        buffers. Completed steps remain applied. Parameters, optimizer state
+        and other effects of user code are outside the buffer rollback.
+        """
+        self._check_open()
+        if max_steps is not None and (isinstance(max_steps, bool) or not isinstance(max_steps, int) or max_steps < 1):
+            raise ValueError("max_steps must be a positive integer or None")
+        batches = _iter_batches(batches)
+        self.student.train()
+        total_loss, samples, steps = 0.0, 0, 0
+        selected = batches if max_steps is None else islice(batches, max_steps)
+        for batch in selected:
+            inputs = _prepare_inputs(batch, self.batch_adapter, self.device)
+            # Finish teacher inference before retaining the student's autograd
+            # activations. Keep only the teacher targets for the loss reduction.
+            targets = []
+            for teacher in self.teachers:
+                with torch.no_grad():
+                    target = teacher(inputs)
+                    if self.teacher_output_adapter:
+                        target = self.teacher_output_adapter(target)
+                targets.append(target)
+            with _restore_student_buffers_on_error(self.student):
+                student_output = self.student(inputs)
+                if self.student_output_adapter:
+                    student_output = self.student_output_adapter(student_output)
+                loss = None
+                for target in targets:
+                    term = self.loss_fn(student_output, target)
+                    loss = term if loss is None else loss + term
+                loss = loss / len(self.teachers)
+                if not isinstance(loss, torch.Tensor) or loss.ndim != 0 or not torch.isfinite(loss):
+                    raise ValueError("loss_fn must return a finite scalar batch-mean loss")
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+            count = inputs.shape[0]
+            total_loss += loss.detach().item() * count
+            samples += count
+            steps += 1
+            self.num_steps += 1
+        return {"loss": total_loss / samples, "steps": steps, "samples": samples}
+
+    def _check_open(self):
+        if self._closed:
+            raise RuntimeError("Distiller is closed")
+
+    def export_student_state(self) -> dict:
+        """Return independent student-only CPU state, retaining the live session."""
+        self._check_open()
+        return _snapshot_state(self.student.state_dict())
+
+    def close(self) -> None:
+        """Release owned model/optimizer references; caller models remain owned by callers."""
+        if not self._closed:
+            self._closed = True
+            self.teachers = []
+            self.student = self.optimizer = None
+
+    def state_dict(self) -> dict:
+        """Copy model/optimizer states and step count for explicit checkpointing.
+
+        Model states are CPU copies; optimizer state follows PyTorch's native
+        format/devices. Use torch.load(..., map_location=...) when loading files.
+        Architecture/factories, adapters, loss configuration and RNG/data-loader
+        state are caller-owned and are not serialized.
+        """
+        self._check_open()
+        return {
+            "student": self.export_student_state(),
+            "teachers": [_snapshot_state(model.state_dict()) for model in self.teachers],
+            "optimizer": deepcopy(self.optimizer.state_dict()),
+            "num_steps": self.num_steps,
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        """Restore into matching architectures, teacher order and configuration.
+
+        The existing models and optimizer retain their identity. On failure,
+        previously initialized state is restored. Lazy tensors are checked before
+        loading and materialized after the other components.
+        Custom state loaders should be able to reload their own state snapshots.
+        Restore caller-owned RNG and data state after loading.
+        """
+        self._check_open()
+        if len(state["teachers"]) != len(self.teachers):
+            raise ValueError("checkpoint teacher count does not match this trainer")
+        count = state["num_steps"]
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ValueError("checkpoint num_steps must be a nonnegative integer")
+        _load_checkpoint(
+            [
+                (self.student, state["student"]),
+                *zip(self.teachers, state["teachers"]),
+                (self.optimizer, deepcopy(state["optimizer"])),
+            ]
+        )
+        self.num_steps = count

@@ -19,4 +19,6 @@ See [the FedBuff recipe guide](../../../../docs/user_guide/data_scientist_guide/
 imports, observer hooks, weighting, transformations, and failure behavior.
 
 Each successful run saves `schedule.json` and `final_weights.npy`. Actual arrival
-order depends on execution timing.
+order depends on execution timing. For fixed acceptance, virtual timing and
+isolated seed streams, use the separate
+[reproducible NumPy example](../numpy_async_reproducible/README.md).

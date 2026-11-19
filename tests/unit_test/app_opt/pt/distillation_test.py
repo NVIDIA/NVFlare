@@ -1,0 +1,623 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from copy import deepcopy
+from functools import partial
+from io import BytesIO
+
+import pytest
+
+torch = pytest.importorskip("torch")
+from torch import nn
+
+from nvflare.app_opt.pt.distillation import DistillationTrainer, TeacherBuffer, kl_divergence
+
+
+@pytest.fixture(autouse=True)
+def isolated_cpu_rng():
+    with torch.random.fork_rng(devices=[]):
+        torch.random.default_generator.manual_seed(17)
+        yield
+
+
+def test_kl_matches_distribution_kl_and_only_student_gets_gradients():
+    student = torch.tensor([[1.0, -2.0, 0.5], [0.1, 0.4, -0.2]], requires_grad=True)
+    teacher = torch.tensor([[0.5, 2.0, -1.0], [-0.3, 0.2, 0.6]], requires_grad=True)
+    temperature = 2.0
+    expected = (
+        torch.distributions.kl_divergence(
+            torch.distributions.Categorical(logits=teacher.detach() / temperature),
+            torch.distributions.Categorical(logits=student / temperature),
+        )
+        * temperature**2
+    )
+
+    loss = kl_divergence(student, teacher, temperature)
+    torch.testing.assert_close(loss, expected.mean())
+    torch.testing.assert_close(kl_divergence(student, teacher, temperature, "sum"), expected.sum())
+    terms = kl_divergence(student, teacher, temperature, "none")
+    assert terms.shape == student.shape
+    torch.testing.assert_close(terms.sum(dim=1), expected)
+    expected_gradient = torch.autograd.grad(expected.mean(), student)[0]
+    loss.backward()
+    torch.testing.assert_close(student.grad, expected_gradient)
+    assert teacher.grad is None
+
+
+def test_softened_probabilities_match_logits_and_invalid_contracts_fail():
+    student, teacher = torch.randn(3, 4), torch.randn(3, 4)
+    target = (teacher / 3).softmax(dim=1)
+    torch.testing.assert_close(
+        kl_divergence(student, target, 3, teacher_is_logits=False), kl_divergence(student, teacher, 3)
+    )
+    for kwargs in ({"temperature": 0}, {"temperature": float("nan")}, {"reduction": "mean"}):
+        with pytest.raises(ValueError):
+            kl_divergence(student, teacher, **kwargs)
+    with pytest.raises(ValueError, match="matching shapes"):
+        kl_divergence(student, teacher[:, :2])
+    with pytest.raises(ValueError, match="probabilities"):
+        kl_divergence(student, target * 2, teacher_is_logits=False)
+
+
+def test_teacher_history_is_bounded_owned_and_restores_in_order():
+    model = nn.Sequential(nn.Linear(2, 3), nn.BatchNorm1d(3))
+    buffer = TeacherBuffer(2)
+    metadata = {"version": 0, "labels": ["a", "b", "c"]}
+    for version in range(3):
+        metadata["version"] = version
+        with torch.no_grad():
+            model[0].weight.fill_(version)
+        buffer.add(model, metadata)
+    metadata["labels"].clear()
+    with torch.no_grad():
+        model[0].weight.fill_(99)
+
+    snapshots = list(buffer)
+    assert len(snapshots) == 2
+    assert [item.metadata["version"] for item in snapshots] == [2, 1]
+    assert snapshots[0].metadata["labels"] == ["a", "b", "c"]
+    assert snapshots[0].model_state["0.weight"].mean().item() == 2
+    assert snapshots[0].model_state["0.weight"].device.type == "cpu"
+    assert hasattr(snapshots[0].model_state, "_metadata")
+    exported = buffer.state_dict()
+    restored = TeacherBuffer(2)
+    restored.load_state_dict(exported)
+    exported["teachers"][0]["model_state"]["0.weight"].zero_()
+    assert next(iter(restored)).model_state["0.weight"].mean().item() == 2
+    assert next(iter(buffer)).model_state["0.weight"].mean().item() == 2
+    with pytest.raises(ValueError, match="capacity"):
+        TeacherBuffer(1).load_state_dict(buffer.state_dict())
+
+
+def test_heterogeneous_kd_reduces_loss_without_changing_original_teachers():
+    teacher = nn.Sequential(nn.Linear(3, 6), nn.BatchNorm1d(6), nn.ReLU(), nn.Dropout(), nn.Linear(6, 2))
+    teacher.train()
+    original = deepcopy(teacher.state_dict())
+    inputs = torch.randn(16, 3)
+    trainer = DistillationTrainer(
+        lambda: nn.Linear(3, 2),
+        [teacher, lambda: nn.Linear(3, 2)],
+        partial(torch.optim.SGD, lr=0.5),
+        loss_fn=partial(kl_divergence, temperature=2),
+    )
+
+    def objective():
+        with torch.no_grad():
+            return sum(trainer.loss_fn(trainer.student(inputs), model(inputs)) for model in trainer.teachers) / 2
+
+    before = objective()
+    metrics = trainer.fit([inputs] * 30)
+    assert objective() < before * 0.5
+    assert metrics["steps"] == trainer.num_steps == 30
+    assert metrics["samples"] == 16 * 30
+    assert teacher.training
+    assert all(parameter.requires_grad and parameter.grad is None for parameter in teacher.parameters())
+    for name, value in teacher.state_dict().items():
+        torch.testing.assert_close(value, original[name])
+    for model in trainer.teachers:
+        assert not model.training
+        assert all(not parameter.requires_grad and parameter.grad is None for parameter in model.parameters())
+
+
+class _OutputModel(nn.Module):
+    def __init__(self, key):
+        super().__init__()
+        self.key = key
+        self.linear = nn.Linear(3, 2)
+
+    def forward(self, inputs):
+        return {self.key: self.linear(inputs)}
+
+
+def test_batch_and_output_adapters_respect_the_step_budget():
+    batch = (torch.randn(4, 3), torch.zeros(4, dtype=torch.long))
+    trainer = DistillationTrainer(
+        _OutputModel("student"),
+        [_OutputModel("teacher")],
+        partial(torch.optim.SGD, lr=0.1),
+        batch_adapter=lambda item: item[0],
+        student_output_adapter=lambda value: value["student"],
+        teacher_output_adapter=lambda value: value["teacher"],
+    )
+    batches = iter([batch] * 3)
+    metrics = trainer.fit(batches, max_steps=2)
+    assert metrics["steps"] == 2
+    assert next(batches) is batch
+
+
+@pytest.mark.parametrize("weight_norm", [False, True])
+def test_checkpoint_restores_optimizer_teachers_and_caller_owned_rng(weight_norm):
+    def make_trainer():
+        linear = nn.Linear(3, 5)
+        if weight_norm:
+            linear = nn.utils.weight_norm(linear)
+        return DistillationTrainer(
+            nn.Sequential(linear, nn.ReLU(), nn.Dropout(0.3), nn.Linear(5, 2)),
+            [lambda: nn.Linear(3, 2)],
+            partial(torch.optim.SGD, lr=0.2, momentum=0.9),
+        )
+
+    trainer = make_trainer()
+    inputs = torch.randn(8, 3)
+    trainer.fit([inputs] * 3)
+    stream = BytesIO()
+    torch.save(trainer.state_dict(), stream)
+    rng = torch.random.get_rng_state()
+    trainer.fit([inputs] * 2)
+    expected = deepcopy(trainer.student.state_dict())
+
+    restored = make_trainer()
+    if weight_norm:
+        restored.fit([inputs])  # A forward caches a non-leaf weight on the module.
+    stream.seek(0)
+    restored.load_state_dict(torch.load(stream, weights_only=True))
+    # Constructors can consume RNG. Restore it after model/state construction.
+    torch.random.set_rng_state(rng)
+    restored.fit([inputs] * 2)
+    assert restored.num_steps == trainer.num_steps == 5
+    for name, value in restored.student.state_dict().items():
+        torch.testing.assert_close(value, expected[name], rtol=0, atol=0)
+
+
+def test_empty_inputs_and_nonfinite_loss_do_not_step_the_optimizer():
+    student = nn.Linear(3, 2).eval()
+    trainer = DistillationTrainer(student, [nn.Linear(3, 2)], partial(torch.optim.SGD, lr=0.1))
+    with pytest.raises(ValueError, match="no batches"):
+        trainer.fit([])
+    assert not student.training
+    trainer.loss_fn = lambda logits, target: logits.sum() * float("nan")
+    original = deepcopy(student.state_dict())
+    with pytest.raises(ValueError, match="finite scalar"):
+        trainer.fit([torch.ones(4, 3)])
+    assert trainer.num_steps == 0
+    for name, value in student.state_dict().items():
+        torch.testing.assert_close(value, original[name])
+    with pytest.raises(ValueError, match="teacher"):
+        DistillationTrainer(student, [], partial(torch.optim.SGD, lr=0.1))
+
+
+@pytest.mark.parametrize("owner", ["student", "generator"])
+@pytest.mark.parametrize("invalid_component", ["teacher", "optimizer"])
+def test_incompatible_checkpoint_leaves_models_and_optimizer_unchanged(owner, invalid_component):
+    from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
+
+    model = nn.Linear(3, 2)
+    optimizer_factory = partial(torch.optim.Adam, lr=0.1)
+    if owner == "student":
+        session = DistillationTrainer(model, [nn.Linear(3, 2)], optimizer_factory)
+        session.fit([torch.ones(4, 3)])
+    else:
+        session = DataFreeSynthesizer(
+            [nn.Linear(2, 2)],
+            generator=model,
+            objective=lambda inputs, teachers, student, targets: teachers[0](inputs).square().mean(),
+            optimizer_factory=optimizer_factory,
+            latent_size=3,
+        )
+        session.synthesize(batch_size=4, steps=1)
+
+    before = session.state_dict()
+    checkpoint = deepcopy(before)
+    checkpoint[owner]["weight"].add_(1)
+    checkpoint["teachers"][0]["bias"].add_(1)
+    checkpoint["num_steps"] += 1
+    if invalid_component == "teacher":
+        checkpoint["teachers"][0]["weight"] = torch.zeros(1, 1)
+        error, message = RuntimeError, "size mismatch"
+    else:
+        checkpoint["optimizer"]["param_groups"][0]["params"].pop()
+        error, message = ValueError, "parameter group"
+
+    with pytest.raises(error, match=message):
+        session.load_state_dict(checkpoint)
+    assert getattr(session, owner) is model
+    torch.testing.assert_close(session.state_dict(), before, rtol=0, atol=0)
+
+
+def test_checkpoint_validation_preserves_lazy_student_until_restore_succeeds():
+    optimizer = partial(torch.optim.SGD, lr=0.1, momentum=0.9)
+    source = DistillationTrainer(nn.Sequential(nn.BatchNorm1d(3), nn.Linear(3, 2)), [nn.Linear(3, 2)], optimizer)
+    inputs = torch.arange(12, dtype=torch.float32).reshape(4, 3)
+    source.fit([inputs])
+    checkpoint = source.state_dict()
+    student = nn.Sequential(nn.LazyBatchNorm1d(), nn.Linear(3, 2))
+    restored = DistillationTrainer(student, [nn.Linear(3, 2)], optimizer)
+    with pytest.raises(RuntimeError, match="size mismatch"):
+        restored.load_state_dict({**checkpoint, "teachers": [{"weight": torch.zeros(1, 1)}]})
+    assert student[0].has_uninitialized_params()
+    bad_student = deepcopy(checkpoint)
+    bad_student["student"]["1.bias"] = torch.zeros(1)
+    with pytest.raises(RuntimeError, match="size mismatch"):
+        restored.load_state_dict(bad_student)
+    assert student[0].has_uninitialized_params()
+    bad_optimizer = deepcopy(checkpoint)
+    bad_optimizer["optimizer"]["param_groups"][0]["params"].pop()
+    with pytest.raises(ValueError, match="parameter group"):
+        restored.load_state_dict(bad_optimizer)
+    assert student[0].has_uninitialized_params()
+
+    restored.load_state_dict(checkpoint)
+    assert restored.student is student
+    assert all(a is b for a, b in zip(student.parameters(), restored.optimizer.param_groups[0]["params"]))
+    torch.testing.assert_close(restored.state_dict(), checkpoint, rtol=0, atol=0)
+    assert restored.fit([inputs])["steps"] == 1
+
+
+@pytest.mark.parametrize("reject_first_step", [False, True])
+def test_lazy_batchnorm_student_can_train_and_restore_first_step_buffers(reject_first_step):
+    norm = nn.LazyBatchNorm1d()
+    student = nn.Sequential(norm, nn.Linear(3, 2))
+    trainer = DistillationTrainer(student, [nn.Linear(3, 2)], partial(torch.optim.SGD, lr=0.1))
+    inputs = torch.arange(12, dtype=torch.float32).reshape(4, 3)
+
+    try:
+        assert norm.has_uninitialized_params()
+        if reject_first_step:
+            trainer.loss_fn = lambda logits, target: logits.sum() * float("nan")
+            with pytest.raises(ValueError, match="finite scalar"):
+                trainer.fit([inputs])
+            state = trainer.export_student_state()
+            torch.testing.assert_close(state["0.running_mean"], torch.zeros(3))
+            torch.testing.assert_close(state["0.running_var"], torch.ones(3))
+            assert state["0.num_batches_tracked"].item() == trainer.num_steps == 0
+            assert not norm._forward_pre_hooks
+            trainer.loss_fn = kl_divergence
+
+        assert trainer.fit([inputs])["steps"] == 1
+        state = trainer.export_student_state()
+        torch.testing.assert_close(state["0.running_mean"], norm.momentum * inputs.mean(0))
+        assert state["0.num_batches_tracked"].item() == trainer.num_steps == 1
+        assert not norm._forward_pre_hooks
+    finally:
+        trainer.close()
+
+
+def test_synthetic_pool_bounds_ownership_custom_sampling_and_state():
+    from nvflare.app_opt.pt.distillation.pool import SyntheticPool
+
+    pool = SyntheticPool(3)
+    inputs = torch.arange(10, dtype=torch.float32).reshape(5, 2)
+    targets = torch.arange(5, dtype=torch.float32).reshape(5, 1)
+    pool.add(inputs, targets)
+    inputs.zero_()
+    targets.zero_()
+    samples, values = pool.sample(3, sampler=lambda x, y, n, rng: torch.arange(n))
+    assert samples.tolist() == [[4, 5], [6, 7], [8, 9]]
+    assert values.flatten().tolist() == [2, 3, 4]
+    samples.zero_()
+    exported = pool.state_dict()
+    restored = SyntheticPool(3)
+    restored.load_state_dict(exported)
+    exported["inputs"].zero_()
+    torch.testing.assert_close(restored.state_dict()["inputs"], pool.state_dict()["inputs"])
+    first = pool.sample(8, generator=torch.Generator().manual_seed(9))
+    second = restored.sample(8, generator=torch.Generator().manual_seed(9))
+    torch.testing.assert_close(first[0], second[0])
+    with pytest.raises(ValueError, match="target presence"):
+        pool.add(torch.ones(1, 2))
+    with pytest.raises(ValueError, match="empty"):
+        SyntheticPool(3).sample(1)
+    with pytest.raises(ValueError, match="indices"):
+        pool.sample(1, sampler=lambda *args: torch.tensor([3]))
+
+
+def test_class_sampling_and_probe_probabilities_have_no_fixed_class_count():
+    from nvflare.app_opt.pt.distillation.classification import mean_class_probabilities, sample_by_class
+
+    targets = torch.tensor([0, 0, 2])
+    rng = torch.Generator().manual_seed(9)
+    actual = sample_by_class(torch.zeros(3, 2), targets, 16, rng, probabilities=torch.tensor([0.1, 0.2, 0.3, 0.4]))
+    # Missing-class mass 0.6 is shared uniformly: [0.05+0.2, 0.05+0.2, 0.3+0.2].
+    expected = torch.multinomial(
+        torch.tensor([0.25, 0.25, 0.5]), 16, replacement=True, generator=torch.Generator().manual_seed(9)
+    )
+    assert torch.equal(actual, expected)
+    model = _OutputModel("teacher").train()
+    inputs = torch.randn(5, 3)
+    original = deepcopy(model.state_dict())
+    reference = deepcopy(model).eval()
+    expected = (reference(inputs)["teacher"] / 2).softmax(1).mean(0)
+    probabilities = mean_class_probabilities(
+        model, [inputs[:2], inputs[2:]], temperature=2, output_adapter=lambda output: output["teacher"]
+    )
+    torch.testing.assert_close(probabilities, expected.detach())
+    assert model.training
+    for name, value in model.state_dict().items():
+        torch.testing.assert_close(value, original[name])
+
+
+def test_synthesis_uses_supplied_classification_components_and_returns_model_ready_inputs():
+    from nvflare.app_opt.pt.distillation.classification import ClassificationObjective
+    from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
+
+    teacher = nn.Sequential(nn.Flatten(), nn.Linear(1 * 8 * 12, 4)).train()
+    original = deepcopy(teacher.state_dict())
+    generator = nn.Sequential(nn.Linear(4, 1 * 8 * 12), nn.Unflatten(1, (1, 8, 12)), nn.Sigmoid())
+    synthesis = DataFreeSynthesizer(
+        [teacher],
+        generator=generator,
+        objective=ClassificationObjective(confidence_weight=1, diversity_weight=1),
+        optimizer_factory=partial(torch.optim.Adam, lr=3e-3, betas=(0.5, 0.999)),
+        latent_size=4,
+        rng=torch.Generator().manual_seed(3),
+    )
+    initial = deepcopy(synthesis.generator.state_dict())
+    inputs, metrics = synthesis.synthesize(batch_size=2, steps=2, targets=torch.tensor([0, 3]))
+    assert inputs.shape == (2, 1, 8, 12)
+    assert inputs.device.type == "cpu" and not inputs.requires_grad
+    assert torch.isfinite(inputs).all() and 0 <= inputs.min() <= inputs.max() <= 1
+    assert metrics["steps"] == synthesis.num_steps == 2
+    assert torch.isfinite(torch.tensor(metrics["loss"]))
+    assert not torch.equal(synthesis.generator.state_dict()["0.weight"], initial["0.weight"])
+    assert teacher.training
+    for name, value in teacher.state_dict().items():
+        torch.testing.assert_close(value, original[name])
+    assert all(value.grad is None and not value.requires_grad for value in synthesis.teachers[0].parameters())
+    assert all(value.grad is None for value in teacher.parameters())
+
+
+def test_custom_regression_synthesis_keeps_input_gradients_and_feeds_existing_kd():
+    from nvflare.app_opt.pt.distillation.pool import SyntheticPool
+    from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
+
+    teacher = nn.Linear(3, 1, bias=False)
+    with torch.no_grad():
+        teacher.weight.fill_(0.5)
+    noise = torch.ones(4, 2)
+
+    def objective(inputs, teachers, student, targets):
+        assert student is None
+        return (teachers[0](inputs) - targets).square().mean()
+
+    synthesis = DataFreeSynthesizer(
+        [teacher],
+        generator=nn.Linear(2, 3),
+        objective=objective,
+        optimizer_factory=partial(torch.optim.SGD, lr=0.2),
+        transform=lambda value: value * 0.5,
+        latent_sampler=lambda count, rng: noise,
+    )
+    targets = torch.zeros(4, 1)
+    before = objective(synthesis.transform(synthesis.generator(noise)), synthesis.teachers, None, targets).item()
+    inputs, metrics = synthesis.synthesize(4, 30, targets)
+    assert metrics["loss"] < before * 0.01
+    assert inputs.shape == (4, 3)
+    pool = SyntheticPool(8)
+    pool.add(inputs, targets)
+    trainer = DistillationTrainer(nn.Linear(3, 1), [teacher], partial(torch.optim.SGD, lr=0.1), loss_fn=nn.MSELoss())
+    assert trainer.fit([pool.sample(4)[0]] * 2)["steps"] == 2
+
+
+def test_synthesis_refreshes_distilled_student_and_preserves_generator_training():
+    from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
+
+    student, teacher = nn.Linear(2, 1), nn.Linear(2, 1)
+    synthesis = DataFreeSynthesizer(
+        [teacher],
+        student=student,
+        generator=nn.Linear(2, 2),
+        objective=lambda inputs, teachers, student, targets: student(inputs).square().mean(),
+        optimizer_factory=partial(torch.optim.SGD, lr=0.1, momentum=0.9),
+        latent_size=2,
+    )
+    inputs, _ = synthesis.synthesize(batch_size=4, steps=1)
+    trainer = DistillationTrainer(student, [teacher], partial(torch.optim.SGD, lr=0.1), loss_fn=nn.MSELoss())
+    try:
+        trainer.fit([inputs])
+        updated = trainer.export_student_state()
+    finally:
+        trainer.close()
+
+    before = synthesis.state_dict()
+    assert not torch.equal(updated["weight"], before["student"]["weight"])
+    synthesis.update_student_state(updated)
+    after = synthesis.state_dict()
+    for key in ("generator", "optimizer", "num_steps"):
+        torch.testing.assert_close(after[key], before[key], rtol=0, atol=0)
+    assert not synthesis.student.training and not any(p.requires_grad for p in synthesis.student.parameters())
+    torch.testing.assert_close(after["student"], updated, rtol=0, atol=0)
+
+    invalid = {"weight": torch.zeros_like(updated["weight"]), "bias": torch.zeros(2)}
+    with pytest.raises(RuntimeError, match="size mismatch"):
+        synthesis.update_student_state(invalid)
+    inputs, metrics = synthesis.synthesize(batch_size=4, steps=1)
+    assert metrics["loss"] == pytest.approx(student(inputs).square().mean().item())
+    assert synthesis.num_steps == 2
+
+
+def test_feature_adapters_and_adversarial_term_preserve_input_gradients_and_remove_hooks():
+    from nvflare.app_opt.pt.distillation.classification import ClassificationObjective, adversarial_disagreement
+    from nvflare.app_opt.pt.distillation.features import forward_with_feature_statistics
+
+    model = nn.Sequential(nn.BatchNorm1d(3), nn.Linear(3, 2)).eval().requires_grad_(False)
+    inputs = torch.randn(6, 3, requires_grad=True)
+    _, loss = forward_with_feature_statistics(model, inputs)
+    expected = inputs.mean(0).norm() + (inputs.var(0, unbiased=False) - 1).norm()
+    torch.testing.assert_close(loss, expected)
+    assert torch.autograd.grad(loss, inputs)[0].abs().sum() > 0
+    assert not model[0]._forward_pre_hooks
+    custom = ClassificationObjective(
+        confidence_weight=0,
+        diversity_weight=0,
+        feature_weight=1,
+        feature_adapter=lambda teacher, values: (teacher(values), values.mean().square()),
+    )
+    torch.testing.assert_close(custom(inputs, [model]), inputs.mean().square())
+    teacher_logits = torch.randn(3, 2, requires_grad=True)
+    student_logits = torch.randn(3, 2, requires_grad=True)
+    loss = adversarial_disagreement([teacher_logits], student_logits, only_agree=False)
+    assert all(value.abs().sum() > 0 for value in torch.autograd.grad(loss, (teacher_logits, student_logits)))
+
+    teacher_logits = torch.tensor([[60.0, -60.0]], requires_grad=True)
+    student_logits = torch.tensor([[1.0, -1.0]], requires_grad=True)
+    loss = adversarial_disagreement([teacher_logits], student_logits, only_agree=False)
+    assert all(torch.isfinite(value).all() for value in torch.autograd.grad(loss, (teacher_logits, student_logits)))
+
+    class Fail(nn.Module):
+        def forward(self, value):
+            raise RuntimeError("forward failed")
+
+    failing = nn.Sequential(nn.BatchNorm1d(3), Fail()).eval()
+    with pytest.raises(RuntimeError, match="forward failed"):
+        forward_with_feature_statistics(failing, inputs)
+    assert not failing[0]._forward_pre_hooks
+
+
+@pytest.mark.parametrize("weight_norm", [False, True])
+def test_synthesis_checkpoint_restores_optimizer_and_external_rng_continuation(weight_norm):
+    from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
+
+    def make_synthesis():
+        generator = nn.Linear(2, 3)
+        if weight_norm:
+            generator = nn.utils.weight_norm(generator)
+        return DataFreeSynthesizer(
+            [nn.Linear(3, 1)],
+            generator=generator,
+            objective=lambda inputs, teachers, student, targets: teachers[0](inputs).square().mean(),
+            optimizer_factory=partial(torch.optim.Adam, lr=3e-3),
+            latent_size=2,
+            rng=torch.Generator().manual_seed(4),
+        )
+
+    synthesis = make_synthesis()
+    synthesis.synthesize(4, 2)
+    stream = BytesIO()
+    torch.save(synthesis.state_dict(), stream)
+    rng = synthesis.rng.get_state()
+    expected, metrics = synthesis.synthesize(4, 3)
+    restored = make_synthesis()
+    if weight_norm:
+        restored.synthesize(4, 1)
+    stream.seek(0)
+    restored.load_state_dict(torch.load(stream, weights_only=True))
+    restored.rng.set_state(rng)
+    actual, resumed = restored.synthesize(4, 3)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert metrics == resumed
+    assert restored.num_steps == synthesis.num_steps == 5
+    for name, value in restored.generator.state_dict().items():
+        torch.testing.assert_close(value, synthesis.generator.state_dict()[name], rtol=0, atol=0)
+
+
+def test_cpu_sampling_and_synthesis_ignore_the_process_default_device():
+    from nvflare.app_opt.pt.distillation.classification import ClassificationObjective, sample_by_class
+    from nvflare.app_opt.pt.distillation.pool import SyntheticPool
+    from nvflare.app_opt.pt.distillation.synthesis import DataFreeSynthesizer
+
+    images = torch.arange(64, dtype=torch.float32).reshape(4, 1, 4, 4) / 64
+    targets = torch.tensor([0, 1, 0, 1])
+    pool = SyntheticPool(4)
+    pool.add(images, targets)
+    for rng in (None, torch.Generator(device="cpu").manual_seed(3)):
+        synthesis = DataFreeSynthesizer(
+            [nn.Linear(16, 2)],
+            generator=nn.Linear(2, 16),
+            objective=ClassificationObjective(confidence_weight=1, diversity_weight=1),
+            optimizer_factory=partial(torch.optim.SGD, lr=3e-3),
+            latent_size=2,
+            rng=rng,
+        )
+        # Meta catches implicit device allocations without requiring a CUDA runner.
+        with torch.device("meta"):
+            samples, labels = pool.sample(8, generator=rng)
+            balanced, _ = pool.sample(8, sampler=partial(sample_by_class, probabilities=[0.4, 0.6]), generator=rng)
+            generated, metrics = synthesis.synthesize(2, 1)
+        assert samples.device.type == labels.device.type == balanced.device.type == "cpu"
+        indices = (samples[:, 0, 0, 0] * 4).long()
+        assert torch.equal(samples, images[indices]) and torch.equal(labels, targets[indices])
+        assert generated.device.type == "cpu" and generated.shape == (2, 16)
+        assert torch.isfinite(generated).all()
+        assert metrics["steps"] == synthesis.num_steps == 1
+
+
+def test_teacher_first_preserves_updates_and_avoids_live_student_graph_during_inference():
+    events = []
+
+    class Recorded(nn.Module):
+        def __init__(self, name):
+            super().__init__()
+            self.name = name
+            self.layers = nn.Sequential(nn.Linear(3, 5), nn.BatchNorm1d(5), nn.Tanh(), nn.Linear(5, 2))
+
+        def forward(self, inputs):
+            events.append((self.name, torch.is_grad_enabled(), self.training))
+            return self.layers(inputs)
+
+    student = Recorded("student")
+    teachers = [Recorded("teacher-1"), Recorded("teacher-2")]
+    expected_student = deepcopy(student)
+    expected_teachers = [deepcopy(teacher).eval().requires_grad_(False) for teacher in teachers]
+    optimizer_factory = partial(torch.optim.SGD, lr=0.05, momentum=0.9)
+    expected_optimizer = optimizer_factory(expected_student.parameters())
+    batches = [torch.randn(8, 3), torch.randn(5, 3)]
+    expected_total = 0.0
+    # Preserve the former student-first execution as an independent reference,
+    # including BatchNorm state and momentum across unequal batches.
+    for inputs in batches:
+        output = expected_student(inputs)
+        terms = []
+        for teacher in expected_teachers:
+            with torch.no_grad():
+                target = teacher(inputs)
+            terms.append(kl_divergence(output, target, temperature=2.0))
+        loss = sum(terms) / len(terms)
+        expected_optimizer.zero_grad()
+        loss.backward()
+        expected_optimizer.step()
+        expected_total += loss.item() * len(inputs)
+    events.clear()
+    originals = [deepcopy(teacher.state_dict()) for teacher in teachers]
+    session = DistillationTrainer(
+        student,
+        teachers,
+        optimizer_factory,
+        loss_fn=partial(kl_divergence, temperature=2.0),
+    )
+    try:
+        metrics = session.fit(batches)
+        assert events == [
+            ("teacher-1", False, False),
+            ("teacher-2", False, False),
+            ("student", True, True),
+        ] * len(batches)
+        assert metrics == pytest.approx({"loss": expected_total / 13, "steps": 2, "samples": 13})
+        for name, value in session.export_student_state().items():
+            torch.testing.assert_close(value, expected_student.state_dict()[name], rtol=0, atol=0)
+        for original, teacher in zip(originals, teachers):
+            assert teacher.training
+            for name, value in teacher.state_dict().items():
+                torch.testing.assert_close(value, original[name], rtol=0, atol=0)
+    finally:
+        session.close()
