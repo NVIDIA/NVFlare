@@ -1,0 +1,991 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nvflare.nvidia.com/schemas/resource_stats/v1/resource_stats.json",
+  "title": "NVFlare resource-statistics reports",
+  "description": "Schema 1.0 scalar resource measurements use native numbers and per-metric status, with one scope-owned issues list tagged by metric and code.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/participant_summary"
+    },
+    {
+      "$ref": "#/$defs/resource_summary"
+    },
+    {
+      "$ref": "#/$defs/study_summary"
+    }
+  ],
+  "$defs": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "job_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "job_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "Query-only display name from persisted job metadata; Unicode and controls are retained in JSON and escaped for terminal display. Never a replacement for job_id."
+    },
+    "participant_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 40,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$"
+    },
+    "unsigned": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "number": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Finite nonnegative JSON number."
+    },
+    "positive_number": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Finite positive JSON number."
+    },
+    "study_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$"
+    },
+    "job_status": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._:/+-]{0,63}$",
+      "description": "Bounded underlying NVFlare job-lifecycle value; distinct from resource_data."
+    },
+    "source_unavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "const": "unavailable"
+        }
+      }
+    },
+    "cpu_time": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit_seconds"
+      ],
+      "properties": {
+        "unit_seconds": {
+          "$ref": "#/$defs/number"
+        }
+      }
+    },
+    "memory_time": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "byte_seconds"
+      ],
+      "properties": {
+        "byte_seconds": {
+          "$ref": "#/$defs/number"
+        }
+      }
+    },
+    "gpu_time": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instance_seconds"
+      ],
+      "properties": {
+        "instance_seconds": {
+          "$ref": "#/$defs/number"
+        }
+      }
+    },
+    "resource_time_complete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu",
+        "memory",
+        "gpu"
+      ],
+      "properties": {
+        "cpu": {
+          "$ref": "#/$defs/cpu_time"
+        },
+        "memory": {
+          "$ref": "#/$defs/memory_time"
+        },
+        "gpu": {
+          "$ref": "#/$defs/gpu_time"
+        }
+      }
+    },
+    "resource_time_partial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "const": "partial"
+        },
+        "cpu": {
+          "$ref": "#/$defs/cpu_time"
+        },
+        "memory": {
+          "$ref": "#/$defs/memory_time"
+        },
+        "gpu": {
+          "$ref": "#/$defs/gpu_time"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "cpu"
+          ]
+        },
+        {
+          "required": [
+            "memory"
+          ]
+        },
+        {
+          "required": [
+            "gpu"
+          ]
+        }
+      ]
+    },
+    "resource_time_unavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "const": "unavailable"
+        }
+      }
+    },
+    "resource_time": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/resource_time_complete"
+        },
+        {
+          "$ref": "#/$defs/resource_time_partial"
+        },
+        {
+          "$ref": "#/$defs/resource_time_unavailable"
+        }
+      ]
+    },
+    "cpu_consumed_complete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_seconds"
+      ],
+      "properties": {
+        "cpu_seconds": {
+          "$ref": "#/$defs/number"
+        }
+      }
+    },
+    "cpu_consumed_partial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "cpu_seconds"
+      ],
+      "properties": {
+        "status": {
+          "const": "partial"
+        },
+        "cpu_seconds": {
+          "$ref": "#/$defs/number"
+        }
+      }
+    },
+    "cpu_consumed": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/cpu_consumed_complete"
+        },
+        {
+          "$ref": "#/$defs/cpu_consumed_partial"
+        },
+        {
+          "$ref": "#/$defs/source_unavailable"
+        }
+      ]
+    },
+    "cpu_consumed_total": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cpu_seconds"
+          ],
+          "properties": {
+            "cpu_seconds": {
+              "$ref": "#/$defs/number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "cpu_seconds"
+          ],
+          "properties": {
+            "status": {
+              "const": "partial"
+            },
+            "cpu_seconds": {
+              "$ref": "#/$defs/number"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            }
+          }
+        }
+      ]
+    },
+    "message_traffic_complete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sent_bytes",
+        "received_bytes"
+      ],
+      "properties": {
+        "sent_bytes": {
+          "$ref": "#/$defs/unsigned"
+        },
+        "received_bytes": {
+          "$ref": "#/$defs/unsigned"
+        }
+      }
+    },
+    "message_traffic_partial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "sent_bytes",
+        "received_bytes"
+      ],
+      "properties": {
+        "status": {
+          "const": "partial"
+        },
+        "sent_bytes": {
+          "$ref": "#/$defs/unsigned"
+        },
+        "received_bytes": {
+          "$ref": "#/$defs/unsigned"
+        }
+      }
+    },
+    "message_traffic": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/message_traffic_complete"
+        },
+        {
+          "$ref": "#/$defs/message_traffic_partial"
+        },
+        {
+          "$ref": "#/$defs/message_traffic_unavailable"
+        }
+      ]
+    },
+    "message_traffic_unavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "const": "unavailable"
+        }
+      }
+    },
+    "message_traffic_total": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sent_bytes",
+            "received_bytes"
+          ],
+          "properties": {
+            "sent_bytes": {
+              "$ref": "#/$defs/unsigned"
+            },
+            "received_bytes": {
+              "$ref": "#/$defs/unsigned"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "sent_bytes",
+            "received_bytes"
+          ],
+          "properties": {
+            "status": {
+              "const": "partial"
+            },
+            "sent_bytes": {
+              "$ref": "#/$defs/unsigned"
+            },
+            "received_bytes": {
+              "$ref": "#/$defs/unsigned"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "const": "unavailable"
+            }
+          }
+        }
+      ]
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_time",
+        "resource_utilization",
+        "issues"
+      ],
+      "properties": {
+        "resource_time": {
+          "$ref": "#/$defs/resource_time"
+        },
+        "resource_utilization": {
+          "$ref": "#/$defs/resource_utilization_total"
+        },
+        "issues": {
+          "$ref": "#/$defs/total_issues"
+        }
+      }
+    },
+    "accepted_participant_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "participant_name",
+        "role",
+        "reported_at",
+        "received_at",
+        "resource_capacity",
+        "resource_utilization",
+        "resource_time",
+        "issues"
+      ],
+      "properties": {
+        "participant_name": {
+          "$ref": "#/$defs/participant_name"
+        },
+        "role": {
+          "enum": [
+            "client",
+            "server"
+          ]
+        },
+        "reported_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "received_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "resource_capacity": {
+          "$ref": "#/$defs/resource_capacity"
+        },
+        "duration_seconds": {
+          "$ref": "#/$defs/number",
+          "description": "Shared elapsed measurement duration for this participant, including waiting. Omitted if timing is unavailable."
+        },
+        "resource_utilization": {
+          "$ref": "#/$defs/resource_utilization"
+        },
+        "resource_time": {
+          "$ref": "#/$defs/resource_time"
+        },
+        "issues": {
+          "$ref": "#/$defs/scope_issues"
+        }
+      }
+    },
+    "invalid_participant_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "participant_name",
+        "role",
+        "status",
+        "received_at"
+      ],
+      "properties": {
+        "participant_name": {
+          "$ref": "#/$defs/participant_name"
+        },
+        "role": {
+          "enum": [
+            "client",
+            "server"
+          ]
+        },
+        "status": {
+          "const": "invalid"
+        },
+        "received_at": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "absent_participant_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "participant_name",
+        "role",
+        "status"
+      ],
+      "properties": {
+        "participant_name": {
+          "$ref": "#/$defs/participant_name"
+        },
+        "role": {
+          "enum": [
+            "client",
+            "server"
+          ]
+        },
+        "status": {
+          "enum": [
+            "missing",
+            "disabled"
+          ]
+        }
+      }
+    },
+    "participant_entry": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/accepted_participant_entry"
+        },
+        {
+          "$ref": "#/$defs/invalid_participant_entry"
+        },
+        {
+          "$ref": "#/$defs/absent_participant_entry"
+        }
+      ]
+    },
+    "study_selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "study_name"
+      ],
+      "properties": {
+        "study_name": {
+          "$ref": "#/$defs/study_name"
+        }
+      }
+    },
+    "study_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_jobs",
+        "included_jobs",
+        "unavailable_jobs",
+        "nonterminal_jobs"
+      ],
+      "properties": {
+        "selected_jobs": {
+          "$ref": "#/$defs/unsigned"
+        },
+        "included_jobs": {
+          "$ref": "#/$defs/unsigned"
+        },
+        "unavailable_jobs": {
+          "$ref": "#/$defs/unsigned"
+        },
+        "nonterminal_jobs": {
+          "$ref": "#/$defs/unsigned"
+        }
+      }
+    },
+    "included_job_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job_id",
+        "job_name",
+        "job_status",
+        "resource_data",
+        "totals"
+      ],
+      "properties": {
+        "job_id": {
+          "$ref": "#/$defs/job_id"
+        },
+        "job_name": {
+          "$ref": "#/$defs/job_name"
+        },
+        "job_status": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/job_status"
+            }
+          ],
+          "pattern": "^(?:FINISHED:.*|FINISHED_OK|FINISHED_EXCEPTION|ABORTED|ABANDONED|FAILED)$",
+          "description": "Included resource data requires a terminal NVFlare job status."
+        },
+        "resource_data": {
+          "const": "included",
+          "description": "This finalized job contributes to study totals."
+        },
+        "totals": {
+          "$ref": "#/$defs/totals"
+        }
+      }
+    },
+    "excluded_job_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "job_id",
+        "job_name",
+        "job_status",
+        "resource_data"
+      ],
+      "properties": {
+        "job_id": {
+          "$ref": "#/$defs/job_id"
+        },
+        "job_name": {
+          "$ref": "#/$defs/job_name"
+        },
+        "job_status": {
+          "$ref": "#/$defs/job_status"
+        },
+        "resource_data": {
+          "enum": [
+            "unavailable",
+            "nonterminal"
+          ],
+          "description": "Why the selected job contributes no totals; distinct from job_status."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "resource_data": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "job_status": {
+                "pattern": "^(?:FINISHED:.*|FINISHED_OK|FINISHED_EXCEPTION|ABORTED|ABANDONED|FAILED)$"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "job_status": {
+                "not": {
+                  "pattern": "^(?:FINISHED:.*|FINISHED_OK|FINISHED_EXCEPTION|ABORTED|ABANDONED|FAILED)$"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "study_job_row": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/included_job_row"
+        },
+        {
+          "$ref": "#/$defs/excluded_job_row"
+        }
+      ]
+    },
+    "participant_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "job_id",
+        "participant_name",
+        "reported_at",
+        "resource_capacity",
+        "resource_utilization",
+        "resource_time",
+        "issues"
+      ],
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/schema_version"
+        },
+        "kind": {
+          "const": "nvflare.resource_stats.participant_summary"
+        },
+        "job_id": {
+          "$ref": "#/$defs/job_id"
+        },
+        "participant_name": {
+          "$ref": "#/$defs/participant_name"
+        },
+        "reported_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "resource_capacity": {
+          "$ref": "#/$defs/resource_capacity"
+        },
+        "duration_seconds": {
+          "$ref": "#/$defs/number",
+          "description": "Shared elapsed measurement duration for this participant, including waiting. Omitted if timing is unavailable."
+        },
+        "resource_utilization": {
+          "$ref": "#/$defs/resource_utilization"
+        },
+        "resource_time": {
+          "$ref": "#/$defs/resource_time"
+        },
+        "issues": {
+          "$ref": "#/$defs/scope_issues"
+        }
+      }
+    },
+    "resource_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "job_id",
+        "participants"
+      ],
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/schema_version"
+        },
+        "kind": {
+          "const": "nvflare.resource_stats.resource_summary"
+        },
+        "job_id": {
+          "$ref": "#/$defs/job_id"
+        },
+        "participants": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/participant_entry"
+          }
+        }
+      }
+    },
+    "study_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "selection",
+        "generated_at",
+        "coverage",
+        "jobs",
+        "totals"
+      ],
+      "properties": {
+        "schema_version": {
+          "$ref": "#/$defs/schema_version"
+        },
+        "kind": {
+          "const": "nvflare.resource_stats.study_summary"
+        },
+        "selection": {
+          "$ref": "#/$defs/study_selection"
+        },
+        "generated_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "coverage": {
+          "$ref": "#/$defs/study_coverage"
+        },
+        "jobs": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/study_job_row"
+          }
+        },
+        "totals": {
+          "$ref": "#/$defs/totals"
+        }
+      }
+    },
+    "cpu_capacity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "units"
+      ],
+      "properties": {
+        "units": {
+          "$ref": "#/$defs/positive_number"
+        }
+      }
+    },
+    "memory_capacity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bytes"
+      ],
+      "properties": {
+        "bytes": {
+          "$ref": "#/$defs/unsigned"
+        }
+      }
+    },
+    "gpu_capacity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count"
+      ],
+      "properties": {
+        "count": {
+          "$ref": "#/$defs/unsigned"
+        }
+      }
+    },
+    "capacity_flat_complete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu",
+        "memory",
+        "gpu"
+      ],
+      "properties": {
+        "cpu": {
+          "$ref": "#/$defs/cpu_capacity"
+        },
+        "memory": {
+          "$ref": "#/$defs/memory_capacity"
+        },
+        "gpu": {
+          "$ref": "#/$defs/gpu_capacity"
+        }
+      }
+    },
+    "capacity_flat_partial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "cpu": {
+          "$ref": "#/$defs/cpu_capacity"
+        },
+        "memory": {
+          "$ref": "#/$defs/memory_capacity"
+        },
+        "gpu": {
+          "$ref": "#/$defs/gpu_capacity"
+        },
+        "status": {
+          "const": "partial"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "cpu"
+          ]
+        },
+        {
+          "required": [
+            "memory"
+          ]
+        },
+        {
+          "required": [
+            "gpu"
+          ]
+        }
+      ]
+    },
+    "resource_capacity": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/capacity_flat_complete"
+        },
+        {
+          "$ref": "#/$defs/capacity_flat_partial"
+        },
+        {
+          "$ref": "#/$defs/resource_time_unavailable"
+        }
+      ]
+    },
+    "resource_utilization_total": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_consumed",
+        "message_traffic"
+      ],
+      "properties": {
+        "cpu_consumed": {
+          "$ref": "#/$defs/cpu_consumed_total"
+        },
+        "message_traffic": {
+          "$ref": "#/$defs/message_traffic_total"
+        }
+      }
+    },
+    "resource_utilization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_consumed",
+        "message_traffic"
+      ],
+      "properties": {
+        "cpu_consumed": {
+          "$ref": "#/$defs/cpu_consumed"
+        },
+        "message_traffic": {
+          "$ref": "#/$defs/message_traffic"
+        }
+      }
+    },
+    "scope_issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric",
+        "code"
+      ],
+      "properties": {
+        "metric": {
+          "enum": [
+            "resource_capacity",
+            "resource_time",
+            "cpu_consumed",
+            "message_traffic"
+          ]
+        },
+        "code": {
+          "enum": [
+            "observation_incomplete",
+            "attribution_incomplete",
+            "unsupported",
+            "malformed_source"
+          ]
+        }
+      }
+    },
+    "scope_issues": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/scope_issue"
+      },
+      "description": "Scope-owned metric/code explanations, sorted by metric then code; [] when complete."
+    },
+    "total_issues": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 6,
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/scope_issue"
+          },
+          {
+            "properties": {
+              "metric": {
+                "enum": [
+                  "resource_time",
+                  "cpu_consumed",
+                  "message_traffic"
+                ]
+              }
+            },
+            "if": {
+              "properties": {"metric": {"const": "resource_time"}}
+            },
+            "else": {
+              "properties": {"code": {"const": "observation_incomplete"}}
+            }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "duration_seconds": 60,
+  "issues": [],
+  "job_id": "synthetic-task-rollup",
+  "kind": "nvflare.resource_stats.participant_summary",
+  "participant_name": "site-1",
+  "reported_at": "2026-10-29T12:00:00Z",
+  "resource_capacity": {
+    "cpu": {
+      "units": 2
+    },
+    "gpu": {
+      "count": 0
+    },
+    "memory": {
+      "bytes": 2147483648
+    }
+  },
+  "resource_time": {
+    "cpu": {
+      "unit_seconds": 150
+    },
+    "gpu": {
+      "instance_seconds": 15
+    },
+    "memory": {
+      "byte_seconds": 161061273600
+    }
+  },
+  "resource_utilization": {
+    "cpu_consumed": {
+      "cpu_seconds": 14
+    },
+    "message_traffic": {
+      "received_bytes": 2147483648,
+      "sent_bytes": 1073741824
+    }
+  },
+  "schema_version": "1.0"
+}

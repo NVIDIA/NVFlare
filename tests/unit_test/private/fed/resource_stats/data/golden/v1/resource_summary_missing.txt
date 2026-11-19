@@ -1,0 +1,25 @@
+Recorded resources for job Synthetic capacity contract example (ID: synthetic-capacity-normal).
+Participants with data: 2/3
+
+Recorded capacity-time per participant
+SITE    TIME    CPU VISIBLE core-h  MEM VISIBLE GiB-h  GPU-h
+site-1  10m0s   5.33                10.67              0.33
+site-3  —       —                   —                  —
+server  10m10s  1.36                2.71               0
+
+Recorded resource utilization per participant
+SITE    AVG CPU USED (cores)  PAYLOAD SENT GiB  PAYLOAD RECEIVED GiB
+site-1  0.3                   1                 2
+site-3  —                     —                 —
+server  0.2                   2                 1
+
+Recorded capacity-time totals
+  CPU visible 6.69* core-h | Memory visible 13.38* GiB-h | GPUs available 0.33* GPU-h
+
+Recorded resource utilization totals
+  CPU time used 0.08* core-h | Payload sent 3* GiB | Payload received 3* GiB
+
+Data gaps:
+  site-3: missing report
+
+* = incomplete; — = unavailable.

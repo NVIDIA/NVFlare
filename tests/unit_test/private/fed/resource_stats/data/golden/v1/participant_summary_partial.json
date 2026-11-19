@@ -1,0 +1,50 @@
+{
+  "duration_seconds": 600,
+  "issues": [
+    {
+      "code": "attribution_incomplete",
+      "metric": "cpu_consumed"
+    },
+    {
+      "code": "observation_incomplete",
+      "metric": "resource_capacity"
+    },
+    {
+      "code": "observation_incomplete",
+      "metric": "resource_time"
+    }
+  ],
+  "job_id": "synthetic-capacity-normal",
+  "kind": "nvflare.resource_stats.participant_summary",
+  "participant_name": "site-2",
+  "reported_at": "2026-10-29T12:00:00Z",
+  "resource_capacity": {
+    "cpu": {
+      "units": 32
+    },
+    "memory": {
+      "bytes": 68719476736
+    },
+    "status": "partial"
+  },
+  "resource_time": {
+    "cpu": {
+      "unit_seconds": 19200
+    },
+    "memory": {
+      "byte_seconds": 41231686041600
+    },
+    "status": "partial"
+  },
+  "resource_utilization": {
+    "cpu_consumed": {
+      "cpu_seconds": 180,
+      "status": "partial"
+    },
+    "message_traffic": {
+      "received_bytes": 2147483648,
+      "sent_bytes": 1073741824
+    }
+  },
+  "schema_version": "1.0"
+}
