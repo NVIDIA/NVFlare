@@ -5,8 +5,8 @@ Codex, Claude Code, and Cursor. The proposed initial plugin version is `1.0.0`;
 it is independent of the NVFlare Python package and individual skill versions.
 This packaging candidate is not yet a signed or approved plugin release.
 
-See the [Plugin Card](plugin-card.md) for intended use, requirements, permissions,
-validation evidence, and known limitations.
+Verification CI generates the final Plugin Card and benchmark for the evaluated
+bundle. Preparation checks below do not establish NVIDIA Verified status.
 
 ## Contents
 
@@ -40,7 +40,11 @@ workspace and local simulation for initial testing.
 
 ## Manifests and source of truth
 
-The repository root is the plugin root, and `skills/` remains the source of truth.
+The distributable plugin is committed under `plugins/nvidia-nvflare/`. The
+existing repository `skills/` directories remain the source of truth; edit skills
+there and regenerate the bundle. The root manifests, plugin-level `evals.json`,
+and this guide are also packaging inputs. The paths below are relative to the
+generated plugin directory.
 
 | Target | Entry point | Skill discovery |
 | --- | --- | --- |
@@ -58,19 +62,37 @@ for desktop execution.
 
 The build copies real files and preserves executable permissions. It packages
 only tracked skill files, the four manifests, this guide as `README.md`,
-`plugin-card.md`, the plugin-level `evals.json`, and `LICENSE`. Repository
-development settings and unrelated source code are excluded.
+the plugin-level `evals.json`, `LICENSE`, and `CONTRIBUTING.md` with the DCO text.
+The maintainer-authored root `plugin-card.md` is preparation material, excluded
+from the bundle; verification CI supplies the final card. Repository development
+settings and unrelated source code are excluded.
 No component symlinks are used.
 
 ## Build and validate
 
 Run these commands from a checkout containing this packaging change, with Python
 3.10 or later. The build itself uses only the standard library and Git. Choose a
-new output directory for each build:
+new output directory for each archive. First regenerate and check the directory
+that will be committed, evaluated, signed, and published:
 
 ```bash
+python3 dev_tools/agent/package_plugin.py --sync
+python3 dev_tools/agent/package_plugin.py --check
 python3 dev_tools/agent/package_plugin.py --output /tmp/nvidia-nvflare-candidate
 ```
+
+Commit the generated `plugins/nvidia-nvflare/` directory along with its source
+changes. CI rejects missing, extra, or changed input files, executable-mode drift,
+and symlinks. Only the root CLI export files and known verification outputs are
+permitted in addition to generated inputs. These outputs are preserved unchanged
+when archiving; the drift check does not validate their scores or signatures.
+
+When inputs change, `--sync` refuses to carry forward existing evaluation or
+signing outputs. Retain the old evidence outside the plugin, remove those outputs,
+rebuild, commit, and run fresh evaluations and verification. Review and remove
+obsolete bundle files explicitly; rebuilding does not silently delete them.
+Use an external evaluation output directory so private raw traces are not mixed
+into the distributable.
 
 The output contains `nvidia-nvflare/`, `nvidia-nvflare-1.0.0.zip`, `SHA256SUMS`, and
 `build-metadata.json`. The metadata records the source commit, skill tree, every
@@ -78,7 +100,7 @@ packaged file's SHA-256 digest, and the archive digest. ZIP entries use fixed
 timestamps so identical inputs produce identical archives with the same toolchain.
 No private keys, credentials, or local logs are required by the build.
 During preparation, `packaging_matches_source_commit` is false if the manifests,
-guide, card, evaluation suite, license, or builder have not been committed. Commit the reviewed packaging and
+guide, evaluation suite, license, contribution guide, or builder have not been committed. Commit the reviewed packaging and
 rebuild before using the source commit as provenance for a release.
 
 The builder requires all nine skills and checks every bundled skill file against
@@ -87,7 +109,8 @@ resource, unrecorded skill file, symlink, or changed skill tree fails the build.
 These digest comparisons establish content preservation; they do not verify the
 signing certificate's trust, constitute a new evaluation, or sign the plugin.
 
-The `Plugin Package` CI workflow validates the manifests and discovery settings,
+The `Plugin Package` CI workflow runs on source and bundled skill changes. It
+checks the committed directory against its sources, validates discovery settings,
 builds twice to check reproducibility, and checks archive contents, permissions,
 retained resource hashes, bundled documentation links, and skill lint. It retains
 the candidate and check results as workflow artifacts. Run the same check locally
@@ -118,11 +141,11 @@ Load an extracted copy outside the repository through each host's documented
 plugin mechanism, without duplicate installed skills. Confirm the display label,
 all nine components, routing, and shared references. Record the host/model
 versions, archive digest, and outcomes. See the host references below and the
-Plugin Card for checks already completed.
+retained check evidence for probes already completed.
 
 ### Local evaluation and publication CI
 
-The root `evals.json` adapts all 107 canonical member cases to the native NVCARPS
+The bundled root `evals.json` adapts all 107 canonical member cases to the native NVCARPS
 plugin schema. Member datasets and their signatures remain unchanged. The suite
 promotes routing expectations into `expected_skill` and `routing`, retains
 assertions and expected outcomes as private grading references, and rebases
@@ -134,30 +157,34 @@ Use the current NVCARPS CLI, configured with model credentials outside the
 repository, and its supported local container runtime. The compute image also
 needs NVFlare and the frameworks exercised by the tasks; precheck does not check
 these application dependencies. Select the same compatible image for skill and
-baseline attempts. From the plugin root:
+baseline attempts. From the repository root, evaluate the committed bundle:
 
 ```bash
 nvcarps update
 nvcarps --version
-nvcarps plugin precheck . --evals
-nvcarps plugin eval .
-nvcarps plugin eval verify .eval-results/<run-id>/eval-result.json
+nvcarps plugin precheck plugins/nvidia-nvflare --evals
+nvcarps plugin eval plugins/nvidia-nvflare --output /absolute/path/to/new-eval-output
+nvcarps plugin eval verify /path/printed/by/the/cli/eval-result.json
 ```
 
 The default Codex and Claude configuration runs skill and baseline arms once,
 giving 428 expected attempts. Inspect the effective plan and retained results:
 all canonical cases, both agents and arms, execution and grading errors, scores,
 and security findings. A structurally valid result does not establish a pass.
-Copy the unedited generated `eval-result.json` to the plugin root and commit it
+Copy the complete unedited CLI export (`eval-result.json`,
+`handoff-manifest.json`, and `overall-score.json`) to the plugin root and commit it
 with the exact plugin content evaluated. Never commit credentials or private logs.
 
-A maintainer comments `/nvskills-ci` on the PR to request official scanning and
-result verification. CI generates `benchmark.md`, the final Plugin Card, and the
-plugin signature. Read the benchmark's verdict and publication checks; a green
+Submit the full `plugins/nvidia-nvflare/` directory and its evaluation export
+through the program's verification playground. Its CI checks source/evidence
+agreement and produces `BENCHMARK.md`, the final Plugin Card, and the plugin
+signature. Mirror the complete verified directory back into this repository
+without regenerating or editing its verification outputs. Read the benchmark's
+verdict and publication checks; a green
 workflow alone is insufficient. `PUBLISHABLE` and `PASS WITH WARNINGS` permit
 publication subject to repository review and approval requirements; `INCOMPLETE`
 and `NOT PUBLISHABLE` require resolution. Local results are self-assessed.
-Re-evaluate changed plugin content before requesting CI again.
+Rebuild, re-evaluate, and re-sign after changing bundled inputs.
 
 Loading probes do not establish conversions or full workflow coverage. Retain
 complete reports and triage findings; an incomplete scan remains a release
@@ -167,10 +194,9 @@ blocker. Do not edit signed resources or suppress findings to obtain a pass.
 
 - [ ] Review the exact package inventory, license notices, dependencies, and model
   or dataset references; retain third-party attribution where applicable.
-- [ ] Confirm existing OSRB approval covers the content and record catalog
-  distribution in the program's OSRB tracking spreadsheet. Follow the current
-  IP review, attribution, and VP approval requirements; seek additional OSRB
-  review for new content, licensing, third-party components, or uncovered scope.
+- [ ] Obtain closed OSRB approval for the plugin's marketplace-distribution
+  scope, linking the prior repository approval. Follow the program's current
+  launch process and applicable IP review, attribution, and VP requirements.
 - [ ] Complete native loading and workflow smoke tests for the supported hosts.
 - [ ] Add an approved square marketplace icon and confirm each marketplace's
   presentation requirements and final installation entry. The current candidate
@@ -191,8 +217,9 @@ blocker. Do not edit signed resources or suppress findings to obtain a pass.
   package. Existing per-skill signatures do not attest to the new manifests or
   the bundle as a whole. Verify the final published package against its attestation.
 - [ ] Review and merge the packaging into the public repository, select the release
-  revision/version, then prepare the NVIDIA/skills plugin catalog sync PR using
-  the program's current submission format. Confirm resulting marketplace content
+  revision/version, then add a `plugins:` entry in NVIDIA/skills
+  `components.d/nvflare.yml` identifying the repository, `2.9` branch, plugin
+  directory, and `catalog_dir` install name. Confirm resulting marketplace content
   and install behavior before announcing availability.
 
 Preparation and local validation can proceed while approval is pending. Keep
