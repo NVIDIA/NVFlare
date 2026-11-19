@@ -48,11 +48,24 @@ import json
 import os
 
 import numpy as np
-from data.cifar10_data_utils import get_site_class_summary, load_cifar10_data
+from data.cifar10_data_utils import load_cifar10_data
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
+from nvflare.utils.data.partition import dirichlet_label_partition
+
+_PARTITIONER_ID = "nvflare.utils.data.partition.dirichlet_label_partition"
+
+
+def _write_summary(sum_file_name: str, num_sites: int, alpha: float, seed: int, class_sum: dict) -> None:
+    with open(sum_file_name, "w") as sum_file:
+        sum_file.write(f"Number of clients: {num_sites}\n")
+        sum_file.write(f"Dirichlet sampling parameter: {alpha}\n")
+        sum_file.write(f"Seed: {seed}\n")
+        sum_file.write(f"Partitioner: {_PARTITIONER_ID}\n")
+        sum_file.write("Class counts for each client:\n")
+        sum_file.write(json.dumps(class_sum, indent=2))
 
 
 class Cifar10DataSplitter(FLComponent):
@@ -67,8 +80,8 @@ class Cifar10DataSplitter(FLComponent):
             raise ValueError("You need to define a valid `split_dir` for splitting the data.")
         if not os.path.isabs(self.split_dir):
             raise ValueError("`split_dir` needs to be absolute path.")
-        if alpha < 0.0:
-            raise ValueError(f"Alpha should be larger or equal 0.0 but was {alpha}!")
+        if alpha <= 0.0:
+            raise ValueError(f"Alpha should be larger than 0.0 but was {alpha}!")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -85,13 +98,13 @@ class Cifar10DataSplitter(FLComponent):
             self.log_warning(fl_ctx, f"Could not read split summary {sum_file_name}: {e}")
             return False
 
-        if f"Number of clients: {self.num_sites}" not in summary:
-            return False
-        if f"Dirichlet sampling parameter: {self.alpha}" not in summary:
-            return False
-
-        seed_line = f"Seed: {self.seed}"
-        return seed_line in summary or ("Seed:" not in summary and self.seed == 0)
+        lines = {line.strip() for line in summary.splitlines()}
+        return (
+            f"Number of clients: {self.num_sites}" in lines
+            and f"Dirichlet sampling parameter: {self.alpha}" in lines
+            and f"Seed: {self.seed}" in lines
+            and f"Partitioner: {_PARTITIONER_ID}" in lines
+        )
 
     def split(self, fl_ctx: FLContext):
         sum_file_name = os.path.join(self.split_dir, "summary.txt")
@@ -125,16 +138,11 @@ class Cifar10DataSplitter(FLComponent):
         )
         site_idx, class_sum = partition_data(self.num_sites, self.alpha, self.seed)
 
-        with open(sum_file_name, "w") as sum_file:
-            sum_file.write(f"Number of clients: {self.num_sites} \n")
-            sum_file.write(f"Dirichlet sampling parameter: {self.alpha} \n")
-            sum_file.write(f"Seed: {self.seed} \n")
-            sum_file.write("Class counts for each client: \n")
-            sum_file.write(json.dumps(class_sum, indent=2))
+        _write_summary(sum_file_name, self.num_sites, self.alpha, self.seed, class_sum)
         self.log_info(fl_ctx, f"Saved summary to: {sum_file_name}")
 
         for site, site_file_name in enumerate(site_file_names):
-            np.save(site_file_name, np.array(site_idx[site]))
+            np.save(site_file_name, np.asarray(site_idx[site], dtype=np.int64))
             self.log_info(fl_ctx, f"Saved site {site + 1} data ({len(site_idx[site])} samples) to: {site_file_name}")
 
         self.log_info(fl_ctx, f"Split data saved to: {self.split_dir}")
@@ -153,39 +161,10 @@ def partition_data(num_sites, alpha, seed):
         site_idx: Dictionary mapping site index to list of data indices
         class_sum: Dictionary with class distribution summary for each site
     """
-    np.random.seed(seed)
-
     train_label = load_cifar10_data()
-
-    min_size = 0
-    K = 10  # Number of classes in CIFAR-10
-    N = train_label.shape[0]
-    site_idx = {}
-
-    # Split data using Dirichlet sampling
-    while min_size < 10:
-        idx_batch = [[] for _ in range(num_sites)]
-        # For each class in the dataset
-        for k in range(K):
-            idx_k = np.where(train_label == k)[0]
-            np.random.shuffle(idx_k)
-            proportions = np.random.dirichlet(np.repeat(alpha, num_sites))
-            # Balance
-            proportions = np.array([p * (len(idx_j) < N / num_sites) for p, idx_j in zip(proportions, idx_batch)])
-            proportions = proportions / proportions.sum()
-            proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
-            idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
-            min_size = min([len(idx_j) for idx_j in idx_batch])
-
-    # Shuffle
-    for j in range(num_sites):
-        np.random.shuffle(idx_batch[j])
-        site_idx[j] = idx_batch[j]
-
-    # Collect class summary
-    class_sum = get_site_class_summary(train_label, site_idx)
-
-    return site_idx, class_sum
+    result = dirichlet_label_partition(labels=train_label, num_sites=num_sites, alpha=alpha, seed=seed)
+    site_idx = {site: indices.tolist() for site, indices in result.site_indices.items()}
+    return site_idx, result.class_counts
 
 
 def split_and_save(split_dir_prefix, num_sites, alpha, seed=0):
@@ -199,8 +178,8 @@ def split_and_save(split_dir_prefix, num_sites, alpha, seed=0):
         seed: Random seed for reproducibility
     """
 
-    if alpha < 0.0:
-        raise ValueError(f"Alpha should be larger or equal 0.0 but was {alpha}!")
+    if alpha <= 0.0:
+        raise ValueError(f"Alpha should be larger than 0.0 but was {alpha}!")
 
     split_dir = f"{split_dir_prefix}_{num_sites}sites_alpha{alpha:.2f}_seed{seed}"
 
@@ -216,18 +195,14 @@ def split_and_save(split_dir_prefix, num_sites, alpha, seed=0):
 
     # Write summary file
     sum_file_name = os.path.join(split_dir, "summary.txt")
-    with open(sum_file_name, "w") as sum_file:
-        sum_file.write(f"Number of clients: {num_sites} \n")
-        sum_file.write(f"Dirichlet sampling parameter: {alpha} \n")
-        sum_file.write("Class counts for each client: \n")
-        sum_file.write(json.dumps(class_sum, indent=2))
+    _write_summary(sum_file_name, num_sites, alpha, seed, class_sum)
     print(f"Saved summary to: {sum_file_name}")
 
     # Save site data files
     site_file_path = os.path.join(split_dir, "site-")
     for site in range(num_sites):
         site_file_name = site_file_path + str(site + 1) + ".npy"
-        np.save(site_file_name, np.array(site_idx[site]))
+        np.save(site_file_name, np.asarray(site_idx[site], dtype=np.int64))
         print(f"Saved site {site + 1} data ({len(site_idx[site])} samples) to: {site_file_name}")
 
     print("\nData splitting completed successfully!")
