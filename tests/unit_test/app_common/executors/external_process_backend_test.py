@@ -1793,6 +1793,56 @@ class TestHello:
         assert reply.payload[MsgKey.REASON] == "backend is closed"
 
 
+class TestFinishedTrainer:
+    def _run_one_round_then_exit(self, env, rc, deliver_result=True):
+        backend, fl_ctx = _initialized_backend(env)
+        if deliver_result:
+            _install_auto_result(env)
+            assert backend.execute("train", Shareable(), fl_ctx, Signal()).get_return_code() == ReturnCode.OK
+        env.harness.processes[0].exit(rc)
+        return backend, fl_ctx
+
+    def test_clean_exit_after_result_answers_train_with_zero_steps(self, env):
+        backend, fl_ctx = self._run_one_round_then_exit(env, rc=0)
+        try:
+            for _ in range(2):
+                result = backend.execute("train", Shareable(), fl_ctx, Signal())
+                assert result.get_return_code() == ReturnCode.OK
+                dxo = from_shareable(result)
+                assert dxo.data == {}
+                assert dxo.get_meta_prop(FLMetaKey.NUM_STEPS_CURRENT_ROUND) == 0
+            assert backend._abort is False
+        finally:
+            backend.finalize(FLContext())
+
+    def test_clean_exit_after_result_fails_non_train_task_without_abort(self, env):
+        backend, fl_ctx = self._run_one_round_then_exit(env, rc=0)
+        try:
+            result = backend.execute("validate", Shareable(), fl_ctx, Signal())
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert backend._abort is False
+        finally:
+            backend.finalize(FLContext())
+
+    def test_crash_after_result_still_aborts(self, env):
+        backend, fl_ctx = self._run_one_round_then_exit(env, rc=1)
+        try:
+            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert backend._abort is True
+        finally:
+            backend.finalize(FLContext())
+
+    def test_clean_exit_without_result_still_aborts(self, env):
+        backend, fl_ctx = self._run_one_round_then_exit(env, rc=0, deliver_result=False)
+        try:
+            result = backend.execute("train", Shareable(), fl_ctx, Signal())
+            assert result.get_return_code() == ReturnCode.EXECUTION_EXCEPTION
+            assert backend._abort is True
+        finally:
+            backend.finalize(FLContext())
+
+
 class TestHeartbeatAndOperationalLiveness:
     def test_hello_advertises_heartbeat_policy(self, env):
         backend, _ = _initialized_backend(env, heartbeat_interval=0.02, heartbeat_timeout=0.2)

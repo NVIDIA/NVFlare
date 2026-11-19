@@ -43,9 +43,11 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.app_common.abstract.fl_model import FLModel, MetaKey, ParamsType
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.executors.client_api.backend_spec import ClientAPIBackendContext
 from nvflare.app_common.executors.client_api.cell_backend import CellBackendBase, CellSession, CellTask
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import (
     BOOTSTRAP_FILE_ENV_VAR,
@@ -345,6 +347,8 @@ class ExternalProcessBackend(CellBackendBase):
                     executor.log_error(fl_ctx, f"no established trainer session; failing task '{task_name}'")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
                 liveness_error = self._trainer_liveness_error(trainer)
+                if liveness_error and self._trainer_finished(trainer):
+                    return self._finished_trainer_reply(task_name, fl_ctx)
                 if liveness_error:
                     self._latch_abort(liveness_error)
                     executor.log_error(fl_ctx, f"{liveness_error}; failing task '{task_name}'")
@@ -955,6 +959,26 @@ class ExternalProcessBackend(CellBackendBase):
                 return f"trainer heartbeat timed out after {silent_for:.1f}s " f"(timeout={heartbeat_timeout}s)"
         return None
 
+    def _trainer_finished(self, trainer: _TrainerSession) -> bool:
+        """True when a trainer that already returned a result has exited with code 0."""
+        if trainer.process is None or not trainer.result_accepted.is_set():
+            return False
+        try:
+            rc = trainer.process.wait(timeout=self._stop_wait_bound())
+        except subprocess.TimeoutExpired:
+            return False
+        return rc == 0 and not self._process_group_alive(trainer)
+
+    def _finished_trainer_reply(self, task_name: str, fl_ctx: FLContext) -> Shareable:
+        executor = self._context.executor
+        if task_name != self._context.train_task_name:
+            executor.log_error(fl_ctx, f"trainer finished training; cannot run task '{task_name}'")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        executor.log_info(fl_ctx, f"trainer finished training; answering '{task_name}' with a 0-step result")
+        return FLModelUtils.to_shareable(
+            FLModel(params={}, params_type=ParamsType.FULL, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+        )
+
     @staticmethod
     def _trainer_exit_reason(trainer: _TrainerSession) -> str:
         rc = trainer.process.poll() if trainer.process else None
@@ -1101,6 +1125,8 @@ class ExternalProcessBackend(CellBackendBase):
             if send_status == _SEND_ABORTED:
                 self._send_abort(trainer, f"'{task_name}' is aborted, abort_signal_triggered")
                 return make_reply(ReturnCode.TASK_ABORTED)
+            if send_status in (_SEND_PROCESS_DEAD, _SEND_SESSION_DEAD) and self._trainer_finished(trainer):
+                return self._finished_trainer_reply(task_name, fl_ctx)
             if send_status == _SEND_PROCESS_DEAD:
                 reason = "trainer process exited while TASK_READY was pending"
                 self._latch_abort(reason)
@@ -1115,6 +1141,8 @@ class ExternalProcessBackend(CellBackendBase):
                 executor.log_error(fl_ctx, f"backend closed while TASK_READY was pending for '{task_name}'")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             reject_reason = self._check_task_accepted(reply)
+            if reject_reason and launch_once and self._trainer_finished(trainer):
+                return self._finished_trainer_reply(task_name, fl_ctx)
             if reject_reason:
                 executor.log_error(fl_ctx, f"trainer did not accept task '{task_name}': {reject_reason}")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
