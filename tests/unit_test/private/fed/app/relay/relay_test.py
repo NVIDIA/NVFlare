@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import threading
 from types import SimpleNamespace
@@ -273,6 +274,60 @@ def test_relay_retries_reconnect_when_server_challenge_is_temporarily_unavailabl
     relay_auth.authenticator.authenticate.assert_called_once()
     assert not relay_auth.registration_needed.is_set()
     assert not relay_auth.refresh_needed.is_set()
+
+
+def test_secure_relay_startup_connects_reconnect_monitor_and_auth_filters(tmp_path, monkeypatch, relay_auth):
+    import nvflare.private.fed.app.relay.relay as relay_module
+
+    startup = tmp_path / "startup"
+    startup.mkdir()
+    (tmp_path / "local").mkdir()
+    (startup / "relay.json").write_text(
+        json.dumps(
+            {
+                "project_name": "test-project",
+                "server_identity": "server",
+                "identity": "relay-2",
+                "connect_to": {"fqcn": "relay-1", "address": "localhost:8002", "scheme": "stcp"},
+            }
+        )
+    )
+    cell = MagicMock()
+
+    # Stop at the mocked transport boundary: no listener, worker or polling
+    # loop is started. Reconnect behavior below uses the installed real monitor.
+    def stopped_monitor(stop_event, workspace):
+        stop_event.set()
+        return MagicMock()
+
+    monkeypatch.setattr(relay_module, "CellnetMonitor", stopped_monitor)
+    monkeypatch.setattr(relay_module, "configure_logging", lambda workspace: None)
+    monkeypatch.setattr(relay_module.ConfigService, "initialize", lambda **kwargs: None)
+    monkeypatch.setattr(relay_module, "search_file", lambda *args: "rootCA.pem")
+    monkeypatch.setattr(relay_module, "enhance_credential_info", lambda credentials: None)
+    monkeypatch.setattr(relay_module, "Cell", lambda **kwargs: cell)
+    monkeypatch.setattr(relay_module, "NetAgent", lambda *args, **kwargs: None)
+    monkeypatch.setattr(relay_module, "Authenticator", lambda **kwargs: relay_auth.authenticator)
+    original = relay_auth.auth_result
+    replacement = ("renewed", "renewed-signature", "renewed-ssid", original[3])
+    relay_auth.authenticator.authenticate.side_effect = [original, replacement]
+    relay_module.main(SimpleNamespace(workspace=str(tmp_path), relay_config="relay.json", set=["secure_train=true"]))
+
+    monitor = cell.core_cell.communicator.register_monitor.call_args.args[0]
+    assert isinstance(monitor, _RelayAuth)
+    assert monitor.parent_fqcn == "relay-1"
+    monitor.stop_event.clear()
+    parent = Endpoint("relay-1")
+    parent.state = EndpointState.READY
+    monitor.state_change(parent)
+    monitor.refresh()
+    assert monitor.auth_result is replacement
+    request = Message()
+    installed_filter = cell.core_cell.add_outgoing_request_filter.call_args.kwargs["cb"]
+    installed_filter(request)
+    assert request.get_header(CellMessageHeaderKeys.TOKEN) == "renewed"
+    assert request.get_header(CellMessageHeaderKeys.TOKEN_SIGNATURE) == "renewed-signature"
+    cell.stop.assert_called_once()
 
 
 def test_nested_relay_renews_binding_without_parent_reconnect_or_key_change(relay_auth, monkeypatch):

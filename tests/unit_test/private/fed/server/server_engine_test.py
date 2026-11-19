@@ -30,8 +30,8 @@ from nvflare.apis.fl_constant import (
     ServerCommandNames,
     SiteType,
 )
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_launcher_spec import JobReturnCode
+from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.utils.tensor_disk_offload_context import setup_tensor_disk_offload
@@ -41,6 +41,7 @@ from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.aux_runner import AuxMsgTarget
 from nvflare.private.defs import CellChannel
+from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.server.server_engine import ServerEngine
 
@@ -49,7 +50,11 @@ from nvflare.private.fed.server.server_engine import ServerEngine
     ("stored_byoc", "deployed_byoc", "expected_byoc"),
     [(None, True, True), (True, False, False)],
 )
-def test_start_runner_process_uses_deployed_byoc_decision(tmp_path, stored_byoc, deployed_byoc, expected_byoc):
+@pytest.mark.parametrize("restored_attempt", [False, True])
+@pytest.mark.parametrize("launch_failure", [None, "error", "stale-error", "no-handle"])
+def test_start_runner_process_uses_deployed_byoc_decision(
+    tmp_path, stored_byoc, deployed_byoc, expected_byoc, restored_attempt, launch_failure
+):
     job_id = "job-1"
     tmp_path.joinpath("startup").mkdir()
     tmp_path.joinpath("local").mkdir()
@@ -64,7 +69,7 @@ def test_start_runner_process_uses_deployed_byoc_decision(tmp_path, stored_byoc,
         job_meta[AppValidationKey.BYOC] = stored_byoc
     job = SimpleNamespace(job_id=job_id, meta=job_meta)
 
-    args = SimpleNamespace(set=[], workspace=str(tmp_path))
+    args = SimpleNamespace(set=["resource_launch_generation=stale"], workspace=str(tmp_path))
     cell = MagicMock()
     cell.get_internal_listener_url.return_value = "tcp://server:8002"
     cell.get_root_url_for_child.return_value = "tcp://server:8003"
@@ -73,14 +78,21 @@ def test_start_runner_process_uses_deployed_byoc_decision(tmp_path, stored_byoc,
         cell=cell,
         server_state=SimpleNamespace(host="localhost", service_port=8002, ssid="ssid"),
     )
-    fl_ctx = FLContext()
+    context_manager = FLContextManager(private_stickers={FLContextKey.ARGS: args})
+    fl_ctx = context_manager.new_context()
     fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
-    fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=False)
     fl_ctx.set_prop(FLContextKey.SITE_OBJ, site, private=True, sticky=False)
 
     engine = ServerEngine.__new__(ServerEngine)
     engine.server = MagicMock()
     engine.server.sign_auth_token.return_value = "signature"
+    engine.job_runner = JobRunner(str(tmp_path))
+    engine.job_runner.bind_server_resource_generation = MagicMock(
+        wraps=engine.job_runner.bind_server_resource_generation
+    )
+    engine.job_runner.discard_server_resource_generation = MagicMock(
+        wraps=engine.job_runner.discard_server_resource_generation
+    )
     engine.client_manager = SimpleNamespace(clients={})
     engine.lock = threading.Lock()
     engine.run_processes = {}
@@ -88,17 +100,58 @@ def test_start_runner_process_uses_deployed_byoc_decision(tmp_path, stored_byoc,
 
     launcher = MagicMock()
     launcher.launch_job.return_value = MagicMock()
+
+    def check_generation_binding(*_):
+        engine.job_runner.bind_server_resource_generation.assert_called_once()
+        _, generation = engine.job_runner.bind_server_resource_generation.call_args.args
+        assert f"resource_launch_generation={generation}" in fl_ctx.get_prop(FLContextKey.ARGS).set
+        assert "resource_launch_generation=stale" not in fl_ctx.get_prop(FLContextKey.ARGS).set
+        assert context_manager.new_context().get_prop(FLContextKey.ARGS) is args
+        if launch_failure == "stale-error":
+            engine.job_runner.bind_server_resource_generation(job_id, "newer-launch")
+        if launch_failure in {"error", "stale-error"}:
+            raise RuntimeError("launch failed")
+        if launch_failure == "no-handle":
+            return None
+        return launcher.launch_job.return_value
+
+    launcher.launch_job.side_effect = check_generation_binding
     with (
         patch("nvflare.private.fed.server.server_engine.get_job_launcher", return_value=launcher) as get_launcher,
         patch("nvflare.private.fed.server.server_engine.threading.Thread") as thread_cls,
     ):
-        engine._start_runner_process(job, {}, None, fl_ctx)
+        if launch_failure:
+            message = "no job handle" if launch_failure == "no-handle" else "launch failed"
+            with pytest.raises(RuntimeError, match=message):
+                engine._start_runner_process(job, {}, None, fl_ctx, restored_attempt=restored_attempt)
+        else:
+            engine._start_runner_process(job, {}, None, fl_ctx, restored_attempt=restored_attempt)
 
+    assert context_manager.new_context().get_prop(FLContextKey.ARGS) is args
+    assert fl_ctx.get_prop(FLContextKey.ARGS) is args
+    assert args.set == ["resource_launch_generation=stale"]
+    if launch_failure:
+        bound_job, generation = engine.job_runner.bind_server_resource_generation.call_args_list[0].args
+        engine.job_runner.discard_server_resource_generation.assert_called_once_with(bound_job, generation)
+        assert engine.job_runner._server_resource_generations == (
+            {job_id: "newer-launch"} if launch_failure == "stale-error" else {}
+        )
+        assert engine.run_processes == {}
+        thread_cls.return_value.start.assert_not_called()
+        return
+    engine.job_runner.discard_server_resource_generation.assert_not_called()
     launch_meta = launcher.launch_job.call_args.args[0]
     assert launch_meta.get(AppValidationKey.BYOC, False) is expected_byoc
     assert get_launcher.call_args.args[0] == launch_meta
     assert job.meta == job_meta
     thread_cls.return_value.start.assert_called_once()
+    job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+    options = job_args[JobProcessArgs.OPTIONS][1]
+    assert ("resource_prior_attempt_incomplete=True" in options) is restored_attempt
+    bound_job, generation = engine.job_runner.bind_server_resource_generation.call_args.args
+    assert bound_job == job_id
+    assert f"resource_launch_generation={generation}" in options
+    assert "resource_launch_generation=stale" not in options
 
 
 def test_start_runner_process_requires_deployed_job_metadata(tmp_path):
