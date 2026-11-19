@@ -679,3 +679,71 @@ def test_disk_recipe_exports_reconstructable_diff_and_exclusions(tmp_path):
     rebuilt = instantiate_class(exported["path"], exported["args"])
     assert isinstance(rebuilt, disk.DiskFedAvgAggregator)
     assert rebuilt.exclude_vars == "skip"
+
+
+def test_scatter_and_gather_fails_zero_step_round_with_rejected_nonzero_reply(tmp_path):
+    save_file({"w": torch.zeros(1)}, tmp_path / "initial.safetensors")
+    ctx = context(tmp_path)
+    aggr = disk.DiskFedAvgAggregator()
+    aggr.fl_ctx = ctx
+    persistor = disk.DiskFedAvgPersistor(str(tmp_path / "initial.safetensors"))
+    sag = ScatterAndGather(min_clients=1, num_rounds=1)
+    sag.aggregator = aggr
+    sag.persistor = persistor
+    sag.shareable_gen = FullModelShareableGenerator()
+    sag._engine = SimpleNamespace(
+        get_clients=lambda: ["site-1", "site-2"], get_cell=lambda: None, persist_components=lambda *_, **__: None
+    )
+    sag._global_weights = persistor.load(ctx)
+    sag.fire_event = lambda *_: None
+    sag.fire_event_with_data = lambda *_: None
+    sag.log_info = lambda *_: None
+    sag.system_panic = MagicMock()
+
+    def broadcast_and_wait(task, fl_ctx, **_):
+        params = refs(tmp_path, "zero", {"w": torch.ones(1)})
+        aggr.accept(FLModelUtils.to_shareable(model(params, steps=0)), fl_ctx)
+        with pytest.raises(TypeError):
+            aggr.accept(FLModelUtils.to_shareable(model({}, client="site-2", steps=5)), fl_ctx)
+
+    sag.broadcast_and_wait = broadcast_and_wait
+    sag.control_flow(Signal(), ctx)
+
+    sag.system_panic.assert_called_once()
+    assert "no accepted contributions" in sag.system_panic.call_args.args[0]
+
+
+def test_scatter_and_gather_fails_zero_step_round_with_unconvertible_nonzero_reply(tmp_path):
+    from nvflare.apis.dxo import MetaKey, from_shareable
+
+    save_file({"w": torch.zeros(1)}, tmp_path / "initial.safetensors")
+    ctx = context(tmp_path)
+    aggr = disk.DiskFedAvgAggregator()
+    aggr.fl_ctx = ctx
+    persistor = disk.DiskFedAvgPersistor(str(tmp_path / "initial.safetensors"))
+    sag = ScatterAndGather(min_clients=1, num_rounds=1)
+    sag.aggregator = aggr
+    sag.persistor = persistor
+    sag.shareable_gen = FullModelShareableGenerator()
+    sag._engine = SimpleNamespace(
+        get_clients=lambda: ["site-1", "site-2"], get_cell=lambda: None, persist_components=lambda *_, **__: None
+    )
+    sag._global_weights = persistor.load(ctx)
+    sag.fire_event = lambda *_: None
+    sag.fire_event_with_data = lambda *_: None
+    sag.log_info = lambda *_: None
+    sag.system_panic = MagicMock()
+
+    def broadcast_and_wait(task, fl_ctx, **_):
+        params = refs(tmp_path, "zero", {"w": torch.ones(1)})
+        aggr.accept(FLModelUtils.to_shareable(model(params, steps=0)), fl_ctx)
+        dxo = from_shareable(FLModelUtils.to_shareable(model({"w": torch.ones(1)}, client="site-2", steps=5)))
+        dxo.meta[MetaKey.INITIAL_METRICS] = 0.8
+        with pytest.raises(TypeError):
+            aggr.accept(dxo.to_shareable(), fl_ctx)
+
+    sag.broadcast_and_wait = broadcast_and_wait
+    sag.control_flow(Signal(), ctx)
+
+    sag.system_panic.assert_called_once()
+    assert "no accepted contributions" in sag.system_panic.call_args.args[0]

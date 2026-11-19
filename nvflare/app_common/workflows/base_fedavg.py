@@ -114,7 +114,9 @@ def _is_zero_step_result(result: FLModel) -> bool:
 
 
 def _release_params(result: FLModel):
-    for value in (result.params or {}).values():
+    if not isinstance(result.params, dict):
+        return
+    for value in result.params.values():
         release = getattr(value, "release", None)
         if callable(release):
             release()

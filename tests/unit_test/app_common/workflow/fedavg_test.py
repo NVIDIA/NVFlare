@@ -2803,3 +2803,12 @@ class TestZeroStepReviewFollowUps:
         assert updated.metrics == {"acc": 0.9}
         assert updated.meta["k"] == 1
         assert updated.params["w"] == pytest.approx([5.0])
+
+
+def test_zero_step_array_params_result_is_skipped():
+    controller = _base_fedavg()
+    skipped = FLModel(params=np.array([1.0]), meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+
+    kept = controller._drop_zero_step_results([skipped, _steps_result("site-2", 3.0, 2)])
+
+    assert len(kept) == 1
