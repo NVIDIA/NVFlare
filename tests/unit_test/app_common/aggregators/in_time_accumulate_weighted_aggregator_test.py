@@ -26,10 +26,12 @@ from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.abstract.model import ModelLearnableKey, make_model_learnable
 from nvflare.app_common.aggregators.dxo_aggregator import DXOAggregator
 from nvflare.app_common.aggregators.intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 from nvflare.app_common.aggregators.weighted_aggregation_helper import AggregationStatsKey
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
 
 
 class TestInTimeAccumulateWeightedAggregator:
@@ -418,6 +420,53 @@ class TestInTimeAccumulateWeightedAggregator:
 
         result = agg.aggregate(fl_ctx)
         np.testing.assert_allclose(result["DXO"]["data"]["var1"], expected["var1"])
+
+    @pytest.mark.parametrize(
+        ("steps", "expected_accepted", "expected_data"),
+        [
+            pytest.param([5, 0], [True, False], {"w": np.array([1.0])}, id="mixed-round-uses-trained-sites"),
+            pytest.param([0, 0], [False, False], {}, id="all-zero-round-keeps-the-global-model"),
+        ],
+    )
+    def test_zero_step_results_are_skipped(self, steps, expected_accepted, expected_data):
+        agg = InTimeAccumulateWeightedAggregator(expected_data_kind=DataKind.WEIGHTS)
+        agg._initialize(agg.aggregation_weights, agg.exclude_vars, agg.expected_data_kind)
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+        accepted = []
+        for i, num_steps in enumerate(steps):
+            dxo = DXO(
+                DataKind.WEIGHTS, {"w": np.array([float(i + 1)])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: num_steps}
+            )
+            s = Shareable()
+            s.set_peer_props({ReservedKey.IDENTITY_NAME: f"site-{i + 1}"})
+            s.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
+            accepted.append(agg.accept(dxo.update_shareable(s), fl_ctx))
+
+        result = agg.aggregate(fl_ctx)
+
+        assert accepted == expected_accepted
+        data = from_shareable(result).data
+        assert data.keys() == expected_data.keys()
+        for key, value in expected_data.items():
+            np.testing.assert_allclose(data[key], value)
+        stats = fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == sum(expected_accepted)
+
+        global_model = make_model_learnable({"w": np.array([9.0])}, {})
+        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, global_model)
+        new_model = FullModelShareableGenerator().shareable_to_learnable(result, fl_ctx)
+        expected_weights = expected_data or {"w": np.array([9.0])}
+        np.testing.assert_allclose(new_model[ModelLearnableKey.WEIGHTS]["w"], expected_weights["w"])
+
+    @pytest.mark.parametrize("num_steps", ["not-a-number", object(), float("nan")])
+    def test_can_accept_does_not_convert_unusable_step_counts(self, num_steps):
+        agg = DXOAggregator()
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, 0)
+        dxo = DXO(DataKind.WEIGHT_DIFF, {"w": np.array([1.0])}, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: num_steps})
+
+        assert agg.can_accept(dxo, "site-1", 0, fl_ctx)
 
     def test_aggregate_publishes_aggregation_stats(self):
         agg = InTimeAccumulateWeightedAggregator(exclude_vars="bias")
