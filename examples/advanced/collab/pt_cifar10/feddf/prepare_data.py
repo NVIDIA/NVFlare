@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 import numpy as np
@@ -34,6 +35,10 @@ def prepare_splits(labels, split_root, num_clients=8, alpha=0.1, proxy_size=5000
     Both aggregation modes consume these exact client shards. Proxy labels are
     used only for preparation summaries; distillation does not receive labels.
     """
+    if num_clients < 1:
+        raise ValueError("num_clients must be positive")
+    if not math.isfinite(alpha) or alpha <= 0:
+        raise ValueError("alpha must be finite and positive")
     labels = np.asarray(labels)
     if not 0 < proxy_size <= len(labels) - 10 * num_clients:
         raise ValueError("Reserve a positive proxy set and at least ten private samples per client")

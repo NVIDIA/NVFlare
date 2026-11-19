@@ -59,6 +59,56 @@ def test_split_preparation_leaves_no_files_when_minimum_cannot_be_met(feddf, tmp
     assert not output.exists()
 
 
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        ({"num_clients": 0}, "num_clients must be positive"),
+        ({"alpha": 0.0}, "alpha must be finite and positive"),
+        ({"alpha": float("nan")}, "alpha must be finite and positive"),
+        ({"alpha": float("inf")}, "alpha must be finite and positive"),
+    ],
+)
+def test_split_preparation_rejects_invalid_options(feddf, tmp_path, options, message):
+    prepare = feddf("prepare_data").prepare_splits
+    output = tmp_path / "split"
+    with pytest.raises(ValueError, match=message):
+        prepare(np.tile(np.arange(10), 24), output, proxy_size=20, **options)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("aggregation", "backend", "job_name"),
+    [
+        ("fedavg", "native", "collab_cifar10_fedavg_proxy"),
+        ("feddf", "native", "collab_cifar10_feddf_native_proxy"),
+        ("feddf", "modelopt", "collab_cifar10_feddf_modelopt_proxy"),
+        ("feddf", "torchdistill", "collab_cifar10_feddf_torchdistill_proxy"),
+    ],
+)
+def test_make_recipe_wires_client_and_distiller(feddf, tmp_path, aggregation, backend, job_name):
+    args = SimpleNamespace(
+        aggregation=aggregation,
+        distiller=backend,
+        num_clients=2,
+        num_rounds=1,
+        split_root=str(tmp_path / "split"),
+        seed=37,
+        kd_epochs=1,
+        kd_lr=0.002,
+        temperature=1.7,
+    )
+    recipe = feddf("job").make_recipe(args)
+    assert recipe.job_name == job_name
+    assert recipe.client.split_root == args.split_root
+    assert recipe.client.seed == args.seed
+    assert recipe.server.aggregation == aggregation
+    factory = recipe.server.distiller_factory
+    assert isinstance(factory, feddf("distiller").Cifar10DistillerFactory)
+    assert factory.backend == backend
+    assert factory.kd_lr == args.kd_lr
+    assert factory.temperature == args.temperature
+
+
 @pytest.mark.parametrize(("name", "value"), [("kd_lr", float("inf")), ("temperature", float("nan"))])
 def test_factory_rejects_nonfinite_kd_settings(feddf, name, value):
     with pytest.raises(ValueError, match="must be finite and positive"):
