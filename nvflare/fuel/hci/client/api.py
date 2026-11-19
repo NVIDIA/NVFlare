@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import sys
 import threading
 import time
 import traceback
@@ -78,6 +77,7 @@ from nvflare.private.fed.authenticator import Authenticator, validate_auth_heade
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier, get_cn_from_cert, load_cert_file
 from nvflare.private.stream_runner import HeaderKey, ObjectStreamer
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.tool.cli_output import print_human, sanitize_cli_output
 
 from .api_spec import (
     AdminAPISpec,
@@ -124,12 +124,7 @@ class ResultKey(object):
 
 
 def _print_hci_message(msg: str):
-    try:
-        from nvflare.tool.cli_output import print_human
-
-        print_human(msg)
-    except ImportError:
-        print(msg, file=sys.stderr)
+    print_human(msg)
 
 
 class _ServerReplyJsonProcessor(object):
@@ -147,7 +142,8 @@ class _ServerReplyJsonProcessor(object):
             resp: The raw response that returns by the server.
         """
         api = self.ctx.get_api()
-        api.debug("Server Reply: {}".format(resp))
+        if api._debug:
+            api.debug("Server Reply: {}".format(sanitize_cli_output(resp)))
 
         ctx = self.ctx
 
@@ -552,7 +548,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             logger=self.logger,
             local_cell_fqcn=self.cell.get_fqcn(),
         )
-        self.debug(f"Successfully authenticated to {self.server_identity}: {token=} {ssid=}")
+        self.debug(f"Successfully authenticated to {self.server_identity}")
 
         self.aux_runner = AuxRunner(self)
         self.object_streamer = ObjectStreamer(self.aux_runner)
@@ -684,7 +680,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         try:
             self.fire_session_event(EventType.BEFORE_LOGIN)
             result = self._try_login()
-            self.debug(f"login result is {result}")
+            self.debug(f"login status: {result.get(ResultKey.STATUS)}")
         except Exception as e:
             result = {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
