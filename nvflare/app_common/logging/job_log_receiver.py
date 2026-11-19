@@ -295,20 +295,41 @@ class JobLogReceiver(Widget):
             self._quiet_since = None
             self._quiet_period = None
 
-    def _end_superseded_stream(self, client, job_id, file_name, fl_ctx):
+    @staticmethod
+    def _require_streamable_job(staging, job_id, fl_ctx):
+        """Reject logs of a deleted or unknown job. Caller holds the staging mutex."""
+        if not staging:
+            return
+        job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+        if staging.is_deleting(job_id) and job_manager is not None:
+            staging.recover_delete(job_id, job_manager, fl_ctx)
+        if staging.is_deleted(job_id):
+            staging.remove_closed_job_logs(job_id)
+            raise ValueError("Cannot stream logs for a deleted or unknown job")
+        if staging.is_deleting(job_id) or (job_manager is not None and job_manager.get_job(job_id, fl_ctx) is None):
+            raise ValueError("Cannot stream logs for a deleted or unknown job")
+
+    def _end_superseded_stream(self, client, job_id, file_name, staging, fl_ctx):
         """Hand the log to its owner's newest stream. Caller holds the stream lock.
 
         A job process that dies never closes its stream, and its replacement
         re-sends the whole log. Runs before the staging mutex is taken because
         ending a stream finalizes it under that mutex.
         """
-        for state in list(self._stream_files.values()):
-            end_stream = state["end_stream"]
-            if (state["client"], state["job_id"], state["file_name"]) == (client, job_id, file_name) and callable(
-                end_stream
-            ):
-                self.log_info(fl_ctx, f"New live log stream replaces '{file_name}' from {client} for job {job_id}")
-                end_stream(ReturnCode.TASK_ABORTED, fl_ctx)
+        superseded = [
+            state
+            for state in self._stream_files.values()
+            if (state["client"], state["job_id"], state["file_name"]) == (client, job_id, file_name)
+            and callable(state["end_stream"])
+        ]
+        if not superseded:
+            return
+        # A replacement that is going to be rejected must leave the stream it would replace usable.
+        with staging.locked() if staging else nullcontext():
+            self._require_streamable_job(staging, job_id, fl_ctx)
+        for state in superseded:
+            self.log_info(fl_ctx, f"New live log stream replaces '{file_name}' from {client} for job {job_id}")
+            state["end_stream"](ReturnCode.TASK_ABORTED, fl_ctx)
 
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         client, job_id = self._get_trusted_stream_identity(fl_ctx)
@@ -330,19 +351,9 @@ class JobLogReceiver(Widget):
                 file_name = LogStreamer.get_file_name(stream_ctx) or WorkspaceConstants.LOG_FILE_NAME
                 workspace = getattr(fl_ctx.get_engine(), "get_workspace", lambda: None)()
                 staging = ClientLogStaging(workspace) if self._dest_dir is None and workspace is not None else None
-                self._end_superseded_stream(client, job_id, file_name, fl_ctx)
+                self._end_superseded_stream(client, job_id, file_name, staging, fl_ctx)
                 with staging.locked() if staging else nullcontext():
-                    job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
-                    if staging and staging.is_deleting(job_id) and job_manager is not None:
-                        staging.recover_delete(job_id, job_manager, fl_ctx)
-                    if staging and staging.is_deleted(job_id):
-                        staging.remove_closed_job_logs(job_id)
-                        raise ValueError("Cannot stream logs for a deleted or unknown job")
-                    if staging and (
-                        staging.is_deleting(job_id)
-                        or (job_manager is not None and job_manager.get_job(job_id, fl_ctx) is None)
-                    ):
-                        raise ValueError("Cannot stream logs for a deleted or unknown job")
+                    self._require_streamable_job(staging, job_id, fl_ctx)
                     path, stream = self._open_log(
                         self._staging_root(fl_ctx), job_id, client, file_name, leased=staging is not None
                     )

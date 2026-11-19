@@ -386,6 +386,20 @@ def test_replacement_stream_takes_over_the_log_of_an_unfinished_stream(leased_lo
     )
 
 
+def test_rejected_replacement_leaves_the_active_stream_usable(leased_log_transport):
+    receiver, streamer, fl_ctx, path, send = leased_log_transport
+    job_manager = fl_ctx.get_engine().get_component.return_value
+    assert send("active", data=b"line 1\n") == ReturnCode.OK
+
+    # Missing job metadata can be a temporary storage failure.
+    with patch.object(job_manager, "get_job", return_value=None):
+        assert send("replacement", data=b"line 1\nline 2\n") == ReturnCode.EXECUTION_EXCEPTION
+
+    assert list(streamer.tx_table) == ["active"]
+    assert send("active", seq=1, data=b"line 2\n") == ReturnCode.OK
+    assert path.read_bytes() == b"line 1\nline 2\n"
+
+
 @pytest.mark.parametrize("ended_by", ["replacement", "idle_timeout"])
 def test_late_chunk_of_an_ended_stream_cannot_reopen_the_log(leased_log_transport, ended_by):
     receiver, streamer, fl_ctx, path, send = leased_log_transport
