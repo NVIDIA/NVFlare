@@ -34,8 +34,6 @@ def make_recipe(args):
         split_root=args.split_root,
         seed=args.seed,
         kd_epochs=args.kd_epochs,
-        kd_lr=args.kd_lr,
-        temperature=args.temperature,
         distiller_factory=Cifar10DistillerFactory(args.distiller, args.kd_lr, args.temperature),
     )
     # Wire the synchronous server to the existing published FedAvg client.

@@ -14,6 +14,7 @@
 
 """Bind backend configuration without exposing backend internals to the server."""
 
+import math
 from functools import partial
 
 import torch
@@ -32,6 +33,8 @@ class Cifar10DistillerFactory:
     def __init__(self, backend="native", kd_lr=0.001, temperature=1.0):
         if backend not in ("native", "modelopt", "torchdistill"):
             raise ValueError("distiller must be native, modelopt or torchdistill")
+        if not all(math.isfinite(value) and value > 0 for value in (kd_lr, temperature)):
+            raise ValueError("KD learning rate and temperature must be finite and positive")
         self.backend = backend
         self.kd_lr = kd_lr
         self.temperature = temperature

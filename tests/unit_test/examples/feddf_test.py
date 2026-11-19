@@ -60,9 +60,36 @@ def test_split_preparation_leaves_no_files_when_minimum_cannot_be_met(feddf, tmp
 
 
 @pytest.mark.parametrize(("name", "value"), [("kd_lr", float("inf")), ("temperature", float("nan"))])
-def test_server_rejects_nonfinite_kd_settings(feddf, name, value):
+def test_factory_rejects_nonfinite_kd_settings(feddf, name, value):
     with pytest.raises(ValueError, match="must be finite and positive"):
-        feddf("server").FedDFServer(**{name: value})
+        feddf("distiller").Cifar10DistillerFactory(**{name: value})
+
+
+def test_seeded_client_supports_custom_site_names(feddf, monkeypatch, tmp_path):
+    import torch
+
+    client_module = importlib.import_module("collab.pt_cifar10.fedavg.client")
+    collab = SimpleNamespace()
+    monkeypatch.setattr(client_module, "collab", collab)
+    calls = []
+
+    def make_loader(**settings):
+        calls.append(settings)
+        return []
+
+    monkeypatch.setattr(client_module, "make_data_loader", make_loader)
+    with torch.random.fork_rng(devices=[]):
+        for site_name in ("hospital-a", "hospital-a", "hospital-b", "site-1"):
+            collab.site_name = site_name
+            client = client_module.FedAvgClient(split_root=str(tmp_path), seed=10)
+            client.device = torch.device("cpu")
+            client.initialize()
+
+    assert [call["site_name"] for call in calls] == ["hospital-a", "hospital-a", "hospital-b", "site-1"]
+    assert all(call["split_root"] == str(tmp_path) for call in calls)
+    first_seed, repeat_seed, other_seed, simulator_seed = [call["generator"].initial_seed() for call in calls]
+    assert first_seed == repeat_seed and first_seed != other_seed
+    assert simulator_seed == 11
 
 
 def test_feddf_averages_then_distills_mean_logits_without_mutating_teachers(feddf, monkeypatch):
@@ -115,7 +142,10 @@ def test_feddf_averages_then_distills_mean_logits_without_mutating_teachers(fedd
     optimizer.step()
 
     model = network()
-    metrics = server.FedDFServer(kd_lr=0.01).aggregate(model, results, [(inputs, torch.full((4,), -999))], 0)
+    factory = feddf("distiller").Cifar10DistillerFactory(kd_lr=0.01)
+    metrics = server.FedDFServer(distiller_factory=factory).aggregate(
+        model, results, [(inputs, torch.full((4,), -999))], 0
+    )
     assert metrics["kd_steps"] == 1 and metrics["kd_samples"] == 4
     assert metrics["kd_loss"] == pytest.approx(loss.item())
     for name, value in model.state_dict().items():
@@ -126,8 +156,8 @@ def test_feddf_averages_then_distills_mean_logits_without_mutating_teachers(fedd
             torch.testing.assert_close(value, state[name], rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("fail", [False, True])
-def test_server_uses_replaceable_session_export_and_always_closes(feddf, monkeypatch, fail):
+@pytest.mark.parametrize("failure", [None, "backend", "empty"])
+def test_server_uses_replaceable_session_export_and_always_closes(feddf, monkeypatch, failure):
     from copy import deepcopy
 
     import torch
@@ -145,11 +175,14 @@ def test_server_uses_replaceable_session_export_and_always_closes(feddf, monkeyp
     class Session:
         # Deliberately no student or optimizer attributes.
         def fit(self, batches):
-            if fail:
+            if failure == "backend":
                 raise RuntimeError("backend failed")
+            if failure == "empty":
+                return {"loss": 0.0, "steps": 0, "samples": 0}
             return {"loss": 0.1, "steps": 1, "samples": 4}
 
         def export_student_state(self):
+            captured["exported"] = True
             return {"weight": captured["average"]["weight"] + 0.5}
 
         def close(self):
@@ -161,8 +194,11 @@ def test_server_uses_replaceable_session_export_and_always_closes(feddf, monkeyp
 
     model = nn.Linear(2, 2, bias=False)
     workflow = server.FedDFServer(distiller_factory=factory)
-    if fail:
+    if failure == "backend":
         with pytest.raises(RuntimeError, match="backend failed"):
+            workflow.aggregate(model, results, [], 0)
+    elif failure == "empty":
+        with pytest.raises(ValueError, match="requires at least one proxy sample"):
             workflow.aggregate(model, results, [], 0)
     else:
         metrics = workflow.aggregate(model, results, [], 0)
@@ -170,3 +206,4 @@ def test_server_uses_replaceable_session_export_and_always_closes(feddf, monkeyp
         torch.testing.assert_close(model.weight, torch.full((2, 2), 2.5))
     torch.testing.assert_close(captured["average"]["weight"], torch.full((2, 2), 2.0))
     assert captured["closed"]
+    assert captured.get("exported", False) == (failure is None)

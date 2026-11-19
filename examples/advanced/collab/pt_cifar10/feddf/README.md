@@ -11,8 +11,9 @@ current client models, computes their **mean logits** on unlabeled proxy images,
 and distills that ensemble into the student. The resulting student is broadcast
 for the next round. FedAvg mode broadcasts the average directly.
 
-Both modes use uniform parameter averaging. Non-parameter buffers come from
-the last client in sorted site order; the default `SimpleNetwork` has none.
+Both modes use uniform parameter averaging. For models with non-parameter
+buffers, the server takes them from the last client in lexicographic site-name
+order. The demo's `SimpleNetwork` has no buffers.
 The distillation optimizer is recreated each round. The default temperature is
 1. No teacher history or synthesis is enabled.
 
@@ -46,6 +47,7 @@ This supplied-proxy demonstration uses no data-free synthesis.
 The new `/tmp/cifar10_splits/pt_cifar10_feddf` directory contains `proxy.npy`,
 `site-N.npy` and `manifest.json` with class counts. Use `--alpha 0.01` and a new
 `--split-root` for stronger skew. Preparation refuses to overwrite a directory.
+If a write is interrupted, use a fresh `--split-root` for the retry.
 If the splitter cannot give each client at least ten samples, increase `--alpha`,
 reduce `--proxy-size`, or reduce `--num-clients`.
 
@@ -57,6 +59,8 @@ All clients participate in every round, using batch size 64, SGD learning rate
 0.01, momentum 0.9 and one local epoch. Their optimizers and loaders persist.
 Both modes share initialization, per-client seeds and prepared private data.
 A dedicated proxy loader generator controls server input order.
+If you adapt the example to custom site names, supply matching
+`<site-name>.npy` files and reserve `proxy.npy` for the server.
 
 ## Server-side workflow
 
@@ -74,6 +78,12 @@ broadcast, so a backend can own its wrapped/copied student. `FedDFServer` accept
 an exportable callable `distiller_factory`; `Cifar10DistillerFactory` binds the
 backend configuration and keeps external internals out of the round loop.
 The server then evaluates the student and uses it for the next round.
+
+The example creates one teacher model per participating client each round.
+The distiller's frozen copy adds to peak server memory, and each proxy batch
+requires a forward pass through every teacher. For larger jobs, measure server
+memory and round time before choosing whether to reuse teacher models or batch
+teacher inference.
 
 ## Job recipe and run
 

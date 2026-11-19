@@ -15,7 +15,6 @@
 """Synchronous rounds with replaceable weight averaging or KD aggregation."""
 
 import json
-import math
 import time
 from pathlib import Path
 
@@ -56,24 +55,18 @@ class FedDFServer:
         split_root="/tmp/cifar10_splits/pt_cifar10_feddf",
         seed=10,
         kd_epochs=1,
-        kd_lr=0.001,
-        temperature=1.0,
         distiller_factory=None,
     ):
         if aggregation not in ("fedavg", "feddf"):
             raise ValueError("aggregation must be fedavg or feddf")
         if num_rounds < 1 or kd_epochs < 1:
             raise ValueError("Round count and KD epochs must be positive")
-        if not all(math.isfinite(value) and value > 0 for value in (kd_lr, temperature)):
-            raise ValueError("KD learning rate and temperature must be finite and positive")
         self.num_rounds = num_rounds
         self.aggregation = aggregation
         self.split_root = split_root
         self.seed = seed
         self.kd_epochs = kd_epochs
-        self.kd_lr = kd_lr
-        self.temperature = temperature
-        self.distiller_factory = distiller_factory
+        self.distiller_factory = Cifar10DistillerFactory() if distiller_factory is None else distiller_factory
 
     def aggregate(self, model, client_results, proxy_loader, round_number):
         """Average current client parameters, then optionally distill mean logits.
@@ -83,8 +76,8 @@ class FedDFServer:
         """
         if client_results.failures:
             raise next(iter(client_results.failures.values()))
-        # Stable teacher order avoids completion timing changing reduction order.
-        results = sorted(client_results)
+        # Lexicographic site order keeps the reduction independent of completion order.
+        results = sorted(client_results, key=lambda result: result[0])
         if not results:
             raise ValueError("No client models were returned")
         # Average parameters only; retain the final teacher's buffers explicitly.
@@ -101,18 +94,17 @@ class FedDFServer:
         if self.aggregation == "fedavg":
             return {}
 
-        factory = (
-            Cifar10DistillerFactory(kd_lr=self.kd_lr, temperature=self.temperature)
-            if self.distiller_factory is None
-            else self.distiller_factory
+        distiller = self.distiller_factory(
+            student=model, teacher=MeanLogitEnsemble([result["weights"] for _, result in results])
         )
-        distiller = factory(student=model, teacher=MeanLogitEnsemble([result["weights"] for _, result in results]))
         total_loss, samples, steps = 0.0, 0, 0
         try:
             for _ in range(self.kd_epochs):
                 if collab.is_aborted:
                     raise RuntimeError("Distillation aborted")
                 metrics = distiller.fit(proxy_loader)
+                if metrics["samples"] <= 0:
+                    raise ValueError("Distillation requires at least one proxy sample per pass")
                 total_loss += metrics["loss"] * metrics["samples"]
                 samples += metrics["samples"]
                 steps += metrics["steps"]
@@ -151,18 +143,18 @@ class FedDFServer:
             local_batch_size=BATCH_SIZE,
             local_lr=LEARNING_RATE,
             local_epochs=LOCAL_EPOCHS,
-            distiller_factory=(
-                type(self.distiller_factory).__name__
-                if self.distiller_factory is not None
-                else "Cifar10DistillerFactory"
-            ),
-            distiller_backend=getattr(
-                self.distiller_factory, "backend", "native" if self.distiller_factory is None else "custom"
-            ),
-            kd_target="uniform_mean_logits",
             parameter_weighting="uniform",
             buffer_policy="last_site_in_sorted_order",
         )
+        if self.aggregation == "feddf":
+            factory = self.distiller_factory
+            config.update(
+                distiller_factory=type(factory).__name__,
+                distiller_backend=getattr(factory, "backend", "custom"),
+                kd_target="uniform_mean_logits",
+            )
+            if isinstance(factory, Cifar10DistillerFactory):
+                config.update(kd_lr=factory.kd_lr, temperature=factory.temperature)
         (run_dir / "run_config.json").write_text(json.dumps(config, indent=2))
         torch.save(get_model_state(model), run_dir / "initial_model.pt")
         history = []

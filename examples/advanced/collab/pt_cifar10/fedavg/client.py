@@ -14,6 +14,8 @@
 
 """Client-side CIFAR-10 training shared by the synchronous Collab examples."""
 
+import hashlib
+
 import torch
 import torch.nn as nn
 
@@ -30,7 +32,6 @@ LOCAL_EPOCHS = 1
 class FedAvgClient:
     """Local SGD with optional alternate shards and independently seeded loading.
 
-    The optional seed uses this example's conventional site-N client names.
     Omitting split_root and seed preserves the original FedAvg configuration.
     """
 
@@ -45,9 +46,15 @@ class FedAvgClient:
     # @collab.init runs once on each client before published methods are called.
     @collab.init
     def initialize(self):
+        site_name = collab.site_name
         generator = None
         if self.seed is not None:
-            site_seed = self.seed + int(collab.site_name.removeprefix("site-"))
+            # Keep existing seeds for simulator sites and derive a stable offset for custom names.
+            try:
+                site_offset = int(site_name.removeprefix("site-"))
+            except ValueError:
+                site_offset = int.from_bytes(hashlib.sha256(site_name.encode("utf-8")).digest()[:4], "big")
+            site_seed = self.seed + site_offset
             torch.manual_seed(site_seed)
             generator = torch.Generator(device="cpu").manual_seed(site_seed)
         self.model = SimpleNetwork().to(self.device)
@@ -55,7 +62,7 @@ class FedAvgClient:
         self.train_loader = make_data_loader(
             train=True,
             batch_size=BATCH_SIZE,
-            site_name=collab.site_name,
+            site_name=site_name,
             split_root=self.split_root,
             generator=generator,
         )
