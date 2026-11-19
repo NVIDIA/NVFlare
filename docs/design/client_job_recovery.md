@@ -109,7 +109,7 @@ and consecutive-attempt limit.
 | Process | The launcher-owned CJ has exited, its process group is absent, and no external-trainer launch bootstrap remains. |
 | Docker | Container wait/inspection confirms exit, rather than merely losing its record. |
 | Slurm | Accounting reports COMPLETED, FAILED, TIMEOUT, OUT_OF_MEMORY, or PREEMPTED, and the allocation has left the active queue. |
-| Kubernetes | The same CJ Pod UID has confirmed container/sandbox shutdown, its PVC workspace finished initialization, and all CP-owned task workers have settled. |
+| Kubernetes | The same CJ Pod UID has confirmed container/sandbox shutdown, read now or observed by CP before the Pod object was removed; its PVC workspace finished initialization; and all CP-owned task workers have settled. |
 
 Normal success, STOPPED teardown, cancellation, configuration errors, and unsafe
 component failures do not trigger recovery. Missing accounting, node loss, backend
@@ -146,6 +146,17 @@ If shutdown exceeds `cleanup_timeout` (60 seconds for resident CJs), recovery
 stops while CP continues worker cleanup. Replacement Pods get fresh launch IDs,
 task capabilities and credential Secrets; the old task capability is closed.
 Old CJ Pod deletion is best effort; the final Pod is retained for diagnostics.
+
+A CJ Pod removed outside FLARE (manual deletion, drain, eviction or preemption)
+is reported as an infrastructure failure, never as an abort. A missing Pod is
+not shutdown evidence. CP replaces such a CJ only when it observed the kubelet's
+container/sandbox shutdown for that Pod UID before the Pod object disappeared;
+otherwise the job ends. CJ Pods carry no settlement finalizer, so whether that
+evidence is observed depends on timing: recovery after Pod removal is best
+effort, unlike task worker Pods, whose finalizer keeps them observable. API
+errors during the recovery check are retried until `cleanup_timeout`; they
+neither prove shutdown nor end recovery early, and a definitive read is still
+required before replacement.
 
 Native worker attempt IDs include the CJ launch ID; server task and attempt IDs
 stay unchanged. Logs map server attempts to physical worker IDs.
