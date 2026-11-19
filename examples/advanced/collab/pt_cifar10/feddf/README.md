@@ -26,7 +26,7 @@ the downloaded `collab-pt` directory, where the `collab` package is visible.
 
 - `server.py`: synchronous workflow, uniform averaging and mean-logit ensemble.
 - `distiller.py`: exportable factory binding optional backend settings.
-- `job.py`: CLI, `CollabRecipe` wiring, simulation and export.
+- `job.py`: CLI, `CollabRecipe` wiring, and simulation.
 - `prepare_data.py`: disjoint client/proxy partitions.
 - `../fedavg/client.py`, `../model.py`, `../loader.py`: shared training, model and data utilities.
 
@@ -162,12 +162,3 @@ the paper's reported target-round counts or three-seed statistics.
 The [per-round data](figures/fedavg_vs_feddf_0_100.csv) and
 [run configuration and qualifications](figures/feddf_reference_run.json)
 accompany the figure.
-
-## Export
-
-Export without downloading data or starting the simulator:
-
-```bash
-python -m collab.pt_cifar10.feddf.job \
-    --aggregation feddf --export --export-dir /tmp/feddf-jobs
-```
