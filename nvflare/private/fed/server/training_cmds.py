@@ -32,7 +32,7 @@ from nvflare.private.fed.utils.fed_utils import get_scope_info
 from nvflare.security.logging import secure_format_exception
 
 from .cmd_utils import CommandUtil
-from .server_engine import ServerEngine
+from .server_engine import ServerEngine, client_removal_audit_targets
 
 
 def _server_status_value(engine: ServerEngineInternalSpec) -> str:
@@ -249,7 +249,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
         clients = conn.get_prop(self.TARGET_CLIENT_TOKENS)
-        err = engine.remove_clients(clients)
+        expected_clients = prepare(lambda: self._control_audit_targets(conn))
+        with client_removal_audit_targets(expected_clients):
+            err = engine.remove_clients(clients)
         if err:
             conn.append_error(err)
             return

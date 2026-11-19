@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import logging
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -21,6 +22,7 @@ import pytest
 
 from nvflare.fuel.sec import admin_audit as audit
 from nvflare.fuel.sec.audit import Auditor, AuditService
+from nvflare.fuel.utils.log_utils import dynamic_log_config
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 
 FIELDS = {"event_id", "reference", "timestamp", "user", "action", "job", "scope", "message"}
@@ -169,26 +171,54 @@ def test_simulator_and_excluded_polling_are_intentionally_silent(writer, monkeyp
     assert records(path) == []
 
 
-def test_diagnostics_throttled_with_protected_fixed_fallback(writer, monkeypatch):
+def test_diagnostics_throttled_with_protected_stderr_write(writer, monkeypatch):
     calls = []
     monkeypatch.setattr(AuditService, "the_auditor", None)
     clock = Mock(return_value=10.0)
     monkeypatch.setattr(audit, "time", SimpleNamespace(monotonic=clock))
-    warning = Mock(side_effect=RuntimeError("diagnostic-secret"))
-    monkeypatch.setattr(audit, "_logger", SimpleNamespace(warning=warning))
     monkeypatch.setattr(audit.os, "write", lambda fd, data: calls.append((fd, data)))
     for _ in range(4):
         assert audit.record("admin.command.dispatched") == ""
-    assert len(calls) == warning.call_count == 1
-    assert calls[0] == (2, b"Administrative audit recording failed; operation continued.\n")
+    assert calls == [(2, b"Administrative audit recording failed; failed attempts since startup: 1\n")]
     clock.return_value = 70.0
     assert audit.record("admin.command.dispatched") == ""
-    assert len(calls) == warning.call_count == 2
-    assert warning.call_args.args[-1] == 5
-    monkeypatch.setattr(audit.os, "write", Mock(side_effect=OSError("fallback-secret")))
+    assert len(calls) == 2
+    assert calls[1] == (2, b"Administrative audit recording failed; failed attempts since startup: 5\n")
+    monkeypatch.setattr(audit.os, "write", Mock(side_effect=OSError("diagnostic failure")))
     clock.return_value = 130.0
     assert audit.record("admin.command.dispatched") == ""
     assert audit._failed_attempts == 6
+
+
+@pytest.mark.parametrize(
+    ("site_level", "handler_level"), [("INFO", None), ("ERROR", None), ("CRITICAL", None), ("INFO", logging.ERROR)]
+)
+def test_audit_failure_diagnostic_survives_site_log_changes(
+    writer, monkeypatch, tmp_path, caplog, capfd, site_level, handler_level
+):
+    _, path = writer
+    monkeypatch.setattr(AuditService, "the_auditor", None)
+    root = logging.getLogger()
+    old_level = root.level
+    handler_levels = [(handler, handler.level) for handler in root.handlers]
+    try:
+        dynamic_log_config(site_level, str(tmp_path), "")
+        if handler_level is not None:
+            # Reloading a workspace config can leave the logger enabled while
+            # all of its output handlers reject warnings.
+            for handler, _ in handler_levels:
+                handler.setLevel(handler_level)
+        assert audit.record("admin.command.dispatched") == ""
+        assert audit.record("admin.command.dispatched") == ""
+    finally:
+        root.setLevel(old_level)
+        for handler, level in handler_levels:
+            handler.setLevel(level)
+
+    assert audit._failed_attempts == 2
+    assert records(path) == []
+    assert not any("Administrative audit recording failed" in r.getMessage() for r in caplog.records)
+    assert capfd.readouterr().err == "Administrative audit recording failed; failed attempts since startup: 1\n"
 
 
 def test_ordinary_audit_callers_keep_failure_semantics(writer, monkeypatch):

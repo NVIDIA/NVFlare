@@ -85,8 +85,8 @@ failure behavior unchanged for unrelated audit callers.
 - Continue the operation and use independent diagnostics, limited to one warning
   per minute per running program. Count failed recording attempts without claiming
   exact lost-record counts.
-- Protect diagnostics themselves, with a fixed, protected standard-error fallback.
-  Never recursively audit an audit failure.
+- Protect the diagnostic write to standard error. Keep it independent of site
+  logging and never recursively audit an audit failure.
 
 ## Validation and delivery
 
@@ -137,7 +137,7 @@ These details do not add JSON object fields.
 | `client.permission.{denied,rejected,error}` | Site policy or authorization-service decision/error; `private/fed/client/admin.py`. A policy event error records the observed error without changing the existing permission decision. |
 | `job.delete.{applied,rejected,error,cleanup_error}` | Configured manager deletion completed, precondition rejected, or later bookkeeping failed; `private/fed/server/job_cmds.py`. Applied deletion is recorded before later bookkeeping. |
 | `job.abort.{before_execution,unchanged,retry_required,requested,error}` | Status update before execution, already finished, starting/retry, a handled abort request, or error; `private/fed/server/job_cmds.py`. A handled abort request does not establish that a signal was dispatched or execution stopped. |
-| `study.{register,remove,site_add,site_remove,user_add,user_remove}.{applied,unchanged,rejected,error,persisted,reload_error}` | Registry mutation and each requested membership target; `private/fed/server/study_cmds.py`. `persisted` followed by `reload_error` distinguishes saved file state from failed live reload. Records are emitted outside the registry lock. |
+| `study.{register,remove,site_add,site_remove,user_add,user_remove}.{applied,unchanged,rejected,error,persisted,reload_error}` | Registry mutation and each requested membership target. Records omit unverified target names. See `private/fed/server/study_cmds.py`. `persisted` followed by `reload_error` distinguishes saved file state from failed live reload. Records are emitted outside the registry lock. |
 | `client.{enable,disable,remove}.{applied,unchanged,error,cleanup_error}` | Actual policy persistence/removal and later cleanup, where applicable; `private/fed/server/client_manager.py` and `server_engine.py`. Per-target mixed results remain separate. |
 | `client.policy.rejected` | Invalid client-policy request; `private/fed/server/training_cmds.py`. |
 | `logging.{site,job}.{applied,error,rejected,remote_reported}` | Local application at its owner, setup rejection, or explicit remote response; server `sys_cmd.py`, `job_cmds.py`, `server_commands.py`, and client `sys_cmd.py`, `admin_commands.py`, `training_cmds.py`. `remote_reported` describes explicit acknowledgement/error/no reply/unknown outcome, not confirmed application. |
@@ -219,8 +219,9 @@ does not duplicate an explicit role rejection.
 Missing/closed writers, ordinary construction/write/flush errors, and unexpected
 empty results count as failed recording attempts and return an empty identifier.
 An explicit simulator marker and excluded polling are intentional silence.
-Independent diagnostics warn at most once per minute per program. Diagnostic
-failure uses protected fixed standard-error text. Counts describe attempts;
+Independent diagnostics warn at most once per minute per program. The fixed
+message and failure count go directly to standard error, independently of
+the site's logging levels and handlers. Counts describe attempts;
 after a flush error a line may already have reached the operating system, so they
 are not exact counts of lost records. Recording never retries the administrative
 operation or invents an identifier/reference.

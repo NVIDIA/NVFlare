@@ -23,6 +23,8 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from contextvars import ContextVar
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 
@@ -91,6 +93,18 @@ from .run_manager import RunManager
 from .server_commands import ServerCommands
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
+
+_removal_audit_targets = ContextVar("removal_audit_targets", default=None)
+
+
+@contextmanager
+def client_removal_audit_targets(targets):
+    """Keep the validated target snapshot for the synchronous removal command."""
+    token = _removal_audit_targets.set(targets)
+    try:
+        yield
+    finally:
+        _removal_audit_targets.reset(token)
 
 
 def _record_admin_control(action, *, reason):
@@ -705,14 +719,18 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         # Token removal is the operation; notification and data cleanup are later
         # steps whose failure must not erase the already applied fact.
         is_admin_removal = snapshot().command.rsplit(".", 1)[-1] == "remove_client"
+        site = ""
+        if is_admin_removal:
+            site = prepare(lambda: (_removal_audit_targets.get() or {}).get(token, ""), default="")
         try:
             removed = self.server.client_manager.remove_client(token)
         except Exception:
             if is_admin_removal:
-                record("client.remove.error", reason="manager_failed")
+                record("client.remove.error", site=site, reason="manager_failed")
             raise
-        site = prepare(lambda: removed.name if removed else "", default="") if is_admin_removal else ""
         if is_admin_removal:
+            if removed:
+                site = prepare(lambda: removed.name, default=site)
             outcome = "applied" if removed else "unchanged"
             record(f"client.remove.{outcome}", site=site, reason="active_entry")
         try:
