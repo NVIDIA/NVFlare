@@ -26,7 +26,12 @@ from nvflare.fuel.f3.drivers.connector_info import Mode
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
-from nvflare.fuel.sec.authn import is_cross_client_family, is_message_origin_trusted, set_add_auth_headers_filters
+from nvflare.fuel.sec.authn import (
+    is_cross_client_family,
+    is_message_from_upstream,
+    is_message_origin_trusted,
+    set_add_auth_headers_filters,
+)
 from nvflare.private.fed.server.fed_server import FederatedServer
 
 AUTH_HEADERS = [
@@ -555,11 +560,19 @@ def test_parent_credentials_are_only_sent_to_server_cells(destination, kept):
         assert _auth_header_values(message) == {key: None for key in AUTH_HEADERS}
 
 
-def test_server_boundary_strips_server_job_credentials_before_client_delivery(monkeypatch):
-    message = _make_routed_message("site-a.job", MessageType.REPLY, origin="server.job", with_auth=True)
+@pytest.mark.parametrize("msg_type", [MessageType.REQ, MessageType.REPLY])
+@pytest.mark.parametrize("secure", [False, True])
+def test_server_boundary_keeps_server_job_adhoc_url_without_credentials(monkeypatch, msg_type, secure):
+    message = _make_routed_message("site-a.job", msg_type, origin="server.job", with_auth=True)
+    message.set_header(MessageHeaderKey.CONN_URL, "stcp://server:9000")
     auth_filter = _make_server_auth_filter(monkeypatch)
+    if not secure:
+        server = FederatedServer.__new__(FederatedServer)
+        server._get_id_asserter = lambda: None
+        auth_filter = server._validate_auth_headers
     assert auth_filter(message) is None
     assert _auth_header_values(message) == {key: None for key in AUTH_HEADERS}
+    assert message.get_header(MessageHeaderKey.CONN_URL) == "stcp://server:9000"
 
 
 @pytest.mark.parametrize(
@@ -573,11 +586,16 @@ def test_server_boundary_strips_server_job_credentials_before_client_delivery(mo
         ("server", "site-a", "site-a.job", Mode.PASSIVE, False, True),
     ],
 )
-def test_one_way_tls_listener_cannot_authenticate_a_claimed_upstream(local, peer, origin, mode, allow, expected):
+@pytest.mark.parametrize("security", [ConnectionSecurity.TLS, ConnectionSecurity.CLEAR])
+def test_unverified_listener_cannot_authenticate_a_claimed_upstream(
+    local, peer, origin, mode, allow, expected, security
+):
     message = Message({MessageHeaderKey.ORIGIN: origin})
     message.set_prop(MessagePropKey.ENDPOINT, Endpoint(peer))
     message.set_prop(
         MessagePropKey.CONNECTION,
-        SimpleNamespace(connector=SimpleNamespace(mode=mode, params={"connection_security": ConnectionSecurity.TLS})),
+        SimpleNamespace(connector=SimpleNamespace(mode=mode, params={"connection_security": security})),
     )
     assert is_message_origin_trusted(message, local, allow_unverified_client=allow) is expected
+    if mode == Mode.PASSIVE:
+        assert not is_message_from_upstream(message, local)

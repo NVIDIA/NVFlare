@@ -390,6 +390,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.in_logout = False
         self.cell = None
         self._cell_auth_monitor = None
+        self._cell_reconnect_lock = threading.RLock()
         self.aux_runner = None
         self.object_streamer = None
         self.fl_ctx_mgr = FLContextManager(
@@ -1048,6 +1049,17 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
     def server_execute(self, command, reply_processor=None, cmd_entry=None, cmd_ctx=None, props=None, headers=None):
         if self.in_logout and command != InternalCommands.LOGOUT:
             return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "session is logging out"}
+
+        with self._cell_reconnect_lock:
+            monitor = self._cell_auth_monitor
+            if monitor and monitor.reconnected.is_set() and not self.in_logout:
+                # Recover on the command thread: transport callbacks cannot wait
+                # for authentication replies. Login also restores the HCI session
+                # after a server restart. The reentrant lock permits login's own
+                # commands and prevents concurrent commands using the retired Cell.
+                result = self._user_login()
+                if result.get(ResultKey.STATUS) != APIStatus.SUCCESS:
+                    return result
 
         args = split_to_args(command)
         if cmd_ctx:

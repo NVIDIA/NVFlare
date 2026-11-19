@@ -12,12 +12,57 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 from types import SimpleNamespace
 
+import pytest
+
 from nvflare.apis.job_def import DEFAULT_STUDY
-from nvflare.fuel.hci.client.api import AdminAPI, ResultKey
+from nvflare.fuel.hci.client.api import AdminAPI, ResultKey, _AdminCellReconnectMonitor
 from nvflare.fuel.hci.client.api_spec import CommandContext
 from nvflare.fuel.hci.client.api_status import APIStatus
+
+
+@pytest.mark.parametrize("reconnected", [False, True])
+@pytest.mark.parametrize("login_ok", [False, True])
+def test_command_recovers_reconnected_admin_before_sending(reconnected, login_ok):
+    api = AdminAPI.__new__(AdminAPI)
+    api.in_logout = False
+    api._cell_reconnect_lock = threading.RLock()
+    api._cell_auth_monitor = _AdminCellReconnectMonitor()
+    if reconnected:
+        api._cell_auth_monitor.reconnected.set()
+    api.debug = lambda message: None
+    commands = []
+    logins = []
+
+    def new_context(command, args, entry):
+        return CommandContext()
+
+    def send(ctx):
+        commands.append(ctx.get_command())
+        ctx.set_command_result({ResultKey.STATUS: APIStatus.SUCCESS})
+
+    def login():
+        logins.append(True)
+        # Model _user_login replacing the retired Cell before sending CERT_LOGIN.
+        api._cell_auth_monitor = _AdminCellReconnectMonitor()
+        if login_ok:
+            return api.server_execute("_cert_login admin")
+        return {ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION}
+
+    api._new_command_context = new_context
+    api._try_command = send
+    api._user_login = login
+    result = api.server_execute("check_status server")
+
+    assert logins == ([True] if reconnected else [])
+    if reconnected and not login_ok:
+        assert result[ResultKey.STATUS] == APIStatus.ERROR_AUTHENTICATION
+        assert commands == []
+    else:
+        assert result[ResultKey.STATUS] == APIStatus.SUCCESS
+        assert commands == (["_cert_login admin"] if reconnected else []) + ["check_status server"]
 
 
 def test_do_client_command_preserves_command_props():

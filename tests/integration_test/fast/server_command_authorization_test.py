@@ -200,6 +200,7 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     victim = submit(kits, module, victim_session, "victim", "site-2")
     run = holding(kits, victim, victim_session)
     peer_run = holding(kits, victim, victim_session, "site-1")
+    local_calls_before = json.loads((peer_run / "collab_calls.json").read_text())
     assert sorted(json.loads((run / "collab_calls.json").read_text())) == ["server", "site-1"]
     evidence = {
         "source": str(Path(nvflare.__file__).resolve()),
@@ -223,6 +224,8 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     attack_file = kits / "site-1" / attacker / "attack.json"
     wait_for(attack_file.exists, "attack reply")
     attack = json.loads(attack_file.read_text())
+    assert attack["local_collab_replay_rc"] != ReturnCode.OK
+    assert json.loads((peer_run / "collab_calls.json").read_text()) == local_calls_before
     evidence["attack"] = attack
     assert str(Path(attack["source"]).resolve()) == evidence["source"]
     relay_prefix = "".join(f"relay-{depth}." for depth in range(1, via_relay + 1))
@@ -277,11 +280,18 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     assert evidence["after"] == "FINISHED:COMPLETED"
     received = json.loads(next(result_dir.rglob("received.json")).read_text())
     assert received["job"] == victim and received["aborted"] is False
+    # Drop the live transport without restarting the server. The next ordinary
+    # command must reauthenticate and log in without an explicit try_connect.
+    old_cell = victim_session.api.cell
+    reconnect = victim_session.api._cell_auth_monitor.reconnected
+    old_cell.core_cell.communicator.remove_endpoint("server")
+    wait_for(reconnect.is_set, "admin reconnection after transport loss")
+    assert len(victim_session.get_system_info().client_info) == 2
+    assert victim_session.api.cell is not old_cell
     # Same-key restart loses server-side token registrations. Existing admin
-    # sessions must re-register on login, and clients behind relays must recover.
+    # sessions must recover from the ordinary command path without explicit login.
     restart_server()
     wait_for(lambda: victim_session.api._cell_auth_monitor.reconnected.is_set(), "admin transport reconnection")
-    victim_session.try_connect(timeout=45)
     wait_for(
         lambda: len(victim_session.get_system_info().client_info) == 2,
         "client/relay recovery after restart",

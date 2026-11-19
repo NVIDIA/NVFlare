@@ -167,7 +167,13 @@ class ControlExecutor(Executor):
             cell.core_cell.add_outgoing_request_filter("*", "*", forge_collab)
             collab_reply = collab_call(cell, victim_client, "site-2", "server")
             assert collab_reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK
+            # A sibling job on this site reaches its victim through the client
+            # parent, without crossing the server's authentication filter.
+            local_victim = f"{cell.get_fqcn().rsplit('.', 1)[0]}.{victim}"
+            local_reply = collab_call(cell, local_victim, "site-1", "server")
+            assert local_reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK
             result = {
+                "local_collab_replay_rc": local_reply.get_header(MessageHeaderKey.RETURN_CODE),
                 "collab_replay_rc": collab_reply.get_header(MessageHeaderKey.RETURN_CODE),
                 "parent_reply_route": [entry[0] for entry in parent_reply.get_header(MessageHeaderKey.ROUTE)],
                 "replay_rc": replay.get_header(MessageHeaderKey.RETURN_CODE),

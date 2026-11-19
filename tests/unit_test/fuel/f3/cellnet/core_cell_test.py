@@ -32,10 +32,12 @@ from nvflare.fuel.f3.cellnet.credential_manager import CredentialManager
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessageType, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo
 from nvflare.fuel.f3.cellnet.registry import Registry
+from nvflare.fuel.f3.drivers.connector_info import Mode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL
 
 
 def _cell(fqcn="site-1"):
@@ -146,9 +148,16 @@ def test_cell_agent_validates_fqcn():
         (CellChannel.CLIENT_COMMAND, "relay", "relay.site-1", "relay.site-2", False),
         (CellChannel.CLIENT_COMMAND, "relay", "relay.site-1", "relay.site-1", True),
         (CellChannel.CLIENT_COMMAND, "relay", "relay.site-1", "relay.site-1.job", True),
+        (STREAM_CHANNEL, "site-1", "site-1.job-b", "server.job-a", False),
+        (STREAM_CHANNEL, "site-1", "site-1.job-b", "site-1.job-a", False),
+        (STREAM_CHANNEL, "site-1", "site-1.job-b", "site-1.job-b", True),
+        (STREAM_CHANNEL, "site-1", "server", "server.job-a", True),
+        ("custom", "site-1", "site-1.job-b", "server.job-a", False),
+        ("custom", "site-1", "site-1.job-b", "site-1.job-b.child", True),
     ],
 )
-def test_admin_origin_is_checked_at_every_hop(channel, receiver, peer, origin, allowed):
+@pytest.mark.parametrize("security", [None, "mtls", "tls", "clear"])
+def test_request_origin_is_checked_at_every_hop(channel, receiver, peer, origin, allowed, security):
     cell = _cell(receiver)
     cell.received_msg_counter_pool = MagicMock()
     cell.sent_msg_counter_pool = MagicMock()
@@ -156,6 +165,7 @@ def test_admin_origin_is_checked_at_every_hop(channel, receiver, peer, origin, a
     cell.message_interceptor = None
     cell._forward = MagicMock()
     cell._send_reply = MagicMock()
+    cell._record_traffic = MagicMock()
     request = Message(
         {
             MessageHeaderKey.MSG_TYPE: MessageType.REQ,
@@ -172,7 +182,15 @@ def test_admin_origin_is_checked_at_every_hop(channel, receiver, peer, origin, a
     )
     cell.msg_travel_stats_pool = MagicMock()
 
-    cell._process_received_msg(Endpoint(peer), None, request)
+    connection = None
+    if security:
+        connection = SimpleNamespace(
+            connector=SimpleNamespace(mode=Mode.PASSIVE, params={"scheme": "stcp", "connection_security": security}),
+            get_conn_properties=lambda: {},
+        )
+        if peer == "server" or peer == FQCN.get_parent(receiver):
+            allowed = allowed and security == "mtls"
+    cell._process_received_msg(Endpoint(peer), connection, request)
 
     if allowed:
         cell._forward.assert_called_once()

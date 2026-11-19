@@ -536,7 +536,8 @@ class FederatedServer(BaseServer):
             CellMessageHeaderKeys.SSID,
         ]:
             message.remove_header(key)
-        message.remove_header(MessageHeaderKey.CONN_URL)
+        if message.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False):
+            message.remove_header(MessageHeaderKey.CONN_URL)
 
     def _validate_auth_headers(self, message: Message):
         """Validate auth headers from messages that go through the server.
