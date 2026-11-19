@@ -21,6 +21,7 @@ from cryptography.hazmat.primitives import serialization
 
 from nvflare.fuel.f3.drivers import aio_grpc_driver, grpc_driver
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.grpc import utils as grpc_utils
 from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, cert_uri
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert
 
@@ -47,6 +48,26 @@ def _server():
     server = MagicMock()
     server.connector.params = {DriverParams.HOST.value: "localhost", DriverParams.PORT.value: "8002"}
     return server
+
+
+def test_explicit_empty_grpc_proxy_disables_general_proxy(monkeypatch):
+    monkeypatch.delenv("no_grpc_proxy", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.setenv("grpc_proxy", "")
+    monkeypatch.setenv("https_proxy", "http://proxy.example:3128")
+
+    assert grpc_utils._proxy_for_target("listener.example", 8443, None) is None
+
+    monkeypatch.setenv("grpc_proxy", "http://proxy.example:3128")
+    assert grpc_utils._proxy_for_target("listener.example", 8443, [("grpc.http_proxy", "")]) is None
+
+
+def test_explicit_empty_grpc_bypass_does_not_use_general_bypass(monkeypatch):
+    monkeypatch.setenv("grpc_proxy", "http://proxy.example:3128")
+    monkeypatch.setenv("no_grpc_proxy", "")
+    monkeypatch.setenv("no_proxy", "listener.example")
+
+    assert grpc_utils._proxy_for_target("listener.example", 8443, None) == ("proxy.example", 3128, None)
 
 
 @pytest.mark.parametrize("scoped", [True, False])
