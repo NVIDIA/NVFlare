@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import threading
 from types import SimpleNamespace
@@ -23,7 +24,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
-from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.drivers.connector_info import Mode
+from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.defs import CellMessageHeaderKeys
@@ -41,6 +43,7 @@ def _relay_core_cell(fqcn="relay-1"):
 def _server_transit_message(incoming_endpoint):
     message = Message(
         headers={
+            MessageHeaderKey.ORIGIN: "site-1.job",
             MessageHeaderKey.SERVER_TRANSIT_REQUIRED: True,
             MessageHeaderKey.ROUTE: [("site-1", 0.0), ("server", 1.0)],
         }
@@ -81,8 +84,8 @@ def test_relay_does_not_trust_forged_server_route_from_child():
             core_cell=core_cell,
         )
 
-    assert result is expected
-    validate.assert_called_once()
+    assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+    validate.assert_not_called()
 
 
 @pytest.fixture
@@ -218,3 +221,144 @@ def test_relay_registration_recovery_is_bounded_and_retries_after_later_rejectio
     relay_auth.refresh()
     assert auth.challenge_server.call_count == 3
     assert relay_auth.auth_result is old
+
+
+def test_relay_reauthenticates_on_same_key_server_reconnect(relay_auth):
+    old = relay_auth.auth_result
+    replacement = ("replacement-token", "replacement-signature", "ssid", old[3])
+    relay_auth.authenticator.authenticate.return_value = replacement
+    endpoint = Endpoint("server")
+    endpoint.state = EndpointState.READY
+    relay_auth.state_change(endpoint)
+    relay_auth.authenticator.authenticate.assert_not_called()
+    relay_auth.refresh()
+    relay_auth.authenticator.authenticate.assert_called_once()
+    assert relay_auth.auth_result is replacement
+    relay_auth.refresh()
+    relay_auth.authenticator.authenticate.assert_called_once()
+
+
+def test_relay_does_not_accept_tls_listener_as_sanitized_upstream():
+    message = _server_transit_message("server")
+    message.set_prop(
+        MessagePropKey.CONNECTION,
+        SimpleNamespace(connector=SimpleNamespace(mode=Mode.PASSIVE, params={"connection_security": "tls"})),
+    )
+    result = _validate_auth_headers(message, MagicMock(), MagicMock(), "relay-1", _relay_core_cell())
+    assert result.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+
+
+def test_relay_retries_failed_registration_after_reconnect(relay_auth):
+    endpoint = Endpoint("server")
+    endpoint.state = EndpointState.READY
+    relay_auth.state_change(endpoint)
+    relay_auth.authenticator.authenticate.side_effect = [RuntimeError("server not ready"), relay_auth.auth_result]
+    relay_auth.refresh()
+    assert relay_auth.registration_needed.is_set()
+    relay_auth.refresh()
+    assert relay_auth.authenticator.authenticate.call_count == 2
+    assert not relay_auth.registration_needed.is_set()
+
+
+def test_relay_retries_reconnect_when_server_challenge_is_temporarily_unavailable(relay_auth):
+    endpoint = Endpoint("server")
+    endpoint.state = EndpointState.READY
+    relay_auth.state_change(endpoint)
+    relay_auth.authenticator.challenge_server.side_effect = [(None, None), ("nonce", relay_auth.auth_result[3])]
+    relay_auth.authenticator.authenticate.return_value = relay_auth.auth_result
+    relay_auth.refresh()
+    assert relay_auth.registration_needed.is_set()
+    assert relay_auth.refresh_needed.is_set()
+    relay_auth.authenticator.authenticate.assert_not_called()
+    relay_auth.refresh()
+    relay_auth.authenticator.authenticate.assert_called_once()
+    assert not relay_auth.registration_needed.is_set()
+    assert not relay_auth.refresh_needed.is_set()
+
+
+def test_secure_relay_startup_connects_reconnect_monitor_and_auth_filters(tmp_path, monkeypatch, relay_auth):
+    import nvflare.private.fed.app.relay.relay as relay_module
+
+    startup = tmp_path / "startup"
+    startup.mkdir()
+    (tmp_path / "local").mkdir()
+    (startup / "relay.json").write_text(
+        json.dumps(
+            {
+                "project_name": "test-project",
+                "server_identity": "server",
+                "identity": "relay-2",
+                "connect_to": {"fqcn": "relay-1", "address": "localhost:8002", "scheme": "stcp"},
+            }
+        )
+    )
+    cell = MagicMock()
+
+    # Stop at the mocked transport boundary: no listener, worker or polling
+    # loop is started. Reconnect behavior below uses the installed real monitor.
+    def stopped_monitor(stop_event, workspace):
+        stop_event.set()
+        return MagicMock()
+
+    monkeypatch.setattr(relay_module, "CellnetMonitor", stopped_monitor)
+    monkeypatch.setattr(relay_module, "configure_logging", lambda workspace: None)
+    monkeypatch.setattr(relay_module.ConfigService, "initialize", lambda **kwargs: None)
+    monkeypatch.setattr(relay_module, "search_file", lambda *args: "rootCA.pem")
+    monkeypatch.setattr(relay_module, "enhance_credential_info", lambda credentials: None)
+    monkeypatch.setattr(relay_module, "Cell", lambda **kwargs: cell)
+    monkeypatch.setattr(relay_module, "NetAgent", lambda *args, **kwargs: None)
+    monkeypatch.setattr(relay_module, "Authenticator", lambda **kwargs: relay_auth.authenticator)
+    original = relay_auth.auth_result
+    replacement = ("renewed", "renewed-signature", "renewed-ssid", original[3])
+    relay_auth.authenticator.authenticate.side_effect = [original, replacement]
+    relay_module.main(SimpleNamespace(workspace=str(tmp_path), relay_config="relay.json", set=["secure_train=true"]))
+
+    monitor = cell.core_cell.communicator.register_monitor.call_args.args[0]
+    assert isinstance(monitor, _RelayAuth)
+    assert monitor.parent_fqcn == "relay-1"
+    monitor.stop_event.clear()
+    parent = Endpoint("relay-1")
+    parent.state = EndpointState.READY
+    monitor.state_change(parent)
+    monitor.refresh()
+    assert monitor.auth_result is replacement
+    request = Message()
+    installed_filter = cell.core_cell.add_outgoing_request_filter.call_args.kwargs["cb"]
+    installed_filter(request)
+    assert request.get_header(CellMessageHeaderKeys.TOKEN) == "renewed"
+    assert request.get_header(CellMessageHeaderKeys.TOKEN_SIGNATURE) == "renewed-signature"
+    cell.stop.assert_called_once()
+
+
+def test_nested_relay_renews_binding_without_parent_reconnect_or_key_change(relay_auth, monkeypatch):
+    import nvflare.private.fed.app.relay.relay as relay_module
+    from nvflare.private.fed.server.auth_registry import NonRegularAuthRegistry
+
+    now = [0.0]
+    monkeypatch.setattr(relay_module, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    registry = NonRegularAuthRegistry()  # The restarted root has no old binding.
+    nested = _RelayAuth(
+        relay_auth.authenticator,
+        FLContext(),
+        relay_auth.auth_result,
+        threading.Event(),
+        logging.getLogger(__name__),
+        parent_fqcn="outer-relay",
+    )
+    replacement = ("renewed", "signature", "ssid", nested.auth_result[3])
+
+    def authenticate(*_args):
+        registry.register("relay-1", replacement[0], "outer-relay.relay-1", Endpoint("outer-relay"))
+        return replacement
+
+    nested.authenticator.authenticate.side_effect = authenticate
+    nested.refresh()
+    nested.authenticator.authenticate.assert_not_called()
+    assert registry.resolve("relay-1", "token") is None
+    # No endpoint event and the signing key still verifies the old token.
+    now[0] = 60.0
+    nested.refresh()
+    assert nested.auth_result is replacement
+    assert registry.resolve("relay-1", "renewed") == "outer-relay.relay-1"
+    nested.refresh()
+    nested.authenticator.authenticate.assert_called_once()

@@ -195,11 +195,16 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         ]
         if with_relay:
             cases.append({"name": "forge_server_origin", "forge_origin": True})
+        boundary_log = tmp_path / ("relay-1.log" if with_relay else "localhost.log")
+        rejection = "rejected message: origin does not belong to sending peer"
+        before_initial_rejections = boundary_log.read_text().count(rejection)
         _write_json(evidence["site-1"] / "request.json", cases)
         result_path = evidence["site-1"] / "results.json"
         wait_for(result_path.exists)
         results = json.loads(result_path.read_text())
         assert isinstance(results, list), results
+        if with_relay:
+            assert boundary_log.read_text().count(rejection) >= before_initial_rejections + 1
         destination_records = [
             json.loads(line) for line in (evidence["site-2"] / "received.jsonl").read_text().splitlines()
         ]
@@ -220,7 +225,6 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
             "admin_read": "passed",
             "startup": ready,
         }
-        boundary_log = tmp_path / ("relay-1.log" if with_relay else "localhost.log")
         assert "missing auth token" in boundary_log.read_text()
         assert results[2]["rc"] == ReturnCode.TIMEOUT, results[2]
         summary["missing_token_rejected_by_production_filter"] = True
@@ -261,10 +265,18 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         for case in job_cases:
             case.update(channel=CellChannel.CLIENT_COMMAND, topic=AdminCommandNames.SHOW_ERRORS, target=target)
         result_path.unlink()
+        before_rejections = boundary_log.read_text().count(rejection)
         _write_json(evidence["site-1"] / "request.json", job_cases)
         wait_for(result_path.exists)
         job_results = json.loads(result_path.read_text())
-        assert all(r["rc"] == ReturnCode.UNAUTHENTICATED for r in job_results), job_results
+        assert job_results[0]["rc"] == ReturnCode.UNAUTHENTICATED, job_results
+        if with_relay:
+            # Forged origins stop at the relay's incoming auth filter before
+            # CellNet can generate a protocol reply. Prove the production gate
+            # rejected both attempts rather than accepting arbitrary timeouts.
+            assert all(r["rc"] == ReturnCode.TIMEOUT for r in job_results[1:]), job_results
+            assert boundary_log.read_text().count(rejection) >= before_rejections + 2
+        assert all("private-job-error-marker" not in json.dumps(r) for r in job_results)
         assert "private-job-error-marker" in json.dumps(admin.show_errors(job_id, "client", ["site-2"]))
         summary["job_commands"] = job_results
         children.joinpath("release").write_text("finish")
@@ -289,6 +301,6 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
             r["rc"] == ReturnCode.OK and r["body"] == "request must originate from server" for r in results[:2]
         ), results
         if with_relay:
-            assert results[-1]["rc"] == ReturnCode.UNAUTHENTICATED, results[-1]
-            assert results[-1]["origin"] == "relay-1"
+            assert results[-1]["rc"] == ReturnCode.TIMEOUT, results[-1]
+            assert results[-1]["origin"] is None
             assert not any(r["origin"] == "server" and r["topic"] == "sys.shell" for r in destination_records)

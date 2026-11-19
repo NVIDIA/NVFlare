@@ -35,11 +35,11 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
+from nvflare.fuel.f3.cellnet.defs import CellChannelTopic, MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.defs import (
@@ -51,6 +51,7 @@ from nvflare.private.defs import (
     new_cell_message,
 )
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
+from nvflare.private.fed.server.auth_registry import NonRegularAuthRegistry
 from nvflare.private.fed.server.client_manager import ClientManager
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
@@ -630,6 +631,7 @@ class TestFederatedServer:
             },
             None,
         )
+        request.set_prop(MessagePropKey.ENDPOINT, Endpoint(origin))
         reply = server._validate_auth_headers(request)
         if accepted:
             assert reply is None
@@ -687,8 +689,12 @@ class TestFederatedServer:
         server.client_manager = ClientManager()
         if origin == "admin":
             origin = peer = new_admin_client_name()
+            server._non_regular_auth_clients = NonRegularAuthRegistry()
+            server._non_regular_auth_clients.register(name, "delegated", origin, Endpoint(peer))
         request = new_cell_message(
             {
+                MessageHeaderKey.CHANNEL: CellChannel.SERVER_MAIN,
+                MessageHeaderKey.TOPIC: CellChannelTopic.HEART_BEAT,
                 MessageHeaderKey.ORIGIN: origin,
                 MessageHeaderKey.DESTINATION: "server",
                 CellMessageHeaderKeys.CLIENT_NAME: name,
@@ -707,25 +713,35 @@ class TestFederatedServer:
         reply = server._validate_auth_headers(request)
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
 
-    def test_non_secure_server_registers_transit_header_sanitizer(self):
+    @pytest.mark.parametrize("secure", [False, True])
+    def test_server_registers_auth_or_transit_filter_and_secure_disconnect_cleanup(self, secure):
         server = object.__new__(FederatedServer)
         server.lock = MagicMock()
         server.cell = MagicMock()
         server.engine = MagicMock()
         server._register_cellnet_cbs = MagicMock()
+        server._non_regular_auth_clients = NonRegularAuthRegistry()
 
         with patch("nvflare.private.fed.server.fed_server.BaseServer.deploy"):
             server.deploy(
                 args=MagicMock(),
                 grpc_args={"service": {"target": "localhost:8002"}},
-                secure_train=False,
+                secure_train=secure,
             )
 
         server.cell.core_cell.add_incoming_filter.assert_called_once_with(
             channel="*",
             topic="*",
-            cb=server._strip_peer_transit_headers,
+            cb=server._validate_auth_headers if secure else server._strip_peer_transit_headers,
         )
+        if secure:
+            monitor = server.cell.core_cell.communicator.register_monitor.call_args.args[0]
+            peer = Endpoint("relay-1")
+            monitor.register("relay-1", "live", peer.name, peer)
+            assert monitor.resolve("relay-1", "live") == peer.name
+            peer.state = EndpointState.DISCONNECTED
+            monitor.state_change(peer)
+            assert monitor.resolve("relay-1", "live") is None
 
     def test_create_job_cell_allows_missing_server_config_for_non_secure_cell(self):
         server = object.__new__(FederatedServer)
@@ -1465,3 +1481,59 @@ class TestGetValidatedSiteConfig:
         s = Shareable()
         s[ClientRegMsgKey.SITE_CONFIG] = site_config
         assert self._call(s) == site_config
+
+
+@pytest.mark.parametrize("origin", ["site-a", "relay-1.site-a", "site-a.job"])
+def test_unmapped_signed_token_cannot_authorize_application_traffic(auth_server, origin):
+    server, private_key = auth_server
+    request = new_cell_message(
+        {
+            MessageHeaderKey.ORIGIN: origin,
+            MessageHeaderKey.DESTINATION: "server.job-a",
+            MessageHeaderKey.CHANNEL: "collab",
+            CellMessageHeaderKeys.CLIENT_NAME: "site-a",
+            CellMessageHeaderKeys.TOKEN: "unmapped",
+            CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content("site-aunmapped", private_key),
+        },
+        None,
+    )
+    request.set_prop(MessagePropKey.ENDPOINT, Endpoint(origin))
+    reply = server._validate_auth_headers(request)
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+
+
+@pytest.mark.parametrize("disconnected", [False, True])
+def test_registration_reply_retains_live_token_or_rejects_disconnected_transport(disconnected):
+    server = object.__new__(FederatedServer)
+    server.logger = MagicMock()
+    server.engine = MagicMock()
+    context = FLContext()
+    server.engine.new_context.return_value = nullcontext(context)
+    server._ready_for_registration = MagicMock(return_value=None)
+    server.client_manager = MagicMock()
+    client = Client("relay-1", "proposed-token")
+    client.set_fqcn("relay-1")
+    server.client_manager.authenticate.return_value = client
+    server.server_state = SimpleNamespace(ssid="session")
+    server.sign_auth_token = MagicMock(return_value="signature")
+    server._generate_reply = lambda headers, payload, fl_ctx: payload
+    server._non_regular_auth_clients = NonRegularAuthRegistry()
+    peer = Endpoint("relay-1")
+    server._non_regular_auth_clients.register("relay-1", "live-token", "relay-1", peer)
+    if disconnected:
+        peer.state = EndpointState.DISCONNECTED
+        server._non_regular_auth_clients.state_change(peer)
+    request = new_cell_message(
+        {CellMessageHeaderKeys.CLIENT_NAME: "relay-1", CellMessageHeaderKeys.CLIENT_TYPE: ClientType.RELAY}, Shareable()
+    )
+    request.set_prop(MessagePropKey.ENDPOINT, peer)
+    result = server.register_client(request)
+    if disconnected:
+        assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+        server.sign_auth_token.assert_not_called()
+        assert server._non_regular_auth_clients.resolve("relay-1", "live-token") is None
+        return
+    assert result[CellMessageHeaderKeys.TOKEN] == "live-token"
+    server.sign_auth_token.assert_called_once_with("relay-1", "live-token")
+    assert server._non_regular_auth_clients.resolve("relay-1", "live-token") == "relay-1"
+    assert server._non_regular_auth_clients.resolve("relay-1", "proposed-token") is None

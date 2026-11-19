@@ -32,6 +32,7 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.sec.authn import is_message_from_upstream
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private import defs as private_defs
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, ClientRegMsgKey, new_cell_message
@@ -338,8 +339,7 @@ def validate_auth_headers(
         message: the message to validate
         token_verifier: the TokenVerifier to be used to verify the token and signature
         client_fqcn_resolver: optional resolver used to bind a client token to its registered CellNet origin.
-            Return None only when the token/name cannot be resolved; return MISSING_CLIENT_FQCN for a registered
-            client with no stored origin so validation fails closed.
+            Unresolved tokens and clients without a stored origin fail closed.
         local_cell_fqcn: the FQCN of the cell that owns this auth filter. Used to bypass auth ONLY for a
             cellnet ``bye`` that actually terminates at this cell (DESTINATION == local_cell_fqcn). When None,
             the bye bypass never triggers and byes fall through to the normal auth check.
@@ -381,6 +381,17 @@ def validate_auth_headers(
         logger.debug(f"skip direct-neighbor cellnet bye {topic=} {channel=} {destination=}")
         return None
 
+    if (
+        client_fqcn_resolver is None
+        and is_message_from_upstream(message, local_cell_fqcn)
+        and isinstance(origin, str)
+        and (origin == FQCN.ROOT_SERVER or FQCN.is_ancestor(FQCN.ROOT_SERVER, origin))
+        and not message.get_header(CellMessageHeaderKeys.TOKEN)
+    ):
+        # Client/admin/relay receivers trust their authenticated upstream for
+        # server-origin traffic without exposing reusable server credentials.
+        return None
+
     client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
     err_text = f"unauthenticated msg ({channel=} {topic=}) received from {origin}"
     if not client_name:
@@ -407,7 +418,7 @@ def validate_auth_headers(
 
     if client_fqcn_resolver:
         client_fqcn = client_fqcn_resolver(client_name, token)
-        if client_fqcn is not None and not _origin_matches_fqcn(origin, client_fqcn):
+        if not _origin_matches_fqcn(origin, client_fqcn):
             registered_origin = client_fqcn or "<missing>"
             err = (
                 f"auth token for client {client_name} is bound to origin {registered_origin}, "
