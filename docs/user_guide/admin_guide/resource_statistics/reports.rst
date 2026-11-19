@@ -23,14 +23,17 @@ handoff and checks its launch-generation token. It never substitutes a surviving
 report from an earlier launch. Missing earlier observations mark the available
 subtotal partial. Scheduling retries without execution do not create a gap.
 
-Aborted or server-failed jobs allow up to 20 seconds after server exit for
-expected clients to report, ending early when all reports arrive. A shorter
-configured client outcome timeout still applies. Cancellation starts immediately
-and other jobs continue processing. Final status, archive availability and release
-of that job's scheduler slot follow report closure.
+If a job is aborted or the server job fails, cancellation starts immediately.
+After the server job exits, the server allows up to 20 seconds for outstanding
+client resource reports. A shorter ``client_outcome_wait_timeout`` or an earlier
+outcome deadline caps the wait. The server proceeds as soon as it has accepted
+reports from all expected clients other than those marked disabled.
 
-At the deadline, the summary lists any client that failed to report as a gap.
-Its startup capacity also comes from the terminal report and can be missing.
+Other jobs continue processing during the wait. When collection closes, the
+server archives the available reports, publishes the job's final status and
+releases its scheduler slot. A client without an accepted report has a gap,
+including for its startup capacity. Successful jobs use the usual client
+outcome timeout.
 
 Stored reports
 ==============

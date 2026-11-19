@@ -180,8 +180,9 @@ nvflare resources --schema
 
 This read-only command uses the shared session, startup-kit selection, JSON
 success/error envelopes, and offline schema discovery. Run `nvflare resources --help`
-for the available selectors. The [resource statistics design](resource_statistics_design.md)
-defines the report format.
+for the available selectors. Job totals and site details come from the same
+`resource_stats/resource_summary.json` file. See the
+[schema 1.0 archive layout](https://github.com/NVIDIA/NVFlare/blob/59614340accc4089e93f8f1f72be35ccf3646b0f/docs/design/resource_statistics_reporting.md#server-ledger-and-archive-publication).
 
 ### `nvflare job` (exists today — requires agent readiness updates)
 
