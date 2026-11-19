@@ -182,25 +182,34 @@ def test_bare_human_command_shows_help_and_old_job_path_is_removed(monkeypatch, 
 
 @pytest.mark.parametrize("output_format", ["txt", "json"])
 @pytest.mark.parametrize(
-    "selection,error,code,message",
+    "selection,error,code,message,hint",
     [
-        (["--job", "job-1"], JobNotDone(), "JOB_NOT_FINALIZED", "has not been finalized"),
+        (["--job", "job-1"], JobNotDone(), "JOB_NOT_FINALIZED", "has not been finalized", "Wait for job completion"),
+        (
+            ["--job", "job-1", "--study", "study-1", "--site", "site-2"],
+            RuntimeError("participant has no accepted resource report: site-2"),
+            "RESOURCE_DATA_UNAVAILABLE",
+            "participant has no accepted resource report: site-2",
+            "without --site to see which participants reported",
+        ),
         (
             ["--job", "job-1"],
             RuntimeError("missing archive"),
             "RESOURCE_DATA_UNAVAILABLE",
             "Resource data is unavailable",
+            "archives",
         ),
         (
             ["--study", "study-1"],
             RuntimeError("missing archive"),
             "RESOURCE_DATA_UNAVAILABLE",
             "Resource data is unavailable",
+            "archives",
         ),
     ],
 )
 def test_expected_query_errors_keep_message_and_hint_in_dev_mode(
-    monkeypatch, capsys, output_format, selection, error, code, message
+    monkeypatch, capsys, output_format, selection, error, code, message, hint
 ):
     session = Mock()
     session.get_job_resources.side_effect = error
@@ -217,8 +226,8 @@ def test_expected_query_errors_keep_message_and_hint_in_dev_mode(
         payload = json.loads(output.out)
         assert payload["error_code"] == code
         assert message in payload["message"]
-        assert payload["hint"]
+        assert hint in payload["hint"]
     else:
         assert message in output.err
         assert f"Code: {code} (exit 4)" in output.err
-        assert "Hint: " in output.err
+        assert hint in output.err

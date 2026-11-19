@@ -96,7 +96,8 @@ def handle_resources_cmd(cmd_args):
         cli_output.output_error("CONNECTION_FAILED", exit_code=2, detail=str(e))
         return
     except Exception as e:
-        cli_output.output_error("RESOURCE_DATA_UNAVAILABLE", exit_code=4, job_id=job_id, detail=str(e))
+        hint = "Retry the same job query without --site to see which participants reported." if site else None
+        cli_output.output_error("RESOURCE_DATA_UNAVAILABLE", exit_code=4, job_id=job_id, detail=str(e), hint=hint)
         return
 
     if job_id:
