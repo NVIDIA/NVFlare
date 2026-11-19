@@ -19,6 +19,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -330,6 +331,36 @@ def test_replay_plan_is_supplied_to_simenv_and_excluded_from_fedrevive_export(re
     assert workflow["path"] == "nvflare.collab.fedbuff_recipe.FedBuffWorkflow"
     assert workflow["args"]["num_rounds"] == 2
     assert str(plan_path) not in config and "simulation_plan" not in config
+
+
+def test_evaluation_preserves_training_rng(research, tmp_path, monkeypatch):
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("torchvision")
+    pytest.importorskip("tensorboard")
+
+    server = research("server")
+    dataset = torch.utils.data.TensorDataset(torch.zeros(2, 2), torch.tensor([0, 1]))
+    monkeypatch.setattr(server.datasets, "CIFAR10", lambda **kwargs: dataset)
+    monkeypatch.setattr(server, "create_model", lambda: torch.nn.Linear(2, 2))
+    monkeypatch.setattr(server, "SummaryWriter", Mock)
+    monkeypatch.setattr(
+        server,
+        "collab",
+        SimpleNamespace(
+            workspace=SimpleNamespace(get_run_dir=lambda _: str(tmp_path)),
+            fl_ctx=SimpleNamespace(get_job_id=lambda: "job"),
+        ),
+    )
+    observer = server.FedReviveObserver("unused", {"arrival_mode": "simulated"}, device="cpu", eval_interval=1)
+    observer.initialize()
+
+    with torch.random.fork_rng(devices=[]):
+        model = server.create_model().state_dict()
+        training_rng = torch.random.get_rng_state()
+        for version in (0, 1):
+            observer.on_model(model, version)
+            assert torch.equal(torch.random.get_rng_state(), training_rng)
+    assert [record["model_version"] for record in observer.history] == [0, 1]
 
 
 def test_replay_observer_records_horizon_when_no_model_was_published(research, tmp_path, monkeypatch):

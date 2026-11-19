@@ -111,6 +111,8 @@ class FedReviveObserver:
             batch_size=self.eval_batch_size,
             shuffle=False,
             num_workers=0,
+            # DataLoader draws an iterator seed even for sequential evaluation.
+            generator=torch.Generator(device="cpu").manual_seed(0),
         )
 
     def on_time(self, simulated_time):
