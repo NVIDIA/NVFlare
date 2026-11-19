@@ -1,0 +1,268 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Task reduction policies use controlled records, without launching workers."""
+
+from copy import deepcopy
+from dataclasses import replace
+
+import pytest
+
+from nvflare.private.fed.resource_stats import task_rollup
+from nvflare.private.fed.resource_stats.measurements import scoped_measurement
+from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
+
+
+def _identity(attempt="first"):
+    return TaskAttemptIdentity("job", "site", "task", "train", attempt)
+
+
+def _report(*, seconds=10, cpu_seconds=8, **changes):
+    record = {
+        "duration_seconds": seconds,
+        "resource_capacity": {"cpu": {"units": 2}, "memory": {"bytes": 1024}, "gpu": {"count": 1}},
+        "cpu_consumed": {"cpu_seconds": cpu_seconds},
+        "message_traffic": {"sent_bytes": 10, "received_bytes": 20},
+        "issues": [],
+    }
+    record.update(changes)
+    for metric in ("resource_capacity", "cpu_consumed", "message_traffic"):
+        record[metric] = scoped_measurement(metric, record[metric], record["issues"])
+    return record
+
+
+def _fold(reducer, identity, record):
+    assert reducer.register(identity)
+    reducer.settle(identity, record, started=True, settled=True)
+    return record
+
+
+def test_no_workers_adds_nothing_and_never_started_work_does_not_create_a_gap():
+    reducer = task_rollup.TaskResourceReducer()
+    assert reducer.snapshot() == {
+        "resource_time": None,
+        "cpu_consumed": None,
+        "message_traffic": None,
+        "duration_contained": True,
+        "issues": [],
+    }
+    identity = _identity()
+    assert reducer.register(identity)
+    reducer.settle(identity, started=False)
+    assert reducer.snapshot()["resource_time"] is None
+
+
+def test_distinct_physical_workers_sum_their_own_lifetimes():
+    reducer = task_rollup.TaskResourceReducer()
+    first, second = _identity(), _identity("second")
+    _fold(reducer, first, _report())
+    _fold(reducer, second, _report(seconds=5, cpu_seconds=4))
+    values = reducer.snapshot()
+    assert values["resource_time"] == {
+        "cpu": {"unit_seconds": 30},
+        "memory": {"byte_seconds": 15360},
+        "gpu": {"instance_seconds": 15},
+    }
+    assert values["cpu_consumed"] == {"cpu_seconds": 12}
+    assert values["message_traffic"] == {"sent_bytes": 20, "received_bytes": 40}
+    assert values["duration_contained"]
+
+
+def test_equivalent_repeated_reports_do_not_add_compute_or_traffic():
+    reducer = task_rollup.TaskResourceReducer()
+    identity = _identity()
+    _fold(reducer, identity, _report())
+    expected = reducer.snapshot()
+    reducer.settle(identity, _report(seconds=10.0, cpu_seconds=8.0), started=True, settled=True)
+    assert reducer.snapshot() == expected
+    assert not reducer.register(identity)
+
+
+def test_conflicting_repeat_retains_first_subtotal_and_marks_a_gap():
+    reducer = task_rollup.TaskResourceReducer()
+    identity = _identity()
+    _fold(reducer, identity, _report())
+    reducer.settle(identity, _report(seconds=20, cpu_seconds=16), started=True, settled=True)
+    values = reducer.snapshot()
+    assert values["resource_time"]["gpu"]["instance_seconds"] == 10
+    assert values["cpu_consumed"] == {"status": "partial", "cpu_seconds": 8}
+    assert [issue["code"] for issue in values["issues"] if issue["metric"] == "cpu_consumed"] == [
+        "observation_incomplete"
+    ]
+    assert values["message_traffic"]["sent_bytes"] == 10
+
+
+@pytest.mark.parametrize("settled", [False, True])
+def test_missing_or_unsettled_worker_keeps_existing_values_and_marks_quality(settled):
+    reducer = task_rollup.TaskResourceReducer()
+    identity = _identity()
+    _fold(reducer, identity, _report())
+    missing = _identity("missing")
+    assert reducer.register(missing)
+    reducer.settle(missing, started=True, settled=settled)
+    values = reducer.snapshot()
+    assert values["resource_time"]["gpu"]["instance_seconds"] == 10
+    assert values["resource_time"]["status"] == "partial"
+    assert values["cpu_consumed"]["cpu_seconds"] == 8
+    assert values["duration_contained"] is settled
+
+
+def test_incomplete_snapshot_preserves_values_without_changing_stored_totals():
+    reducer = task_rollup.TaskResourceReducer()
+    identity = _identity()
+    _fold(
+        reducer,
+        identity,
+        _report(seconds=0, cpu_seconds=0, message_traffic={"sent_bytes": 0, "received_bytes": 10**50}),
+    )
+    complete = reducer.snapshot()
+    stored = deepcopy(reducer._totals)
+    unresolved = _identity("unresolved")
+    assert reducer.register(unresolved)
+
+    values = reducer.snapshot()
+    assert values["resource_time"] == {**complete["resource_time"], "status": "partial"}
+    assert values["cpu_consumed"] == {"cpu_seconds": 0, "status": "partial"}
+    assert values["message_traffic"] == {"sent_bytes": 0, "received_bytes": 10**50, "status": "partial"}
+    assert not values["duration_contained"]
+    assert reducer._totals == stored
+    assert reducer.snapshot() == values
+
+    values["resource_time"]["cpu"]["unit_seconds"] = 99
+    assert reducer.snapshot()["resource_time"]["cpu"]["unit_seconds"] == 0
+    reducer.settle(unresolved, started=False)
+    assert reducer.snapshot() == complete
+    assert reducer._totals == stored
+
+
+def test_late_confirmed_settlement_can_resolve_a_temporary_scope_gap():
+    reducer = task_rollup.TaskResourceReducer()
+    identity = _identity()
+    record = _report()
+    assert reducer.register(identity)
+    reducer.settle(identity, record, started=True, settled=False)
+    assert not reducer.snapshot()["duration_contained"]
+    reducer.settle(identity, record, started=True, settled=True)
+    values = reducer.snapshot()
+    assert values["duration_contained"]
+    assert values["cpu_consumed"] == {"cpu_seconds": 8}
+    assert "status" not in values["resource_time"]
+
+
+def test_partial_cpu_does_not_discard_complete_capacity_or_traffic():
+    reducer = task_rollup.TaskResourceReducer()
+    identity = _identity()
+    _fold(
+        reducer,
+        identity,
+        _report(cpu_consumed={"status": "partial", "issues": ["attribution_incomplete"], "cpu_seconds": 8}),
+    )
+    values = reducer.snapshot()
+    assert "status" not in values["resource_time"]
+    assert [issue["code"] for issue in values["issues"] if issue["metric"] == "cpu_consumed"] == [
+        "attribution_incomplete"
+    ]
+    assert "status" not in values["message_traffic"]
+
+
+@pytest.mark.parametrize("reason", ["unsupported", "malformed_source"])
+def test_unavailable_capacity_keeps_prior_capacity_and_this_workers_cpu_and_traffic(reason):
+    reducer = task_rollup.TaskResourceReducer()
+    first, second = _identity(), _identity("second")
+    _fold(reducer, first, _report())
+    _fold(
+        reducer,
+        second,
+        _report(resource_capacity={"status": "unavailable", "issues": [reason]}),
+    )
+    values = reducer.snapshot()
+    assert values["resource_time"]["gpu"]["instance_seconds"] == 10
+    assert [issue["code"] for issue in values["issues"] if issue["metric"] == "resource_time"] == [
+        "observation_incomplete"
+    ]
+    assert values["cpu_consumed"] == {"cpu_seconds": 16}
+    assert values["message_traffic"] == {"sent_bytes": 20, "received_bytes": 40}
+
+
+def test_unregistered_or_mismatched_claims_never_add_a_new_execution():
+    reducer = task_rollup.TaskResourceReducer()
+    identity = _identity()
+    reducer.settle(identity, _report(), started=True, settled=True)
+    assert reducer.snapshot()["resource_time"] is None
+    assert reducer.register(identity)
+    assert not reducer.register(replace(identity, task_name="different"))
+    assert reducer.snapshot()["resource_time"]["status"] == "unavailable"
+
+
+def test_key_limit_freezes_without_evicting_or_recounting_existing_sources(monkeypatch):
+    monkeypatch.setattr(task_rollup, "_MAX_SCOPES", 1)
+    reducer = task_rollup.TaskResourceReducer()
+    identity = _identity()
+    record = _fold(reducer, identity, _report())
+    assert not reducer.register(_identity("new"))
+    reducer.settle(identity, record, started=True, settled=True)
+    assert len(reducer._scopes) == 1
+    assert reducer.snapshot()["cpu_consumed"]["cpu_seconds"] == 8
+    assert reducer.snapshot()["cpu_consumed"]["status"] == "partial"
+    assert not reducer.snapshot()["duration_contained"]
+
+
+def test_serialized_ledger_limit_rejects_growth_before_storing_a_contribution(monkeypatch):
+    monkeypatch.setattr(task_rollup, "_MAX_STATE_BYTES", 1700)
+    reducer = task_rollup.TaskResourceReducer()
+    identity = TaskAttemptIdentity("job", "site", "task", "t" * 300, "first")
+    _fold(reducer, identity, _report())
+    assert reducer._frozen
+    assert reducer._scopes[task_rollup._key(identity)].record is None
+    assert reducer.snapshot()["cpu_consumed"]["status"] == "unavailable"
+    assert reducer.snapshot()["duration_contained"]  # Missing values do not imply an unsettled worker.
+    assert not reducer.register(_identity("later"))
+    assert not reducer.snapshot()["duration_contained"]
+
+
+def test_overflow_preserves_valid_dimensions_and_the_previous_cpu_subtotal():
+    reducer = task_rollup.TaskResourceReducer()
+    first, second = _identity(), _identity("second")
+    _fold(reducer, first, _report(seconds=1, cpu_seconds=1e308))
+    _fold(reducer, second, _report(seconds=1e308, cpu_seconds=1e308))
+    values = reducer.snapshot()
+    assert values["resource_time"]["gpu"]["instance_seconds"] == 1e308
+    assert values["resource_time"]["memory"]["byte_seconds"] == 1024
+    assert values["resource_time"]["status"] == "partial"
+    assert values["cpu_consumed"] == {"status": "partial", "cpu_seconds": 1e308}
+    assert [issue["code"] for issue in values["issues"] if issue["metric"] == "cpu_consumed"] == [
+        "observation_incomplete"
+    ]
+
+
+@pytest.mark.parametrize(
+    "record",
+    [None, {}, 42, {"issues": None}, _report(extra="x" * task_rollup.MAX_WORKER_RECORD_BYTES)],
+    ids=["missing", "empty", "non-object", "invalid-issues", "oversized"],
+)
+def test_missing_or_malformed_diagnostics_keep_prior_subtotals(record):
+    reducer = task_rollup.TaskResourceReducer()
+    identity = _identity()
+    _fold(reducer, identity, _report())
+    _fold(reducer, _identity("second"), record)
+    assert reducer.snapshot()["cpu_consumed"] == {"cpu_seconds": 8, "status": "partial"}
+    assert reducer.snapshot()["duration_contained"]
+
+
+def test_fork_reset_discards_parent_ledger():
+    reducer = task_rollup.TaskResourceReducer()
+    task_rollup.install_task_resource_reducer(reducer)
+    assert task_rollup.get_task_resource_reducer() is reducer
+    task_rollup._reset_after_fork()
+    assert task_rollup.get_task_resource_reducer() is None

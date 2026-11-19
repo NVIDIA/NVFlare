@@ -596,6 +596,12 @@ class TestSensitiveOutputRedaction:
         ("text", "expected"),
         [
             ('password="correct horse battery staple"', 'password="<redacted>"'),
+            ("token='registration-secret' ssid='server-session'", "token='<redacted>' ssid='server-session'"),
+            ('{"token": "signed-session-secret"}', '{"token": "<redacted>"}'),
+            ("registration_token=registration-secret", "registration_token=<redacted>"),
+            ("registration-token='registration secret'", "registration-token='<redacted>'"),
+            ("--token signed-session-secret --verbose", "--token <redacted> --verbose"),
+            ("--registration-token=registration-secret", "--registration-token=<redacted>"),
             (
                 '{"client_secret": "alpha beta gamma", "safe": true}',
                 '{"client_secret": "<redacted>", "safe": true}',
@@ -624,6 +630,52 @@ class TestSensitiveOutputRedaction:
         value = {"headers": {"Authorization": "Bearer sk-live-abc123"}}
 
         assert cli_output.sanitize_cli_output(value) == {"headers": {"Authorization": "<redacted>"}}
+
+    @pytest.mark.parametrize("key", ["token", "registration_token", "registration-token", "session_token"])
+    def test_redacts_token_fields_without_changing_input(self, key):
+        value = {"nested": {key: "credential-secret", "data": "ordinary result"}}
+
+        assert cli_output.sanitize_cli_output(value) == {"nested": {key: "<redacted>", "data": "ordinary result"}}
+        assert value == {"nested": {key: "credential-secret", "data": "ordinary result"}}
+
+    def test_redacts_hci_token_items_without_changing_command_data(self):
+        token_item = {"type": "token", "data": "signed-session-secret"}
+        command_item = {"type": "string", "data": "server started"}
+        value = {
+            "data": [token_item, command_item],
+            "nested": (token_item,),
+            "retry_token": {"supported": False},
+        }
+
+        assert cli_output.sanitize_cli_output(value) == {
+            "data": [{"type": "token", "data": "<redacted>"}, command_item],
+            "nested": ({"type": "token", "data": "<redacted>"},),
+            "retry_token": {"supported": False},
+        }
+        assert token_item == {"type": "token", "data": "signed-session-secret"}
+        assert command_item == {"type": "string", "data": "server started"}
+
+    @pytest.mark.parametrize("fmt", ["txt", "json", "jsonl"])
+    def test_print_human_redacts_hci_credentials_on_diagnostic_stream(self, fmt, capsys, monkeypatch):
+        monkeypatch.setattr(cli_output, "_output_format", fmt)
+        print_human(
+            {
+                "registration_token": "registration-secret",
+                "data": [{"type": "token", "data": "signed-session-secret"}],
+                "status": "ok",
+            }
+        )
+
+        captured = capsys.readouterr()
+        diagnostic = captured.out if fmt == "txt" else captured.err
+        assert "registration-secret" not in captured.out + captured.err
+        assert "signed-session-secret" not in captured.out + captured.err
+        assert "<redacted>" in diagnostic
+        assert "'status': 'ok'" in diagnostic
+
+    @pytest.mark.parametrize("text", ["retry_token=supported", "retry-token=supported", "token_count=7"])
+    def test_preserves_noncredential_token_diagnostics(self, text):
+        assert cli_output.sanitize_cli_output(text) == text
 
     def test_output_json_redacts_sensitive_fields(self, capsys):
         output({"credential": "cred-secret", "status": "ok"}, "json")

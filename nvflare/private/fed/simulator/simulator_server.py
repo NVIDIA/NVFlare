@@ -18,6 +18,12 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ServerCommandKey, SiteType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.apis.simulation_plan import (
+    SIMULATION_PLAN_FILE,
+    SIMULATION_PLAN_PROP,
+    SimulationPlanRuntime,
+    load_simulation_plan,
+)
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.message import Message
 from nvflare.private.fed.server.run_manager import RunManager
@@ -75,7 +81,14 @@ class SimulatorServerEngine(ServerEngine):
 
 class SimulatorRunManager(RunManager):
     def create_job_processing_context_properties(self, workspace, job_id):
-        return super().create_job_processing_context_properties(workspace, job_id)
+        props = super().create_job_processing_context_properties(workspace, job_id)
+        props[FLContextKey.SIMULATE_MODE] = True
+        plan_path = os.path.join(workspace.get_root_dir(), "local", SIMULATION_PLAN_FILE)
+        if os.path.isfile(plan_path):
+            props[SIMULATION_PLAN_PROP] = SimulationPlanRuntime(
+                load_simulation_plan(plan_path), os.path.join(workspace.get_run_dir(job_id), "simulation")
+            )
+        return props
 
 
 class SimulatorIdentityAsserter(IdentityAsserter):

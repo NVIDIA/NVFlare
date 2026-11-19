@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Client-side CIFAR-10 training shared by FedAvg and FedProx."""
+"""Client-side CIFAR-10 training shared by the synchronous Collab examples."""
+
+import hashlib
 
 import torch
 import torch.nn as nn
@@ -28,7 +30,14 @@ LOCAL_EPOCHS = 1
 
 
 class FedAvgClient:
-    def __init__(self):
+    """Local SGD with optional alternate shards and independently seeded loading.
+
+    Omitting split_root and seed preserves the original FedAvg configuration.
+    """
+
+    def __init__(self, split_root: str | None = None, seed: int | None = None):
+        self.split_root = split_root
+        self.seed = seed
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model = None
         self.optimizer = None
@@ -37,9 +46,26 @@ class FedAvgClient:
     # @collab.init runs once on each client before published methods are called.
     @collab.init
     def initialize(self):
+        site_name = collab.site_name
+        generator = None
+        if self.seed is not None:
+            # Keep existing seeds for simulator sites and derive a stable offset for custom names.
+            try:
+                site_offset = int(site_name.removeprefix("site-"))
+            except ValueError:
+                site_offset = int.from_bytes(hashlib.sha256(site_name.encode("utf-8")).digest()[:4], "big")
+            site_seed = self.seed + site_offset
+            torch.manual_seed(site_seed)
+            generator = torch.Generator(device="cpu").manual_seed(site_seed)
         self.model = SimpleNetwork().to(self.device)
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=LEARNING_RATE, momentum=0.9)
-        self.train_loader = make_data_loader(train=True, batch_size=BATCH_SIZE, site_name=collab.site_name)
+        self.train_loader = make_data_loader(
+            train=True,
+            batch_size=BATCH_SIZE,
+            site_name=site_name,
+            split_root=self.split_root,
+            generator=generator,
+        )
 
     def _before_train(self) -> None:
         pass
