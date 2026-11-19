@@ -224,6 +224,9 @@ def download_tensors(
 
     Returns: tuple of (error message if any, downloaded state dict).
 
+    Raises:
+        DownloadUnavailable: another attempt completed this source; retry the enclosing submission.
+
     """
     consumer = TensorConsumer(tensors_received_cb, cb_kwargs)
     download_object(
@@ -347,7 +350,9 @@ def download_tensors_to_disk(
 
     Returns: tuple of (error message if any, LazyTensorDict for lazy access).
 
-    Raises: DownloadCancelled if workflow cleanup cancelled this download.
+    Raises:
+        DownloadCancelled: workflow cleanup cancelled this download.
+        DownloadUnavailable: another attempt completed this source; retry the enclosing submission.
     """
     cell_ctx = cell.get_fobs_context()
     if root_dir is None:

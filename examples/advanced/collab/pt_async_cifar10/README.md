@@ -231,7 +231,11 @@ training uses ordinary persistent loaders, optimizer and scheduler state; this
 example does not impose per-assignment RNG scopes or replay.
 
 Actual arrivals depend on training and RPC timing. `schedule.jsonl` records the
-observed assignment IDs, physical/logical clients and base versions.
+observed assignment IDs, physical/logical clients and base versions. For
+simulator-owned replay and assignment seed helpers, see the separate
+[reproducible CIFAR-10 example](../pt_async_cifar10_reproducible/README.md).
+The [NumPy replay example](../numpy_async_reproducible/README.md) provides a
+small dataset-free path through the same simulator execution port.
 
 ## Outputs
 
