@@ -1881,8 +1881,8 @@ def _pl_trainer(**kwargs):
     return pl.Trainer(**options)
 
 
-def _fit_with_step_sync(fake, module, loader, sync_every_n_steps, val_loader=None, **trainer_kwargs):
-    with _flare(fake):
+def _fit_with_step_sync(fake, module, loader, sync_every_n_steps, val_loader=None, config=None, **trainer_kwargs):
+    with _flare(fake, config=config):
         trainer = _pl_trainer(**trainer_kwargs)
         lightning_patch(trainer, sync_every_n_steps=sync_every_n_steps)
         trainer.fit(module, train_dataloaders=loader, val_dataloaders=val_loader)
@@ -2500,12 +2500,143 @@ def test_patch_rejects_invalid_sync_every_n_steps(invalid):
             lightning_patch(trainer, sync_every_n_steps=invalid)
 
 
-def test_patch_rejects_step_sync_with_train_with_evaluation():
-    config = {ConfigKey.TASK_EXCHANGE: {ConfigKey.TRAIN_WITH_EVAL: True}}
-    with _flare(_FakeFlare([]), config=config):
+_TRAIN_WITH_EVAL = {ConfigKey.TASK_EXCHANGE: {ConfigKey.TRAIN_WITH_EVAL: True}}
+
+
+def _distinct_round_model(round_idx):
+    weight = torch.tensor([[float(round_idx), 0.0], [0.0, -float(round_idx)]])
+    return FLModel(params={"fc.weight": weight, "fc.bias": torch.zeros(2)}, current_round=round_idx, meta={})
+
+
+def test_step_sync_with_train_with_evaluation_sends_the_global_model_metrics_of_each_round():
+    tasks = [("train", _distinct_round_model(r)) for r in range(3)]
+    fake = _FakeFlare(tasks)
+    val_inputs, val_labels = _loader(2).dataset.tensors
+
+    _fit_with_step_sync(
+        fake,
+        RecordingNet(),
+        _loader(6),
+        sync_every_n_steps=2,
+        val_loader=_loader(2),
+        config=_TRAIN_WITH_EVAL,
+        max_epochs=1,
+    )
+
+    assert fake.steps() == [2, 2, 2]
+    for (_, global_model), sent in zip(tasks, fake.sent):
+        logits = val_inputs @ global_model.params["fc.weight"].T
+        assert set(sent.metrics) == {"val_loss", "accuracy"}
+        assert sent.metrics["val_loss"] == pytest.approx(F.cross_entropy(logits, val_labels).item())
+        assert sent.metrics["accuracy"] == pytest.approx((logits.argmax(1) == val_labels).float().mean().item())
+
+
+class DropoutNet(TinyLightningNet):
+    def __init__(self):
+        super().__init__()
+        self.losses = []
+
+    def training_step(self, batch, batch_idx):
+        inputs, labels = batch
+        loss = F.cross_entropy(self.fc(F.dropout(inputs, 0.5)), labels)
+        self.losses.append(loss.item())
+        self.log("train_loss", loss)
+        return loss
+
+
+class _RecordingLogger(pl.loggers.logger.Logger):
+    name = "recording"
+    version = 0
+
+    def __init__(self):
+        super().__init__()
+        self.rows = []
+
+    def log_metrics(self, metrics, step=None):
+        self.rows.append((step, {key: float(value) for key, value in metrics.items()}))
+
+    def log_hyperparams(self, *args, **kwargs):
+        pass
+
+
+class ValidationLosses(pl.Callback):
+    def __init__(self):
+        self.losses = []
+
+    def on_validation_end(self, trainer, pl_module):
+        self.losses.append(float(trainer.callback_metrics["val_loss"]))
+
+
+def _fit_dropout_net_with_in_fit_checks(tmp_path, config):
+    pl.seed_everything(0)
+    module, logger = DropoutNet(), _RecordingLogger()
+    checkpoint = pl.callbacks.ModelCheckpoint(monitor="val_loss", dirpath=tmp_path, save_top_k=1)
+    early_stopping = EarlyStopping(monitor="val_loss", patience=100)
+    validation_losses = ValidationLosses()
+    trainer = _fit_with_step_sync(
+        _FakeFlare(_train_tasks(4)),
+        module,
+        DataLoader(_loader(8).dataset, batch_size=1, shuffle=True),
+        sync_every_n_steps=2,
+        val_loader=_loader(2),
+        config=config,
+        max_epochs=1,
+        val_check_interval=3,
+        logger=logger,
+        log_every_n_steps=1,
+        enable_checkpointing=True,
+        callbacks=[checkpoint, early_stopping, validation_losses],
+    )
+    return dict(
+        losses=module.losses,
+        global_step=trainer.global_step,
+        logged=logger.rows,
+        best_score=float(checkpoint.best_model_score),
+        best_k=sorted(float(v) for v in checkpoint.best_k_models.values()),
+        early_stopping=(early_stopping.wait_count, float(early_stopping.best_score)),
+        callback_metrics=sorted(trainer.callback_metrics),
+        val_progress=trainer.fit_loop.epoch_loop.val_loop.batch_progress.state_dict(),
+        validation_losses=validation_losses.losses,
+    )
+
+
+def test_step_sync_global_model_validation_leaves_training_and_in_fit_validation_unchanged(tmp_path):
+    without = _fit_dropout_net_with_in_fit_checks(tmp_path / "without", config=None)
+    with_eval = _fit_dropout_net_with_in_fit_checks(tmp_path / "with", config=_TRAIN_WITH_EVAL)
+
+    other_callbacks_see_both = with_eval.pop("validation_losses")
+    in_fit_only = without.pop("validation_losses")
+    assert with_eval == without
+    assert len(other_callbacks_see_both) == len(in_fit_only) + 4
+
+
+@pytest.mark.parametrize("trainer_kwargs", [{}, {"limit_val_batches": 0}], ids=["no-val-loader", "no-val-batches"])
+def test_step_sync_with_train_with_evaluation_requires_validation_batches(trainer_kwargs):
+    val_loader = _loader(2) if trainer_kwargs else None
+    with pytest.raises(RuntimeError, match="no validation batches"):
+        _fit_with_step_sync(
+            _FakeFlare(_train_tasks(2)),
+            RecordingNet(),
+            _loader(4),
+            sync_every_n_steps=2,
+            val_loader=val_loader,
+            config=_TRAIN_WITH_EVAL,
+            max_epochs=1,
+            **trainer_kwargs,
+        )
+
+
+def test_lightning_keeps_the_private_attributes_global_model_validation_relies_on():
+    with _flare(_FakeFlare(_train_tasks(1))):
         trainer = _pl_trainer(max_epochs=1)
-        with pytest.raises(ValueError, match="train_with_evaluation"):
-            lightning_patch(trainer, sync_every_n_steps=2)
+    connector = trainer._logger_connector
+    for name in ("_callback_metrics", "_logged_metrics", "_progress_bar_metrics", "_first_loop_iter", "_current_fx"):
+        assert hasattr(connector, name), f"Lightning {pl.__version__} dropped _LoggerConnector.{name}"
+    loop = trainer.fit_loop.epoch_loop.val_loop
+    assert callable(loop.run) and hasattr(loop, "skip")
+    assert callable(loop._data_source.is_defined)
+    loop.batch_progress.load_state_dict(loop.batch_progress.state_dict())
+    assert "_last_val_time" in inspect.getsource(type(loop).on_run_end)
 
 
 _ROUND_HOOKS = ["on_fl_receive", "on_fl_model_loaded", "on_fl_before_send"]
