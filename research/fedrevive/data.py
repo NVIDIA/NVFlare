@@ -44,6 +44,17 @@ DELAY_SCHEDULES = {
 }
 
 
+def prepared_shard_name(logical_name: str) -> str:
+    """Map a server-assigned logical name to its prepared CIFAR shard."""
+    prefix, _, index = logical_name.partition("-")
+    if index.isdecimal():
+        if prefix == "client":
+            return logical_name
+        if prefix == "site" and int(index) > 0:
+            return f"client-{int(index) - 1}"
+    raise ValueError("Use site-N or client-N names with prepared CIFAR shards")
+
+
 def train_transform():
     return transforms.Compose(
         [

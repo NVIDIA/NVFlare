@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from data import train_transform
+from data import prepared_shard_name, train_transform
 from model import create_model, get_model_params, load_model_params
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets
@@ -51,7 +51,7 @@ def _trim_process_memory():
 class FedReviveClient:
     """Train prepared logical clients with one reusable physical-worker model.
 
-    The paper simulates K=100 concurrent *logical* clients, but creating that
+    The paper simulates 100 concurrent *logical* clients, but creating that
     many local NVFlare processes, dataset copies, thread pools, and CUDA
     contexts can exhaust a workstation.  A small pool of physical Collab sites
     instead multiplexes assignments.  Logical state lives in prepared shards
@@ -69,6 +69,7 @@ class FedReviveClient:
         device: str | None = "cpu",
         num_threads: int = 1,
         num_workers: int = 0,
+        run_seed: int = 10,
     ):
         self.data_root = data_root
         self.prepared_data_root = prepared_data_root
@@ -78,6 +79,7 @@ class FedReviveClient:
         self.device = device
         self.num_threads = num_threads
         self.num_workers = num_workers
+        self.run_seed = run_seed
         self.logger = get_obj_logger(self)
         self._dataset = None
         self._model = None
@@ -140,7 +142,7 @@ class FedReviveClient:
         model_version: int,
         global_model: dict[str, torch.Tensor],
         logical_assignments: dict[str, str],
-        train_seeds: dict[str, int],
+        train_seeds: dict[str, int] | None = None,
     ):
         if collab.is_aborted:
             return None
@@ -153,7 +155,11 @@ class FedReviveClient:
         physical_name = collab.site_name
         logical_name = logical_assignments[physical_name]
         assignment_id = int(assignment_ids[physical_name])
-        train_seed = int(train_seeds[physical_name])
+        shard_name = prepared_shard_name(logical_name)
+        if train_seeds is None:
+            train_seed = self.run_seed * 1_000_000 + assignment_id + 1
+        else:
+            train_seed = int(train_seeds[physical_name])
         torch.manual_seed(train_seed)
 
         device = self._device()
@@ -161,7 +167,7 @@ class FedReviveClient:
         model = load_model_params(self._model, global_model, target_device=device)
         optimizer = torch.optim.Adam(model.parameters(), lr=self.local_lr)
         criterion = nn.CrossEntropyLoss()
-        loader = self._loader(logical_name, train_seed)
+        loader = self._loader(shard_name, train_seed)
         iterator = iter(loader)
 
         model.train()
@@ -202,6 +208,7 @@ class FedReviveClient:
             "model_version": int(model_version),
             "logical_name": logical_name,
             "train_seed": train_seed,
+            "shard_name": shard_name,
         }
         self.logger.info(
             f"[{collab.call_info}] assignment={assignment_id} logical={logical_name} "
@@ -213,7 +220,7 @@ class FedReviveClient:
         # can be discarded here without losing client state.  DataLoader and
         # iterator deletion also closes any per-assignment loader workers.  Keep
         # only one reusable model on CPU between calls and release CUDA caches;
-        # this bounds resources by physical sites instead of logical K.
+        # this bounds resources by physical sites instead of logical concurrency.
         model.to("cpu")
         del optimizer, loader, iterator, inputs, labels, outputs, loss, criterion
         gc.collect()

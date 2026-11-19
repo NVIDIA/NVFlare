@@ -34,16 +34,50 @@ for _variable in (
 from client import FedReviveClient
 from data import DELAY_SCHEDULES, load_manifest, prepare_cifar10
 from fedrevive import FIGURE_2_METHOD_CONFIGS, ClassProportionSource, Method
-from server import FedReviveServer
+from server import FedReviveModelLoader, FedReviveModelOps, FedReviveObserver
+from update import FedAvgUpdate, FedReviveUpdate
+from workflow import FedReviveRecipe
 
-from nvflare.collab import CollabRecipe
+from nvflare.apis.simulation_plan import ASYNC_EXECUTION, load_simulation_plan
+from nvflare.collab import FedBuffRecipe
 from nvflare.recipe import SimEnv
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
 
+class FedReviveSimEnv(SimEnv):
+    """Reserve a fresh experiment directory before simulator startup."""
+
+    def deploy(self, job):
+        workspace = Path(self.workspace_root) / job.name
+        # Simulator startup briefly removes the job directory, so admission
+        # has to be reserved beside it.
+        reservation = workspace.with_name(f".{workspace.name}.running")
+        try:
+            reservation.mkdir(parents=True)
+        except FileExistsError:
+            raise FileExistsError(
+                f"FedRevive workspace is reserved: {workspace}. Choose a fresh workspace root."
+            ) from None
+        try:
+            if workspace.exists() or workspace.is_symlink():
+                raise FileExistsError(
+                    f"FedRevive workspace already exists: {workspace}. Choose a fresh workspace root."
+                )
+            return super().deploy(job)
+        finally:
+            reservation.rmdir()
+
+
 def define_parser():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--arrival-mode",
+        choices=("simulated", "actual", "replay"),
+        default="simulated",
+        help="Seeded paper phases, live arrivals, or a SimEnv plan",
+    )
+    parser.add_argument("--simulation-plan", help="SimEnv JSON plan required for --arrival-mode replay")
     parser.add_argument(
         "--method",
         choices=[method.value for method in Method],
@@ -57,17 +91,20 @@ def define_parser():
     )
     parser.add_argument("--num-logical-clients", type=int, default=1000)
     parser.add_argument(
+        "--concurrency",
         "--num-active-jobs",
         type=int,
         default=None,
-        help="K; defaults to the method preset",
+        help="Maximum concurrent logical clients; defaults to the method preset",
     )
-    parser.add_argument("--buffer-size", type=int, default=None, help="B; defaults to the method preset")
+    parser.add_argument(
+        "--buffer-size", type=int, default=None, help="Contributions per global model; defaults to the method preset"
+    )
     parser.add_argument(
         "--min-open-slots",
         type=int,
         default=None,
-        help="O; defaults to the method preset",
+        help="Free logical slots before refill; defaults to the method preset",
     )
     parser.add_argument("--server-lr", type=float, default=None)
     parser.add_argument(
@@ -89,7 +126,14 @@ def define_parser():
         help="Number of Gaussian inputs used for each class-proportion probe",
     )
     parser.add_argument("--max-time", type=float, default=200.0, help="Simulated-time budget")
-    parser.add_argument("--max-model-versions", type=int, default=100000)
+    parser.add_argument(
+        "--num-rounds",
+        "--max-model-versions",
+        dest="max_model_versions",
+        type=int,
+        default=100000,
+        help="Maximum global model publications",
+    )
     parser.add_argument("--data-root", default="/tmp/cifar10")
     parser.add_argument("--prepared-data-root", default="/tmp/fedrevive/cifar10")
     parser.add_argument("--prepare-data", action="store_true")
@@ -111,7 +155,7 @@ def define_parser():
         "--in-time",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Accumulate accepted deltas in place; --no-in-time retains all B deltas (higher memory)",
+        help="Compatibility flag; shared async aggregation always accumulates in time",
     )
     parser.add_argument("--call-timeout", type=float, default=3600.0)
     parser.add_argument("--server-device", choices=("auto", "cpu", "cuda"), default="auto")
@@ -137,10 +181,16 @@ def _device(value: str):
 
 
 def validate_args(args):
+    if (args.arrival_mode == "replay") != (args.simulation_plan is not None):
+        raise ValueError("--arrival-mode replay requires --simulation-plan, which is only used in replay mode")
+    if not args.in_time:
+        raise ValueError("The shared async coordinator uses bounded in-time accumulation; remove --no-in-time")
     if args.num_clients < 1 or args.num_logical_clients < 1:
         raise ValueError("--num-clients and --num-logical-clients must be >= 1")
-    if args.max_time <= 0 or args.local_iterations < 1 or args.local_batch_size < 1:
-        raise ValueError("--max-time, --local-iterations, and --local-batch-size must be positive")
+    if args.arrival_mode == "simulated" and not args.max_time > 0:
+        raise ValueError("--max-time must be positive")
+    if args.local_iterations < 1 or args.local_batch_size < 1:
+        raise ValueError("--local-iterations and --local-batch-size must be positive")
     if args.local_lr <= 0 or args.call_timeout <= 0 or args.num_workers < 0:
         raise ValueError("--local-lr and --call-timeout must be positive; --num-workers must be nonnegative")
     if (args.generation_interval is not None and args.generation_interval < 1) or args.class_proportion_probe_count < 1:
@@ -154,9 +204,10 @@ def validate_args(args):
 
 
 def make_recipe(args):
+    validate_args(args)
     method = Method(args.method)
     preset = FIGURE_2_METHOD_CONFIGS[method]
-    active_jobs = preset.num_active_jobs if args.num_active_jobs is None else args.num_active_jobs
+    concurrency = preset.concurrency if args.concurrency is None else args.concurrency
     buffer_size = preset.buffer_size if args.buffer_size is None else args.buffer_size
     open_slots = preset.min_open_slots if args.min_open_slots is None else args.min_open_slots
     class_proportion_source = args.class_proportion_source
@@ -169,32 +220,49 @@ def make_recipe(args):
     generation_interval = args.generation_interval
     if generation_interval is None:
         generation_interval = 10 if method is Method.FEDREVIVE else 1
-    if active_jobs < 1:
-        raise ValueError("K must be positive")
-    if buffer_size < 1 or not 1 <= open_slots <= active_jobs:
-        raise ValueError("B must be positive and O must be between 1 and K")
+    if concurrency < 1:
+        raise ValueError("concurrency must be positive")
+    if buffer_size < 1 or not 1 <= open_slots <= concurrency:
+        raise ValueError("buffer_size must be positive and min_open_slots must be between 1 and concurrency")
 
-    server = FedReviveServer(
-        method=method,
-        data_root=args.data_root,
-        prepared_data_root=args.prepared_data_root,
-        max_time=args.max_time,
-        num_active_jobs=active_jobs,
+    if args.arrival_mode == "actual" and (
+        concurrency > args.num_clients or args.num_clients > args.num_logical_clients
+    ):
+        raise ValueError("Actual arrivals require concurrency <= physical clients <= prepared logical clients")
+    server_lr = preset.server_lr if args.server_lr is None else args.server_lr
+    if server_lr <= 0 or args.max_model_versions < 1:
+        raise ValueError("server_lr and num_rounds must be positive")
+    config = vars(args).copy()
+    config.pop("simulation_plan")
+    config.update(
+        concurrency=concurrency,
         buffer_size=buffer_size,
         min_open_slots=open_slots,
-        server_lr=args.server_lr,
-        call_timeout=args.call_timeout,
-        device=_device(args.server_device),
-        eval_batch_size=args.eval_batch_size,
-        eval_interval=args.eval_interval,
-        in_time=args.in_time,
-        setup_seed=args.setup_seed,
-        run_seed=args.run_seed,
-        max_model_versions=args.max_model_versions,
+        server_lr=server_lr,
         class_proportion_source=class_proportion_source,
         generation_interval=generation_interval,
-        class_proportion_probe_count=args.class_proportion_probe_count,
     )
+    observer = FedReviveObserver(
+        data_root=args.data_root,
+        run_config=config,
+        device=_device(args.server_device),
+        eval_batch_size=args.eval_batch_size,
+        eval_interval=(1 if method is Method.FEDAVG else 10) if args.eval_interval is None else args.eval_interval,
+    )
+    transform = (
+        FedReviveUpdate(
+            args.prepared_data_root,
+            device=_device(args.server_device),
+            generation_interval=generation_interval,
+            class_proportion_source=class_proportion_source,
+            probe_count=args.class_proportion_probe_count,
+            run_seed=args.run_seed,
+        )
+        if method is Method.FEDREVIVE
+        else None
+    )
+    if method is Method.FEDAVG:
+        transform = FedAvgUpdate(buffer_size)
     client = FedReviveClient(
         data_root=args.data_root,
         prepared_data_root=args.prepared_data_root,
@@ -203,31 +271,69 @@ def make_recipe(args):
         local_lr=args.local_lr,
         device=_device(args.client_device),
         num_workers=args.num_workers,
+        run_seed=args.run_seed,
     )
     # SimEnv creates one process per physical site.  Physical sites are only a
-    # bounded execution pool and are deliberately independent of logical K.
+    # bounded execution pool and are deliberately independent of logical concurrency.
     # Bound Collab's call pools to that small pool instead of retaining the
-    # recipe default of 100 threads in every process.  This prevents a K=100
+    # recipe default of 100 threads in every process.  This prevents a concurrency=100
     # experiment from multiplying thread stacks and queued RPC state while the
     # server-side event scheduler still reproduces all 100 logical jobs.
     server_call_threads = max(8, 2 * args.num_clients)
     client_call_threads = 4
-    recipe = CollabRecipe(
-        job_name=f"fedrevive_{method.value}",
-        server=server,
+    paper_schedule = args.arrival_mode == "simulated"
+    recipe_class = FedReviveRecipe if paper_schedule else FedBuffRecipe
+    schedule_options = (
+        dict(prepared_data_root=args.prepared_data_root, run_seed=args.run_seed, max_time=args.max_time)
+        if paper_schedule
+        else {}
+    )
+    recipe = recipe_class(
+        name=f"fedrevive_{method.value}",
+        model_loader=FedReviveModelLoader(setup_seed=args.setup_seed),
+        model_ops=FedReviveModelOps(),
+        observer=observer,
+        num_rounds=args.max_model_versions,
+        concurrency=concurrency,
+        buffer_size=buffer_size,
+        min_open_slots=open_slots,
+        server_lr=server_lr,
+        update_transform=transform,
+        call_timeout=args.call_timeout,
         client=client,
         min_clients=args.num_clients,
         sync_task_timeout=600,
         max_call_threads_for_server=server_call_threads,
         max_call_threads_for_client=client_call_threads,
+        **schedule_options,
     )
     recipe.set_client_prop("data_root", args.data_root)
     recipe.set_client_prop("prepared_data_root", args.prepared_data_root)
     for filename in ("model.py", "data.py"):
         recipe.add_client_file(str(PROJECT_DIR / filename))
-    for filename in ("model.py", "data.py", "fedrevive.py", "dfkd.py"):
+    for filename in (
+        "model.py",
+        "data.py",
+        "fedrevive.py",
+        "dfkd.py",
+        "update.py",
+    ):
         recipe.add_server_file(str(PROJECT_DIR / filename))
-    return recipe, (active_jobs, buffer_size, open_slots)
+    if paper_schedule:
+        for filename in ("schedule.py", "storage.py", "workflow.py"):
+            recipe.add_server_file(str(PROJECT_DIR / filename))
+    return recipe, (concurrency, buffer_size, open_slots)
+
+
+def make_sim_env(args, manifest):
+    options = dict(num_clients=args.num_clients, workspace_root=args.workspace_root)
+    if args.arrival_mode != "replay":
+        return FedReviveSimEnv(**options)
+    plan = load_simulation_plan(args.simulation_plan)
+    missing = set(plan[ASYNC_EXECUTION]["logical_sequence"]) - set(manifest["runtime_profiles"])
+    if missing:
+        raise ValueError(f"Simulation plan names unprepared logical clients: {sorted(missing)}")
+    return FedReviveSimEnv(reprod=True, plan=plan, **options)
 
 
 def main():
@@ -250,25 +356,30 @@ def main():
             f"but --num-logical-clients={args.num_logical_clients}"
         )
     prepared_schedule = manifest.get("delay_schedule", "default")
-    if prepared_schedule != args.delay_schedule:
+    if args.arrival_mode == "simulated" and prepared_schedule != args.delay_schedule:
         raise ValueError(
             f"Prepared data uses delay schedule {prepared_schedule!r}, but --delay-schedule={args.delay_schedule!r}"
         )
 
-    recipe, (active_jobs, buffer_size, open_slots) = make_recipe(args)
+    recipe, (concurrency, buffer_size, open_slots) = make_recipe(args)
     print("=" * 80)
     print(f"FEDREVIVE COLLAB FIGURE 2: {args.method}")
     print(f"  Physical clients: {args.num_clients}")
     print(f"  Logical clients: {args.num_logical_clients}")
-    print(f"  K/B/O: {active_jobs}/{buffer_size}/{open_slots}")
+    print(f"  Concurrency: {concurrency}")
+    print(f"  Buffer size: {buffer_size}")
+    print(f"  Minimum open slots: {open_slots}")
     print(f"  In-time accumulation: {args.in_time}")
-    print(f"  Simulated-time budget: {args.max_time}")
-    print(f"  Delay schedule: {args.delay_schedule}")
-    print(f"  Class-proportion source: {recipe.server.class_proportion_source.value}")
+    if args.arrival_mode == "simulated":
+        print(f"  Simulated-time budget: {args.max_time}")
+        print(f"  Delay schedule: {args.delay_schedule}")
+    print(f"  Global-version budget: {args.max_model_versions}")
+    print(f"  Arrival mode: {args.arrival_mode}")
+    print(f"  Class-proportion source: {recipe.server.observer.run_config['class_proportion_source']}")
     print(f"  Class-proportion probe count: {args.class_proportion_probe_count}")
-    print(f"  Generation interval: {recipe.server.generation_interval}")
+    print(f"  Generation interval: {recipe.server.observer.run_config['generation_interval']}")
     print("=" * 80)
-    run = recipe.execute(SimEnv(num_clients=args.num_clients, workspace_root=args.workspace_root))
+    run = recipe.execute(make_sim_env(args, manifest))
     print("Job Status:", run.get_status())
     print("Results at:", run.get_result())
 
