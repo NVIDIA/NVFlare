@@ -241,8 +241,8 @@ distinct within that module.
      - Assignment IDs, active bases and versions; client concurrency, refill and contribution
        budget; result/weight validation; exact-base deltas; buffered publication;
        update-transform context.
-     - Collab RPCs, execution environments, result arrival timing and
-       framework-specific arithmetic.
+     - Collab RPCs, execution environments, result arrival timing,
+       framework-specific arithmetic and simulation plans.
    * - Example model helpers
      - Snapshots, shape/dtype/finite checks, differences, update application and
        non-floating buffer rules.
@@ -251,10 +251,22 @@ distinct within that module.
      - Initial model construction, dataset/shards, training and optimizer state;
        evaluation, metrics and artifacts through observer hooks.
      - Core assignment/version accounting and buffered aggregation.
+   * - :ref:`Simulation plan runtime <reproducible_simulation>`
+     - Simulator-only logical starts, acceptance, virtual time,
+       disk evidence and model history.
+     - Recipe construction, exported job configuration and production arrivals.
+   * - :github_nvflare_link:`Reproducible simulation example
+       <examples/advanced/collab/numpy_async_reproducible>`
+     - A complete ``FedBuffRecipe`` composition with independent client seed
+       streams and simulator plans for fixed acceptance or virtual timing.
+     - Shared execution controls, retained model/result evidence and numerical
+       acceptance are supplied by the simulator and core recipe.
+
 ``FedBuffRecipe`` builds ``FedBuffWorkflow``, which invokes ``FedBuffTrainingCoordinator``.
 The coordinator performs no Collab calls and uses caller-supplied model arithmetic.
-The workflow accepts actual arrivals and the coordinator performs the numerical
-acceptance and publication. Core does not import the examples.
+Both live and planned runs use the same numerical acceptance/publication path.
+``SimEnv`` selects planned execution and owns retained bases/results; core never
+imports the examples.
 
 The same module defines ``Assignment``, ``FedBuffResult``, ``AcceptedUpdate``,
 ``FedBuffEvent``. They describe server-local state and hook inputs, and introduce
@@ -264,6 +276,20 @@ import ``FedBuffRecipe`` from ``nvflare.collab``; alternative orchestration can
 import ``FedBuffTrainingCoordinator`` from ``nvflare.collab.fedbuff_recipe``. Protected
 workflow methods are implementation reuse points rather than a public scheduler/storage
 plugin API.
+
+Reproducible Simulation
+-----------------------
+
+Actual arrivals depend on training/RPC timing; fixed seeds alone do not make them
+reproducible. :ref:`Reproducible Simulation Plans <reproducible_simulation>`
+describe simulator-owned fixed acceptance and virtual-time controls for this
+same recipe. The
+:github_nvflare_link:`reproducible example <examples/advanced/collab/numpy_async_reproducible>`
+shows an ordinary ``FedBuffRecipe`` run with a simulator-owned plan, seed
+helpers and retained experiment evidence. Its concrete model and seed helpers
+remain example code, outside the installed SDK. A new async algorithm can
+connect its assignment, acceptance and publication operations through the
+shared execution port; this example needs no recipe subclass.
 
 Failure and Recovery Limits
 ---------------------------

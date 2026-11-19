@@ -264,6 +264,30 @@ jobs:
           python3 -m pytest -q
           tests/integration_test/fast/hello_pt_environment_continuity_test.py
 
+  distillation-backend-tests:
+    needs: full-ci-selection
+    if: needs.full-ci-selection.outputs.run-full-ci == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install CPU PyTorch and optional distillation backends
+        run: |
+          bash ci/install_cpu_torch.sh 'torch==2.12.0' 'torchvision==0.27.0'
+          python3 -m pip install -e '.[test_support]' 'nvidia-modelopt==0.48.0' 'torchdistill==1.1.5'
+      - name: Run native and optional backend contract tests
+        run: |
+          python3 -c 'import modelopt.torch.distill; import torchdistill.core.distillation'
+          python3 -m pytest -q -rs --cov=nvflare/app_opt/pt/distillation --cov-report=term-missing \
+            tests/unit_test/app_opt/pt/distillation_test.py \
+            tests/unit_test/app_opt/pt/distiller_backend_test.py
+
   hf-client-api-tests:
     needs: full-ci-selection
     if: needs.full-ci-selection.outputs.run-full-ci == 'true'
