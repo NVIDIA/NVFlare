@@ -411,7 +411,7 @@ def test_exited_process_leader_does_not_release_owned_children(monkeypatch, late
                 assert service.shutdown(timeout=5) == ()
 
 
-def test_bounded_cleanup_wait_warns_and_keeps_the_physical_owner():
+def test_bounded_cleanup_wait_signals_pending_and_keeps_the_physical_owner():
     from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers
 
     p = runtime_fixture()
@@ -421,7 +421,8 @@ def test_bounded_cleanup_wait_warns_and_keeps_the_physical_owner():
     p.owner.thread.is_alive.return_value = True
     native = Mock(spec=ProcessHandle)
     wrapped = JobHandleWithTaskWorkers(native, p.owner, cleanup_timeout=0.01)
-    assert wrapped.wait() is None
+    with pytest.raises(TimeoutError, match="coordinator or task-worker cleanup remains unconfirmed"):
+        wrapped.wait()
     p.owner.warn_cleanup_pending.assert_called_once_with()
     assert p.owner.thread.is_alive()
     native.wait.assert_not_called()
@@ -515,7 +516,8 @@ def test_stalled_docker_control_cannot_block_worker_cancel_or_spawn_more_control
             for _ in range(5):
                 owner.observe_cj()
                 assert owner.cj_control_thread is control
-            assert wrapped.wait() is None
+            with pytest.raises(TimeoutError, match="cleanup remains unconfirmed"):
+                wrapped.wait()
             assert owner.thread.is_alive()
             owner.on_done.assert_not_called()
         finally:

@@ -268,9 +268,10 @@ CP binds resources, invokes ``sbatch/squeue/sacct/scancel``, and retains cleanup
 after CJ loss, cancellation or a lost reply. CP shutdown fences new launches,
 keeps owners for in-flight coordinator creation, and stops late-created
 coordinators. Its cleanup wait uses ``task_execution.finalization_timeout``;
-a timeout warns and returns while the task service retains physical cleanup
-ownership for as long as CP remains alive. This does not add caller-side retention
-of registration, admission resources or credentials. The Docker CJ needs no
+a timeout signals pending cleanup to the shared client executor, which retains
+registration, admission resources and credentials until cleanup is confirmed.
+The task service continues physical cleanup for as long as CP remains alive;
+late confirmation automatically finalizes the retained job once. The Docker CJ needs no
 ``SLURM_JOB_ID`` or Slurm child marker. The existing Slurm CJ profile still
 requires them. Application success and scheduler-confirmed release remain
 separate outcomes. Automatic CJ recovery is disabled, and parent-crash

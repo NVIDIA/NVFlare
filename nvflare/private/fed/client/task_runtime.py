@@ -68,8 +68,8 @@ class _TaskExecutionState:
 class JobHandleWithTaskWorkers(JobHandleSpec):
     """Preserve CJ outcome while bounding the wait for parent-owned cleanup.
 
-    A cleanup timeout warns and returns; CP's physical owner keeps retrying.
-    Caller registration/admission retention belongs to the shared executor.
+    A managed cleanup timeout raises so the shared executor retains registration,
+    admission resources and credentials while CP's physical owner keeps retrying.
     """
 
     def __init__(self, handle, owner, cleanup_timeout=30.0, *, allow_restart=True):
@@ -127,7 +127,7 @@ class JobHandleWithTaskWorkers(JobHandleSpec):
         if self.owner.thread.is_alive():
             if getattr(self.owner, "manage_cj", False):
                 self.owner.warn_cleanup_pending()
-                return
+                raise TimeoutError(f"job {self.owner.job_id}: coordinator or task-worker cleanup remains unconfirmed")
             with self.owner.lock:
                 pending = [a.execution_id for a in self.owner.attempts.values() if not a.status.settled]
             logging.getLogger(__name__).warning(

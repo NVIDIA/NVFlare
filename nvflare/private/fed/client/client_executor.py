@@ -62,7 +62,6 @@ from nvflare.security.logging import secure_format_exception, secure_log_traceba
 from nvflare.utils.job_launcher_utils import has_cj_resource_spec, validate_cj_execution_lifetime
 
 from .client_status import ClientStatus, get_status_message
-from .task_execution_policy import TaskExecutionPolicy
 
 REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: PROCESS_EXIT_REASON[ProcessExitCode.EXCEPTION],
@@ -504,10 +503,6 @@ class JobExecutor(ClientExecutor):
 
         fl_ctx.set_prop(FLContextKey.ALLOCATED_RESOURCES, allocated_resource, private=True, sticky=False)
         job_launcher: JobLauncherSpec = get_job_launcher(job_meta, fl_ctx)
-        if has_cj_resource_spec(job_meta, client.client_name):
-            from .task_execution_policy import TaskExecutionPolicy, _get_cj_preparer
-
-            _get_cj_preparer(TaskExecutionPolicy.from_workspace(workspace).launcher, job_launcher)
 
         # prepare command args for the job process
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
