@@ -158,6 +158,11 @@ Rules:
      `on_train_batch_start` return `-1` once, and Lightning ends the epoch before the batch runs. Raising
      `StopIteration` from the callback would also work but relies on `TrainingEpochLoop.run` catching it, which
      Lightning does not document; a supported way for callbacks is requested in Lightning-AI/pytorch-lightning#22151.
+   - Lightning still steps the LR schedulers for a batch skipped with `-1`, although no optimizer step ran, so a
+     bounded scheduler (`OneCycleLR` sized for `num_rounds * N`) would raise and `fit()` would fail. The callback
+     sets `trainer.strategy.lr_scheduler_configs` to `[]` for the skipped batch and puts it back at
+     `on_train_epoch_end`, which Lightning calls right after the skip, before the epoch-interval step that a stop at
+     batch end also gets; `on_train_end` and `on_exception` put it back as well.
 3. **The server's horizon.** `on_train_start` sets `fit_loop.max_epochs` and `epoch_loop.max_steps` to `-1`, and
    clears `min_epochs` and `min_steps`, which would otherwise keep Lightning from honouring the stop, so only the
    server ends a normal run. `on_train_end` and `on_exception` put the four limits back, so a later `fit()` on the
@@ -381,6 +386,7 @@ enforces NVFlare's exchange order: a send without a preceding receive fails.
 | Passing the trainer's own step budget logs one scheduler warning | warning count past `max_epochs` |
 | In-fit validation runs between send and receive | call order of send, validation and receive |
 | The server finishing first stops training cleanly | `receive()` returns `None` |
+| A bounded LR scheduler sized for the run survives a stop found at a batch start | `OneCycleLR` with a later callback clearing `should_stop` |
 | A non-train task mid-fit stops training and is handled by a later `trainer.validate()` | evaluate task after a sync |
 | SCAFFOLD and FedProx produce per-sync metadata | existing algorithm fixtures in step mode |
 | Hooks are called in order, once per received model, in both modes; edits take effect | recording callback; a hook that adds to `meta` and one that edits the received params |

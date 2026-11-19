@@ -487,6 +487,7 @@ class _StepSyncFLCallback(_FLCallbackBase):
         self._trainer_step_budget = None
         self._trainer_limits = None
         self._received_model = None
+        self._held_lr_scheduler_configs = None
 
     def on_train_start(self, trainer, pl_module):
         budget = trainer.estimated_stepping_batches
@@ -523,6 +524,8 @@ class _StepSyncFLCallback(_FLCallbackBase):
                 self._receive_next_round(trainer)
             received, self._received_model = self._received_model, None
             if received is None:
+                self._held_lr_scheduler_configs = trainer.strategy.lr_scheduler_configs
+                trainer.strategy.lr_scheduler_configs = []
                 _skip_rest_of_epoch(pl_module)
                 return
             input_model = self._load_received_model(trainer, pl_module, received)
@@ -552,6 +555,9 @@ class _StepSyncFLCallback(_FLCallbackBase):
             if not trainer.should_stop:
                 self._receive_next_round(trainer)
 
+    def on_train_epoch_end(self, trainer, pl_module):
+        self._restore_lr_scheduler_configs(trainer)
+
     def on_train_end(self, trainer, pl_module):
         self._restore_trainer_limits(trainer)
         self._received_model = None
@@ -570,7 +576,13 @@ class _StepSyncFLCallback(_FLCallbackBase):
     def on_exception(self, trainer, pl_module, exception):
         self._restore_trainer_limits(trainer)
 
+    def _restore_lr_scheduler_configs(self, trainer):
+        if self._held_lr_scheduler_configs is not None:
+            trainer.strategy.lr_scheduler_configs = self._held_lr_scheduler_configs
+            self._held_lr_scheduler_configs = None
+
     def _restore_trainer_limits(self, trainer):
+        self._restore_lr_scheduler_configs(trainer)
         if self._trainer_limits is None:
             return
         fit_loop = trainer.fit_loop
