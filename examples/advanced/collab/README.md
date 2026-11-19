@@ -60,6 +60,7 @@ These use small NumPy arrays to focus on communication and control flow.
 | Example | What you'll learn |
 |---|---|
 | [FedBuff recipe](numpy_async/README.md) | Configurable client concurrency, buffered aggregation and refill with model adapters and optional update transformations |
+| [Async reproducible simulation](numpy_async_reproducible/README.md) | FedBuff with simulator-owned fixed replay, virtual timing and isolated seed streams |
 | [Response callbacks](response_callbacks/job.py) | Processing results with response callbacks within each round |
 | [Swarm learning](swarm/swarm.py) | Decentralized training with client-to-client calls |
 
@@ -85,6 +86,7 @@ commands before launching training.
 | [CIFAR-10: FedAvg, FedProx, and SCAFFOLD](pt_cifar10/README.md) | Comparing synchronous algorithms and their client/server state exchange | Prepare CIFAR-10 client shards |
 | [CIFAR-10 FedDF](pt_cifar10/feddf/README.md) | Iterative mean-logit distillation with standalone KD helpers | Prepare disjoint client shards and unlabeled server proxy images |
 | [Asynchronous CIFAR-10](pt_async_cifar10/README.md) | Buffered aggregation (FedBuff), client scheduling, and a synchronous comparison | Prepare logical-client shards; TensorBoard |
+| [Reproducible asynchronous CIFAR-10](pt_async_cifar10_reproducible/README.md) | Fixed-order or timed replay with logical clients and seeded training | Prepare CIFAR-10 shards; TensorBoard |
 | [CIFAR-10 SplitNN](../vertical_federated_learning/cifar10-splitnn/README.md) | Two-party split learning with activation and gradient exchange | Prepare data; TensorBoard and PSI |
 | [LLM supervised fine-tuning](pt_llm_sft/README.md) | Full-parameter Hugging Face training with server-side FedAvg | Prepare text data; Hugging Face dependencies and model resources |
 
