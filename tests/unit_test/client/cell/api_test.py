@@ -20,6 +20,8 @@ batch-loop is_running() semantics, and ABORT/SHUTDOWN session ends."""
 
 import os
 import signal as process_signal
+import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -1148,6 +1150,22 @@ def test_trainer_session_error_is_runtime_error():
     assert issubclass(TrainerSessionError, RuntimeError)
 
 
+@pytest.mark.parametrize("exit_code", [0, 3])
+def test_process_exits_with_script_exit_code_despite_blocked_threads(exit_code):
+    script = (
+        "import sys, threading\n"
+        "from concurrent.futures import ThreadPoolExecutor\n"
+        "from nvflare.client.cell import api\n"
+        "stop = threading.Event()\n"
+        "ThreadPoolExecutor(1).submit(stop.wait)\n"
+        "threading.Thread(target=stop.wait).start()\n"
+        "api._call_before_thread_join(stop.set)\n"
+        f"sys.exit({exit_code})\n"
+    )
+    proc = subprocess.run([sys.executable, "-c", script], timeout=30)
+    assert proc.returncode == exit_code
+
+
 class TestInit:
     def test_external_owner_watchdog_terminates_group_when_cj_disappears(self, bootstrap_path, monkeypatch):
         config = read_bootstrap_config(bootstrap_path)
@@ -1196,6 +1214,15 @@ class TestInit:
 
         assert signals == [(1234, process_signal.SIGTERM), (1234, process_signal.SIGKILL)]
         assert exits == [1]
+
+    def test_init_shuts_down_when_the_script_returns(self, bootstrap_path, env, monkeypatch):
+        hooks = []
+        monkeypatch.setattr(cell_api, "_call_before_thread_join", hooks.append)
+        api = _init_api(bootstrap_path, env)
+        try:
+            assert hooks == [api.shutdown]
+        finally:
+            api.shutdown()
 
     def test_init_does_hello_handshake(self, bootstrap_path, env):
         api = _init_api(bootstrap_path, env)

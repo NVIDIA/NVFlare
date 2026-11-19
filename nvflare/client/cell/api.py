@@ -85,6 +85,11 @@ def _shutdown_f3_streaming() -> None:
     shutdown_f3_streaming()
 
 
+def _call_before_thread_join(fn) -> None:
+    """Call ``fn`` at interpreter exit, before non-daemon and thread-pool threads are joined."""
+    threading._register_atexit(fn)
+
+
 def _to_python_scalar(v: Any) -> Any:
     """Convert 0-d NumPy metrics to Python scalars accepted by analytics validation."""
     item = getattr(v, "item", None)
@@ -260,6 +265,8 @@ class CellClientAPI(APISpec):
             self._initialized = True
             if self._attach:
                 self._attach.register_cleanup()
+            else:
+                _call_before_thread_join(self.shutdown)
             self.logger.info(f"trainer session established: fqcn={self._trainer_fqcn} session_id={self._session_id}")
 
     def _register_control_cbs(self, cell: Cell) -> None:
