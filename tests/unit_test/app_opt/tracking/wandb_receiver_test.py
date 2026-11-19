@@ -14,6 +14,7 @@
 
 import json
 from copy import deepcopy
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -51,8 +52,6 @@ def args(**updates):
 
 def approve(context, value, default=False):
     workspace = context.get_workspace()
-    from pathlib import Path
-
     path = Path(workspace.get_site_config_dir()) / ("resources.json.default" if default else "resources.json")
     path.write_text(json.dumps({"wandb_base_urls": value}))
 
@@ -220,3 +219,24 @@ def test_settings_object_without_explicit_backend_inherits_site_default(context,
     assert result["settings"].base_url == "https://trusted.example"
     assert "base_url" in result["settings"].model_fields_set
     assert result["settings"].init_timeout == 3
+
+
+@pytest.mark.parametrize("invalid_source", ["job-settings", "site-resources"])
+def test_invalid_configuration_is_rejected_before_credentials_or_workers(context, monkeypatch, invalid_source):
+    monkeypatch.setenv("WANDB_API_KEY", "a" * 40)
+    login = MagicMock()
+    monkeypatch.setattr(subject.wandb, "login", login)
+    queues, processes = capture_workers(monkeypatch)
+    config = args()
+    if invalid_source == "job-settings":
+        config["settings"] = "https://unapproved.example"
+        expected_error = "wandb_args.settings must be a dict or wandb.Settings"
+    else:
+        resources = Path(context.get_workspace().get_site_config_dir()) / "resources.json"
+        resources.write_text(json.dumps([{"wandb_base_urls": ["https://unapproved.example"]}]))
+        expected_error = "site resources must be a JSON object"
+    receiver = subject.WandBReceiver(config, mode="online")
+    with pytest.raises(ValueError, match=expected_error):
+        receiver.initialize(context)
+    login.assert_not_called()
+    assert queues == processes == []
