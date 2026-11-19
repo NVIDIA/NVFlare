@@ -119,6 +119,13 @@ In step mode:
   unchanged, which FedAvg would skip anyway, and SCAFFOLD cannot compute a control update from zero steps. The
   callback logs a warning instead. The server then handles the missing site as it handles any client that stops
   responding.
+- A site that stops on its own right after a sync (`EarlyStopping` on the validation that follows it) has sent that
+  round and leaves without answering later rounds. In the simulator (FedAvg recipe, 2 sites, external process), the
+  next task sent to that site failed about 40 s later ("trainer process exited while TASK_READY was pending"), and
+  the server aborted the job: "Cannot reach min_responses: remaining good clients (1) < min_responses (2)". The
+  FedAvg recipe uses `min_clients` both as the number of sites sampled per round and as the minimum responses, so
+  with `min_clients=1` the job finished only in runs where the stopped site was not sampled again (2 of 5). This is
+  the same with the receive at batch end (#5700 as merged); it does not depend on when the receive happens.
 - Every site reports `NUM_STEPS_CURRENT_ROUND = N`, so FedAvg weights sites equally per round, whatever their dataset
   size. Use `aggregation_weight` on the server for unequal weights.
 
@@ -127,11 +134,13 @@ In step mode:
 ```text
 fit() ─ on_train_start: rank 0 receives round 1 → broadcast (no training task → trainer.should_stop = True)
         ├─ on_train_batch_start: every rank loads the received model in place → start round
-        ├─ batch … ─ on_train_batch_end: N steps since round start → finish round, rank 0 sends,
-        │      then rank 0 receives the next task → broadcast
-        │      (no model → trainer.should_stop = True; a non-train task → stop, leave it pending)
-        │      (validation from val_check_interval / epoch end runs here, on the local model)
-        ├─ on_train_batch_start: load the received model → start round
+        ├─ batch … ─ on_train_batch_end: N steps since round start → finish round, rank 0 sends
+        │      (validation from val_check_interval / epoch end runs here, on the local model,
+        │       while the server aggregates)
+        ├─ on_train_batch_start (or on_train_epoch_end after the epoch's last batch):
+        │      rank 0 receives the next task → broadcast → load it in place → start round
+        │      (no model → trainer.should_stop = True and skip the batch; a non-train task → the same,
+        │       leave it pending)
         ├─ …
         └─ on_train_end: send the open round, if the trainer stopped itself
 ```
@@ -143,26 +152,34 @@ Rules:
    batch that ran the optimizer step. A batch that takes the round past N steps (manual optimization with several
    optimizer steps per batch) raises `RuntimeError`, because the round can no longer end at N; N must then be a
    multiple of the steps per batch.
-2. **Receive at batch end, load at batch start.**
-   - The send and the next receive both happen at batch end, so the callback can stop with `trainer.should_stop`
-     before another batch trains. The received model is loaded at the next batch start, so in-fit validation between
-     the two still evaluates the local model.
-   - The cost: a validation that falls right after a sync waits for the server's aggregation instead of overlapping
-     it, which adds up to the shorter of the two per such sync. Lightning gives a callback no hook between batch end
-     and its stop check that says whether validation runs next, so the receive cannot be moved after it without
-     copying Lightning's private scheduling logic.
-   - If `trainer.should_stop` is already set when the round is sent (by the training step or a callback that runs
-     earlier), the callback does not receive, so `fit()` returns without waiting for the server's next task.
-   - If a callback that runs later clears `trainer.should_stop` again, the next batch start receives instead. If no
-     train task comes, that batch must not train. A callback cannot skip a batch, so the callback makes the module's
-     `on_train_batch_start` return `-1` once, and Lightning ends the epoch before the batch runs. Raising
-     `StopIteration` from the callback would also work but relies on `TrainingEpochLoop.run` catching it, which
-     Lightning does not document; a supported way for callbacks is requested in Lightning-AI/pytorch-lightning#22151.
+2. **Send at batch end, receive at the next batch start.**
+   - The send happens at the end of the sync batch; the next receive at the start of the next batch. Validation and
+     other callbacks in between (`val_check_interval`, epoch end, checkpoints) run while the server aggregates. The
+     saving per sync followed by a validation is the validation time, while the aggregation takes longer. In-fit
+     validation scores the site's own weights, not the new global model; that would be the same with a receive at
+     batch end, since the received model is only loaded at the next batch start.
+   - A sync on the last batch of an epoch receives at `on_train_epoch_end`, after the epoch-end validation and its
+     checkpoint. Receiving at batch 0 of the next epoch instead would, at the end of the job, start an empty epoch:
+     its epoch-end callbacks and epoch-interval LR schedulers would run once more. Epoch-end validation runs once.
+   - If `trainer.should_stop` is already set when the round is sent (by the training step, a callback, or the
+     validation after the sync), the callback does not receive, so `fit()` returns without waiting for the server's
+     next task.
+   - If no train task comes, the batch that started must not train. A callback cannot skip a batch, so the callback
+     sets `trainer.should_stop` and makes the module's `on_train_batch_start` return `-1` once, and Lightning ends
+     the epoch before the batch runs. Raising `StopIteration` from the callback would also work but relies on
+     `TrainingEpochLoop.run` catching it, which Lightning does not document; a supported way for callbacks is
+     requested in Lightning-AI/pytorch-lightning#22151.
    - Lightning still steps the LR schedulers for a batch skipped with `-1`, although no optimizer step ran, so a
      bounded scheduler (`OneCycleLR` sized for `num_rounds * N`) would raise and `fit()` would fail. The callback
      sets `trainer.strategy.lr_scheduler_configs` to `[]` for the skipped batch and puts it back at
      `on_train_epoch_end`, which Lightning calls right after the skip, before the epoch-interval step that a stop at
-     batch end also gets; `on_train_end` and `on_exception` put it back as well.
+     batch end also gets; `on_train_end` and `on_exception` put it back as well. Receiving in `on_validation_end`
+     instead was considered: it avoids the skip only when a validation follows the sync, and a sync with no validation
+     after it would still reach the skip.
+   - Timing: a shutdown or a pending evaluate task is found one validation later than with a receive at batch end,
+     and a validation that stops training (`EarlyStopping`) or raises does so before the next receive. The round was
+     already sent, so the site leaves without taking the next task.
+   - Under DDP every rank reaches the same receive hook at the same batch, so the broadcast stays aligned.
 3. **The server's horizon.** `on_train_start` sets `fit_loop.max_epochs` and `epoch_loop.max_steps` to `-1`, and
    clears `min_epochs` and `min_steps`, which would otherwise keep Lightning from honouring the stop, so only the
    server ends a normal run. `on_train_end` and `on_exception` put the four limits back, so a later `fit()` on the
@@ -178,12 +195,10 @@ Rules:
    receive that returned a train task and the next send; `on_train_end` sends only an open round.
 5. **Receive results.**
    - A train task: load in place, start the next round.
-   - No model (the server finished, or the job stopped): set `trainer.should_stop`. The receive happens at batch end
-     (or at `on_train_start` for the first round), so Lightning stops before the next batch; no round is open and no
-     step is lost. As for any `should_stop` (`EarlyStopping`), Lightning then runs one validation pass if a
-     validation dataloader is set and that batch was not already a validation batch. It evaluates the last local
-     model and does not reach the server. Skipping it would mean changing `trainer.limit_val_batches` during
-     `fit()`, which would also drop a scheduled validation on the same batch.
+   - No model (the server finished, or the job stopped): set `trainer.should_stop` and skip the batch (Rule 2); no
+     round is open and no step is lost. The last validation, if one followed the last sync, has already run, and
+     Lightning runs no extra one after the stop: when the last sync falls between validation intervals, the job ends
+     without a final validation.
    - A non-train task (evaluate, submit model): stop the same way, without loading it or clearing the Client API
      cache. The task stays pending. A train-only job needs no code after `fit()`: the script exits, and the pending
      task is handled as for any client that leaves. A job that also sends evaluate tasks (cross-site evaluation)
@@ -384,9 +399,15 @@ enforces NVFlare's exchange order: a send without a preceding receive fails.
 | Task lifetime: one task per process sends one round and returns | a single train task, then no task |
 | The server's end stops `fit()` even when the trainer sets `min_steps` or `min_epochs` | server finishing below both minimums |
 | Passing the trainer's own step budget logs one scheduler warning | warning count past `max_epochs` |
-| In-fit validation runs between send and receive | call order of send, validation and receive |
 | The server finishing first stops training cleanly | `receive()` returns `None` |
 | A bounded LR scheduler sized for the run survives a stop found at a batch start | `OneCycleLR` with a later callback clearing `should_stop` |
+| Validation after a sync runs between send and receive on the sent weights, and the next batch trains the received model | call order, validation weights equal the sent snapshot |
+| The server's end adds no optimizer step, send or validation | `global_step` and `training_step` calls `== k * N` after k rounds, validation count, scheduler steps |
+| A last sync between validation intervals ends the job without a final validation | validation count |
+| A bounded scheduler sized for `num_rounds * N` survives the server's end, with validation after the last sync, elsewhere or not at all | `OneCycleLR(total_steps=num_rounds * N)`, `fit()` returns and the evaluate loop runs |
+| A sync on an epoch's last batch receives after epoch-end validation, which runs once, and the end of the job adds no epoch | call order with epoch-end events, `current_epoch` |
+| Evaluate and submit-model tasks found at the batch-start receive stay pending; the evaluate loop after `fit()` answers them | mid-epoch and epoch-end, then `trainer.validate()` |
+| Validation that stops training (`EarlyStopping`) or raises prevents the next receive | call order, `global_step`, trainer limits restored |
 | A non-train task mid-fit stops training and is handled by a later `trainer.validate()` | evaluate task after a sync |
 | SCAFFOLD and FedProx produce per-sync metadata | existing algorithm fixtures in step mode |
 | Hooks are called in order, once per received model, in both modes; edits take effect | recording callback; a hook that adds to `meta` and one that edits the received params |
@@ -394,6 +415,7 @@ enforces NVFlare's exchange order: a send without a preceding receive fails.
 | Fit-per-round mode is unchanged | the existing tests; a test pins `FLCallback`'s constructor and methods |
 | Under DDP, all ranks pause at the same step, hold identical weights after each sync, only rank 0 sends, no hang | 2-rank test in `tests/integration_test/fast/lightning_step_sync_ddp_test.py`, run serially by `ci/run_process_contracts.py`: CPU with gloo, and GPU with NCCL when two GPUs are available |
 | Under DDP, the evaluate loop after `fit()` validates on all ranks and leaves on any other task | the same test, with a pending evaluate task and then a `submit_model` task |
+| Under DDP, the batch-start and epoch-end receives keep ranks aligned, with no extra optimizer step on any rank | the same test with `val_check_interval`, sync at epoch end and mid-epoch |
 
 ## Follow-ups
 
