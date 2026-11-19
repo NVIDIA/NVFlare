@@ -28,6 +28,7 @@ from nvflare.fuel.hci.proto import ConfirmMethod, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.admin_audit import prepare, record, recording_failed, reject
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.private.fed.server.server_engine import ServerEngine
@@ -144,6 +145,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         role = conn.get_prop(ConnProps.USER_ROLE, "")
         if role in {"project_admin", "org_admin"}:
             return PreAuthzReturnCode.OK
+        reject("authorization.role.denied", reason="role_denied")
         conn.append_error(f"NOT_AUTHORIZED for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
         return PreAuthzReturnCode.ERROR
 
@@ -153,6 +155,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
         # filters each returned study by caller role, org, and explicit user mapping.
         if role in {"project_admin", "org_admin", "lead", "member"}:
             return PreAuthzReturnCode.OK
+        reject("authorization.role.denied", reason="role_denied")
         conn.append_error(f"NOT_AUTHORIZED for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
         return PreAuthzReturnCode.ERROR
 
@@ -399,8 +402,38 @@ class StudyCommandModule(CommandModule, CommandUtil):
         payload["sites"] = sorted({s for org_sites in payload["site_orgs"].values() for s in org_sites})
         return payload
 
-    def _with_mutation(self, conn: Connection, mutation_cb):
+    @staticmethod
+    def _audit_mutation(operation, study, initial, working, result, reason, sites=(), target=""):
+        """Emit facts after releasing the registry lock, without registry contents."""
+        try:
+            before = (initial or {}).get("studies", {}).get(study) or {}
+            after = (working or {}).get("studies", {}).get(study) or {}
+            if operation not in {"site_add", "site_remove"} or not sites:
+                record(f"study.{operation}.{result}", reason=reason, study=study, target=target)
+            if operation in {"register", "site_add", "site_remove"}:
+                membership_operation = "site_remove" if operation == "site_remove" else "site_add"
+                for org, site in sites:
+                    member_result = result
+                    if result in {"applied", "persisted", "unchanged"}:
+                        old_member = site in before.get("site_orgs", {}).get(org, ())
+                        new_member = site in after.get("site_orgs", {}).get(org, ())
+                        member_result = result if old_member != new_member else "unchanged"
+                    member_reason = "no_change" if member_result == "unchanged" else reason
+                    record(
+                        f"study.{membership_operation}.{member_result}", reason=member_reason, study=study, site=site
+                    )
+            if operation == "register" and target and result in {"applied", "persisted", "unchanged"}:
+                old_member = target in before.get("admins", ())
+                new_member = target in after.get("admins", ())
+                member_result = result if old_member != new_member else "unchanged"
+                member_reason = "no_change" if member_result == "unchanged" else reason
+                record(f"study.user_add.{member_result}", reason=member_reason, study=study, target=target)
+        except Exception:
+            recording_failed()
+
+    def _with_mutation(self, conn: Connection, mutation_cb, *, operation, study, sites=(), target=""):
         if not StudyRegistryService.acquire_lock(_LOCK_TIMEOUT_SECS):
+            record(f"study.{operation}.rejected", reason="lock_timeout", study=study)
             self._error(
                 conn,
                 "LOCK_TIMEOUT",
@@ -410,29 +443,59 @@ class StudyCommandModule(CommandModule, CommandUtil):
             )
             return
 
+        initial = working = None
+        persisted = reloaded = False
+        result, reason = "error", "processing_error"
         try:
             engine = conn.app_ctx
             if not isinstance(engine, ServerEngine):
                 raise TypeError(f"engine must be ServerEngine but got {type(engine)}")
 
             workspace = engine.get_workspace()
-            config = self._load_registry_config(workspace.get_study_registry_file_path())
-            working = deepcopy(config)
+            initial = self._load_registry_config(workspace.get_study_registry_file_path())
+            working = deepcopy(initial)
             payload = mutation_cb(engine, working)
             if payload is None:
                 self._error(conn, "INTERNAL_ERROR", "mutation callback returned no result", exit_code=5)
                 return
             if isinstance(payload, dict) and payload.get("error_code"):
+                code = payload["error_code"]
+                # These outcomes leave membership unchanged even though the
+                # established command reply reports an error to its caller.
+                result = "unchanged" if code in {"USER_ALREADY_IN_STUDY", "USER_NOT_IN_STUDY"} else "rejected"
+                reason = {
+                    "USER_ALREADY_IN_STUDY": "already_member",
+                    "USER_NOT_IN_STUDY": "not_member",
+                    "STUDY_NOT_FOUND": "study_not_found",
+                    "STUDY_ALREADY_EXISTS": "study_already_exists",
+                    "INVALID_SITE": "invalid_site",
+                    "STUDY_HAS_JOBS": "study_has_jobs",
+                }.get(code, "mutation_rejected")
                 self._reply(conn, payload)
                 return
             new_registry = StudyRegistry(working)
             self._write_registry_config(workspace.get_study_registry_write_path(), working)
+            persisted = True
             StudyRegistryService.initialize(new_registry)
+            reloaded = True
+            result = "applied" if working != initial else "unchanged"
+            reason = "configuration_reloaded" if result == "applied" else "no_change"
             self._reply(conn, payload)
         except Exception as e:
             self._error(conn, "INTERNAL_ERROR", f"study command failed: {e}", exit_code=5)
         finally:
-            StudyRegistryService.release_lock()
+            try:
+                StudyRegistryService.release_lock()
+            finally:
+                # A reply/cleanup error must not erase a completed persistence
+                # or live configuration update. No audit I/O holds the lock.
+                if persisted and not reloaded:
+                    self._audit_mutation(
+                        operation, study, initial, working, "persisted", "configuration_written", sites, target
+                    )
+                    record(f"study.{operation}.reload_error", reason="reload_failed", study=study)
+                else:
+                    self._audit_mutation(operation, study, initial, working, result, reason, sites, target)
 
     def _study_not_found(self, conn: Connection, study: str):
         self._error(
@@ -449,12 +512,15 @@ class StudyCommandModule(CommandModule, CommandUtil):
             self._validate_study_name(parsed.study)
             requested = self._requested_site_orgs(conn, parsed)
         except _InvalidArgsError as e:
+            record("study.register.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_ARGS", str(e), exit_code=4)
             return
         except _InvalidSiteError as e:
+            record("study.register.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_SITE", str(e), exit_code=4)
             return
         except _InvalidStudyNameError as e:
+            record("study.register.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_STUDY_NAME", str(e), exit_code=4)
             return
 
@@ -496,7 +562,14 @@ class StudyCommandModule(CommandModule, CommandUtil):
                 admins.append(caller)
             return self._study_payload(parsed.study, study_def)
 
-        self._with_mutation(conn, _mutate)
+        self._with_mutation(
+            conn,
+            _mutate,
+            operation="register",
+            study=parsed.study,
+            sites=prepare(lambda: tuple((org, site) for org, names in requested.items() for site in names), default=()),
+            target=prepare(lambda: self._caller_name(conn), default=""),
+        )
 
     def cmd_add_study_site(self, conn: Connection, args: List[str]):
         parser = _study_parser(AdminCommandNames.ADD_STUDY_SITE, include_sites=True, include_site_org=True)
@@ -505,12 +578,15 @@ class StudyCommandModule(CommandModule, CommandUtil):
             self._validate_study_name(parsed.study)
             requested = self._requested_site_orgs(conn, parsed)
         except _InvalidArgsError as e:
+            record("study.site_add.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_ARGS", str(e), exit_code=4)
             return
         except _InvalidSiteError as e:
+            record("study.site_add.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_SITE", str(e), exit_code=4)
             return
         except _InvalidStudyNameError as e:
+            record("study.site_add.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_STUDY_NAME", str(e), exit_code=4)
             return
 
@@ -547,7 +623,13 @@ class StudyCommandModule(CommandModule, CommandUtil):
                         added.append(site)
             return self._site_mutation_payload(parsed.study, study_def, added=added, already_enrolled=already_enrolled)
 
-        self._with_mutation(conn, _mutate)
+        self._with_mutation(
+            conn,
+            _mutate,
+            operation="site_add",
+            study=parsed.study,
+            sites=prepare(lambda: tuple((org, site) for org, names in requested.items() for site in names), default=()),
+        )
 
     def cmd_remove_study_site(self, conn: Connection, args: List[str]):
         parser = _study_parser(AdminCommandNames.REMOVE_STUDY_SITE, include_sites=True, include_site_org=True)
@@ -556,12 +638,15 @@ class StudyCommandModule(CommandModule, CommandUtil):
             self._validate_study_name(parsed.study)
             requested = self._requested_site_orgs(conn, parsed)
         except _InvalidArgsError as e:
+            record("study.site_remove.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_ARGS", str(e), exit_code=4)
             return
         except _InvalidSiteError as e:
+            record("study.site_remove.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_SITE", str(e), exit_code=4)
             return
         except _InvalidStudyNameError as e:
+            record("study.site_remove.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_STUDY_NAME", str(e), exit_code=4)
             return
 
@@ -598,7 +683,13 @@ class StudyCommandModule(CommandModule, CommandUtil):
                 site_orgs[org] = new_current
             return self._site_mutation_payload(parsed.study, study_def, removed=removed, not_enrolled=not_enrolled)
 
-        self._with_mutation(conn, _mutate)
+        self._with_mutation(
+            conn,
+            _mutate,
+            operation="site_remove",
+            study=parsed.study,
+            sites=prepare(lambda: tuple((org, site) for org, names in requested.items() for site in names), default=()),
+        )
 
     def cmd_remove_study(self, conn: Connection, args: List[str]):
         parser = _study_parser(AdminCommandNames.REMOVE_STUDY)
@@ -606,6 +697,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             parsed = parser.parse_args(args[1:])
             self._validate_study_name(parsed.study)
         except Exception as e:
+            record("study.remove.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_STUDY_NAME", str(e), exit_code=4)
             return
 
@@ -636,7 +728,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             del studies[parsed.study]
             return {"name": parsed.study, "removed": True}
 
-        self._with_mutation(conn, _mutate)
+        self._with_mutation(conn, _mutate, operation="remove", study=parsed.study)
 
     def cmd_list_studies(self, conn: Connection, args: List[str]):
         if len(args) != 1:
@@ -680,6 +772,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             parsed = parser.parse_args(args[1:])
             self._validate_study_name(parsed.study)
         except Exception as e:
+            record("study.user_add.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_STUDY_NAME", str(e), exit_code=4)
             return
 
@@ -703,7 +796,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             admins.append(parsed.user)
             return {"study": parsed.study, "user": parsed.user}
 
-        self._with_mutation(conn, _mutate)
+        self._with_mutation(conn, _mutate, operation="user_add", study=parsed.study, target=parsed.user)
 
     def cmd_remove_study_user(self, conn: Connection, args: List[str]):
         parser = _study_parser(AdminCommandNames.REMOVE_STUDY_USER, include_user=True)
@@ -711,6 +804,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             parsed = parser.parse_args(args[1:])
             self._validate_study_name(parsed.study)
         except Exception as e:
+            record("study.user_remove.rejected", reason="invalid_arguments")
             self._error(conn, "INVALID_STUDY_NAME", str(e), exit_code=4)
             return
 
@@ -734,4 +828,4 @@ class StudyCommandModule(CommandModule, CommandUtil):
             admins.remove(parsed.user)
             return {"study": parsed.study, "user": parsed.user, "removed": True}
 
-        self._with_mutation(conn, _mutate)
+        self._with_mutation(conn, _mutate, operation="user_remove", study=parsed.study, target=parsed.user)

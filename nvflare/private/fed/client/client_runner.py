@@ -15,6 +15,7 @@ import fnmatch
 import threading
 import time
 import uuid
+from dataclasses import replace
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -43,6 +44,16 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.streaming.download_service import DownloadService
+from nvflare.fuel.sec.task_audit import (
+    TaskAuditContext,
+    build_context,
+    code_status,
+    current_context,
+    prepare,
+    record,
+    set_context,
+    use_context,
+)
 from nvflare.fuel.utils.fobs.decomposers.via_downloader import contains_lazy_download_ref
 from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, SpecialTaskName, TaskConstant, new_cell_message
@@ -58,6 +69,7 @@ from .utils import determine_parent_name
 _TASK_CHECK_RESULT_OK = 0
 _TASK_CHECK_RESULT_TRY_AGAIN = 1
 _TASK_CHECK_RESULT_TASK_GONE = 2
+_TASK_AUDIT_CONTEXT = "_task_audit_context"
 
 
 class TaskRouter:
@@ -243,6 +255,33 @@ class ClientRunner(TBI):
         return reply
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
+        local_context = build_context(fl_ctx)
+        with use_context(local_context):
+            prepare(lambda: fl_ctx.set_prop(_TASK_AUDIT_CONTEXT, local_context, private=True, sticky=False))
+            reply = self._process_task_impl(task, fl_ctx)
+            record(
+                "task.result.prepared",
+                context=self._publication_audit_context(reply, fl_ctx),
+                status=self._audit_code(reply),
+            )
+            return reply
+
+    @staticmethod
+    def _audit_code(reply):
+        return prepare(lambda: code_status(reply.get_return_code()), default="unavailable")
+
+    @staticmethod
+    def _publication_audit_context(result, fl_ctx):
+        context = prepare(lambda: fl_ctx.get_prop(_TASK_AUDIT_CONTEXT))
+        if not isinstance(context, TaskAuditContext):
+            context = build_context(fl_ctx)
+        reference = prepare(lambda: result.get_header(ReservedKey.AUDIT_EVENT_ID, ""), default="")
+        return prepare(
+            lambda: replace(context, reference=reference if isinstance(reference, str) else ""),
+            default=build_context(fl_ctx),
+        )
+
+    def _process_task_impl(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
         cookie_jar = task.data.get_cookie_jar() if isinstance(task.data, Shareable) else None
         cookie_jar = dict(cookie_jar) if cookie_jar else None
         reply = self._do_process_task(task, fl_ctx)
@@ -262,6 +301,7 @@ class ClientRunner(TBI):
 
     def _do_process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
         if fl_ctx.is_job_unsafe():
+            record("task.assignment.rejected", context=build_context(fl_ctx), reason="job_unsafe")
             return make_reply(ReturnCode.UNSAFE_JOB)
 
         with self.task_lock:
@@ -273,6 +313,8 @@ class ClientRunner(TBI):
         except TaskExecutionInterrupted:
             raise
         except Exception as ex:
+            context = prepare(lambda: fl_ctx.get_prop(_TASK_AUDIT_CONTEXT), default=build_context(fl_ctx))
+            record("task.processing.error", context=context, reason="processing_error")
             self.log_exception(fl_ctx, secure_format_exception(ex))
             reply = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
@@ -286,7 +328,12 @@ class ClientRunner(TBI):
         return reply
 
     def _do_task(self, task: TaskAssignment, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        with use_context(build_context(fl_ctx)):
+            return self._do_task_impl(task, fl_ctx, abort_signal)
+
+    def _do_task_impl(self, task: TaskAssignment, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if not isinstance(task.data, Shareable):
+            record("task.assignment.rejected", reason="bad_task_data")
             self.log_error(fl_ctx, f"got invalid task data in assignment: expect Shareable, but got {type(task.data)}")
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
@@ -301,6 +348,7 @@ class ClientRunner(TBI):
 
         peer_ctx = fl_ctx.get_peer_context()
         if not peer_ctx:
+            record("task.assignment.rejected", reason="missing_peer_context")
             self.log_error(fl_ctx, "missing peer context in Server task assignment")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.MISSING_PEER_CONTEXT),
@@ -310,6 +358,7 @@ class ClientRunner(TBI):
             )
 
         if not isinstance(peer_ctx, FLContext):
+            record("task.assignment.rejected", reason="bad_peer_context")
             self.log_error(
                 fl_ctx,
                 "bad peer context in Server task assignment: expects FLContext but got {}".format(type(peer_ctx)),
@@ -324,6 +373,7 @@ class ClientRunner(TBI):
         task.data.set_peer_props(peer_ctx.get_all_public_props())
         peer_job_id = peer_ctx.get_job_id()
         if peer_job_id != self.job_id:
+            record("task.assignment.rejected", reason="job_mismatch")
             self.log_error(fl_ctx, "bad task assignment: not for the same job_id")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.RUN_MISMATCH),
@@ -332,8 +382,24 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.RUN_MISMATCH}",
             )
 
+        context = prepare(
+            lambda: build_context(
+                fl_ctx,
+                task_name=task.name,
+                task_id=task.task_id,
+                workflow_id=task.workflow_id or "",
+                attempt_id=task.attempt_id or "",
+                reference=server_audit_event_id,
+                site=fl_ctx.get_identity_name() or "",
+            ),
+            default=build_context(fl_ctx),
+        )
+        set_context(context)
+        prepare(lambda: fl_ctx.set_prop(_TASK_AUDIT_CONTEXT, current_context(), private=True, sticky=False))
+        record("task.assignment.received")
         executor = self.find_executor(task.name)
         if not executor:
+            record("task.assignment.rejected", reason="unknown_executor")
             self.log_error(fl_ctx, f"bad task assignment: no executor available for task {task.name}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_UNKNOWN),
@@ -357,6 +423,11 @@ class ClientRunner(TBI):
                         task.data, release_task_data = resolve(task.data, fl_ctx, abort_signal=abort_signal)
                     fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
                 except Exception as e:
+                    record(
+                        "task.filter.aborted" if abort_signal.triggered else "task.filter.error",
+                        reason="abort_signal" if abort_signal.triggered else "data_resolution_error",
+                        stage="data_resolution",
+                    )
                     self.log_exception(fl_ctx, f"task data resolution failed: {secure_format_exception(e)}")
                     return self._reply_and_audit(
                         reply=make_reply(
@@ -390,6 +461,7 @@ class ClientRunner(TBI):
                 abort_signal=abort_signal,
             )
         except UnsafeJobError:
+            record("task.filter.error", reason="unsafe_job", stage="data_filter", status=ReturnCode.UNSAFE_JOB)
             self.log_exception(fl_ctx, "UnsafeJobError from Task Data Filters")
             executor.unsafe = True
             fl_ctx.set_job_is_unsafe()
@@ -403,12 +475,14 @@ class ClientRunner(TBI):
             )
         except Exception as e:
             if abort_signal.triggered:
+                record("task.filter.aborted", reason="abort_signal", stage="data_filter")
                 return self._reply_and_audit(
                     reply=make_reply(ReturnCode.TASK_ABORTED),
                     ref=server_audit_event_id,
                     fl_ctx=fl_ctx,
                     msg=f"submit result: {ReturnCode.TASK_ABORTED}",
                 )
+            record("task.filter.error", reason="filter_error", stage="data_filter")
             self.log_exception(fl_ctx, f"Processing error from Task Data Filters : {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
@@ -418,6 +492,7 @@ class ClientRunner(TBI):
             )
 
         if not isinstance(task_data, Shareable):
+            record("task.filter.error", reason="invalid_filter_result", stage="data_filter")
             self.log_error(
                 fl_ctx, "task data was converted to wrong type: expect Shareable but got {}".format(type(task_data))
             )
@@ -444,10 +519,12 @@ class ClientRunner(TBI):
             self.log_info(fl_ctx, f"invoking task executor {executor_name}")
             add_job_audit_event(fl_ctx=fl_ctx, msg=f"invoked executor {executor_name}")
 
+            record("task.execution.started")
             try:
                 reply = executor.execute(task.name, task.data, fl_ctx, abort_signal)
             except BaseException:
                 if abort_signal.triggered:
+                    record("task.execution.aborted", reason="abort_signal")
                     return self._reply_and_audit(
                         reply=make_reply(ReturnCode.TASK_ABORTED),
                         ref=server_audit_event_id,
@@ -457,6 +534,7 @@ class ClientRunner(TBI):
                 raise
 
             if abort_signal.triggered:
+                record("task.execution.aborted", reason="abort_signal")
                 return self._reply_and_audit(
                     reply=make_reply(ReturnCode.TASK_ABORTED),
                     ref=server_audit_event_id,
@@ -465,6 +543,7 @@ class ClientRunner(TBI):
                 )
 
             if not isinstance(reply, Shareable):
+                record("task.execution.error", reason="invalid_executor_result")
                 self.log_error(
                     fl_ctx, f"bad result generated by executor {executor_name}: must be Shareable but got {type(reply)}"
                 )
@@ -476,9 +555,11 @@ class ClientRunner(TBI):
                 )
 
         except TaskExecutionInterrupted:
+            record("task.execution.interrupted", reason="execution_interrupted")
             # Do not close the outstanding server assignment with an error result.
             raise
         except RuntimeError as e:
+            record("task.execution.error", reason="executor_runtime_error")
             self.log_exception(
                 fl_ctx, f"RuntimeError from executor {executor_name}: {secure_format_exception(e)}: Aborting the job!"
             )
@@ -489,6 +570,7 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.EXECUTION_RESULT_ERROR}",
             )
         except UnsafeJobError:
+            record("task.execution.error", reason="unsafe_job", status=ReturnCode.UNSAFE_JOB)
             self.log_exception(fl_ctx, f"UnsafeJobError from executor {executor_name}")
             executor.unsafe = True
             fl_ctx.set_job_is_unsafe()
@@ -499,6 +581,7 @@ class ClientRunner(TBI):
                 msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
             )
         except Exception as e:
+            record("task.execution.error", reason="executor_exception")
             self.log_exception(fl_ctx, f"Processing error from executor {executor_name}: {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.EXECUTION_EXCEPTION),
@@ -509,6 +592,7 @@ class ClientRunner(TBI):
         finally:
             fl_ctx.set_prop(FLContextKey.TASK_DATA, value=None, private=True, sticky=False)
 
+        record("task.execution.returned", status=self._audit_code(reply))
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_EXECUTION")
@@ -529,6 +613,7 @@ class ClientRunner(TBI):
                 abort_signal=abort_signal,
             )
         except UnsafeJobError:
+            record("task.filter.error", reason="unsafe_job", stage="result_filter", status=ReturnCode.UNSAFE_JOB)
             self.log_exception(fl_ctx, "UnsafeJobError from Task Result Filters")
             executor.unsafe = True
             fl_ctx.set_job_is_unsafe()
@@ -540,12 +625,14 @@ class ClientRunner(TBI):
             )
         except Exception as e:
             if abort_signal.triggered:
+                record("task.filter.aborted", reason="abort_signal", stage="result_filter")
                 return self._reply_and_audit(
                     reply=make_reply(ReturnCode.TASK_ABORTED),
                     ref=server_audit_event_id,
                     fl_ctx=fl_ctx,
                     msg=f"submit result: {ReturnCode.TASK_ABORTED}",
                 )
+            record("task.filter.error", reason="filter_error", stage="result_filter")
             self.log_exception(fl_ctx, f"Processing error in Task Result Filter : {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
@@ -555,6 +642,7 @@ class ClientRunner(TBI):
             )
 
         if not isinstance(reply, Shareable):
+            record("task.filter.error", reason="invalid_filter_result", stage="result_filter")
             self.log_error(
                 fl_ctx, "task result was converted to wrong type: expect Shareable but got {}".format(type(reply))
             )
@@ -570,6 +658,7 @@ class ClientRunner(TBI):
         self.log_info(fl_ctx, "finished processing task")
 
         if not isinstance(reply, Shareable):
+            record("task.processing.error", reason="invalid_processing_result")
             self.log_error(
                 fl_ctx, "task processing error: expects result to be Shareable, but got {}".format(type(reply))
             )
@@ -654,6 +743,41 @@ class ClientRunner(TBI):
         return task_fetch_interval, True
 
     def _send_task_result(self, result: Shareable, task_id: str, fl_ctx: FLContext):
+        with use_context(self._publication_audit_context(result, fl_ctx)):
+            try:
+                sent = self._send_task_result_impl(result, task_id, fl_ctx)
+            except Exception:
+                attempted = prepare(lambda: fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED))
+                stage = (
+                    "after_submission"
+                    if attempted is True
+                    else "before_submission" if attempted is False else "submission_unknown"
+                )
+                record("task.publication.error", reason="publication_error", stage=stage)
+                raise
+            receipt = prepare(lambda: fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT))
+            attempted = prepare(lambda: fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED))
+            aborted = prepare(lambda: self.run_abort_signal.triggered)
+            if sent:
+                if receipt == TaskResultReceipt.RECEIVED:
+                    record("task.publication.received", reason="receipt_confirmed")
+                else:
+                    record("task.publication.acknowledged", reason="legacy_transport_acknowledgement")
+            elif aborted:
+                reason = (
+                    "after_submission"
+                    if attempted is True
+                    else "before_submission" if attempted is False else "submission_unknown"
+                )
+                record("task.publication.aborted", reason=reason)
+            else:
+                record(
+                    "task.publication.closed",
+                    reason="task_closed" if receipt == TaskResultReceipt.TASK_CLOSED else "task_unavailable",
+                )
+            return sent
+
+    def _send_task_result_impl(self, result: Shareable, task_id: str, fl_ctx: FLContext):
         # This fact spans retries: False proves the result never reached the
         # submission transport; send success alone cannot distinguish that from
         # an upload whose acknowledgement was lost before abort/task removal.

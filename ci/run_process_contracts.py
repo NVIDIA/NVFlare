@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 TESTS = (
+    "tests/integration_test/fast/admin_download_audit_test.py",
     "tests/integration_test/fast/autofl_process_lifecycle_test.py",
     "tests/integration_test/fast/cell_reconnect_test.py",
     "tests/integration_test/fast/cell_session_mtls_test.py",

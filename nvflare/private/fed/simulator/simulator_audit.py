@@ -16,10 +16,14 @@ from nvflare.fuel.sec.audit import Auditor
 
 
 class SimulatorAuditor(Auditor):
+    _admin_audit_noop = True
+
     def __init__(self):
         pass
 
-    def add_event(self, user: str, action: str, ref: str = "", msg: str = "") -> str:
+    def add_event(
+        self, user: str, action: str, ref: str = "", msg: str = "", *, job_id: str = "", scope_name: str = ""
+    ) -> str:
         pass
 
     def add_job_event(
