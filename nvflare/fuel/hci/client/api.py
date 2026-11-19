@@ -130,7 +130,8 @@ class _ServerReplyJsonProcessor(object):
             resp: The raw response that returns by the server.
         """
         api = self.ctx.get_api()
-        api.debug("Server Reply: {}".format(sanitize_cli_output(resp)))
+        if api._debug:
+            api.debug("Server Reply: {}".format(sanitize_cli_output(resp)))
 
         ctx = self.ctx
 

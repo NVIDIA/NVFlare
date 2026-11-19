@@ -119,7 +119,18 @@ def test_login_reply_redacts_diagnostics_without_changing_session_token(capsys, 
         },
     }
 
-    _ServerReplyJsonProcessor(ctx).process_server_reply(response)
+    with (
+        patch("nvflare.fuel.hci.client.api.sanitize_cli_output", wraps=cli_output.sanitize_cli_output) as sanitize,
+        patch.object(api, "debug", wraps=api.debug) as debug_output,
+    ):
+        _ServerReplyJsonProcessor(ctx).process_server_reply(response)
+
+    if debug:
+        sanitize.assert_called_once_with(response)
+        debug_output.assert_called_once()
+    else:
+        sanitize.assert_not_called()
+        debug_output.assert_not_called()
 
     assert api.token == "signed-session-secret"
     assert api.login_result == "OK"
