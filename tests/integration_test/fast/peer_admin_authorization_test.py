@@ -16,7 +16,7 @@
 
 Real provisioning, server, enrollment, client entry points and admin login; separate
 processes/CWDs on a shared host filesystem (no OS user or mount isolation).
-The existing one-round job also verifies actual task/workflow audit observations;
+The existing one-round job also verifies task, workflow and model audit observations;
 controlled component suites cover execution failures, duplicate/late results, and
 abort semantics without adding another federation startup here.
 """
@@ -31,6 +31,7 @@ import time
 from contextlib import ExitStack
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from nvflare.apis.fl_constant import AdminCommandNames, SiteType, WorkspaceConstants
@@ -50,7 +51,7 @@ from nvflare.lighter.provisioner import Provisioner
 from nvflare.private.defs import CellChannel, RequestHeader
 from tests.peer_admin_test_utils import _write_json
 from tests.process_test_utils import OwnedProcesses
-from tests.task_audit_test_utils import RESULT_MARKER, TASK_MARKER
+from tests.task_audit_test_utils import MODEL_SOURCE_VALUE, RESULT_MARKER, TASK_MARKER
 
 
 def _task_details(record):
@@ -329,6 +330,19 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         shutil.copytree(Path(__file__).parents[1] / "data/jobs/hello-numpy-sag", job)
         config_path = job / "app/config/config_fed_server.json"
         config = json.loads(config_path.read_text())
+        model_source_name = "private-model-source-marker.npy"
+        model_output_dir = "private-model-output-marker"
+        model_source_dir = job / "app" / WorkspaceConstants.CUSTOM_FOLDER_NAME
+        model_source_dir.mkdir(exist_ok=True)
+        np.save(
+            model_source_dir / model_source_name, np.array([[MODEL_SOURCE_VALUE]], dtype=np.float32), allow_pickle=False
+        )
+        persistor = next(component for component in config["components"] if component["id"] == "persistor")
+        persistor["args"].update(
+            source_ckpt_file_full_name=model_source_name,
+            model_dir=model_output_dir,
+            model=[[7.0]],
+        )
         config["workflows"][0]["args"].update(num_rounds=1, wait_time_after_min_received=0)
         children = tmp_path / "children"
         config["task_data_filters"] = [
@@ -390,6 +404,14 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         assert downloaded
         archived_workspace = Path(downloaded) / Path(WORKSPACE_ZIP).stem
         assert archived_workspace.is_dir(), downloaded
+        saved_models = list(archived_workspace.rglob(f"{model_output_dir}/server.npy"))
+        assert len(saved_models) == 1, saved_models
+        # Each client adds one to the supplied weight. Both contributions have
+        # equal weight, so averaging preserves that increment.
+        expected_weight = MODEL_SOURCE_VALUE + 1
+        np.testing.assert_array_equal(np.load(saved_models[0], allow_pickle=False), [[expected_weight]])
+        for name in ("site-1", "site-2"):
+            assert json.loads((children / f"model-source-{name}.json").read_text()) == {"source_model_seen": True}
         job_audit_paths = {}
         for name in ("localhost", "site-1", "site-2"):
             site_name = SiteType.SERVER if name == "localhost" else name
@@ -449,6 +471,40 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
                     assert event["reference"] in all_by_id, event
 
         server_job_audit = job_records["localhost"]
+        model_records = [record for record in server_job_audit if record["action"].startswith("model.")]
+        for record in model_records:
+            assert record["job"] == job_id, record
+            assert record["user"] == "unknown", record
+            assert not record["action"].endswith((".error", ".stage_error", ".skipped")), record
+            if record.get("reference"):
+                assert record["reference"] in all_by_id, record
+            for forbidden in (
+                model_source_name,
+                model_output_dir,
+                str(MODEL_SOURCE_VALUE),
+                str(expected_weight),
+                str(tmp_path),
+            ):
+                assert forbidden not in record.get("message", ""), record
+        for operation, file_stage in (("load", "source_read"), ("save", "write")):
+            prefix = f"model.{operation}."
+            matching = [
+                record
+                for record in model_records
+                if record["action"] in {prefix + "started", prefix + "returned"}
+                or (
+                    record["action"] == prefix + "stage_returned"
+                    and f"stage={file_stage}" in record.get("message", "").split()
+                )
+            ]
+            assert [record["action"] for record in matching] == [
+                prefix + "started",
+                prefix + "stage_returned",
+                prefix + "returned",
+            ], model_records
+            if operation == "load":
+                assert "status=value_returned" in matching[-1].get("message", "").split(), matching[-1]
+        summary["model_audit_records"] = "verified source consumption, saved model, and private model data exclusion"
         workflow_id = "scatter_and_gather"
         initialized = _one_task_record(server_job_audit, "workflow.execution.initialized", workflow=workflow_id)
         control = _one_task_record(server_job_audit, "workflow.control.returned", workflow=workflow_id)

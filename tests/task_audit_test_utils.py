@@ -16,13 +16,18 @@
 
 from pathlib import Path
 
+import numpy as np
+
+from nvflare.apis.dxo import from_shareable
 from nvflare.apis.filter import Filter
+from nvflare.app_common.np.constants import NPConstants
 from tests.peer_admin_test_utils import PeerAdminJobTrainer, _write_json
 
 TASK_KEY = "audit_private_task_data"
 TASK_MARKER = "private-audit-task-data-marker"
 RESULT_KEY = "audit_private_result_data"
 RESULT_MARKER = "private-audit-result-data-marker"
+MODEL_SOURCE_VALUE = 104729
 
 
 class TaskAuditDataFilter(Filter):
@@ -38,6 +43,14 @@ class TaskAuditJobTrainer(PeerAdminJobTrainer):
         result = super().execute(task_name, shareable, fl_ctx, abort_signal)
         result[RESULT_KEY] = RESULT_MARKER
         return result
+
+    def _train(self, shareable, fl_ctx, abort_signal):
+        model = from_shareable(shareable).data.get(NPConstants.NUMPY_KEY)
+        if not np.array_equal(model, [[MODEL_SOURCE_VALUE]]):
+            raise RuntimeError("audit regression source model did not reach client")
+        site = fl_ctx.get_identity_name()
+        _write_json(self.directory / f"model-source-{site}.json", {"source_model_seen": True})
+        return super()._train(shareable, fl_ctx, abort_signal)
 
 
 class TaskAuditResultFilter(Filter):

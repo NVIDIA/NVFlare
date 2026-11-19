@@ -21,6 +21,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
+from nvflare.fuel.sec import model_audit
 
 from .constants import NPConstants
 from .utils import load_numpy_model
@@ -110,5 +111,7 @@ class NPModelPersistor(ModelPersistor):
         if not os.path.exists(model_root_dir):
             os.makedirs(model_root_dir)
 
-        np.save(model_path, model_learnable[ModelLearnableKey.WEIGHTS][NPConstants.NUMPY_KEY])
+        model_audit.save_step(
+            self, "write", np.save, model_path, model_learnable[ModelLearnableKey.WEIGHTS][NPConstants.NUMPY_KEY]
+        )
         self.log_info(fl_ctx, f"Saved numpy model to: {model_path}")
