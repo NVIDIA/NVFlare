@@ -2059,6 +2059,17 @@ def test_step_sync_with_one_task_per_process_sends_one_round_and_returns():
     assert trainer.global_step == 2
 
 
+class OneCycleNet(RecordingNet):
+    def __init__(self, total_steps):
+        super().__init__()
+        self.total_steps = total_steps
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.SGD(self.parameters(), lr=0.1)
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=0.1, total_steps=self.total_steps)
+        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
+
+
 class ClearStopAtStep(pl.Callback):
     def __init__(self, step):
         self.step = step
@@ -2081,8 +2092,23 @@ def test_step_sync_receives_at_batch_start_when_a_later_callback_clears_the_stop
 
     assert fake.steps() == expected_steps
     assert trainer.global_step == sum(expected_steps)
+    assert trainer.lr_scheduler_configs[0].scheduler.last_epoch == sum(expected_steps)
     assert all(torch.equal(module.state_dict()[key], value) for key, value in fake.sent_snapshots[-1].items())
     assert "on_train_batch_start" not in vars(module)
+
+
+def test_step_sync_stops_a_bounded_scheduler_when_the_batch_start_receive_finds_no_task():
+    fake = _FakeFlare(_train_tasks(2))
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=1, callbacks=[StopAtStep(4)])
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.callbacks.append(ClearStopAtStep(4))
+        module = OneCycleNet(total_steps=4)
+        trainer.fit(module, train_dataloaders=_loader(8))
+
+    assert trainer.global_step == len(module.seen) == 4
+    assert trainer.lr_scheduler_configs[0].scheduler.last_epoch == 4
 
 
 @pytest.mark.timeout(60)
