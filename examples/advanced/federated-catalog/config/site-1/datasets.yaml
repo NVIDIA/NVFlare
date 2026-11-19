@@ -1,0 +1,25 @@
+# site-1 dataset configuration. prepare_data.py installs it as <data-root>/site-1/local/datasets.yaml,
+# replacing ${SITE_DATA} with the site's absolute data folder.
+format_version: 1
+studies:
+  default:                        # SimEnv runs in the default Study
+    datasets:
+      omop:                       # Parquet directory: one table per .parquet file
+        type: parquet
+        uri: file://${SITE_DATA}/omop
+        usage:
+          catalog:
+            share: true
+            exclude_columns:
+              person: [person_source_value]
+              condition_occurrence: [condition_source_value]
+      lab_results:                # one CSV file
+        type: csv
+        uri: file://${SITE_DATA}/lab_results.csv
+        usage:
+          catalog: {share: true}
+      visits:
+        type: csv
+        uri: file://${SITE_DATA}/visits.csv
+        usage:
+          catalog: {share: true}

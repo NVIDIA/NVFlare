@@ -1,0 +1,15 @@
+# site-2 dataset configuration. prepare_data.py installs it as <data-root>/site-2/local/datasets.yaml,
+# replacing ${SITE_DATA} with the site's absolute data folder.
+format_version: 1
+studies:
+  default:
+    datasets:
+      omop:                       # a SQLite database file, read with the built-in sql connector
+        type: sql
+        uri: file://${SITE_DATA}/omop.sqlite
+        usage:
+          catalog:
+            share: true
+            exclude_columns:
+              person: [person_source_value]
+              condition_occurrence: [condition_source_value]
