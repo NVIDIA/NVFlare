@@ -20,6 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from model import set_seed
 from torch.utils.data import random_split
 from torchvision import datasets, transforms
 
@@ -163,6 +164,7 @@ def prepare_cifar10(
     if alpha <= 0:
         raise ValueError("alpha must be > 0")
 
+    set_seed(setup_seed)
     output_root = Path(output_root).expanduser().resolve()
     split_root = output_root / "splits"
     split_root.mkdir(parents=True, exist_ok=True)
@@ -174,8 +176,6 @@ def prepare_cifar10(
     train_indices = list(train_subset.indices)
     train_labels = [dataset.targets[index] for index in train_indices]
 
-    random.seed(setup_seed)
-    np.random.seed(setup_seed)
     # Persist the sampled identities with the data partition.  Reusing this
     # manifest across methods prevents each baseline from silently receiving a
     # different client-speed population or participant sequence.

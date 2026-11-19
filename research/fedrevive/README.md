@@ -29,11 +29,12 @@ through `SimEnv`.
 CIFAR-100, FEMNIST, 20NewsGroups, DD-FedRevive, and AFL-DW are outside this
 initial contribution.
 
-The class-proportion source and generator interval are independent experiment
-options. `--class-proportion-source true-histogram` reads each client's
+`--class-proportion-source true-histogram` reads each client's
 prepared class histogram, while `--class-proportion-source estimated` derives
 it entirely on the server from ordinary model uploads. `--generation-interval`
 controls how many global model versions elapse between synthesis steps.
+`--synthesis-label-distribution` selects uniform targets or targets sampled from
+the mean of the buffered teachers' class proportions.
 
 ## Class-proportion estimation
 
@@ -54,8 +55,8 @@ per observed client. Use
 probes are forwarded in chunks of at most 64 so peak device memory remains
 bounded.
 
-The paper-main setting, and therefore the FedRevive default, uses estimated
-class proportions and `--generation-interval 10`. All settings use
+FedRevive defaults to estimated class proportions, uniform synthesis targets,
+and `--generation-interval 10`. All settings use
 $K_{synth}=2$, $K_{KD}=10$, and an eight-model teacher buffer ($c=8$).
 Distillation still occurs on every eligible stale arrival after warmup. Between
 synthesis steps, the bounded synthetic pool is reused.
@@ -77,8 +78,7 @@ The server exposes three scheduling parameters:
 All returned models pass through the same update function. The client delta is
 computed against the exact model snapshot used by that assignment. The shared
 `FedBuffTrainingCoordinator` accumulates accepted deltas in a running sum and
-publishes only after `buffer_size` contributions. For individual result inspection,
-use the paper mode's retained raw-result files in place of `--no-in-time`. The method presets are:
+publishes only after `buffer_size` contributions. The method presets are:
 
 | Method | Concurrency | Buffer size | Minimum open slots | Server learning rate |
 |---|---:|---:|---:|---:|
@@ -119,47 +119,50 @@ behavior.
 | `dfkd.py` | Conditional generator, optimized latent/embedding tensors, Reptile update, weighted per-teacher objectives and sampling |
 | `schedule.py` | Paper mode: seeded download/train/upload phases and logical-client eligibility |
 | `workflow.py` | Paper mode: research reservations and physical-worker mapping over core calls/acceptance |
-| `storage.py` | Paper mode: append-only tensor files in a fresh run directory |
+| `storage.py` | Paper mode: run-owned temporary tensor files with reference counts |
 | `SimEnv` with a replay plan | Explicit assignment and acceptance order or timing, with evidence in the run's `simulation/` directory |
 | `server.py` | Separate initial model loader, FedRevive model operations, and CIFAR evaluation/artifact observer |
 
 `FedReviveWorkflow` inherits the protected call/lifecycle implementation from
 `FedBuffWorkflow`; `PhaseCoordinator` inherits its numerical acceptance from
-`FedBuffTrainingCoordinator`. There is no additional result-reader pool or
-reference-counted snapshot cache. Concurrency bounds active logical clients; physical sites
-bound concurrent calls and the core receipt queue. The workflow writes completed
-results to disk before waiting for their logical upload phase, and loads exact
-assignment bases from disk only when needed.
+`FedBuffTrainingCoordinator`. Concurrency bounds active logical assignments.
+Physical sites bound concurrent calls and the core receipt queue. One exact
+base file is shared by every outstanding assignment for its version.
+`TensorStore.retain` records these references at reservation and
+`TensorStore.release` deletes the file after the last assignment is consumed.
+Completed uploads wait on disk for their logical acceptance, then their files
+are deleted as soon as the coordinator consumes them. This bounds temporary
+model storage by outstanding assignments even in long or shifted runs.
 
-All experiment files are retained, including after failure:
+The observer retains experiment evidence:
 
 | Artifact | Contents |
 | --- | --- |
 | `run_config.json` | Resolved experiment options |
 | `dfkd_config.json` | Resolved synthesis/KD defaults when FedRevive is enabled |
-| `assignment_bases/<version>.pt` | Paper mode's immutable assignment bases |
-| `assignment_results/<id>.pt` | Paper mode's raw completed model/metrics/metadata tuples |
-| `published_models/<version>.pt` | Initial model and every publication |
 | `phases.jsonl` | Paper mode's incremental download/train/upload events and simulated times |
 | `schedule.jsonl` | Dispatch/accept identities, versions and training seeds |
 | `updates.jsonl` | Validated upload metadata/metrics, including actual-arrival seeds and shards |
 | `revival.jsonl` | FedRevive gate decisions, blend weights and DFKD metrics |
+| `accuracy_history.json`, `results.json` | Centralized evaluations and final run summary |
 | `final_model/global_model.pt` | Final model |
 
-Disk usage grows with the run. Provision space for all retained models and
-remove completed experiments explicitly. Before starting the simulator, the
-launcher rejects a job directory that already exists or is reserved by another
-run under the effective workspace root.
+The workflow discards pending uploads at its horizon and drains active calls
+before releasing outstanding bases. Normal shutdown, managed aborts, and
+handled failures remove temporary model files. A process killed before
+cleanup can leave temporary files in that run's directory.
+Before starting the simulator, the launcher rejects a job directory that
+already exists or is reserved by another run under the effective workspace root.
 Use a distinct `--workspace-root` for each repeat of the same method, including
 when changing arrival modes. If `NVFLARE_SIMULATOR_WORKSPACE_ROOT` is set, it
-selects the root instead. These trusted, run-owned checkpoints support local inspection.
-The workflow drains physical calls at its horizon without accepting their
-updates. Exceptions stop training; core cleanup ignores late callbacks.
+selects the root instead. Exceptions stop training, and core cleanup ignores
+late callbacks.
 
 The shared teacher buffer owns CPU model snapshots. FedRevive owns client-level
 class proxies, including refreshing retained teachers after the second probe.
-The research synthetic pool clones only new CPU images and preserves the reference
-label/index RNG draw order. Ordinary KD uses the shared detached
+`SyntheticPool.add` clones only new CPU images, and `SyntheticPool.sample_batch_indices`
+plans KD batches as indices. Images are stacked only when a batch is used.
+Ordinary KD uses the shared detached
 teacher loss. Synthesis retains teacher-input gradients, optimized latent and
 embedding tensors, raw-image pooling and repeated augmentation. The generic
 trainer's same-batch multi-teacher policy and generic synthesizer's fixed-latent
@@ -185,25 +188,22 @@ $$
 + \beta(\tau)\widetilde{\Delta}^{KD}_i.
 $$
 
-DFKD starts after model version 50 when the accepted update has nonzero
-staleness. Steps 1--3 occur when the model version is divisible by
-`--generation-interval`, while step 4 still occurs for every eligible update
-after the version-100 warmup. These version-50 and version-100 gates are part
-of the curve-producing experimental configuration but are not specified in the
-paper:
+DFKD becomes eligible when the current global model is at version 50 or
+later and the accepted update has nonzero staleness. Through current version
+100, the student delta is zero and the server applies the client delta with
+weight $1-\beta(\tau)$. These warmup thresholds are experiment settings.
 
-1. samples target labels from the mean class-proportion proxy of the buffered
-   teachers and adapts a fast copy of the persistent generator for two
-   synthesis steps;
-2. applies a Reptile update to the persistent generator;
-3. adds the best generated batch to a bounded 16,000-image pool; and
-4. after the version-100 warmup, trains a student for ten multi-teacher KD
-   iterations and returns its delta from the current global model.
-
-The mean-teacher target distribution is the setting used to produce these
-curves. It differs from the uniform synthesis-target description in Section
-2.2 of the paper; teacher-specific class proportions are still used separately
-when sampling the synthetic pool for multi-teacher KD.
+1. On eligible versions divisible by `--generation-interval`, draw synthesis
+   targets and adapt a fast copy of the persistent generator for two steps.
+   The synthesis loss weights each teacher by its class proportions, even when
+   target labels are uniform as described in Section 2.2 of the paper. The
+   adversarial loss starts at the 100th synthesis call.
+2. Apply a Reptile update to the persistent generator and add the best
+   generated batch to the bounded 16,000-image pool.
+3. After current version 100, plan ten batches per teacher using its class
+   proportions. Prefer distinct images within each class when the pool has
+   enough samples. Load one batch per teacher for each KD step and return the
+   trained student's delta from the current global model.
 
 All synthesis and KD work is server-side. No synthetic data is sent to clients.
 
@@ -292,9 +292,17 @@ requested population exceeds the available training examples.
 
 ## Run the experiments
 
+`set_seed` seeds Python, NumPy, and PyTorch on CPU and CUDA. The launcher uses
+`--setup-seed` before data preparation or job construction, and the server
+uses it to initialize the model and DFKD components. Once those components
+are built, `--run-seed` starts the server's training RNG before any client
+updates. It also seeds the simulated arrival sequence and the probe generator.
+Each client training call uses its assignment's own seed for shuffled batches
+and augmentation.
+
 Each method uses the same entry point and defaults to its table preset. The
-FedRevive defaults additionally select the paper-main estimated class
-proportions and generation interval of 10:
+FedRevive defaults additionally select estimated class proportions, uniform
+synthesis targets, and a generation interval of 10.
 
 ```bash
 python job.py --method fedavg \
@@ -310,11 +318,13 @@ python job.py --method fedrevive \
   --max-time 200 --setup-seed 10 --run-seed 10
 ```
 
-To run the true-histogram, every-version synthesis ablation:
+To run with true histograms, teacher-mean targets, and synthesis on every
+eligible version:
 
 ```bash
 python job.py --method fedrevive \
   --class-proportion-source true-histogram --generation-interval 1 \
+  --synthesis-label-distribution teacher-mean \
   --data-root /tmp/cifar10 --prepared-data-root /tmp/fedrevive/cifar10 \
   --workspace-root /tmp/nvflare/fedrevive-true-histogram \
   --max-time 200 --setup-seed 10 --run-seed 10
@@ -339,9 +349,8 @@ python job.py --method fedrevive \
   --max-time 100 --setup-seed 10 --run-seed 10
 ```
 
-For the shifted-schedule ablation, add
-`--class-proportion-source true-histogram --generation-interval 1` to the FedRevive
-command and use `--workspace-root /tmp/nvflare/fedrevive-shifted-true-histogram`.
+For the shifted run with teacher-mean targets, use the same three options and
+`--workspace-root /tmp/nvflare/fedrevive-shifted-true-histogram`.
 
 A CUDA-capable GPU is recommended for both client training and FedRevive's
 server-side DFKD. Device selection defaults to `auto`; use `--client-device
@@ -452,9 +461,10 @@ pool checkpoints, and TensorBoard events in the NVFlare run directory.
 
 ## Results
 
-The following raw curves were produced by the pre-migration Collab workflow
-with seed 10. They have not been rerun with the composed workflow. They are single-seed results rather than
-the paper's three-seed averages.
+The following historical curves use one seed (10) and the pre-migration Collab
+workflow. Both FedRevive configurations used teacher-mean synthesis targets
+and the earlier warmup and KD sampling rules. The paper reports averages over
+three seeds.
 
 ### Default delay schedule
 
@@ -487,10 +497,9 @@ condition for future runs.
 
 ### FedRevive configuration options
 
-Figure 3 compares the two FedRevive configurations shown in the run commands:
-the paper-main server-estimated class proportions using 64 Gaussian probes with
-synthesis every ten versions, and the true-histogram, every-version synthesis
-ablation.
+Figure 3 compares server-estimated class proportions using 64 Gaussian probes
+and synthesis every ten versions with true histograms and synthesis every
+eligible version.
 Both runs use seed 10 and the same 1,270 centralized evaluation points, model
 versions, and simulated arrival times.
 
@@ -531,7 +540,7 @@ fedrevive/
 ├── client.py
 ├── server.py             # Model loader, operations, evaluation observer
 ├── schedule.py           # Seeded research phases
-├── storage.py            # Retained tensor artifacts
+├── storage.py            # Reference-counted temporary tensor files
 ├── update.py             # Optional FedRevive update transform
 ├── workflow.py           # Research composition over core async
 ├── fedrevive.py

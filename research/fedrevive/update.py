@@ -19,7 +19,14 @@ from dataclasses import asdict
 from pathlib import Path
 
 import torch
-from fedrevive import ClassProportionSource, TeacherBuffer, blend_updates, cosine_staleness_beta
+from fedrevive import (
+    ClassProportionSource,
+    SynthesisLabelDistribution,
+    TeacherBuffer,
+    blend_updates,
+    cosine_staleness_beta,
+)
+from model import set_seed
 
 from nvflare.collab import collab
 
@@ -57,6 +64,7 @@ class FedReviveUpdate:
         class_proportion_source="estimated",
         probe_count=64,
         run_seed=10,
+        synthesis_label_distribution=SynthesisLabelDistribution.UNIFORM.value,
     ):
         self.prepared_data_root = prepared_data_root
         self.device = device
@@ -64,12 +72,17 @@ class FedReviveUpdate:
         self.class_proportion_source = class_proportion_source
         self.probe_count = probe_count
         self.run_seed = run_seed
+        self.synthesis_label_distribution = synthesis_label_distribution
 
     def initialize(self):
         from data import load_manifest
         from dfkd import ClassProportionProxyEstimator, DFKDConfig, DFKDReviver
 
-        self.config = DFKDConfig(generation_interval=self.generation_interval, proxy_batch_size=self.probe_count)
+        self.config = DFKDConfig(
+            generation_interval=self.generation_interval,
+            proxy_batch_size=self.probe_count,
+            synthesis_label_distribution=self.synthesis_label_distribution,
+        )
         self.teachers = TeacherBuffer(self.config.teacher_buffer_size)
         self.run_dir = Path(collab.workspace.get_run_dir(collab.fl_ctx.get_job_id()))
         (self.run_dir / "dfkd_config.json").write_text(json.dumps(asdict(self.config), indent=2))
@@ -87,6 +100,9 @@ class FedReviveUpdate:
             )
         else:
             self.proportions = load_manifest(self.prepared_data_root)["class_proportions"]
+        # Start the server's run stream after allocating every DFKD model.
+        # Their initialization depends on the setup seed, not the run seed.
+        set_seed(self.run_seed)
 
     def __call__(self, update):
         from data import prepared_shard_name
@@ -103,8 +119,9 @@ class FedReviveUpdate:
         self.teachers.update_class_proxy(name, proxy)
         self.teachers.add(returned, proxy, name, update.assignment.base_version)
         beta = cosine_staleness_beta(update.staleness, 75)
+        eligible = update.current_version >= self.config.freeze_versions and beta > 0
         distilled, metrics = None, {}
-        if update.current_version >= self.config.freeze_versions and beta > 0:
+        if eligible:
             distilled, metrics = self.reviver.revive(update.current_model, list(self.teachers), update.current_version)
         with (self.run_dir / "revival.jsonl").open("a") as stream:
             stream.write(
@@ -120,7 +137,13 @@ class FedReviveUpdate:
                 )
                 + "\n"
             )
-        return update.delta if distilled is None else blend_updates(update.delta, distilled, beta)
+        if distilled is not None:
+            return blend_updates(update.delta, distilled, beta)
+        if eligible:
+            # During synthesis-only warmup the student delta is zero, so the
+            # hybrid update still applies the stale client weight from Eq. (3).
+            return {name: (1.0 - beta) * value for name, value in update.delta.items()}
+        return update.delta
 
     def close(self):
         # The workflow owns shutdown; release persistent models on success/failure.

@@ -15,15 +15,13 @@
 """FedRevive model operations, initialization and experiment artifacts."""
 
 import json
-import random
 from dataclasses import asdict
 from pathlib import Path
 
-import numpy as np
 import torch
 from data import test_transform
 from fedrevive import model_delta
-from model import create_model, get_model_params, load_model_params, reset_tracker_stats_in_state
+from model import create_model, get_model_params, load_model_params, reset_tracker_stats_in_state, set_seed
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets
@@ -72,9 +70,7 @@ class FedReviveModelLoader:
 
     def load_model(self):
         torch.set_num_threads(1)
-        random.seed(self.setup_seed)
-        np.random.seed(self.setup_seed)
-        torch.manual_seed(self.setup_seed)
+        set_seed(self.setup_seed)
         return get_model_params(create_model(), target_device="cpu")
 
 
@@ -106,7 +102,6 @@ class FedReviveObserver:
         config = self.run_dir / "run_config.json"
         with config.open("x") as stream:
             json.dump(self.run_config, stream, indent=2)
-        (self.run_dir / "published_models").mkdir()
         self.writer = SummaryWriter(log_dir=str(self.run_dir / "tensorboard"))
         self.history = []
         self.simulated_time = 0.0 if self.run_config["arrival_mode"] == "simulated" else None
@@ -142,13 +137,15 @@ class FedReviveObserver:
             )
 
     def on_model(self, model, version):
-        torch.save(model, self.run_dir / "published_models" / f"{version:08d}.pt")
         if version % self.eval_interval == 0:
             self._evaluate(model, version)
 
     def _evaluate(self, model, version):
         if self._eval_model is None:
-            self._eval_model = create_model()
+            # Evaluation loads published weights. Discard the RNG draws for
+            # the temporary CPU initialization so they cannot shift KD draws.
+            with torch.random.fork_rng(devices=[]):
+                self._eval_model = create_model()
         load_model_params(self._eval_model, model, target_device=self._device())
         self._eval_model.eval()
         correct, total, loss_sum = 0, 0, 0.0

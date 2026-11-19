@@ -42,22 +42,40 @@ class PhaseCoordinator(FedBuffTrainingCoordinator):
         return 0 if self._closed or self.finished or slots < self.min_open_slots else slots
 
     def reserve_for_phase(self, logical_names, run_seed):
-        if not self.bases.path(self.version).exists():
-            self.bases.put(self.version, self.model)
+        names = logical_names[: self.available_slots]
+        if not names:
+            return []
+        base_path = self.bases.retain(self.version, self.model, users=len(names))
         assignments = []
-        for name in logical_names[: self.available_slots]:
+        for name in names:
             assignment = DiskAssignment(
                 self._next_id,
                 None,
                 name,
                 self.version,
-                str(self.bases.path(self.version)),
+                str(base_path),
                 {"train_seed": run_seed * 1_000_000 + self._next_id + 1},
             )
             self._next_id += 1
             self.active[assignment.assignment_id] = assignment
             assignments.append(assignment)
         return assignments
+
+    def accept(self, assignment, result, error=None):
+        active = self.active.get(assignment.assignment_id)
+        try:
+            return super().accept(assignment, result, error)
+        finally:
+            # The coordinator removes the assignment after consuming its exact-base delta.
+            if active is not None and active.assignment_id not in self.active:
+                self.bases.release(active.base_version)
+
+    def close(self):
+        try:
+            super().close()
+        finally:
+            # Outstanding assignments may still need a base until the call scope ends.
+            self.bases.close()
 
 
 class FedReviveWorkflow(FedBuffWorkflow):
@@ -115,15 +133,16 @@ class FedReviveWorkflow(FedBuffWorkflow):
                 self._notify("on_time", scheduler.time)
                 self._emit("dispatch", assignment, coordinator.version, name)
 
-        def collect():
+        def collect(cache_result=True):
             name, identity, result, error = receive()
             if inflight.pop(name) != identity:
                 raise ValueError("physical result identity mismatch")
             if error is not None or result is None:
                 raise RuntimeError(f"assignment {identity} failed: {error or 'no result'}")
-            results.put(identity, result)
-            completed_sites[identity] = name
-            scheduler.on_result(name, identity)
+            if cache_result:
+                results.retain(identity, result)
+                completed_sites[identity] = name
+                scheduler.on_result(name, identity)
 
         try:
             while not coordinator.finished and not scheduler.stopped:
@@ -134,9 +153,10 @@ class FedReviveWorkflow(FedBuffWorkflow):
                 self._notify("on_time", scheduler.time)
                 if identity is not None:
                     assignment = coordinator.active[identity]
-                    result = results.load(identity)
                     version = coordinator.version
-                    published = coordinator.accept(assignment, self._normalize(result, assignment))
+                    published = coordinator.accept(assignment, self._normalize(results.load(identity), assignment))
+                    # The buffer owns the delta and the teacher buffer owns its snapshot.
+                    results.release(identity)
                     scheduler.on_accept(identity)
                     self._emit("accept", assignment, version, completed_sites.pop(identity))
                     if published:
@@ -151,17 +171,19 @@ class FedReviveWorkflow(FedBuffWorkflow):
                     collect()
                 except queue.Empty:
                     continue
-            # Preserve all physically completed results on disk without accepting
-            # beyond the horizon. Remote calls finish or hit the core timeout.
-            while inflight:
-                if collab.is_aborted:
-                    raise RuntimeError("FedRevive run aborted during drain")
-                try:
-                    collect()
-                except queue.Empty:
-                    continue
         finally:
             scheduler.close()
+            results.close()
+
+        # Beyond the horizon, drain calls and discard their results on receipt.
+        while inflight:
+            if collab.is_aborted:
+                raise RuntimeError("FedRevive run aborted during drain")
+            try:
+                collect(cache_result=False)
+            except queue.Empty:
+                continue
+        coordinator.bases.close()
 
 
 class FedReviveRecipe(CollabRecipe):

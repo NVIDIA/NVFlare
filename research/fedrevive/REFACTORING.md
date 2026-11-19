@@ -12,9 +12,10 @@ The [README](README.md) covers data preparation, CLI options, and experiment art
   assignment base. `FedReviveUpdate` adds the arriving full model to the teacher
   buffer before revival, refreshes retained proxies when the client's second
   upload finalizes its estimate, and blends in a KD delta computed against the
-  current global model. The reference synthesis and KD warmup gates use current
-  versions 50 and 100, respectively. A separate FedAvg transform checks that each
-  publication uses contributions from a single base version.
+  current global model. The synthesis gate opens at current version 50. The
+  blend uses a zero KD delta through current version 100, so the client delta
+  is still scaled by its staleness weight. A separate FedAvg transform checks
+  that each publication uses contributions from a single base version.
 - **Live arrivals and explicit replay.** Both use `FedBuffRecipe` with the same
   model operations, observer, and update transform. `SimEnv` supplies any replay
   plan at execution. It keeps a logical client reserved until its result is
@@ -39,10 +40,10 @@ The [README](README.md) covers data preparation, CLI options, and experiment art
 The shared feature objective groups each layer's mean and variance losses before
 summing. In one ResNet CPU comparison, the scalar changed from 299.679016 to
 299.679047 with identical input gradients. The paper-phase workflow surfaces
-physical call errors on receipt, including while draining at the horizon. It
-keeps raw results on disk for inspection in place of the old `--no-in-time`
-path. The disk files support experiment inspection. Distributed recovery is
-outside the scope of this workflow.
+physical call errors on receipt, including while draining at the horizon.
+It reclaims temporary upload and assignment-base files when their last
+consumer finishes. The run retains the schedule, metrics, and final global
+model for experiment inspection.
 
 ## Historical migration checks
 

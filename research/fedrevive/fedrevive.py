@@ -38,6 +38,11 @@ class ClassProportionSource(str, Enum):
     ESTIMATED = "estimated"
 
 
+class SynthesisLabelDistribution(str, Enum):
+    UNIFORM = "uniform"
+    TEACHER_MEAN = "teacher-mean"
+
+
 @dataclass(frozen=True)
 class MethodConfig:
     """Paper configuration that controls scheduling and aggregation.

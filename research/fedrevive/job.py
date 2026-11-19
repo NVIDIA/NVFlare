@@ -33,7 +33,8 @@ for _variable in (
 
 from client import FedReviveClient
 from data import DELAY_SCHEDULES, load_manifest, prepare_cifar10
-from fedrevive import FIGURE_2_METHOD_CONFIGS, ClassProportionSource, Method
+from fedrevive import FIGURE_2_METHOD_CONFIGS, ClassProportionSource, Method, SynthesisLabelDistribution
+from model import set_seed
 from server import FedReviveModelLoader, FedReviveModelOps, FedReviveObserver
 from update import FedAvgUpdate, FedReviveUpdate
 from workflow import FedReviveRecipe
@@ -120,6 +121,12 @@ def define_parser():
         help="Generate synthetic data every N global model versions; defaults to 10 for FedRevive",
     )
     parser.add_argument(
+        "--synthesis-label-distribution",
+        choices=[distribution.value for distribution in SynthesisLabelDistribution],
+        default=SynthesisLabelDistribution.UNIFORM.value,
+        help="Draw synthesis targets uniformly or from the mean of the buffered teachers' class proportions",
+    )
+    parser.add_argument(
         "--class-proportion-probe-count",
         type=int,
         default=64,
@@ -170,7 +177,7 @@ def define_parser():
         "--run-seed",
         type=int,
         default=10,
-        help="Logical participant-selection and delay-sampling seed; fixes the simulated arrival sequence",
+        help="Seed for the simulated arrival sequence, client assignments, and server-side distillation",
     )
     parser.add_argument("--workspace-root", default="/tmp/nvflare/fedrevive")
     return parser
@@ -199,8 +206,9 @@ def validate_args(args):
         args.class_proportion_source not in (None, ClassProportionSource.TRUE_HISTOGRAM.value)
         or args.generation_interval not in (None, 1)
         or args.class_proportion_probe_count != 64
+        or args.synthesis_label_distribution != SynthesisLabelDistribution.UNIFORM.value
     ):
-        raise ValueError("class-proportion, probe-count, and generation options require --method fedrevive")
+        raise ValueError("class-proportion and synthesis options require --method fedrevive")
 
 
 def make_recipe(args):
@@ -257,6 +265,7 @@ def make_recipe(args):
             class_proportion_source=class_proportion_source,
             probe_count=args.class_proportion_probe_count,
             run_seed=args.run_seed,
+            synthesis_label_distribution=args.synthesis_label_distribution,
         )
         if method is Method.FEDREVIVE
         else None
@@ -339,6 +348,7 @@ def make_sim_env(args, manifest):
 def main():
     args = define_parser().parse_args()
     validate_args(args)
+    set_seed(args.setup_seed)
     if args.prepare_data:
         prepare_cifar10(
             output_root=args.prepared_data_root,

@@ -16,6 +16,7 @@
 
 import os
 import time
+from collections import Counter
 from dataclasses import dataclass
 
 import kornia.augmentation as K
@@ -23,7 +24,7 @@ import kornia.enhance as KE
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from fedrevive import ModelState, TeacherState
+from fedrevive import ModelState, SynthesisLabelDistribution, TeacherState
 from model import StatTracker, create_model, get_model_diff, load_model_params, reset_model_state
 
 from nvflare.app_opt.pt.distillation.classification import mean_class_probabilities
@@ -55,6 +56,7 @@ class DFKDConfig:
     proxy_num_uploads: int = 2
     proxy_temperature: float = 0.8
     proxy_batch_size: int = 64
+    synthesis_label_distribution: str = SynthesisLabelDistribution.UNIFORM.value
 
     def __post_init__(self):
         if self.teacher_buffer_size < 1 or self.generator_steps < 1 or self.generation_interval < 1:
@@ -174,10 +176,10 @@ class DFKDGenerator(nn.Module):
 
 
 class SyntheticPool:
-    """Bounded CPU image storage with the reference class-sampling RNG order.
+    """Bounded CPU image storage with class-aware KD sampling.
 
-    Clone only new images so appending a batch does not copy the retained pool.
-    Keep one label draw per batch and one index draw per sample.
+    Clone only new images when appending. Plan KD batches using indices so the
+    images are materialized one minibatch at a time.
     """
 
     def __init__(self, max_images: int, output_dir: str | None = None):
@@ -217,24 +219,28 @@ class SyntheticPool:
                 os.path.join(self.output_dir, "synthetic_dataset.pt"),
             )
 
-    def sample(self, distribution: torch.Tensor, batch_size: int):
-        if not self.images:
-            return None, None
+    def sample_batch_indices(self, distribution: torch.Tensor, batch_size: int, num_batches: int):
+        """Draw labels for all steps, then sample matching images per class."""
+
         probabilities = distribution.detach().cpu().float()
         probabilities = probabilities / probabilities.sum()
-        requested = torch.multinomial(probabilities, batch_size, replacement=True).tolist()
+        requested = torch.multinomial(probabilities, batch_size * num_batches, replacement=True).tolist()
         indices = []
-        for label in requested:
+        for label, count in Counter(requested).items():
             candidates = self.by_label.get(label)
-            if candidates:
-                index = candidates[torch.randint(len(candidates), (1,), device="cpu").item()]
+            if not candidates:
+                indices.extend(torch.randint(len(self.images), (count,), device="cpu").tolist())
+                continue
+            if len(candidates) >= count:
+                selected = torch.randperm(len(candidates), device="cpu")[:count]
             else:
-                index = torch.randint(len(self.images), (1,), device="cpu").item()
-            indices.append(index)
-        return (
-            torch.stack([self.images[index] for index in indices]),
-            torch.tensor([self.labels[index] for index in indices], dtype=torch.long, device="cpu"),
-        )
+                selected = torch.randint(len(candidates), (count,), device="cpu")
+            indices.extend(candidates[index] for index in selected.tolist())
+        shuffled = torch.tensor(indices, device="cpu")[torch.randperm(len(indices), device="cpu")]
+        return shuffled.reshape(num_batches, batch_size).tolist()
+
+    def load_batch(self, indices: list[int]) -> torch.Tensor:
+        return torch.stack([self.images[index] for index in indices])
 
 
 def _kldiv(student_logits, teacher_logits, temperature: float, reduction="batchmean"):
@@ -324,16 +330,18 @@ class DFKDReviver:
             distributions.append(teacher.class_proxy.to(self.device))
         return models, distributions
 
-    def _synthesize(self, teachers, distributions, student, current_version: int):
+    def _synthesize(self, teachers, distributions, student):
         started = time.time()
         self.synthesis_count += 1
         batch_size = self.config.synth_batch_size
-        combined_distribution = torch.stack(distributions).mean(dim=0)
-        targets = torch.multinomial(combined_distribution, batch_size, replacement=True)
         noise = torch.randn(batch_size, self.config.latent_size, device=self.device, requires_grad=True)
+        distribution_tensor = torch.stack(distributions)
+        if self.config.synthesis_label_distribution == SynthesisLabelDistribution.TEACHER_MEAN.value:
+            targets = torch.multinomial(distribution_tensor.mean(dim=0), batch_size, replacement=True)
+        else:
+            targets = torch.randint(distribution_tensor.size(1), (batch_size,), device=self.device)
         embeddings = torch.randn(10, self.config.latent_size, device=self.device, requires_grad=True)
 
-        distribution_tensor = torch.stack(distributions)
         teacher_weights = distribution_tensor / distribution_tensor.sum(dim=0, keepdim=True).clamp_min(1e-8)
         sample_weights = teacher_weights[:, targets].T
         fast_generator = self.generator.clone()
@@ -370,7 +378,8 @@ class DFKDReviver:
             one_hot_loss = self._stabilize((sample_weights * ce_losses.T).sum() / batch_size, "one_hot")
 
             adversarial_loss = torch.zeros((), device=self.device)
-            if self.config.adversarial_weight > 0 and current_version >= self.config.warmup_versions:
+            # The generator has its own warmup, measured in synthesis calls.
+            if self.config.adversarial_weight > 0 and self.synthesis_count >= self.config.warmup_versions:
                 student_output = student(augmented)
                 per_teacher = []
                 for teacher_output in stacked_outputs:
@@ -424,7 +433,7 @@ class DFKDReviver:
             parameter.requires_grad_(False)
 
         if self.config.should_generate(current_version):
-            metrics = self._synthesize(teachers, distributions, self.student_model, current_version)
+            metrics = self._synthesize(teachers, distributions, self.student_model)
             metrics["synthesis_performed"] = True
         else:
             # The periodic configuration reuses the bounded synthetic pool
@@ -432,20 +441,23 @@ class DFKDReviver:
             # eligible client arrival. No model snapshot is retained for reuse.
             metrics = {"synthesis_performed": False, "synthesis_time": 0.0}
         distilled_update = None
-        if current_version > self.config.warmup_versions:
+        if current_version > self.config.warmup_versions and len(self.pool):
             for parameter in self.student_model.parameters():
                 parameter.requires_grad_(True)
             self.student_model.train()
             optimizer = torch.optim.Adam(self.student_model.parameters(), lr=self.config.kd_lr, weight_decay=1e-5)
             losses = []
-            for _ in range(self.config.kd_iterations):
+            # Plan every KD batch teacher by teacher. Each optimizer step
+            # still uses one minibatch from each teacher.
+            batches = [
+                self.pool.sample_batch_indices(distribution, self.config.kd_batch_size, self.config.kd_iterations)
+                for distribution in distributions
+            ]
+            for step_batches in zip(*batches):
                 loss = torch.zeros((), device=self.device)
                 samples = 0
-                for teacher, distribution in zip(teachers, distributions):
-                    images, _ = self.pool.sample(distribution, self.config.kd_batch_size)
-                    if images is None:
-                        continue
-                    images = self.augmentation(images.to(self.device))
+                for teacher, indices in zip(teachers, step_batches):
+                    images = self.augmentation(self.pool.load_batch(indices).to(self.device))
                     student_output = self.student_model(images.detach())
                     with torch.no_grad():
                         teacher_output = teacher(images)
@@ -456,15 +468,13 @@ class DFKDReviver:
                         reduction="sum",
                     )
                     samples += images.size(0)
-                if samples:
-                    loss = self._stabilize(loss / samples, "kd")
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
-                    losses.append(loss.item())
-            metrics["kd_loss"] = sum(losses) / len(losses) if losses else 0.0
-            if losses:
-                distilled_update = get_model_diff(self.student_model, global_model, target_device="cpu")
+                loss = self._stabilize(loss / samples, "kd")
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                losses.append(loss.item())
+            metrics["kd_loss"] = sum(losses) / len(losses)
+            distilled_update = get_model_diff(self.student_model, global_model, target_device="cpu")
         else:
             metrics["kd_loss"] = 0.0
 

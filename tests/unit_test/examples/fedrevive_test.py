@@ -39,7 +39,14 @@ def research(monkeypatch):
                 sys.modules[name] = previous
 
 
-def test_revival_uses_current_global_delta_and_refreshes_arriving_teacher(research, tmp_path):
+@pytest.mark.parametrize(
+    ("version", "base_version", "student_delta", "processed_delta"),
+    [(49, 0, None, 2.0), (75, 0, None, 1.0), (125, 50, 8.0, 5.0)],
+    ids=("frozen", "synthesis-only", "distilled"),
+)
+def test_revival_uses_current_global_delta_and_refreshes_arriving_teacher(
+    research, tmp_path, version, base_version, student_delta, processed_delta
+):
     torch = pytest.importorskip("torch")
     pytest.importorskip("torchvision")
     from nvflare.collab.fedbuff_recipe import AcceptedUpdate, Assignment
@@ -56,14 +63,14 @@ def test_revival_uses_current_global_delta_and_refreshes_arriving_teacher(resear
         seen.append((global_model["w"].item(), [t.model["w"].item() for t in teachers], version))
         assert all(t.client_name == "client-0" for t in teachers)
         assert all(torch.equal(t.class_proxy, torch.tensor([0.25, 0.75])) for t in teachers)
-        return {"w": torch.tensor([8.0])}, {}
+        return (None if student_delta is None else {"w": torch.tensor([student_delta])}), {}
 
     policy.reviver = SimpleNamespace(revive=revive)
     policy.teachers.add({"w": torch.tensor([1.0])}, torch.tensor([1.0, 0.0]), "client-0", 0)
-    assignment = Assignment(7, "site-1", "site-1", 0, {"w": torch.tensor([0.0])})
+    assignment = Assignment(7, "site-1", "site-1", base_version, {"w": torch.tensor([0.0])})
     update = AcceptedUpdate(
         assignment,
-        75,
+        version,
         {"w": torch.tensor([20.0])},
         {"w": torch.tensor([2.0])},
         1.0,
@@ -72,13 +79,16 @@ def test_revival_uses_current_global_delta_and_refreshes_arriving_teacher(resear
         {},
     )
     result = policy(update)
-    assert seen == [(20.0, [2.0, 1.0], 75)]
-    torch.testing.assert_close(result["w"], torch.tensor([5.0]))  # beta(75)=0.5
+    assert seen == ([(20.0, [2.0, 1.0], version)] if version >= 50 else [])
+    torch.testing.assert_close(result["w"], torch.tensor([processed_delta]))  # beta(75)=0.5 when eligible
     assert update.current_model["w"].item() == 20 and update.delta["w"].item() == 2
     # An on-time upload still enters history but does not trigger revival.
-    current = Assignment(8, "site-1", "client-0", 75, update.current_model)
-    policy(AcceptedUpdate(current, 75, update.current_model, update.delta, 1.0, {}, update.returned_model, {}))
-    assert len(seen) == 1 and len(policy.teachers) == 2
+    current = Assignment(8, "site-1", "client-0", version, update.current_model)
+    result = policy(
+        AcceptedUpdate(current, version, update.current_model, update.delta, 1.0, {}, update.returned_model, {})
+    )
+    torch.testing.assert_close(result["w"], update.delta["w"])
+    assert len(seen) == int(version >= 50) and len(policy.teachers) == 2
 
 
 def test_phase_release_precedes_upload_and_horizon_rejects_due_result(research, tmp_path):
@@ -124,6 +134,107 @@ def test_fedavg_rejects_mixed_assignment_bases_within_a_publication(research):
     guard(update(1))
     with pytest.raises(RuntimeError, match="different global versions"):
         guard(update(2))
+
+
+def _paper_coordinator(research, tmp_path, monkeypatch, **options):
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("torchvision")
+    pytest.importorskip("tensorboard")
+    workflow = research("workflow")
+    monkeypatch.setattr(
+        workflow,
+        "collab",
+        SimpleNamespace(
+            workspace=SimpleNamespace(get_run_dir=lambda _: tmp_path),
+            fl_ctx=SimpleNamespace(get_job_id=lambda: "job"),
+            is_aborted=False,
+        ),
+    )
+    return workflow.PhaseCoordinator({"w": torch.tensor([0.0])}, research("server").FedReviveModelOps(), **options)
+
+
+def test_phase_coordinator_keeps_shared_base_until_last_acceptance(research, tmp_path, monkeypatch):
+    torch = pytest.importorskip("torch")
+    from nvflare.collab.fedbuff_recipe import FedBuffResult
+
+    coordinator = _paper_coordinator(research, tmp_path, monkeypatch, num_rounds=2, concurrency=2, buffer_size=2)
+    a, b = coordinator.reserve_for_phase(["client-0", "client-1"], run_seed=10)
+    base = Path(a.base_path)
+    assert a.base_path == b.base_path and base.is_file()
+
+    assert not coordinator.accept(a, FedBuffResult(a.assignment_id, 0, {"w": torch.tensor([1.0])}))
+    assert base.is_file()
+    assert coordinator.accept(b, FedBuffResult(b.assignment_id, 0, {"w": torch.tensor([2.0])}))
+    assert not base.exists()
+    torch.testing.assert_close(coordinator.model["w"], torch.tensor([1.5]))
+
+    outstanding = coordinator.reserve_for_phase(["client-0"], run_seed=10)[0]
+    assert Path(outstanding.base_path).is_file()
+    coordinator.close()
+    assert not Path(outstanding.base_path).exists()
+
+
+@pytest.mark.parametrize("stop", ["version", "horizon", "failure", "abort"])
+def test_paper_workflow_reclaims_completed_uploads(research, tmp_path, monkeypatch, stop):
+    torch = pytest.importorskip("torch")
+    coordinator = _paper_coordinator(research, tmp_path, monkeypatch, num_rounds=1, concurrency=3)
+    workflow = research("workflow")
+    profiles = {
+        f"client-{i}": {"download_mean": delay, "train_mean": 0, "upload_mean": 0.1, "upload_half_width": 0}
+        for i, delay in enumerate((0.1, 0.5, 1.0))
+    }
+    monkeypatch.setattr(workflow, "load_manifest", lambda _: {"runtime_profiles": profiles})
+    uploads = tmp_path / "assignment_results"
+    dispatched = {}
+    order = iter(("client-1", "client-0", "client-2"))
+
+    def observe(event):
+        if event.phase == "accept":
+            assert event.logical_name == "client-0"
+            assert not (uploads / f"{event.assignment_id:08d}.pt").exists()
+            assert len(list(uploads.glob("*.pt"))) == 1
+
+    instance = workflow.FedReviveWorkflow(
+        SimpleNamespace(load_model=lambda: coordinator.model),
+        coordinator.model_ops,
+        1,
+        3,
+        "unused",
+        10,
+        0.15 if stop == "horizon" else 2.0,
+        observer=SimpleNamespace(on_event=observe),
+    )
+
+    def submit(site, assignment, **kwargs):
+        dispatched[assignment.logical_name] = site, assignment
+
+    def receive():
+        name = next(order)
+        site, assignment = dispatched[name]
+        if name == "client-0":
+            assert len(list(uploads.glob("*.pt"))) == 1  # Client 1 finished before its simulated upload.
+            if stop == "failure":
+                return site, assignment.assignment_id, None, "client failure"
+        if name == "client-2":
+            assert not list(uploads.glob("*.pt"))  # Drop obsolete files before draining this call.
+        if name == "client-1" and stop == "abort":
+            workflow.collab.is_aborted = True
+        metadata = {"assignment_id": assignment.assignment_id, "model_version": 0, "logical_name": name}
+        return site, assignment.assignment_id, ({"w": torch.tensor([1.0])}, {}, metadata), None
+
+    try:
+        if stop in ("failure", "abort"):
+            with pytest.raises(RuntimeError, match="client failure" if stop == "failure" else "run aborted"):
+                instance._run(coordinator, ["site-1", "site-2", "site-3"], submit, receive)
+            assert coordinator.version == 0
+        else:
+            instance._run(coordinator, ["site-1", "site-2", "site-3"], submit, receive)
+            assert coordinator.version == (1 if stop == "version" else 0)
+            assert not list(coordinator.bases.directory.glob("*.pt"))
+        assert not list(uploads.glob("*.pt"))
+    finally:
+        coordinator.close()
+    assert not list(coordinator.bases.directory.glob("*.pt"))
 
 
 def test_replay_plan_is_supplied_to_simenv_and_excluded_from_fedrevive_export(research, tmp_path, monkeypatch):

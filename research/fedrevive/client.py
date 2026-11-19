@@ -23,7 +23,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from data import prepared_shard_name, train_transform
-from model import create_model, get_model_params, load_model_params
+from model import create_model, get_model_params, load_model_params, set_seed
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets
 
@@ -89,6 +89,7 @@ class FedReviveClient:
     def initialize(self):
         torch.set_num_threads(self.num_threads)
         torch.set_num_interop_threads(self.num_threads)
+        set_seed(self.run_seed)
         self.data_root = collab.get_app_prop("data_root", self.data_root)
         self.prepared_data_root = collab.get_app_prop("prepared_data_root", self.prepared_data_root)
         self._dataset = datasets.CIFAR10(
@@ -160,7 +161,7 @@ class FedReviveClient:
             train_seed = self.run_seed * 1_000_000 + assignment_id + 1
         else:
             train_seed = int(train_seeds[physical_name])
-        torch.manual_seed(train_seed)
+        set_seed(train_seed)
 
         device = self._device()
         started = time.perf_counter()
