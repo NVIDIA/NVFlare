@@ -39,7 +39,7 @@ from nvflare.client.api import (
 from nvflare.client.config import ConfigKey, TransferType
 from nvflare.fuel.utils import fobs
 
-from .algorithm import _AlgorithmHandlerManager
+from .algorithm import _AlgorithmHandlerManager, _AlgorithmResult
 from .callbacks import RestoreState
 
 FL_META_KEY = "__fl_meta__"
@@ -235,7 +235,15 @@ class _FLCallbackBase(Callback):
         else:
             fl_meta = {}
         if self._is_training:
-            algorithm_result = self._algorithm_handler_manager.finish_round(pl_module)
+            if self._training_round_started and self._get_round_num_steps(trainer) == 0:
+                self.logger.warning(
+                    f"Training stopped before the first optimizer step of round {self.current_round}. The received "
+                    "model is sent back with 0 steps and no algorithm update."
+                )
+                self._algorithm_handler_manager.abort_round()
+                algorithm_result = _AlgorithmResult(num_steps=0)
+            else:
+                algorithm_result = self._algorithm_handler_manager.finish_round(pl_module)
             metadata_conflicts = sorted(set(fl_meta).intersection(algorithm_result.metadata))
             if metadata_conflicts:
                 raise RuntimeError(
