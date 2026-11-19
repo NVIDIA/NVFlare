@@ -24,6 +24,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.trainer.states import TrainerFn
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -2199,27 +2200,7 @@ class ValidationWeights(pl.Callback):
         self.weights.append(pl_module.fc.weight.detach().clone())
 
 
-def test_step_sync_receives_after_send_and_validates_the_local_model():
-    events = []
-    weights = ValidationWeights()
-    fake = _FakeFlare(_train_tasks(2), events=events)
-
-    _fit_with_step_sync(
-        fake,
-        RecordingNet(),
-        _loader(4),
-        sync_every_n_steps=2,
-        val_loader=_loader(2),
-        max_epochs=1,
-        val_check_interval=2,
-        callbacks=[ValidationEvents(events), weights],
-    )
-
-    assert events == ["receive", "send", "receive", "val", "send", "receive:none", "val"]
-    assert not torch.equal(weights.weights[0], torch.full((2, 2), 1.0))
-
-
-def test_step_sync_validates_once_more_when_the_server_ends_between_validations():
+def test_step_sync_skips_the_final_validation_when_the_last_sync_falls_between_validations():
     events = []
     fake = _FakeFlare(_train_tasks(2), events=events)
 
@@ -2234,7 +2215,157 @@ def test_step_sync_validates_once_more_when_the_server_ends_between_validations(
         callbacks=[ValidationEvents(events)],
     )
 
-    assert events == ["receive", "send", "receive", "val", "send", "receive:none", "val"]
+    assert events == ["receive", "send", "receive", "val", "send", "receive:none"]
+    assert events.count("val") == 1
+
+
+class EpochEndEvents(pl.Callback):
+    def __init__(self, events):
+        self.events = events
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        self.events.append("epoch_end")
+
+
+def _fit_validating_every_sync(fake, module, num_batches, callbacks=(), **trainer_kwargs):
+    trainer_kwargs.setdefault("val_check_interval", 2)
+    return _fit_with_step_sync(
+        fake,
+        module,
+        _loader(num_batches),
+        sync_every_n_steps=2,
+        val_loader=_loader(2),
+        max_epochs=1,
+        callbacks=list(callbacks),
+        **trainer_kwargs,
+    )
+
+
+def test_step_sync_validates_before_the_receive_and_trains_the_received_model_next():
+    events = []
+    weights = ValidationWeights()
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(2), events=events)
+
+    _fit_validating_every_sync(fake, module, 6, callbacks=[ValidationEvents(events), weights])
+
+    assert events == ["receive", "send", "val", "receive", "send", "val", "receive:none"]
+    assert torch.equal(weights.weights[0], fake.sent_snapshots[0]["fc.weight"])
+    assert torch.equal(module.seen[2].weight, torch.full((2, 2), 1.0))
+
+
+@pytest.mark.parametrize("num_rounds", [1, 3])
+def test_step_sync_stops_at_the_server_end_without_an_extra_step(num_rounds):
+    events = []
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(num_rounds), events=events)
+
+    trainer = _fit_validating_every_sync(fake, module, 8, callbacks=[ValidationEvents(events)])
+
+    assert trainer.global_step == len(module.seen) == 2 * num_rounds
+    assert fake.steps() == [2] * num_rounds
+    assert events.count("val") == num_rounds
+    assert events[-1] == "receive:none"
+    assert trainer.lr_scheduler_configs[0].scheduler.last_epoch == 2 * num_rounds
+
+
+def test_step_sync_receives_after_the_epoch_end_validation():
+    events = []
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(2), events=events)
+
+    trainer = _fit_validating_every_sync(
+        fake, module, 2, callbacks=[ValidationEvents(events), EpochEndEvents(events)], val_check_interval=1.0
+    )
+
+    assert events == [
+        "receive",
+        "send",
+        "val",
+        "epoch_end",
+        "receive",
+        "send",
+        "val",
+        "epoch_end",
+        "receive:none",
+    ]
+    assert torch.equal(module.seen[2].weight, torch.full((2, 2), 1.0))
+    assert trainer.global_step == len(module.seen) == 4
+    assert trainer.current_epoch == 2
+    assert trainer.lr_scheduler_configs[0].scheduler.last_epoch == 4
+
+
+@pytest.mark.parametrize("num_batches", [8, 4], ids=["mid-epoch", "epoch-end"])
+def test_step_sync_leaves_evaluate_and_submit_model_tasks_for_after_fit(num_batches):
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(2) + [("evaluate", _round_model(9)), ("submit_model", FLModel(params={}))])
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=1, val_check_interval=2)
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.fit(module, train_dataloaders=_loader(num_batches), val_dataloaders=_loader(2))
+        assert trainer.global_step == len(module.seen) == 4
+        assert all(not torch.equal(record.weight, torch.full((2, 2), 9.0)) for record in module.seen)
+        while fake.receive() is not None and fake.is_evaluate():
+            trainer.validate(module, dataloaders=_loader(2))
+
+    assert [model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] for model in fake.sent[:2]] == [2, 2]
+    assert fake.sent[2].params is None
+    assert fake.sent[2].metrics["val_loss"] >= 0.0
+    assert torch.equal(module.fc.weight.detach(), torch.full((2, 2), 9.0))
+    assert fake.is_submit_model()
+
+
+def test_step_sync_does_not_receive_after_validation_stops_training():
+    events = []
+    module = RecordingNet()
+    fake = _FakeFlare(_train_tasks(3), events=events)
+    early_stopping = EarlyStopping(monitor="val_loss", stopping_threshold=1e9, check_on_train_epoch_end=False)
+
+    trainer = _fit_validating_every_sync(fake, module, 8, callbacks=[ValidationEvents(events), early_stopping])
+
+    assert events == ["receive", "send", "val"]
+    assert trainer.global_step == len(module.seen) == 2
+    assert fake.steps() == [2]
+
+
+class FailingValidationNet(RecordingNet):
+    def validation_step(self, batch, batch_idx):
+        raise RuntimeError("validation failed")
+
+
+def test_step_sync_raises_a_validation_error_before_the_receive():
+    fake = _FakeFlare(_train_tasks(3))
+
+    with _flare(fake):
+        module = FailingValidationNet()
+        trainer = _pl_trainer(max_epochs=2, max_steps=7, min_epochs=1, min_steps=3, val_check_interval=2)
+        limits = _trainer_limits(trainer)
+        lightning_patch(trainer, sync_every_n_steps=2)
+        with pytest.raises(RuntimeError, match="validation failed"):
+            trainer.fit(module, train_dataloaders=_loader(8), val_dataloaders=_loader(2))
+
+    assert fake.events == ["receive", "send"]
+    assert trainer.global_step == len(module.seen) == 2
+    assert _trainer_limits(trainer) == limits
+
+
+@pytest.mark.parametrize("val_check_interval", [2, 3, None], ids=["val-after-sync", "val-elsewhere", "no-val"])
+def test_step_sync_stops_a_bounded_scheduler_sized_for_the_server_rounds(val_check_interval):
+    num_rounds = 3
+    module = OneCycleNet(total_steps=num_rounds * 2)
+    fake = _FakeFlare(_train_tasks(num_rounds) + [("evaluate", _round_model(9))])
+
+    with _flare(fake):
+        trainer = _pl_trainer(max_epochs=1, val_check_interval=val_check_interval)
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.fit(module, train_dataloaders=_loader(8), val_dataloaders=_loader(2) if val_check_interval else None)
+        while fake.receive() is not None and fake.is_evaluate():
+            trainer.validate(module, dataloaders=_loader(2))
+
+    assert trainer.global_step == len(module.seen) == num_rounds * 2
+    assert trainer.lr_scheduler_configs[0].scheduler.last_epoch == num_rounds * 2
+    assert fake.sent[-1].metrics is not None
 
 
 @pytest.mark.parametrize("with_scaffold", [False, True])
