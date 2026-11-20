@@ -124,6 +124,10 @@ class DXOAggregator(FLComponent):
                 )
                 return False
 
+        if _is_zero_steps(dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND)):
+            self.log_warning(fl_ctx, f"Skipping DXO from {contributor_name} at round {contribution_round}: 0 steps.")
+            return False
+
         try:
             self.aggregation_helper.validate_shapes(data, contributor_name, contribution_round)
         except AggregationShapeError as e:
@@ -209,3 +213,12 @@ class DXOAggregator(FLComponent):
             self.processed_algorithm = None
 
         return dxo
+
+
+def _is_zero_steps(n_iter) -> bool:
+    if n_iter is None or isinstance(n_iter, bool):
+        return False
+    try:
+        return float(n_iter) == 0
+    except (TypeError, ValueError, OverflowError):
+        return False
