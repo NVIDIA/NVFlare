@@ -171,9 +171,12 @@ Rules:
      requested in Lightning-AI/pytorch-lightning#22151.
    - Lightning still steps the LR schedulers for a batch skipped with `-1`, although no optimizer step ran, so a
      bounded scheduler (`OneCycleLR` sized for `num_rounds * N`) would raise and `fit()` would fail. The callback
-     sets `trainer.strategy.lr_scheduler_configs` to `[]` for the skipped batch and puts it back at
-     `on_train_epoch_end`, which Lightning calls right after the skip, before the epoch-interval step that a stop at
-     batch end also gets; `on_train_end` and `on_exception` put it back as well. Receiving in `on_validation_end`
+     sets `trainer.strategy.lr_scheduler_configs` to copies with `interval="never"`, which Lightning never steps,
+     so a checkpoint saved at that epoch end still holds the scheduler state. The epoch-interval update after the
+     skip does not run either, so `ReduceLROnPlateau` is not asked for a metric the skipped validation never logged.
+     The trade-off: a stop found at batch end still gets that last epoch-interval step, a stop at the server's end
+     does not. `on_train_epoch_end` puts the originals back only when training goes on (a later callback cleared
+     `should_stop`); otherwise `on_train_end` or `on_exception` does. Receiving in `on_validation_end`
      instead was considered: it avoids the skip only when a validation follows the sync, and a sync with no validation
      after it would still reach the skip.
    - Timing: a shutdown or a pending evaluate task is found one validation later than with a receive at batch end,
@@ -404,6 +407,7 @@ enforces NVFlare's exchange order: a send without a preceding receive fails.
 | Validation after a sync runs between send and receive on the sent weights, and the next batch trains the received model | call order, validation weights equal the sent snapshot |
 | The server's end adds no optimizer step, send or validation | `global_step` and `training_step` calls `== k * N` after k rounds, validation count, scheduler steps |
 | A last sync between validation intervals ends the job without a final validation | validation count |
+| Epoch-interval schedulers do not step on the server's-end skip, and a checkpoint saved then keeps their state | `ReduceLROnPlateau` on `val_loss` and `StepLR`: `fit()` returns, `last_epoch` and LR unchanged; `last.ckpt` has `lr_schedulers` |
 | A bounded scheduler sized for `num_rounds * N` survives the server's end, with validation after the last sync, elsewhere or not at all | `OneCycleLR(total_steps=num_rounds * N)`, `fit()` returns and the evaluate loop runs |
 | A sync on an epoch's last batch receives after epoch-end validation, which runs once, and the end of the job adds no epoch | call order with epoch-end events, `current_epoch` |
 | Evaluate and submit-model tasks found at the batch-start receive stay pending; the evaluate loop after `fit()` answers them | mid-epoch and epoch-end, then `trainer.validate()` |

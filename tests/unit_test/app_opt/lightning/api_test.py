@@ -2219,6 +2219,56 @@ def test_step_sync_skips_the_final_validation_when_the_last_sync_falls_between_v
     assert events.count("val") == 1
 
 
+class EpochSchedulerNet(RecordingNet):
+    def __init__(self, plateau):
+        super().__init__()
+        self.plateau = plateau
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.SGD(self.parameters(), lr=0.1)
+        if self.plateau:
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+            return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "monitor": "val_loss"}}
+        return {"optimizer": optimizer, "lr_scheduler": torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)}
+
+
+@pytest.mark.parametrize("plateau", [True, False], ids=["reduce-on-plateau", "step-lr"])
+def test_step_sync_does_not_step_epoch_schedulers_on_the_skip_at_the_server_end(plateau):
+    module = EpochSchedulerNet(plateau)
+
+    trainer = _fit_with_step_sync(
+        _FakeFlare(_train_tasks(1)),
+        module,
+        _loader(8),
+        sync_every_n_steps=2,
+        val_loader=_loader(2),
+        max_epochs=1,
+        val_check_interval=4,
+    )
+
+    assert trainer.global_step == 2
+    assert trainer.lr_scheduler_configs[0].scheduler.last_epoch == 0
+    assert trainer.optimizers[0].param_groups[0]["lr"] == 0.1
+
+
+@pytest.mark.parametrize("plateau", [True, False], ids=["reduce-on-plateau", "step-lr"])
+def test_step_sync_checkpoint_at_the_server_end_skip_keeps_the_scheduler_state(tmp_path, plateau):
+    checkpoint = pl.callbacks.ModelCheckpoint(dirpath=tmp_path, save_last=True)
+
+    _fit_with_step_sync(
+        _FakeFlare(_train_tasks(1)),
+        EpochSchedulerNet(plateau),
+        _loader(8),
+        sync_every_n_steps=2,
+        max_epochs=1,
+        limit_val_batches=0,
+        enable_checkpointing=True,
+        callbacks=[checkpoint],
+    )
+
+    assert len(torch.load(tmp_path / "last.ckpt", weights_only=False)["lr_schedulers"]) == 1
+
+
 class EpochEndEvents(pl.Callback):
     def __init__(self, events):
         self.events = events
