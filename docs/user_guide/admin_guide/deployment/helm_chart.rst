@@ -530,7 +530,7 @@ and ``startup-kit`` volumes and container mounts. The workspace uses an
 ``emptyDir`` by default and the assigned jobs PVC subPath for persistent CJs.
 
 Minimal Study Job Pod Template
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Reference the template per study in ``local/study_runtime.yaml`` (paths resolve
 relative to ``local/``; an inline pod mapping is also accepted):

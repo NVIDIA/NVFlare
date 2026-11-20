@@ -176,7 +176,8 @@ Kubernetes:
   the main container with the `nvflare_job` sentinel; the launcher renames it to the per-job generated name
   (`container-<job-id>`).
 - In task mode, datasets, env, Secret references, and `container.image` apply to the worker. The worker falls
-  back to the site task launcher's image. The CJ uses its own job image and `pod_template`.
+  back to the site task launcher's image and uses the worker launcher's configured Python path in either image.
+  The CJ prefers its job image and falls back to the study image. It keeps its own `pod_template`.
 - `worker_scheduling`: optional Kubernetes-only mapping of `nodeSelector`, `affinity`, and `tolerations` for task
   workers. The site configures worker placement independently of the CJ.
 - `docker_kwargs`: hard error (Docker-only).
@@ -241,8 +242,8 @@ Merge order (later wins):
 
 ## Future: Image Enforce Mode
 
-For Docker and Kubernetes job mode, `container.image` is the site default job image; resolution is
-job-supplied image → study `container.image` → error. FLARE-3027 tracks the follow-up enforce/pin mode for those
+For Docker and for Kubernetes job and CJ pods, `container.image` is the site default;
+resolution is job-supplied image → study `container.image` → error. FLARE-3027 tracks the follow-up enforce/pin mode for those
 launchers. Slurm follows the same override principle, with an additional site launcher fallback:
 job-supplied image → study `container.image` → site `job_launcher.image` → error for a container backend.
 Job-supplied images use the existing BYOC authorization on all three container launchers.

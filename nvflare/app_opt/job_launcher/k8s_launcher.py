@@ -1047,16 +1047,11 @@ class K8sJobLauncher(JobLauncherSpec):
         study = job_meta.get(JobMetaKey.STUDY.value)
         workspace_root = args.workspace
         study_runtime = self._resolve_study_runtime(workspace_root, study)
-        # In task mode, training uses the study image while the CJ has its own image and template.
-        pod_runtime = study_runtime if execution_lifetime == "job" else None
-        if not job_image and pod_runtime is not None:
-            job_image = pod_runtime.container_image
+        if not job_image and study_runtime is not None:
+            job_image = study_runtime.container_image
+            if job_image and execution_lifetime == "task":
+                self.logger.info("Using study image %s for the task-mode CJ at site %s", job_image, site_name)
         if not job_image:
-            if execution_lifetime == "task":
-                raise RuntimeError(
-                    f"Kubernetes task mode requires a CJ image in launcher_spec['{site_name}']['k8s']['image'] "
-                    "or launcher_spec['default']['k8s']['image']. The study image configures the task worker."
-                )
             raise RuntimeError(
                 f"K8sJobLauncher is configured for site '{site_name}' but no job image "
                 f"was specified in meta.json for this site. "
@@ -1066,6 +1061,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 f"or studies.<study>.container.image in local/study_runtime.yaml (site default)."
             )
         pod_manifest_template = study_runtime.pod_template if study_runtime is not None else None
+        pod_runtime = study_runtime if execution_lifetime == "job" else None
         study_volumes, study_mounts, study_secret_env = study_pod_bindings(pod_runtime)
         native_resources = k8s_spec
         if execution_lifetime == "task":

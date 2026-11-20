@@ -4007,8 +4007,10 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
     assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
 
 
-@pytest.mark.parametrize("lifetime", ["job", "task"])
-def test_cp_routes_study_runtime_to_the_pod_running_training(tmp_path, monkeypatch, lifetime):
+@pytest.mark.parametrize("lifetime, cj_image_override", [("job", True), ("task", True), ("task", False)])
+def test_cp_routes_study_runtime_to_the_pod_running_training(
+    tmp_path, monkeypatch, caplog, lifetime, cj_image_override
+):
     from nvflare.apis.task_launcher_spec import TaskLaunchRequest
     from nvflare.app_opt.task_launcher.k8s_launcher import SETTLEMENT_FINALIZER, WORKER_MODULE
     from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap, write_bootstrap
@@ -4017,6 +4019,8 @@ def test_cp_routes_study_runtime_to_the_pod_running_training(tmp_path, monkeypat
     if lifetime == "task" and _k8s_quantity is None:
         pytest.skip("Kubernetes quantity parser is required for the task backend binding")
     launcher, fl_ctx, meta, _ = _setup_cp_submission(tmp_path, monkeypatch, lifetime)
+    if not cj_image_override:
+        del meta["launcher_spec"][_TASK_SITE]["k8s"]["image"]
     meta[JobMetaKey.STUDY.value] = "study-a"
     (tmp_path / "local" / "study_runtime.yaml").write_text(
         """
@@ -4050,12 +4054,14 @@ studies:
       tolerations: [{key: gpu, operator: Exists, effect: NoSchedule}]
 """
     )
-    handle, service, _ = _launch_cp_job(launcher, meta, fl_ctx)
+    with caplog.at_level("INFO", logger=launcher.logger.name):
+        handle, service, _ = _launch_cp_job(launcher, meta, fl_ctx)
     cj_spec = handle.pod_manifest["spec"]
     cj = cj_spec["containers"][0]
     assert cj_spec["nodeSelector"] == {"pool": "coordinators"}
     assert "affinity" not in cj_spec and "tolerations" not in cj_spec
-    assert cj["image"] == "site/image"
+    assert cj["image"] == ("site/image" if cj_image_override else "site/study-worker")
+    assert ("Using study image site/study-worker for the task-mode CJ" in caplog.text) == (not cj_image_override)
 
     if lifetime == "task":
         assert {v["name"] for v in cj_spec["volumes"]} == {"workspace-job", "startup-kit"}

@@ -15,7 +15,8 @@ accounts, namespace and storage. Jobs supply separate resource budgets:
 * ``cj_resource_spec`` applies only to task-mode coordinators. Site defaults are
   0.25 CPU, 512Mi and zero GPUs; explicit coordinator GPUs are independent.
 * The site selects the worker image in its study runtime or ``task_execution``
-  configuration. A job's Kubernetes image setting selects its CJ image.
+  configuration. A job can override the CJ image, which otherwise comes from
+  the study runtime.
 
 Workers use their CJ's configured namespace. CP can share that namespace or use
 a separate control namespace with explicit permissions and compatible storage.
@@ -317,7 +318,8 @@ both local files::
    }
 
 The job retains its existing ``execution_lifetime="task"`` application flag.
-Its metadata specifies the CJ image and independent resource budgets, for example::
+Its ``meta.json`` can specify independent resource budgets and a CJ image override,
+for example::
 
    {
      "resource_spec": {
@@ -338,8 +340,16 @@ portable compute fields, including distinct native requests and limits. Jobs
 can set the new field through ``meta_props`` or
 ``set_recipe_meta(recipe, JobMetaKey.CJ_RESOURCE_SPEC, ...)``. The same metadata
 without a task-lifetime client must omit ``cj_resource_spec``; job mode keeps
-its existing resource semantics. Images must contain the same reviewed
-framework source and the required application dependencies.
+its existing resource semantics.
+
+To pick a different CJ image, a submitter can set ``launcher_spec.default.k8s.image``
+in ``meta.json`` and override it for a particular site with
+``launcher_spec.<site>.k8s.image``. A recipe can set the same metadata with
+``set_recipe_meta(recipe, JobMetaKey.JOB_LAUNCHER_SPEC, launcher_spec)``.
+When the job omits the image, the CJ uses the study's ``container.image``.
+If neither source specifies a CJ image, the launcher reports a configuration
+error. Images must contain the same reviewed framework source and the required
+application dependencies.
 
 Task cleanup and CJ recovery require kubelet ``PodReadyToStartContainers`` teardown
 evidence and terminal container statuses. The condition is
@@ -403,13 +413,20 @@ registry, set the pull Secret on the worker service account.
 Study image and environment entries override the defaults in
 ``task_execution.launcher.args``. The optional ``worker_scheduling`` mapping
 accepts Kubernetes ``nodeSelector``, ``affinity``, and ``tolerations`` fields.
-The existing ``pod_template`` still configures the CJ independently. Configure
-the task-mode CJ image in the job's Kubernetes launcher metadata even if the
-study defines ``container.image``. Put any environment variables needed only
-by the CJ in its Pod template. If a CJ template previously included training
+The existing ``pod_template`` still configures the CJ independently. Put any
+environment variables needed only by the CJ in its Pod template. If a CJ template previously included training
 mounts or Secret references directly, remove those entries and configure them
 in ``datasets``, ``secret_mounts``, or ``secret_env`` instead. Job-mode pods use
 their existing study settings and ignore ``worker_scheduling``.
+
+The worker always starts with the site's
+``task_execution.launcher.args.python_path`` (default ``/usr/local/bin/python``).
+If a study overrides the worker image, that image must have an executable Python
+with NVFlare installed at the configured path. For example, a site using
+``/opt/conda/bin/python`` can set that path in its worker launcher settings and
+use compatible images for all studies at the site. If the study image also runs
+the CJ, its Python must match the CJ launcher's ``default_python_path`` or the
+job's ``launcher_spec.<site>.k8s.python_path`` override.
 
 Deployment readiness runbook
 ----------------------------
@@ -476,23 +493,22 @@ the participant being checked. Use the intended Kubernetes context throughout.
    node, ``127.0.0.1`` names that other node. A multi-node profile needs image
    access from every node on which its Pods can schedule.
 
-   **Check all three image configuration locations.** Parent images come from
-   the Deployment/Helm configuration. Job metadata
-   ``launcher_spec[site]["k8s"]["image"]`` selects the SJ/CJ image. The worker
-   image comes from the study's ``container.image`` when set, with canonical
-   site ``task_execution.launcher.args.image`` as the fallback. Updating one location does not
-   update the others. Record the intended digest for each role. When a lab
-   uses one image for all roles, generate all three settings from that one
-   image input. Include reset/redeployment templates in that update; a reset
-   must not restore a stale local tag. Inspect the actual parent references::
+   **Check the image selected for each role.** Parent images come from the
+   Deployment/Helm configuration. The SJ/CJ launcher prefers the image in job
+   metadata and falls back to the study's ``container.image``. The task worker
+   launcher prefers the study image and falls back to
+   ``task_execution.launcher.args.image``. Record the intended digest for each
+   role. Include reset/redeployment templates when updating image settings.
+   Inspect the actual parent references::
 
       kubectl -n "$NVFLARE_TEST_NAMESPACE" get deployments \
         -o 'custom-columns=NAME:.metadata.name,IMAGES:.spec.template.spec.containers[*].image'
 
    Compare the job metadata and actual mounted policy in every CP and fresh CJ;
    editing a host-side file alone does not update an already mounted kit.
-   This diagnostic prints the selected policy file and requires its worker
-   image to match ``NVFLARE_TEST_IMAGE``::
+   For a site without a study image override, this diagnostic checks the worker
+   default against ``NVFLARE_TEST_IMAGE``. For a study that sets ``container.image``,
+   check the actual worker Pod's image instead::
 
       kubectl -n "$NVFLARE_TEST_NAMESPACE" exec -i "$NVFLARE_TEST_CP_POD" -- \
         python - "$NVFLARE_TEST_WORKSPACE" "$NVFLARE_TEST_SITE" "$NVFLARE_TEST_IMAGE" <<'PY'
