@@ -4135,21 +4135,29 @@ def test_cp_monitor_replaces_a_removed_cj_only_after_observing_its_shutdown(tmp_
     handle.api_instance.delete_namespaced_pod.assert_not_called()
 
 
+def _evicted_cj(handle, sandbox_down=True, exit_code=137):
+    pod = _exited_cj(handle, sandbox_down=sandbox_down, exit_code=exit_code or 137)
+    pod.status.reason = "Evicted"
+    if exit_code is None:
+        running = SimpleNamespace(name=handle._job_container_name, state=SimpleNamespace(terminated=None))
+        pod.status.container_statuses = [running]
+    return pod
+
+
 @pytest.mark.parametrize("recoverable", [True, False], ids=["recoverable", "uninitialized-workspace"])
-def test_cp_monitor_treats_a_cj_evicted_before_its_container_exit_as_lost_infrastructure(tmp_path, recoverable):
-    # The kubelet reports Failed/Evicted before it stops the container. That first
-    # read carries no exit code and must not be reported as an abort.
+@pytest.mark.parametrize("first_exit", [None, 137, 143], ids=["container-running", "sigkill", "sigterm"])
+def test_cp_monitor_treats_an_evicted_cj_as_lost_infrastructure(tmp_path, recoverable, first_exit):
+    # The kubelet reports Failed/Evicted before it stops the container, so CP's first
+    # read may or may not carry the signal exit. The outcome must not depend on which.
     from itertools import chain, repeat
 
     from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
     from nvflare.private.defs import JobOutcomeMsgKey
 
     handle = _initialized_cj(tmp_path)
-    evicting, evicted = _exited_cj(handle, sandbox_down=False), _exited_cj(handle)
-    evicting.status.reason = evicted.status.reason = "Evicted"
-    running = SimpleNamespace(name=handle._job_container_name, state=SimpleNamespace(terminated=None))
-    evicting.status.container_statuses = [running]
-    handle.api_instance.read_namespaced_pod.side_effect = chain([evicting], repeat(evicted))
+    first = _evicted_cj(handle, sandbox_down=False, exit_code=first_exit)
+    settled = _evicted_cj(handle, exit_code=first_exit or 137)
+    handle.api_instance.read_namespaced_pod.side_effect = chain([first], repeat(settled))
     if not recoverable:
         (tmp_path / WORKSPACE_READY_FILE).unlink()
 
@@ -4159,6 +4167,24 @@ def test_cp_monitor_treats_a_cj_evicted_before_its_container_exit_as_lost_infras
         JobReturnCode.SUCCESS if recoverable else ProcessExitCode.INFRASTRUCTURE_ERROR
     )
     handle.api_instance.delete_namespaced_pod.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "exit_code, cancelled, expected",
+    [(ProcessExitCode.CONFIG_ERROR, False, ProcessExitCode.CONFIG_ERROR), (137, True, JobReturnCode.ABORTED)],
+    ids=["flare-exit-code", "flare-stop"],
+)
+def test_cp_monitor_keeps_what_flare_knows_about_an_evicted_cj(tmp_path, exit_code, cancelled, expected):
+    from nvflare.private.defs import JobOutcomeMsgKey
+
+    handle = _initialized_cj(tmp_path)
+    handle.api_instance.read_namespaced_pod.return_value = _evicted_cj(handle, exit_code=exit_code)
+    if cancelled:
+        handle.terminate()
+
+    launches, outcome = _monitor_cj(handle, tmp_path)
+    assert launches == 0
+    assert outcome[JobOutcomeMsgKey.CODE] == expected
 
 
 @pytest.mark.parametrize("fault", ["ephemeral", "uninitialized", "node-lost", "different-uid", "cancelled"])

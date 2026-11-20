@@ -453,6 +453,11 @@ class K8sJobHandle(JobHandleSpec):
             statuses = getattr(getattr(pod, "status", None), "container_statuses", None)
             if not isinstance(statuses, (list, tuple)):
                 statuses = []
+            # An eviction is lost infrastructure whether or not the container's signal exit
+            # is visible yet. Only an exit code FLARE chose itself says more than that.
+            evicted = (
+                not self._termination_requested and getattr(getattr(pod, "status", None), "reason", None) == "Evicted"
+            )
             exit_code = None
             for container_status in statuses:
                 if getattr(container_status, "name", None) != job_container_name:
@@ -468,16 +473,11 @@ class K8sJobHandle(JobHandleSpec):
                 ):
                     self.terminal_return_code = exit_code
                 elif isinstance(exit_code, int) and exit_code != 0:
-                    self.terminal_return_code = JobReturnCode.EXECUTION_ERROR
+                    self.terminal_return_code = (
+                        ProcessExitCode.INFRASTRUCTURE_ERROR if evicted else JobReturnCode.EXECUTION_ERROR
+                    )
                 break
-            if (
-                exit_code is None
-                and self.terminal_return_code is None
-                and not self._termination_requested
-                and getattr(getattr(pod, "status", None), "reason", None) == "Evicted"
-            ):
-                # The kubelet reports an eviction before the container exit.
-                # That is lost infrastructure, not an abort.
+            if evicted and exit_code is None and self.terminal_return_code is None:
                 self.terminal_return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
         self._release_job_resources()
 
