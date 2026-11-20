@@ -492,7 +492,7 @@ class TestProducerSide:
         service._handle_download(_confirm_request(rid, "r1", DownloadStatus.SUCCESS, serve_nonce(terminal)))
         assert rid not in service._ref_table
 
-        replay = service._handle_download(_pull_request(rid, "r1", confirm_capable=True))
+        replay = service._handle_download(_pull_request(rid, "r1", confirm_capable=True, state={"chunk_idx": 1}))
         assert replay.payload.get(_PropKey.STATUS) == ProduceRC.EOF
         assert _PropKey.CONFIRM_EXPECTED not in replay.payload
 

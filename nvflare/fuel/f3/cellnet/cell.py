@@ -31,6 +31,7 @@ from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import (
     BlobSizeError,
     DownloadCancelled,
+    DownloadUnavailable,
     StreamFuture,
     StreamTargetUnreachable,
 )
@@ -117,8 +118,9 @@ class Adapter:
         secure = request.get_header(MessageHeaderKey.SECURE, False)
         try:
             decode_payload(request, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=decode_ctx)
-        except DownloadCancelled as ex:
-            self.logger.debug(f"request download cancelled locally: {secure_format_exception(ex)}")
+        except (DownloadCancelled, DownloadUnavailable) as ex:
+            log = self.logger.info if isinstance(ex, DownloadUnavailable) else self.logger.debug
+            log(f"request download unavailable: {secure_format_exception(ex)}")
             self._send_response(
                 make_reply(ReturnCode.SERVICE_UNAVAILABLE), stream_req_id, req_id, channel, topic, origin, secure
             )

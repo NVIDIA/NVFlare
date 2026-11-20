@@ -49,6 +49,14 @@ class DownloadCancelled(StreamError):
     """An object download was cancelled locally by workflow cleanup."""
 
 
+class DownloadUnavailable(StreamError):
+    """A duplicate download lost its source to a completed download; retry the enclosing request."""
+
+
+class DownloadUnavailableReason(str):
+    """A recoverable rejection that preserves the consumer failure callback's string contract."""
+
+
 class Stream(ABC):
     """A raw, read-only, seekable binary byte stream"""
 

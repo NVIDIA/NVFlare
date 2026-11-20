@@ -423,6 +423,53 @@ class Session(SessionSpec):
             raise InternalError("server failed to return job meta")
         return job_meta
 
+    def get_job_resources(self, job_id: str, site: str = None) -> dict:
+        """Return finalized resource statistics for a job the caller may download.
+
+        The job must be finished and its resource report finalized; otherwise,
+        this raises :class:`JobNotDone`. The default command wait is 300 seconds;
+        an explicit session command timeout takes precedence. Timing out does
+        not cancel the server's archive read.
+
+        Args:
+            job_id: ID of the job
+            site: optional participant name (a client site or "server") whose
+                report should also be included
+
+        Returns: a dict with key ``resource_summary`` (the job-level rollup),
+            plus ``job_name`` and, when ``site`` is given, ``participant_summary``.
+            See :ref:`resource_statistics` for the field reference.
+
+        """
+        self._validate_job_id(job_id)
+        parts = [AdminCommandNames.GET_JOB_RESOURCES, job_id]
+        if site is not None:
+            if not isinstance(site, str) or not site:
+                raise InvalidArgumentError("site must be a non-empty string")
+            parts.extend(["--site", site])
+        reply = self._do_command(join_args(parts), enforce_meta=False)
+        return self._get_dict_data(reply)
+
+    def get_study_resources(self) -> dict:
+        """Return resource statistics across accessible retained jobs in the active study.
+
+        See :ref:`flare_api_initialization` for study selection. Each job requires
+        download permission; restricted jobs are excluded from rows, totals, and
+        coverage counts. Accessible jobs that are not finalized or have unavailable
+        resource data count toward coverage but do not contribute numeric totals.
+
+        The default command wait is 300 seconds; an explicit session command
+        timeout takes precedence. Timing out does not cancel the server's
+        sequential scan.
+
+        Returns: a dict describing the study-level rollup (``jobs``,
+            ``coverage``, and ``totals``). See :ref:`resource_statistics`
+            for the field reference.
+
+        """
+        reply = self._do_command(AdminCommandNames.GET_STUDY_RESOURCES, enforce_meta=False)
+        return self._get_dict_data(reply)
+
     def list_jobs(
         self,
         detailed: bool = False,

@@ -30,8 +30,14 @@ _TRANSFORM = transforms.Compose(
 )
 
 
-def make_data_loader(train: bool, batch_size: int, site_name: str | None = None) -> DataLoader:
-    """Load the shared test set or one prepared client training split."""
+def make_data_loader(
+    train: bool, batch_size: int, site_name: str | None = None, split_root: str | None = None, generator=None
+) -> DataLoader:
+    """Load the shared test set or prepared training indices (site-N or proxy).
+
+    An alternate split_root and explicit loader generator are optional. Existing
+    synchronous jobs retain their default split path and ordinary RNG behavior.
+    """
 
     dataset = datasets.CIFAR10(root=CIFAR10_ROOT, train=train, download=False, transform=_TRANSFORM)
     if train:
@@ -39,8 +45,8 @@ def make_data_loader(train: bool, batch_size: int, site_name: str | None = None)
             raise ValueError("site_name is required for a client training loader")
 
         # The standard splitter names each client index file after its NVFlare site.
-        split_file = Path(SPLIT_ROOT) / f"{site_name}.npy"
+        split_file = Path(SPLIT_ROOT if split_root is None else split_root) / f"{site_name}.npy"
         indices = np.load(split_file, allow_pickle=False).tolist()
         dataset = Subset(dataset, indices)
 
-    return DataLoader(dataset, batch_size=batch_size, shuffle=train)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=train, generator=generator)

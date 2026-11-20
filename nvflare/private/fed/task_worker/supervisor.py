@@ -25,7 +25,7 @@ import math
 import os
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 
 from nvflare.apis.fl_constant import ReturnCode, TaskResultReceipt
@@ -92,6 +92,10 @@ class _Attempt:
     releasing: bool = False
     released: bool = False
     result_readers: int = 0
+    resource_registered: bool = False
+    resource_record: Optional[dict] = None
+    launch_called: bool = False
+    resource_unresolved: bool = False
     cleanup_delegated: bool = False
 
 
@@ -109,10 +113,11 @@ class TaskSupervisor:
     supervisor diagnostics remain after payload release in either case.
     """
 
-    def __init__(self, *, retain_artifacts: bool = False):
+    def __init__(self, *, retain_artifacts: bool = False, resource_reducer=None):
         if not isinstance(retain_artifacts, bool):
             raise TypeError("retain_artifacts must be bool")
         self._retain_artifacts = retain_artifacts
+        self._resource_reducer = resource_reducer
         self._execution_lock = threading.Lock()
         self._state_lock = threading.RLock()
         self._diagnostic_lock = threading.Lock()
@@ -122,6 +127,19 @@ class TaskSupervisor:
         self._stopping = False
         self._settlement_unconfirmed = False
         self._issues = []
+
+    def _resource_call(self, method, *args, **kwargs):
+        if self._resource_reducer is None:
+            return None
+        try:
+            return getattr(self._resource_reducer, method)(*args, **kwargs)
+        except Exception:
+            # Optional observations never change training or settlement.
+            try:
+                self._resource_reducer.mark_incomplete()
+            except Exception:
+                pass
+        return None
 
     @property
     def settlement_unconfirmed(self) -> bool:
@@ -169,6 +187,10 @@ class TaskSupervisor:
             raise TaskSettlementError("task execution settlement is unconfirmed", status)
         with self._state_lock:
             attempt.settled = True
+            late_resources = attempt.resource_unresolved
+            attempt.resource_unresolved = False
+        if late_resources:
+            self._resource_call("settle", attempt.identity, attempt.resource_record, started=True, settled=True)
         return status
 
     def _cancel(self, attempt):
@@ -253,6 +275,10 @@ class TaskSupervisor:
                 attempt = _Attempt(identity, store, runtime_root)
                 self._attempts[identity] = attempt
                 self._active = attempt
+            attempt.resource_registered = self._resource_call("register", identity) is True
+            # The runtime owner enables reporting only after reserving its budget.
+            # This is private bootstrap state, not a job or operator setting.
+            bootstrap = replace(bootstrap, resource_reporting=attempt.resource_registered)
             store.create_attempt(identity)
             store.write_input(identity, input_payload)
             bootstrap_path = store.bootstrap_path(identity)
@@ -264,6 +290,7 @@ class TaskSupervisor:
                 attempt.failed = True
                 return TaskSupervisorOutcome(identity=identity, aborted=True)
             try:
+                attempt.launch_called = True
                 handle = launcher.launch_task(request)
             except TaskLaunchError as e:
                 # Acquiring a handle is ownership, including post-spawn errors.
@@ -300,6 +327,9 @@ class TaskSupervisor:
             except IncompleteTaskArtifactError as e:
                 failure = store.read_failure(identity)
                 if failure is not None:
+                    diagnostics = failure.get("diagnostics")
+                    if isinstance(diagnostics, dict):
+                        attempt.resource_record = diagnostics.get("resource_stats")
                     raise RuntimeError(
                         f"task worker {identity.attempt_id} failed: {failure['error_type']}: {failure['message']} "
                         f"(diagnostics: {store.attempt_dir(identity)})"
@@ -321,6 +351,7 @@ class TaskSupervisor:
             worker_pid = getattr(handle, "process_group_id", None)
             if worker_pid is not None and completion.worker_pid != worker_pid:
                 raise ValueError("task completion worker PID does not match launched process")
+            attempt.resource_record = completion.to_dict()["diagnostics"].get("resource_stats")
             with self._state_lock:
                 if self._aborted(attempt, abort_signal):
                     attempt.failed = True
@@ -343,6 +374,16 @@ class TaskSupervisor:
                     self._cancel(attempt)
             raise
         finally:
+            if attempt is not None and attempt.resource_registered:
+                with self._state_lock:
+                    attempt.resource_unresolved = attempt.launch_called and not attempt.settled
+                self._resource_call(
+                    "settle",
+                    attempt.identity,
+                    attempt.resource_record,
+                    started=True if attempt.handle is not None else (None if attempt.launch_called else False),
+                    settled=attempt.settled,
+                )
             with self._state_lock:
                 if attempt is not None and (attempt.handle is None or attempt.settled or attempt.cleanup_delegated):
                     if not self._settlement_unconfirmed:

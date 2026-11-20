@@ -266,7 +266,7 @@ studies. Use a suitably configured Docker deployment when jobs require isolation
 If the file or selected study entry is absent, the job uses its usual environment (a client whose
 file lists other studies rejects the job). Jobs without a
 study use ``default``. Invalid configuration anywhere in the file fails launch. Process mode always
-ignores the legacy ``study_data.yaml``, including when both files exist.
+never reads the removed ``study_data.yaml``; Docker, Kubernetes, and Slurm refuse to launch while it is present.
 
 Replace the file atomically to update subsequent launches. Running jobs retain their environment;
 changing secret source values normally requires restarting the parent service.

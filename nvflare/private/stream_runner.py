@@ -250,14 +250,15 @@ class ObjectStreamer(FLComponent):
         factory, consumed_cb, stream_done_cb, cb_kwargs = factory_info
 
         self.debug(request, "received stream request")
+        restarted = None
         with self.tx_lock:
             info = self.tx_table.get(tx_id)
             if info:
                 if seq <= 0:
                     # if we already have processor for this tx_id, then the seq number must be > 0
                     self.error(request, f"sequence error: expect > 0 but got {seq}")
-                    self._end_tx(tx_id, ReturnCode.BAD_REQUEST_DATA, fl_ctx)
-                    return make_reply(ReturnCode.BAD_REQUEST_DATA)
+                    # tx_lock is not reentrant and stream_done runs consumer callbacks: finish outside the lock.
+                    restarted = self.tx_table.pop(tx_id)
             else:
                 if seq != 0:
                     # the sequence number is not 0 - we didn't get the initial msg!
@@ -302,6 +303,10 @@ class ObjectStreamer(FLComponent):
                         request, f"factory {type(factory)} failed to produce consumer: {secure_format_exception(ex)}"
                     )
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        if restarted:
+            restarted.stream_done(ReturnCode.BAD_REQUEST_DATA, fl_ctx)
+            return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         # process the message
         try:

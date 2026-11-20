@@ -33,7 +33,6 @@ _PROJECT_WRITABLE = {
     "server1",
     "frozen",
     "public",
-    "cc_mode",
 }
 
 _REQUESTABLE_ROLES = {"", "lead", "member", "org_admin"}

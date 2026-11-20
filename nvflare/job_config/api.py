@@ -739,6 +739,7 @@ class FedJob:
         threads: Optional[int] = None,
         gpu: Optional[str] = None,
         log_config: Optional[str] = None,
+        simulation_plan: Optional[str] = None,
     ):
         """Run the job with the simulator with the `workspace` using `clients` and `threads`.
         For end users.
@@ -750,6 +751,7 @@ class FedJob:
             threads: number of threads.
             gpu: gpu assignments for simulating clients, comma separated
             log_config: log config mode ('concise', 'progress', 'msg_only', 'full', 'verbose'), filepath, or level
+            simulation_plan: optional JSON execution plan for the simulator only.
 
         Returns:
         """
@@ -777,6 +779,7 @@ class FedJob:
             threads=threads,
             gpu=gpu,
             log_config=log_config,
+            simulation_plan=simulation_plan,
         )
 
     def as_id(self, obj: Any) -> str:

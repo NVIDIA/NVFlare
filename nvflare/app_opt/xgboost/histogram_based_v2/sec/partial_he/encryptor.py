@@ -14,12 +14,15 @@
 
 import concurrent.futures
 
+from nvflare.private.fed.resource_stats.cpu_consumed import mark_child_cpu_coverage_uncertain
+
 
 class Encryptor:
     def __init__(self, pubkey, max_workers=10):
         self.max_workers = max_workers
         self.pubkey = pubkey
         self.exe = concurrent.futures.ProcessPoolExecutor(max_workers=max_workers)
+        mark_child_cpu_coverage_uncertain()
 
     def encrypt(self, numbers):
         """

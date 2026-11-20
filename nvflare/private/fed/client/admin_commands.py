@@ -17,6 +17,7 @@
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.sec.admin_audit import prepare, record
 from nvflare.fuel.utils.log_utils import dynamic_log_config, validate_site_log_config
 from nvflare.private.fed.client.client_status import get_status_message
 from nvflare.security.logging import secure_format_exception
@@ -279,7 +280,9 @@ class ConfigureJobLogCommand(CommandProcessor):
                 reload_path=workspace.get_log_config_file_path(),
             )
         except Exception as e:
+            record("logging.job.error", job_id=prepare(fl_ctx.get_job_id, default=""), reason="local_application_error")
             return secure_format_exception(e)
+        record("logging.job.applied", job_id=prepare(fl_ctx.get_job_id, default=""))
 
 
 class AdminCommands(object):

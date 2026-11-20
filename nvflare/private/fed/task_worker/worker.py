@@ -19,6 +19,7 @@ import os
 import resource
 import sys
 import time
+from collections.abc import Mapping
 from functools import partial
 
 from nvflare.apis.executor import Executor
@@ -43,13 +44,16 @@ from nvflare.job_config.task_execution import (
     STATISTICS_EXECUTOR_PATH,
     task_constructor_args,
 )
+from nvflare.private.fed.resource_stats.collector import ExecutionResourceCollector
+from nvflare.private.fed.resource_stats.measurements import canonical_json_bytes, ordered_issues, scoped_measurement
+from nvflare.private.fed.resource_stats.task_rollup import MAX_WORKER_RECORD_BYTES
 from nvflare.private.fed.utils.fed_utils import fobs_initialize, get_job_meta_from_workspace
 from nvflare.security.logging import secure_format_exception
 from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 from .artifacts import ArtifactReference, FileTaskArtifactStore, TaskCompletion
 from .cell_session import CellWorkerTransport
-from .protocol import WorkerBootstrap, _thaw_json, read_bootstrap
+from .protocol import WorkerBootstrap, _load_json, _thaw_json, read_bootstrap
 from .runtime import TaskRuntime
 
 _PROTECTED_CONTEXT_KEYS = {
@@ -235,6 +239,50 @@ def _execute(
     return result, runtime
 
 
+def _stop_resources(collection):
+    try:
+        snapshot = collection.stop() if collection is not None else None
+        if isinstance(snapshot, Mapping):
+            return snapshot
+    except Exception:
+        pass
+    return {
+        "resource_capacity": {"status": "unavailable"},
+        "cpu_consumed": {"status": "unavailable"},
+        "issues": [
+            {"metric": name, "code": "observation_incomplete"} for name in ("resource_capacity", "cpu_consumed")
+        ],
+    }
+
+
+def _resource_diagnostics(snapshot, transport):
+    """Attach bounded JSON to existing artifacts without adding statistics I/O."""
+    try:
+        traffic = (
+            transport.traffic_snapshot(incomplete=True)
+            if transport is not None
+            else {"sent_bytes": 0, "received_bytes": 0}
+        )
+    except Exception:
+        traffic = {"status": "unavailable", "issues": ["observation_incomplete"]}
+    try:
+        issues = list(snapshot.get("issues", []))
+        traffic = scoped_measurement("message_traffic", traffic, issues)
+        record = {
+            **snapshot,
+            "message_traffic": traffic,
+            "issues": ordered_issues(issues),
+        }
+        encoded = canonical_json_bytes({"diagnostics": {"resource_stats": record}})
+        if len(encoded) <= MAX_WORKER_RECORD_BYTES:
+            # Apply the existing artifact JSON/depth rules before attaching
+            # optional data, so it cannot invalidate a successful completion.
+            return _load_json(encoded)["diagnostics"]
+    except Exception:
+        pass
+    return {}
+
+
 def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_keys=()) -> TaskCompletion:
     """Run one bootstrap and commit its result after successful finalization."""
 
@@ -254,6 +302,8 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
     store.claim_worker(identity)
     owns_auditor = False
     transport = None
+    collection = None
+    resource_snapshot = None
     try:
         # Record policy decisions even before application logging or imports.
         if AuditService.get_auditor() is None:
@@ -262,6 +312,12 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         # Policy preflight precedes logging factories, custom decomposers and payload decoding.
         _runtime, fl_ctx = _new_context(bootstrap, workspace, protected_context_keys)
         _authorize_bootstrap(bootstrap, workspace, fl_ctx)
+        if bootstrap.resource_reporting:
+            try:
+                collection = ExecutionResourceCollector()
+            except Exception:
+                # Resource statistics are optional; execution remains authoritative.
+                pass
         if workspace.get_log_config_file_path():
             configure_logging(workspace, identity.job_id, file_prefix=f"task_{identity.attempt_id}")
         else:
@@ -295,8 +351,10 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
         # Serialization can invoke application decomposers. Fail early here;
         # the publication guard makes the final decision after verification.
         runtime.raise_if_failed()
+        checkpoint = store.stage_checkpoint(identity)
+        if bootstrap.resource_reporting:
+            resource_snapshot = _stop_resources(collection)
         usage = resource.getrusage(resource.RUSAGE_SELF)
-        completed_at = time.time()
         diagnostics = {
             "elapsed_seconds": time.monotonic() - started_monotonic,
             "user_cpu_seconds": usage.ru_utime,
@@ -304,7 +362,9 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             "max_rss_native_units": usage.ru_maxrss,
             "max_rss_unit": "bytes" if sys.platform == "darwin" else "kibibytes",
         }
-        checkpoint = store.stage_checkpoint(identity)
+        if bootstrap.resource_reporting:
+            diagnostics.update(_resource_diagnostics(resource_snapshot, transport))
+        completed_at = time.time()
         if checkpoint is not None:
             diagnostics["checkpoint"] = checkpoint.to_dict()
         return store.commit_staged_result(
@@ -318,6 +378,8 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
             publication_guard=runtime.completion_guard,
         )
     except BaseException as e:
+        if bootstrap.resource_reporting and resource_snapshot is None:
+            resource_snapshot = _stop_resources(collection)
         try:
             store.record_failure(
                 identity,
@@ -327,6 +389,7 @@ def run_worker(bootstrap_path: str, *, context_binding=None, protected_context_k
                 failed_at=time.time(),
                 error_type=type(e).__name__,
                 message=secure_format_exception(e),
+                diagnostics=(_resource_diagnostics(resource_snapshot, transport) if resource_snapshot else None),
             )
         except Exception:
             pass

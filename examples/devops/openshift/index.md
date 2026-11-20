@@ -570,10 +570,9 @@ After preparation, verify that `local/resources.json.default` contains `k8s_laun
 Before staging or starting the parent pods, you may edit the generated
 `local/study_runtime.yaml` — the auto-discovered file for per-study datasets,
 env vars, secrets, and Pod templates (`studies.<study>.pod_template`); no
-launcher arguments are needed. For legacy kits that still carry
-`local/study_data.yaml`, `nvflare deploy prepare` instead sets
-`study_data_pvc_file_path` to `<workspace_mount_path>/local/study_data.yaml`;
-the two files must not coexist. Stage any referenced pod template files with
+launcher arguments are needed. The removed
+`local/study_data.yaml` is no longer read: move its studies into
+`study_runtime.yaml` and delete it. Stage any referenced pod template files with
 `local/`.
 
 ### Create PVCs and Stage Kits
