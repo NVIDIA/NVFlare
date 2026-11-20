@@ -204,9 +204,10 @@ attribute on the original task's ``FLContext``, outside its properties. The clie
 runner passes that same object to the output filter. The snapshot is omitted from
 public metadata and the standard FOBS context encoding. Install both filters on
 the parent client chains in the same process, using the same original context.
-The task context owns the snapshot for the duration of the task. Install one
-paired chain per task context. Missing baselines report ``unsupported``;
-for unpaired full-model or final global evaluation, call the auditor directly with
+The original task context owns the snapshot. Cloned and later task contexts do
+not inherit it, and neither filter retains it. Install one paired chain per
+task context. Missing baselines report ``unsupported``.
+For unpaired full-model or final global evaluation, call the auditor directly with
 ``baseline=None``. The filter checks baseline/candidate round equality before
 calling any auditor. Match ``start_round`` and ``frequency`` on both filters to
 avoid baseline copies on skipped rounds; their defaults audit every round. An
