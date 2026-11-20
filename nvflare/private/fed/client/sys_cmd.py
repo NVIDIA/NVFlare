@@ -24,6 +24,7 @@ except ImportError:
 
 from nvflare.apis.fl_constant import FLContextKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.sec.admin_audit import record
 from nvflare.fuel.utils.log_utils import dynamic_log_config, validate_site_log_config
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import SysCommandTopic
@@ -98,6 +99,8 @@ class ConfigureSiteLogProcessor(RequestProcessor):
                 config=config, dir_path=workspace.get_root_dir(), reload_path=workspace.get_log_config_file_path()
             )
         except Exception as e:
+            record("logging.site.error", reason="local_application_error")
             return error_reply(secure_format_exception(e))
 
+        record("logging.site.applied")
         return ok_reply(topic=f"reply_{req.topic}", body=f"successfully configured {site_name} log")
