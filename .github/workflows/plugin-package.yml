@@ -19,17 +19,19 @@ on:
     paths:
       - 'plugin.json'
       - 'evals.json'
-      - 'plugin-card.md'
       - 'PLUGIN.md'
       - 'LICENSE'
+      - 'CONTRIBUTING.md'
       - '.claude-plugin/**'
       - '.codex-plugin/**'
       - '.cursor-plugin/**'
       - 'skills/**'
+      - 'plugins/nvidia-nvflare/**'
       - 'dev_tools/agent/package_plugin.py'
       - 'dev_tools/agent/plugin_validation/**'
       - 'dev_tools/agent/skills/**'
       - 'ci/check_relative_doc_links.py'
+      - 'tests/ci/test_plugin_package.py'
       - '.github/workflows/plugin-package.yml'
   merge_group:
     types: [checks_requested]
@@ -50,7 +52,11 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install lightweight validation dependencies
-        run: python -m pip install 'PyYAML==6.0.3' 'jsonschema==4.25.1'
+        run: python -m pip install 'PyYAML==6.0.3' 'jsonschema==4.25.1' 'pytest==9.2.0'
+      - name: Test bundle drift and stale-evidence guards
+        run: python -m pytest --confcutdir=tests/ci -q tests/ci/test_plugin_package.py
+      - name: Check committed bundle matches its sources
+        run: python dev_tools/agent/package_plugin.py --check
       - name: Download the versioned manifest schema
         run: >-
           curl --fail --location --silent --show-error --max-time 30

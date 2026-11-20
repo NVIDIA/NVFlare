@@ -120,7 +120,6 @@ def validate_contained_package(package, schema):
     }
     count = package_plugin.verify_resources(files)
     case_count = validate_evaluation_cases(files)
-    require(bool(files.get("plugin-card.md", (b"", 0))[0].strip()), "Plugin card is missing or empty")
     docs = [path for path in paths if path.suffix in (".md", ".html") and path.is_file()]
     problems = check_relative_doc_links(docs, package)
     require(not problems, "Broken package links: " + "; ".join(f"{p.file_path}:{p.line}: {p.target}" for p in problems))
@@ -139,8 +138,10 @@ def run(output, schema_path):
     require(schema.get("$id") == SCHEMA_URL, "Unexpected Agent Plugins schema identity")
     Draft202012Validator.check_schema(schema)
     files, metadata = package_plugin.collect_files(ROOT)
+    files = package_plugin.check_bundle(package_plugin.bundle_path(ROOT), files)
     archive = package_plugin.write_bundle(output / "candidate", files, metadata)
     second_files, second_metadata = package_plugin.collect_files(ROOT)
+    second_files = package_plugin.check_bundle(package_plugin.bundle_path(ROOT), second_files)
     repeat = package_plugin.write_bundle(output / "repeat", second_files, second_metadata)
     require(archive.read_bytes() == repeat.read_bytes(), "Plugin archive is not reproducible")
     with zipfile.ZipFile(archive) as zipped:
@@ -170,6 +171,7 @@ def run(output, schema_path):
         "packaging_matches_source_commit": metadata["packaging_matches_source_commit"],
         "schema_sha256": SCHEMA_SHA256,
         "reproducible_archive": True,
+        "bundle_matches_source": True,
         "archive_bytes_and_modes_verified": True,
         "skill_lint": "passed",
         "publication_eligibility": "not assessed",

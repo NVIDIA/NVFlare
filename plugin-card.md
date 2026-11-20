@@ -1,5 +1,8 @@
 # NVIDIA FLARE Plugin Card
 
+This maintainer-authored draft is preparation material outside the distributable.
+Verification CI generates the final card inside `plugins/nvidia-nvflare/`.
+
 NVIDIA FLARE helps developers adapt machine learning workflows to federated
 learning. The `nvidia-nvflare` plugin brings its existing conversion, diagnosis,
 statistics, and Auto-FL skills into coding agents, with shared references and
