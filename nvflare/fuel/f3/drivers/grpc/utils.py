@@ -18,6 +18,7 @@ import os
 import socket
 import ssl
 import threading
+import time
 from urllib.parse import unquote, urlsplit
 
 import grpc
@@ -40,6 +41,47 @@ class PendingProbeSockets:
         self.lock = threading.Lock()
         self.sockets = set()
         self.closed = False
+        self.stopped = threading.Event()
+        self.resolver_job = None
+
+    def resolve_addresses(self, host, port, timeout):
+        # getaddrinfo has no cancellation API. Keep at most one daemon lookup
+        # per connector, and let shutdown release its waiting connector thread.
+        with self.lock:
+            if self.closed:
+                raise ConnectionAbortedError("gRPC certificate probe was stopped")
+            job = self.resolver_job
+            if job and job["done"].is_set():
+                job = None
+                self.resolver_job = None
+            if job and job["target"] != (host, port):
+                raise OSError("another gRPC address lookup is in progress")
+            if job is None:
+                job = {"target": (host, port), "done": threading.Event()}
+                self.resolver_job = job
+
+                def lookup():
+                    try:
+                        job["addresses"] = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+                    except Exception as ex:
+                        job["error"] = ex
+                    finally:
+                        job["done"].set()
+
+                job["thread"] = threading.Thread(target=lookup, name="grpc-probe-dns", daemon=True)
+                job["thread"].start()
+
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while not job["done"].wait(0.05):
+            if self.stopped.is_set():
+                raise ConnectionAbortedError("gRPC certificate probe was stopped")
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("gRPC address lookup timed out")
+        if self.stopped.is_set():
+            raise ConnectionAbortedError("gRPC certificate probe was stopped")
+        if "error" in job:
+            raise job["error"]
+        return job["addresses"]
 
     def register(self, sock, replace=None):
         with self.lock:
@@ -57,6 +99,7 @@ class PendingProbeSockets:
     def cancel(self):
         with self.lock:
             self.closed = True
+            self.stopped.set()
             sockets = tuple(self.sockets)
         for sock in sockets:
             try:
@@ -126,12 +169,18 @@ def _check_proxy_response(response):
 
 def _connect_raw(host, port, timeout, pending):
     last_error = None
-    for family, socktype, proto, _, address in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM):
+    deadline = None if timeout is None else time.monotonic() + timeout
+    for family, socktype, proto, _, address in pending.resolve_addresses(host, port, timeout):
+        remaining = None if deadline is None else max(0.001, deadline - time.monotonic())
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError("gRPC certificate probe timed out")
         raw = socket.socket(family, socktype, proto)
-        raw.settimeout(timeout)
+        raw.settimeout(remaining)
         try:
             pending.register(raw)
             raw.connect(address)
+            if deadline is not None:
+                raw.settimeout(max(0.001, deadline - time.monotonic()))
             return raw
         except OSError as ex:
             last_error = ex

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -20,10 +21,14 @@ from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 
 from nvflare.fuel.f3.drivers import aio_grpc_driver, grpc_driver
+from nvflare.fuel.f3.drivers.connector_info import Mode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.grpc import utils as grpc_utils
+from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.sfm.conn_manager import ConnManager
 from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, cert_uri
-from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert
+from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
+from tests.timing_utils import CheckedThread
 
 
 def _cert_pem(common_name: str, scoped: bool) -> bytes:
@@ -68,6 +73,64 @@ def test_explicit_empty_grpc_bypass_does_not_use_general_bypass(monkeypatch):
     monkeypatch.setenv("no_proxy", "listener.example")
 
     assert grpc_utils._proxy_for_target("listener.example", 8443, None) == ("proxy.example", 3128, None)
+
+
+def test_grpc_connector_stop_does_not_wait_for_stalled_dns(tmp_path, monkeypatch):
+    ca_key, ca_public = generate_keys()
+    ca_cert = generate_cert(Identity("rootCA"), Identity("rootCA"), ca_key, ca_public, ca=True)
+    client_key, client_public = generate_keys()
+    client_cert = generate_cert(Identity("site-1"), Identity("rootCA"), ca_key, client_public)
+    for name, data in {
+        "rootCA.pem": serialize_cert(ca_cert),
+        "client.crt": serialize_cert(client_cert),
+        "client.key": serialize_pri_key(client_key),
+    }.items():
+        (tmp_path / name).write_bytes(data)
+
+    entered, release = threading.Event(), threading.Event()
+
+    def stalled_lookup(*args, **kwargs):
+        entered.set()
+        release.wait(10)
+        return []
+
+    monkeypatch.setenv("no_grpc_proxy", "listener.invalid")
+    manager = ConnManager(Endpoint("site-1"))
+    driver = grpc_driver.GrpcDriver()
+    manager.add_connector(
+        driver,
+        {
+            DriverParams.SCHEME.value: "grpcs",
+            DriverParams.HOST.value: "listener.invalid",
+            DriverParams.PORT.value: 8443,
+            DriverParams.CA_CERT.value: str(tmp_path / "rootCA.pem"),
+            DriverParams.CLIENT_CERT.value: str(tmp_path / "client.crt"),
+            DriverParams.CLIENT_KEY.value: str(tmp_path / "client.key"),
+            DriverParams.CONNECT_TIMEOUT.value: None,
+        },
+        Mode.ACTIVE,
+    )
+    stopper = CheckedThread(target=manager.stop)
+    stopped_promptly = False
+    with patch.object(grpc_utils.socket, "getaddrinfo", side_effect=stalled_lookup):
+        try:
+            manager.start()
+            assert entered.wait(3), "certificate probe did not reach DNS"
+            stopper.start()
+            stopper.join(timeout=3)
+            stopped_promptly = not stopper.is_alive()
+        finally:
+            release.set()
+            if stopper.ident is None:
+                stopper.start()
+            stopper.join(timeout=5)
+            resolver = driver.pending_probes.resolver_job
+            if resolver:
+                resolver["thread"].join(timeout=5)
+                assert not resolver["thread"].is_alive()
+            assert not stopper.is_alive()
+            stopper.raise_if_failed()
+    assert stopped_promptly, "stalled DNS delayed connector shutdown"
 
 
 @pytest.mark.parametrize("scoped", [True, False])
