@@ -22,36 +22,18 @@ import tempfile
 import time
 
 import numpy as np
-from data.cifar10_data_utils import get_site_class_summary, load_cifar10_data
+from data.cifar10_data_utils import load_cifar10_data
+
+from nvflare.utils.data.partition import dirichlet_label_partition
+
+_PARTITIONER_ID = "nvflare.utils.data.partition.dirichlet_label_partition"
 
 
 def partition_data(num_sites, alpha, seed):
-    np.random.seed(seed)
     train_label = load_cifar10_data()
-
-    min_size = 0
-    k_classes = 10
-    total_n = train_label.shape[0]
-    site_idx = {}
-
-    while min_size < 10:
-        idx_batch = [[] for _ in range(num_sites)]
-        for k in range(k_classes):
-            idx_k = np.where(train_label == k)[0]
-            np.random.shuffle(idx_k)
-            proportions = np.random.dirichlet(np.repeat(alpha, num_sites))
-            proportions = np.array([p * (len(idx_j) < total_n / num_sites) for p, idx_j in zip(proportions, idx_batch)])
-            proportions = proportions / proportions.sum()
-            proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
-            idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
-            min_size = min(len(idx_j) for idx_j in idx_batch)
-
-    for j in range(num_sites):
-        np.random.shuffle(idx_batch[j])
-        site_idx[j] = idx_batch[j]
-
-    class_sum = get_site_class_summary(train_label, site_idx)
-    return site_idx, class_sum
+    result = dirichlet_label_partition(labels=train_label, num_sites=num_sites, alpha=alpha, seed=seed)
+    site_idx = {site: indices.tolist() for site, indices in result.site_indices.items()}
+    return site_idx, result.class_counts
 
 
 def get_split_dir(split_dir_prefix, num_sites, alpha, seed):
@@ -62,10 +44,30 @@ def _site_file_name(split_dir, site_num):
     return os.path.join(split_dir, f"site-{site_num}.npy")
 
 
-def _split_complete(split_dir, num_sites):
-    expected_files = [os.path.join(split_dir, "summary.txt")]
+def _summary_matches_config(sum_file_name, num_sites, alpha=None, seed=None):
+    try:
+        with open(sum_file_name, encoding="utf-8") as sum_file:
+            summary = sum_file.read()
+    except OSError:
+        return False
+
+    lines = {line.strip() for line in summary.splitlines()}
+    if f"Number of clients: {num_sites}" not in lines or f"Partitioner: {_PARTITIONER_ID}" not in lines:
+        return False
+    if alpha is not None and f"Dirichlet sampling parameter: {alpha}" not in lines:
+        return False
+    if seed is not None and f"Seed: {seed}" not in lines:
+        return False
+    return True
+
+
+def _split_complete(split_dir, num_sites, alpha=None, seed=None):
+    sum_file_name = os.path.join(split_dir, "summary.txt")
+    expected_files = [sum_file_name]
     expected_files.extend(_site_file_name(split_dir, site_num) for site_num in range(1, num_sites + 1))
-    return all(os.path.isfile(path) and os.path.getsize(path) > 0 for path in expected_files)
+    if not all(os.path.isfile(path) and os.path.getsize(path) > 0 for path in expected_files):
+        return False
+    return _summary_matches_config(sum_file_name, num_sites, alpha=alpha, seed=seed)
 
 
 def _write_split(split_dir, num_sites, alpha, seed):
@@ -78,11 +80,12 @@ def _write_split(split_dir, num_sites, alpha, seed):
         sum_file.write(f"Number of clients: {num_sites}\n")
         sum_file.write(f"Dirichlet sampling parameter: {alpha}\n")
         sum_file.write(f"Seed: {seed}\n")
+        sum_file.write(f"Partitioner: {_PARTITIONER_ID}\n")
         sum_file.write("Class counts for each client:\n")
         sum_file.write(json.dumps(class_sum, indent=2))
 
     for site in range(num_sites):
-        np.save(_site_file_name(split_dir, site + 1), np.array(site_idx[site]))
+        np.save(_site_file_name(split_dir, site + 1), np.asarray(site_idx[site], dtype=np.int64))
 
 
 def _write_split_atomically(split_dir, num_sites, alpha, seed):
@@ -114,11 +117,11 @@ def split_and_save(
     lock_timeout_seconds=600,
     lock_poll_seconds=0.2,
 ):
-    if alpha < 0.0:
-        raise ValueError(f"Alpha should be >= 0.0 but was {alpha}")
+    if alpha <= 0.0:
+        raise ValueError(f"Alpha should be > 0.0 but was {alpha}")
 
     split_dir = get_split_dir(split_dir_prefix, num_sites, alpha, seed)
-    if reuse and _split_complete(split_dir, num_sites):
+    if reuse and _split_complete(split_dir, num_sites, alpha=alpha, seed=seed):
         print(f"Reusing CIFAR-10 split: {split_dir}")
         return split_dir
 
@@ -135,7 +138,7 @@ def split_and_save(
             os.mkdir(lock_dir)
             lock_acquired = True
         except FileExistsError:
-            if reuse and _split_complete(split_dir, num_sites):
+            if reuse and _split_complete(split_dir, num_sites, alpha=alpha, seed=seed):
                 print(f"Reusing CIFAR-10 split: {split_dir}")
                 return split_dir
             if time.time() - start_time > lock_timeout_seconds:
@@ -143,7 +146,7 @@ def split_and_save(
             time.sleep(lock_poll_seconds)
 
     try:
-        if reuse and _split_complete(split_dir, num_sites):
+        if reuse and _split_complete(split_dir, num_sites, alpha=alpha, seed=seed):
             print(f"Reusing CIFAR-10 split: {split_dir}")
             return split_dir
         _write_split_atomically(split_dir, num_sites, alpha, seed)

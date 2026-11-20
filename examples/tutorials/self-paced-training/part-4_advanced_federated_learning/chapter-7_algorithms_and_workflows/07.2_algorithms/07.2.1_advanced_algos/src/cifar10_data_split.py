@@ -38,14 +38,18 @@
 # SOFTWARE.
 
 
+import _pickle
 import json
 import os
 import time
 
-import _pickle
 import numpy as np
 from filelock import FileLock, Timeout
 from tensorflow.keras import datasets
+
+from nvflare.utils.data.partition import dirichlet_label_partition
+
+_PARTITIONER_ID = "nvflare.utils.data.partition.dirichlet_label_partition"
 
 
 def cifar10_split(split_dir: str = None, num_sites: int = 8, alpha: float = 0.5, seed: int = 0):
@@ -53,79 +57,43 @@ def cifar10_split(split_dir: str = None, num_sites: int = 8, alpha: float = 0.5,
         raise ValueError("You need to define a valid `split_dir` for splitting the data.")
     if not os.path.isabs(split_dir):
         raise ValueError("`split_dir` needs to be absolute path.")
-    if alpha < 0.0:
-        raise ValueError(f"Alpha should be larger or equal 0.0 but was" f" {alpha}!")
-
-    np.random.seed(seed)
+    if alpha <= 0.0:
+        raise ValueError(f"Alpha should be larger than 0.0 but was {alpha}!")
 
     train_idx_paths = []
 
     print(f"Partition CIFAR-10 dataset into {num_sites} sites with Dirichlet sampling under alpha {alpha}")
-    site_idx, class_sum = _partition_data(num_sites, alpha)
+    site_idx, class_sum = _partition_data(num_sites, alpha, seed=seed)
 
     # write to files
     if not os.path.isdir(split_dir):
         os.makedirs(split_dir)
     sum_file_name = os.path.join(split_dir, "summary.txt")
     with open(sum_file_name, "w") as sum_file:
-        sum_file.write(f"Number of clients: {num_sites} \n")
-        sum_file.write(f"Dirichlet sampling parameter: {alpha} \n")
-        sum_file.write("Class counts for each client: \n")
+        sum_file.write(f"Number of clients: {num_sites}\n")
+        sum_file.write(f"Dirichlet sampling parameter: {alpha}\n")
+        sum_file.write(f"Seed: {seed}\n")
+        sum_file.write(f"Partitioner: {_PARTITIONER_ID}\n")
+        sum_file.write("Class counts for each client:\n")
         sum_file.write(json.dumps(class_sum))
 
     site_file_path = os.path.join(split_dir, "site-")
     for site in range(num_sites):
         site_file_name = site_file_path + str(site + 1) + ".npy"
         print(f"Save split index {site + 1} of {num_sites} to {site_file_name}")
-        np.save(site_file_name, np.array(site_idx[site]))
+        np.save(site_file_name, np.asarray(site_idx[site], dtype=np.int64))
         train_idx_paths.append(site_file_name)
 
     return train_idx_paths
 
 
-def _get_site_class_summary(train_label, site_idx):
-    class_sum = {}
-
-    for site, data_idx in site_idx.items():
-        unq, unq_cnt = np.unique(train_label[data_idx], return_counts=True)
-        tmp = {int(unq[i]): int(unq_cnt[i]) for i in range(len(unq))}
-        class_sum[site] = tmp
-    return class_sum
-
-
-def _partition_data(num_sites, alpha):
+def _partition_data(num_sites, alpha, seed=0):
     # only training label is needed for doing split
     (train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
-
-    min_size = 0
-    K = 10
-    N = train_labels.shape[0]
-    site_idx = {}
-
-    # split
-    while min_size < 10:
-        idx_batch = [[] for _ in range(num_sites)]
-        # for each class in the dataset
-        for k in range(K):
-            idx_k = np.where(train_labels == k)[0]
-            np.random.shuffle(idx_k)
-            proportions = np.random.dirichlet(np.repeat(alpha, num_sites))
-            # Balance
-            proportions = np.array([p * (len(idx_j) < N / num_sites) for p, idx_j in zip(proportions, idx_batch)])
-            proportions = proportions / proportions.sum()
-            proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
-            idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]
-            min_size = min([len(idx_j) for idx_j in idx_batch])
-
-    # shuffle
-    for j in range(num_sites):
-        np.random.shuffle(idx_batch[j])
-        site_idx[j] = idx_batch[j]
-
-    # collect class summary
-    class_sum = _get_site_class_summary(train_labels, site_idx)
-
-    return site_idx, class_sum
+    labels = np.asarray(train_labels).reshape(-1)
+    result = dirichlet_label_partition(labels=labels, num_sites=num_sites, alpha=alpha, seed=seed)
+    site_idx = {site: indices.tolist() for site, indices in result.site_indices.items()}
+    return site_idx, result.class_counts
 
 
 def load_cifar10_with_retry(max_retries=3, retry_delay=5):
