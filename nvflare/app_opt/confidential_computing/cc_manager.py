@@ -26,7 +26,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError, CCTokenVerifyError
+from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError
 from nvflare.app_opt.confidential_computing.cc_timeouts import resolve_token_timeouts
 from nvflare.fuel.f3.cellnet.core_cell import make_reply
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -348,7 +348,8 @@ class CCManager(FLComponent):
                 verifier = self.cc_verifiers.get(namespace)
                 try:
                     valid = verifier is not None and verifier.verify_for_site(info.get(CC_TOKEN, ""), site)
-                except CCTokenVerifyError:
+                except Exception:
+                    # Provider exceptions must become a failed verdict so registration can reject the client.
                     valid = False
                 if valid:
                     result[site + "." + namespace] = True
