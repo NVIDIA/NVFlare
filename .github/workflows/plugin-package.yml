@@ -28,7 +28,7 @@ on:
       - 'skills/**'
       - 'plugins/nvidia-nvflare/**'
       - 'dev_tools/agent/package_plugin.py'
-      - 'dev_tools/agent/plugin_validation/ci_check.py'
+      - 'dev_tools/agent/plugin_validation/**'
       - 'dev_tools/agent/skills/**'
       - 'ci/check_relative_doc_links.py'
       - 'tests/ci/test_plugin_package.py'

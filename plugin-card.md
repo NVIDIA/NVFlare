@@ -121,7 +121,7 @@ signatures, were preserved.
 | Component integrity | All 165 resource hashes in nine retained signature manifests matched packaged files; cryptographic signing trust was not checked locally |
 | Native loading and routing | Passed the host probes listed above |
 | Plugin security scan | Earlier candidate blocked: OSS SkillEvaluator 0.8.0 with SkillSpector 2.13.3 reported findings and incomplete analysis; final package scan remains required |
-| Plugin evaluation inputs | Native NVCARPS precheck passed for 107 canonical cases; the planned Codex/Claude skill and baseline matrix contains 428 attempts |
+| Plugin evaluation inputs | 107 plugin cases including `pytorch-convert-basic-v2`; the planned Codex/Claude skill and baseline matrix contains 428 attempts |
 | Plugin-level quality, lift, and agent/arm coverage | Not established; full workflow and formal plugin evaluation remain pending |
 
 Packaging and discovery checks do not constitute agent-driven conversion tests

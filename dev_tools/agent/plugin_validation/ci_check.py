@@ -46,13 +46,18 @@ def require(condition, message):
 
 
 def validate_evaluation_cases(files):
-    """Require a lossless native projection of the signed member cases and their routing."""
+    """Verify the plugin projection, including its versioned PyTorch conversion case."""
     expected = []
     for skill in package_plugin.SKILLS:
         suite_path = f"skills/{skill}/evals/evals.json"
         suite = json.loads(files[suite_path][0])
         for original in suite["evals"]:
             row = dict(original)
+            if skill == "nvflare-convert-pytorch" and row["id"] == "pytorch-convert-basic":
+                revision = json.loads(Path(__file__).with_name("pytorch-convert-basic-v2.json").read_text())
+                for key in ("id", "files", "prompt", "expected_output"):
+                    row[key] = revision[key]
+                row["assertions"] = [*row["assertions"], *revision["assertions"]]
             metadata = row.pop("nvflare")
             row["expected_skill"] = metadata["expected_skill"]
             negative = metadata.get("negative_for")
@@ -65,7 +70,7 @@ def validate_evaluation_cases(files):
                 row["expected_behavior"] = "Source NVFlare grading references: " + json.dumps(
                     references, sort_keys=True
                 )
-            row["files"] = [f"skills/{skill}/evals/{name}" for name in original["files"]]
+            row["files"] = [f"skills/{skill}/evals/{name}" for name in row["files"]]
             for name in row["files"]:
                 require(name in files, f"Missing plugin evaluation fixture: {name}")
             if row["files"]:
@@ -79,7 +84,7 @@ def validate_evaluation_cases(files):
             expected.append(row)
     actual = json.loads(files["evals.json"][0])["evals"]
     require(len({row["id"] for row in expected}) == len(expected), "Member case IDs must be globally unique")
-    require(actual == expected, "Plugin evals.json differs from the signed member cases or native routing projection")
+    require(actual == expected, "Plugin evals.json differs from the expected versioned member projection")
     return len(expected)
 
 
