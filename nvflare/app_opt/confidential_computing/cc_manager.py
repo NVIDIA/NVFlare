@@ -26,7 +26,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError, CCTokenVerifyError
+from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError
 from nvflare.app_opt.confidential_computing.cc_timeouts import resolve_token_timeouts
 from nvflare.fuel.f3.cellnet.core_cell import make_reply
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -332,8 +332,8 @@ class CCManager(FLComponent):
     def _verify_participants_tokens(self, participants_tokens: dict[str, list[dict[str, str]]]) -> VerificationResult:
         """Return a verdict, without deciding whether to reject or shut down.
 
-        Authorizers may consume replay IDs; this method has no logging,
-        lifecycle or federation-failure side effects.
+        Authorizers may consume replay IDs. Provider exceptions are logged by
+        type only and returned as failed verification.
         """
         result, errors = {}, []
         for site, cc_info in participants_tokens.items():
@@ -348,7 +348,9 @@ class CCManager(FLComponent):
                 verifier = self.cc_verifiers.get(namespace)
                 try:
                     valid = verifier is not None and verifier.verify_for_site(info.get(CC_TOKEN, ""), site)
-                except CCTokenVerifyError:
+                except Exception as exc:
+                    # Provider exception messages can contain tokens or evidence.
+                    self.logger.warning("CC verifier %s raised %s for site %s", namespace, type(exc).__name__, site)
                     valid = False
                 if valid:
                     result[site + "." + namespace] = True
