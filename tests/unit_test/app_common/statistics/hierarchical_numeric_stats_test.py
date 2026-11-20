@@ -127,7 +127,7 @@ global_stats_0 = {
         "count": {"data_set1": {"Feature1": 1000}},
         "sum": {"data_set1": {"Feature1": 10000}},
         "mean": {"data_set1": {"Feature1": 10.0}},
-        "min": {"data_set1": {"Feature1": 1}},
+        "min": {"data_set1": {"Feature1": 0}},
         "max": {"data_set1": {"Feature1": 50}},
         "histogram": {
             "data_set1": {
@@ -228,7 +228,7 @@ global_stats_1 = {
         "count": {"data_set1": {"Feature1": 1000}},
         "sum": {"data_set1": {"Feature1": 10000}},
         "mean": {"data_set1": {"Feature1": 10.0}},
-        "min": {"data_set1": {"Feature1": 1}},
+        "min": {"data_set1": {"Feature1": 0}},
         "max": {"data_set1": {"Feature1": 50}},
         "histogram": {
             "data_set1": {
@@ -290,7 +290,7 @@ global_stats_1 = {
                 "count": {"data_set1": {"Feature1": 300}},
                 "sum": {"data_set1": {"Feature1": 3000}},
                 "mean": {"data_set1": {"Feature1": 10.0}},
-                "min": {"data_set1": {"Feature1": 1}},
+                "min": {"data_set1": {"Feature1": 0}},
                 "max": {"data_set1": {"Feature1": 30}},
                 "histogram": {
                     "data_set1": {
@@ -373,7 +373,7 @@ global_stats_2 = {
         "count": {"data_set1": {"Feature1": 1000}},
         "sum": {"data_set1": {"Feature1": 10000}},
         "mean": {"data_set1": {"Feature1": 10.0}},
-        "min": {"data_set1": {"Feature1": 1}},
+        "min": {"data_set1": {"Feature1": 0}},
         "max": {"data_set1": {"Feature1": 50}},
         "histogram": {
             "data_set1": {
@@ -479,7 +479,7 @@ global_stats_2 = {
                 "count": {"data_set1": {"Feature1": 300}},
                 "sum": {"data_set1": {"Feature1": 3000}},
                 "mean": {"data_set1": {"Feature1": 10.0}},
-                "min": {"data_set1": {"Feature1": 1}},
+                "min": {"data_set1": {"Feature1": 0}},
                 "max": {"data_set1": {"Feature1": 30}},
                 "histogram": {
                     "data_set1": {
@@ -584,7 +584,7 @@ global_stats_3 = {
         "count": {"data_set1": {"Feature1": 1000}},
         "sum": {"data_set1": {"Feature1": 10000}},
         "mean": {"data_set1": {"Feature1": 10.0}},
-        "min": {"data_set1": {"Feature1": 1}},
+        "min": {"data_set1": {"Feature1": 0}},
         "max": {"data_set1": {"Feature1": 50}},
         "histogram": {
             "data_set1": {
@@ -734,7 +734,7 @@ global_stats_3 = {
                 "count": {"data_set1": {"Feature1": 300}},
                 "sum": {"data_set1": {"Feature1": 3000}},
                 "mean": {"data_set1": {"Feature1": 10.0}},
-                "min": {"data_set1": {"Feature1": 1}},
+                "min": {"data_set1": {"Feature1": 0}},
                 "max": {"data_set1": {"Feature1": 30}},
                 "histogram": {
                     "data_set1": {
@@ -1351,3 +1351,41 @@ class TestHierarchicalMixedFeatures:
         verify(result)
         controller = HierarchicalStatisticsController({"histogram": {}}, "writer", hierarchy_config="hierarchy.json")
         controller._recursively_round_global_stats(result)
+
+
+class TestHierarchicalMinMaxOfZero:
+    HIERARCHY = {"States": [{"Name": "State-1", "Sites": ["a", "b"]}, {"Name": "State-2", "Sites": ["c"]}]}
+
+    @pytest.mark.parametrize("order", list(itertools.permutations(["a", "b", "c"])))
+    @pytest.mark.parametrize(
+        "data",
+        [
+            # site "a" has min 0, the other sites have positive values only
+            {"a": np.array([0.0, 7.0]), "b": np.array([5.0, 6.0]), "c": np.array([3.0, 4.0])},
+            # site "a" has max 0, the other sites have negative values only
+            {"a": np.array([-4.0, 0.0]), "b": np.array([-3.0, -2.0]), "c": np.array([-6.0, -5.0])},
+        ],
+        ids=["min-is-zero", "max-is-zero"],
+    )
+    def test_zero_is_a_valid_min_and_max_at_every_level(self, order, data):
+        from nvflare.app_common.statistics.hierarchical_numeric_stats import get_global_stats
+
+        client_stats = {"count": {}, "sum": {}, "min": {}, "max": {}}
+        for site in order:
+            values = data[site]
+            client_stats["count"][site] = {"ds": {"f": len(values)}}
+            client_stats["sum"][site] = {"ds": {"f": float(values.sum())}}
+            client_stats["min"][site] = {"ds": {"f": float(values.min())}}
+            client_stats["max"][site] = {"ds": {"f": float(values.max())}}
+
+        result = get_global_stats({}, client_stats, StC.STATS_1st_STATISTICS, self.HIERARCHY)
+
+        levels = [
+            (result[StC.GLOBAL], ["a", "b", "c"]),
+            (result["States"][0][StC.GLOBAL], ["a", "b"]),
+            (result["States"][1][StC.GLOBAL], ["c"]),
+        ]
+        for stats, sites in levels:
+            values = np.concatenate([data[site] for site in sites])
+            assert stats[StC.STATS_MIN]["ds"]["f"] == values.min()
+            assert stats[StC.STATS_MAX]["ds"]["f"] == values.max()
