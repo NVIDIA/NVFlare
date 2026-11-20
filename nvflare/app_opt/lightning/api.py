@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import dataclasses
 import logging
 from typing import Dict, Optional
 
@@ -69,11 +70,19 @@ def patch(
             model updates where the client only keeps part of the server keyspace.
         update_fit_loop: whether to increase `trainer.fit_loop.max_epochs` and `trainer.fit_loop.epoch_loop.max_steps` each FL round.
             Defaults to `True` which is suitable for most PyTorch Lightning applications.
-        sync_every_n_steps: when set, one ``trainer.fit()`` exchanges the model with the server every
-            ``sync_every_n_steps`` optimizer steps instead of once per ``fit()``. The received model is loaded
-            in place, so the optimizer, LR scheduler and data position carry over. The server's ``num_rounds``
-            decides how long training runs: the trainer's ``max_epochs``, ``max_steps``, ``min_epochs`` and
-            ``min_steps`` are lifted, and ``fit()``
+        sync_every_n_steps: when set, one ``trainer.fit()`` spans all FL rounds instead of one ``fit()`` per round,
+            and exchanges the model with the server every ``sync_every_n_steps`` optimizer steps. The
+            receive, ``trainer.validate()``, ``trainer.fit()`` loop of fit-per-round mode becomes a single ``fit()``.
+            In-fit validation then scores the site's local weights, not the new global model, and no per-round
+            global-model evaluation runs; evaluate tasks such as cross-site evaluation are answered by
+            ``trainer.validate()`` after ``fit()``. The model is sent at the end of the sync batch and the next
+            one is received at the start of the next batch (or at epoch end), so validation and other callbacks
+            in between run while the server aggregates. A shutdown or a pending evaluate task is therefore found
+            only after that validation, and a validation that stops training or raises does so before the next
+            receive. A site that stops on its own leaves without answering later rounds; a FedAvg job aborts once
+            the server sends it a task again. The received model is loaded in place, so the optimizer, LR
+            scheduler and data position carry over. The server's ``num_rounds`` decides how long training runs:
+            the trainer's ``max_epochs``, ``max_steps``, ``min_epochs`` and ``min_steps`` are lifted, and ``fit()``
             ends when the server stops sending training tasks. An LR scheduler sized from the trainer's limits
             (``OneCycleLR``, cosine with ``T_max`` from ``estimated_stepping_batches``) must be sized for
             ``num_rounds * sync_every_n_steps`` instead; step-counting schedulers work unchanged. ``restore_state``
@@ -487,6 +496,7 @@ class _StepSyncFLCallback(_FLCallbackBase):
         self._trainer_step_budget = None
         self._trainer_limits = None
         self._received_model = None
+        self._held_lr_scheduler_configs = None
 
     def on_train_start(self, trainer, pl_module):
         budget = trainer.estimated_stepping_batches
@@ -523,6 +533,10 @@ class _StepSyncFLCallback(_FLCallbackBase):
                 self._receive_next_round(trainer)
             received, self._received_model = self._received_model, None
             if received is None:
+                self._held_lr_scheduler_configs = trainer.strategy.lr_scheduler_configs
+                trainer.strategy.lr_scheduler_configs = [
+                    dataclasses.replace(config, interval="never") for config in self._held_lr_scheduler_configs
+                ]
                 _skip_rest_of_epoch(pl_module)
                 return
             input_model = self._load_received_model(trainer, pl_module, received)
@@ -549,8 +563,12 @@ class _StepSyncFLCallback(_FLCallbackBase):
             )
         if round_steps == self.sync_every_n_steps:
             self._finish_round_and_send(trainer, pl_module)
-            if not trainer.should_stop:
-                self._receive_next_round(trainer)
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        if not trainer.should_stop:
+            self._restore_lr_scheduler_configs(trainer)
+        if not self._training_round_started and self._received_model is None and not trainer.should_stop:
+            self._receive_next_round(trainer)
 
     def on_train_end(self, trainer, pl_module):
         self._restore_trainer_limits(trainer)
@@ -570,7 +588,13 @@ class _StepSyncFLCallback(_FLCallbackBase):
     def on_exception(self, trainer, pl_module, exception):
         self._restore_trainer_limits(trainer)
 
+    def _restore_lr_scheduler_configs(self, trainer):
+        if self._held_lr_scheduler_configs is not None:
+            trainer.strategy.lr_scheduler_configs = self._held_lr_scheduler_configs
+            self._held_lr_scheduler_configs = None
+
     def _restore_trainer_limits(self, trainer):
+        self._restore_lr_scheduler_configs(trainer)
         if self._trainer_limits is None:
             return
         fit_loop = trainer.fit_loop
