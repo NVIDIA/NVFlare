@@ -116,9 +116,9 @@ In step mode:
 - `train_with_evaluation=True` in the job config raises `ValueError` when `patch()` runs.
 - A site that stops on its own (`EarlyStopping`, `max_time`, `trainer.should_stop`) sends its open round, which may be
   shorter than N steps, and leaves. A round with no optimizer step yet is not sent: it would carry the received model
-  unchanged, which FedAvg counts with weight 1 (it treats `NUM_STEPS_CURRENT_ROUND <= 0` as 1), and SCAFFOLD cannot
-  compute a control update from zero steps. The callback logs a warning instead. The server then handles the missing
-  site as it handles any client that stops responding.
+  unchanged, which FedAvg would skip anyway, and SCAFFOLD cannot compute a control update from zero steps. The
+  callback logs a warning instead. The server then handles the missing site as it handles any client that stops
+  responding.
 - Every site reports `NUM_STEPS_CURRENT_ROUND = N`, so FedAvg weights sites equally per round, whatever their dataset
   size. Use `aggregation_weight` on the server for unequal weights.
 

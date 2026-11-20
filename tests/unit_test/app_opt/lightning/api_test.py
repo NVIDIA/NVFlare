@@ -2037,6 +2037,28 @@ def test_step_sync_does_not_send_a_round_without_optimizer_steps(caplog, with_sc
     assert [r for r in caplog.records if "stopped before the first optimizer step of round 1" in r.getMessage()]
 
 
+@pytest.mark.parametrize("algorithm", ["fedavg", "scaffold", "fedprox"])
+def test_fit_per_round_sends_zero_steps_when_stopped_before_the_first_optimizer_step(caplog, algorithm):
+    module = RecordingNet()
+    meta = {
+        "fedavg": None,
+        "scaffold": {AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL: _zero_controls(module)},
+        "fedprox": {AlgorithmConstants.FEDPROX_MU: 0.1},
+    }[algorithm]
+    fake = _FakeFlare(_train_tasks(1, meta=meta))
+
+    with caplog.at_level(logging.WARNING, logger="FLCallback"), _flare(fake):
+        trainer = _pl_trainer(max_epochs=1, accumulate_grad_batches=2, callbacks=[StopAtBatch(0)])
+        lightning_patch(trainer)
+        trainer.fit(module, train_dataloaders=_loader(4))
+
+    assert trainer.global_step == 0
+    assert fake.steps() == [0]
+    assert AlgorithmConstants.SCAFFOLD_CTRL_DIFF not in fake.sent[0].meta
+    assert torch.equal(fake.sent_snapshots[0]["fc.weight"], fake.received[0].params["fc.weight"])
+    assert [r for r in caplog.records if "stopped before the first optimizer step of round 0" in r.getMessage()]
+
+
 def test_step_sync_does_not_wait_for_the_next_task_when_the_trainer_stops_on_a_sync_batch():
     fake = _FakeFlare(_train_tasks(10))
 
