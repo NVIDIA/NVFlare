@@ -39,7 +39,7 @@ class FlowerExecutor(TieExecutor):
             tx_timeout: transaction timeout for ReliableMessage
             client_shutdown_timeout: how long to wait for graceful shutdown of the client
             extra_env: extra env variables to be passed to client applet
-            allow_runtime_dependency_installation: whether to allow dynamic dependency installation (only flwr>=1.29)
+            allow_runtime_dependency_installation: whether to allow dynamic dependency installation
         """
         TieExecutor.__init__(
             self,
@@ -50,7 +50,6 @@ class FlowerExecutor(TieExecutor):
         if extra_env:
             check_object_type("extra_env", extra_env, dict)
 
-        self.int_server_grpc_options = None
         self.per_msg_timeout = per_msg_timeout
         self.tx_timeout = tx_timeout
         self.client_shutdown_timeout = client_shutdown_timeout
@@ -59,12 +58,12 @@ class FlowerExecutor(TieExecutor):
         self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
 
     def get_connector(self, fl_ctx: FLContext):
-        from nvflare.app_opt.flower.connectors.grpc_client_connector import GrpcClientConnector
+        from nvflare.app_opt.flower.connectors.http_client_connector import HttpClientConnector
 
-        return GrpcClientConnector(
-            int_server_grpc_options=self.int_server_grpc_options,
+        return HttpClientConnector(
             per_msg_timeout=self.per_msg_timeout,
             tx_timeout=self.tx_timeout,
+            client_shutdown_timeout=self.client_shutdown_timeout,
         )
 
     def get_applet(self, fl_ctx: FLContext):
@@ -82,7 +81,6 @@ class FlowerExecutor(TieExecutor):
 
     def _log_states(self, fl_ctx: FLContext):
         self.log_info(fl_ctx, "States are:")
-        self.log_info(fl_ctx, f"    {self.int_server_grpc_options=}")
         self.log_info(fl_ctx, f"    {self.per_msg_timeout=}")
         self.log_info(fl_ctx, f"    {self.tx_timeout=}")
         self.log_info(fl_ctx, f"    {self.client_shutdown_timeout=}")

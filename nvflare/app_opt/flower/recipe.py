@@ -23,8 +23,8 @@ from nvflare.fuel.utils.secret_utils import warn_on_potential_secrets, warn_on_u
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.recipe.spec import Recipe
 
-SUPPORTED_FLWR_MIN_VERSION = Version("1.26")
-SUPPORTED_FLWR_SPEC = "flwr>=1.26"
+SUPPORTED_FLWR_MIN_VERSION = Version("1.43")
+SUPPORTED_FLWR_SPEC = "flwr>=1.43"
 
 
 def _validate_flwr_version():
@@ -71,7 +71,7 @@ class FlowerRecipe(Recipe):
     to persist the relayed metrics.
 
     Flower CLI compatibility:
-        This recipe requires ``flwr>=1.26``. The integration uses Flower
+        This recipe requires ``flwr>=1.43``. The integration uses Flower
         Configuration under ``$FLWR_HOME/config.toml`` and the newer
         SuperLink-based CLI workflow.
 
@@ -111,7 +111,7 @@ class FlowerRecipe(Recipe):
         client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
         extra_env (dict, optional): optional extra env variables to be passed to Flower client.
         run_config (dict, optional): optional dict for flwr run --run-config arguments.
-        allow_runtime_dependency_installation (bool, optional): whether to allow dynamic dependency installation (only flwr>=1.29). Defaults to False.
+        allow_runtime_dependency_installation (bool, optional): whether to allow dynamic dependency installation. Defaults to False.
     """
 
     def __init__(

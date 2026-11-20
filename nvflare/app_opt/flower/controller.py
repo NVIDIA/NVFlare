@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
@@ -59,9 +60,9 @@ class FlowerController(TieController):
             job_status_check_interval: how often to check job status
             max_client_op_interval: max time allowed for missing client requests
             progress_timeout: max time allowed for missing overall progress
-            int_client_grpc_options: internal grpc client options
+            int_client_grpc_options: deprecated and ignored. The gRPC-adapter transport was removed with Flower 1.43.
             run_config: optional dict for flwr run --run-config arguments
-            allow_runtime_dependency_installation: whether to allow dynamic dependency installation (only flwr>=1.29)
+            allow_runtime_dependency_installation: whether to allow dynamic dependency installation
             flower_app_path: absolute path to pre-deployed Flower app on the server (clients receive via FAB)
         """
         TieController.__init__(
@@ -85,19 +86,22 @@ class FlowerController(TieController):
         self.superlink_ready_timeout = superlink_ready_timeout
         self.superlink_grace_period = superlink_grace_period
         self.superlink_min_query_interval = superlink_min_query_interval
-        self.int_client_grpc_options = int_client_grpc_options
+        if int_client_grpc_options is not None:
+            warnings.warn(
+                "int_client_grpc_options is deprecated and ignored: the Flower integration no longer uses gRPC",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.logger.warning("int_client_grpc_options is deprecated and ignored")
         self.monitor_interval = monitor_interval
         self.run_config = run_config
         self.allow_runtime_dependency_installation = allow_runtime_dependency_installation
         self.flower_app_path = flower_app_path
 
     def get_connector(self, fl_ctx: FLContext):
-        from nvflare.app_opt.flower.connectors.grpc_server_connector import GrpcServerConnector
+        from nvflare.app_opt.flower.connectors.http_server_connector import HttpServerConnector
 
-        return GrpcServerConnector(
-            int_client_grpc_options=self.int_client_grpc_options,
-            monitor_interval=self.monitor_interval,
-        )
+        return HttpServerConnector(monitor_interval=self.monitor_interval)
 
     def get_applet(self, fl_ctx: FLContext):
         return FlowerServerApplet(

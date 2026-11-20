@@ -66,7 +66,7 @@ class FlowerJob(FedJob):
             client_shutdown_timeout (float, optional): Timeout for client shutdown. Defaults to 5.0 seconds.
             extra_env (dict, optional): optional extra env variables to be passed to Flower client
             run_config (dict, optional): optional dict for flwr run --run-config arguments
-            allow_runtime_dependency_installation (bool, optional): whether to allow dynamic dependency installation. Defaults to False. (only flwr>=1.29)
+            allow_runtime_dependency_installation (bool, optional): whether to allow dynamic dependency installation. Defaults to False.
         """
         if flower_content and flower_app_path:
             raise ValueError("Specify either 'flower_content' (BYOC) or 'flower_app_path' (pre-deployed), not both.")

@@ -4,21 +4,26 @@ Run Flower Application as FLARE Job
 
 Before running Flower applications with FLARE, you must have both FLARE and Flower frameworks
 installed in your Python environment. Current NVFlare ``main`` and the NVFlare 2.8 release
-candidate line use Flower's SuperLink configuration flow and require ``flwr>=1.26``.
+candidate line use Flower's SuperLink configuration flow and require ``flwr>=1.43``.
 
 .. code-block:: shell
 
-    pip install 'flwr>=1.26'
+    pip install 'flwr>=1.43'
 
 If you are using released NVFlare 2.7.x, use ``flwr>=1.16,<1.26`` and the 2.7 branch or tag of
 the Flower examples. NVFlare 2.7.x still uses Flower's legacy ``--federation-config`` CLI
 option, which Flower 1.26+ ignores.
 
+NVFlare carries Flower's HTTP Fleet API between each SuperNode and the SuperLink over FLARE's
+ReliableMessage; the gRPC-adapter transport used with earlier Flower versions is no longer used.
+The FLARE server and clients must run the same NVFlare version. If you must stay on ``flwr<1.36``,
+use an NVFlare release from before this change.
+
 With Flower 1.26 and newer, SuperLink connections are no longer configured in
 ``pyproject.toml`` for NVFlare jobs. Instead, NVFlare writes a job-scoped Flower
 configuration file at ``$FLWR_HOME/config.toml`` and uses it to connect
 ``flwr run``, ``flwr list``, and ``flwr stop`` to the job's dynamically assigned
-SuperLink control API address. Do not create a global ``~/.flwr/config.toml`` as a workaround
+SuperLink address. Do not create a global ``~/.flwr/config.toml`` as a workaround
 for NVFlare 2.7.x compatibility; the dynamic port must be configured by an NVFlare version that
 supports Flower 1.26+.
 
@@ -73,7 +78,7 @@ set to finetune its behavior, as shown below:
             job_status_check_interval: float = TieConstant.JOB_STATUS_CHECK_INTERVAL,
             max_client_op_interval: float = TieConstant.MAX_CLIENT_OP_INTERVAL,
             progress_timeout: float = TieConstant.WORKFLOW_PROGRESS_TIMEOUT,
-            int_client_grpc_options=None,
+            int_client_grpc_options=None,  # deprecated, ignored
             run_config: Optional[dict] = None,
         ):
             """Constructor of FlowerController
@@ -92,7 +97,7 @@ set to finetune its behavior, as shown below:
                 job_status_check_interval: how often to check job status
                 max_client_op_interval: max time allowed for missing client requests
                 progress_timeout: max time allowed for missing overall progress
-                int_client_grpc_options: internal grpc client options
+                int_client_grpc_options: deprecated and ignored
                 run_config: optional dict for flwr run --run-config arguments
             """
 
