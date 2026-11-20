@@ -37,6 +37,7 @@ Command groups
 - ``deploy``: prepare existing server or client startup kits for deployment
   runtimes such as Docker or Kubernetes
 - ``job``: submit and manage jobs
+- ``resources``: query saved resource reports for a job or study
 - ``study``: manage multi-study lifecycle (register, enroll sites, manage users)
 - ``system``: inspect and operate a running FL system
 - ``config``: manage local CLI settings, including startup-kit registration
@@ -61,6 +62,7 @@ workflows unless you are maintaining an older setup.
    distributed_provisioning
    deploy_command
    job_cli
+   resources_command
    study_command
    system_command
    cert_command
