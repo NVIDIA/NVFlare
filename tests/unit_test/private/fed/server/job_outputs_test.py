@@ -88,16 +88,22 @@ class TestSplitJobOutputs:
         assert _files(split.output_dirs[0]) == ["plots/a.png"]
         assert _files(split.rest_dirs[0]) == ["error_log.txt", "log.txt"]
 
-    def test_symlinks_stay_with_the_rest(self, tmp_path):
+    def test_symlinks_are_omitted_from_both_link_folders(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"metrics/metrics_summary.json": b"{}"})
-        secret = tmp_path / "secret.txt"
-        secret.write_text("secret")
-        os.symlink(secret, run_dir / "metrics" / "link.txt")
+        external = tmp_path / "external.txt"
+        external.write_text("external")
+        os.symlink(external, run_dir / "metrics" / "external.txt")
+        os.symlink("metrics_summary.json", run_dir / "metrics" / "latest.json")
+        os.symlink("metrics", run_dir / "metrics_link")
+        os.symlink("missing.txt", run_dir / "dangling.txt")
 
         split = split_job_outputs([str(run_dir)])
 
         assert _files(split.output_dirs[0]) == ["metrics/metrics_summary.json"]
-        assert os.readlink(os.path.join(split.rest_dirs[0], "metrics", "link.txt")) == str(secret)
+        assert sorted(os.listdir(split.rest_dirs[0])) == ["metrics"]
+        assert not os.listdir(os.path.join(split.rest_dirs[0], "metrics"))
+        assert (run_dir / "metrics" / "external.txt").is_symlink()
+        assert (run_dir / "metrics_link").is_symlink()
 
     def test_each_workspace_folder_is_split_beside_itself(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})
@@ -113,8 +119,8 @@ class TestSplitJobOutputs:
         assert all(os.path.dirname(d) == str(tmp_path) for d in split.output_dirs + split.rest_dirs)
 
     @pytest.mark.parametrize("symlink_in", ["run", "result"])
-    def test_an_output_path_also_kept_with_another_folders_rest_rejects_the_split(self, tmp_path, symlink_in):
-        # the workspace folders share archive paths: the split must not change which copy a full download keeps
+    def test_a_symlink_at_another_folders_output_path_keeps_the_split(self, tmp_path, symlink_in):
+        # The workspace folders share archive paths, but the symlink contributes no archive member.
         run_dir = _run_folder(tmp_path / "run", {"app_server/x.json": b"{}"})
         result_root = _run_folder(tmp_path / "result", {})
         initial = tmp_path / "initial.npy"
@@ -126,8 +132,8 @@ class TestSplitJobOutputs:
         split = link_job_outputs([str(run_dir), str(result_root)])
 
         assert "models/server.npy" in split.found
-        with pytest.raises(OSError):  # store the workspace whole
-            split.link_rest()
+        split.link_rest()
+        assert all(not _files(d) for d in split.rest_dirs)
 
     def test_the_same_output_path_in_two_folders_keeps_the_split(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"models/server.npy": b"initial"})
@@ -164,46 +170,6 @@ class TestSplitJobOutputs:
         assert first.output_dirs == second.output_dirs
         assert _files(second.output_dirs[0]) == ["app_server/FL_global_model.pt"]
 
-    def test_a_relative_symlink_to_an_output_still_resolves_in_the_workspace(self, tmp_path):
-        run_dir = _run_folder(tmp_path / "run", {"app_server/model.pt": b"model"})
-        os.symlink("model.pt", run_dir / "app_server" / "latest.pt")
-
-        split = split_job_outputs([str(run_dir)])
-
-        latest = os.path.join(split.rest_dirs[0], "app_server", "latest.pt")
-        with open(latest, "rb") as f:  # what the workspace archive reads, as before the split
-            assert f.read() == b"model"
-
-    def test_a_relative_symlink_through_a_linked_folder_reads_the_same_file(self, tmp_path):
-        run_dir = _run_folder(
-            tmp_path / "run",
-            {
-                "app_server/FL_global_model.pt": b"m",
-                "models/model.bin": b"top",
-                "models/snapshots/model.bin": b"snapshot",
-                "models/snapshots/v1/weights.bin": b"",
-            },
-        )
-        os.symlink("snapshots/v1", run_dir / "models" / "current")
-        # "current/.." is "snapshots", not "models": normalizing the path would change the file it reads
-        os.symlink("../models/current/../model.bin", run_dir / "app_server" / "latest.bin")
-        with open(run_dir / "app_server" / "latest.bin", "rb") as f:
-            original = f.read()
-
-        split = split_job_outputs([str(run_dir)])
-
-        with open(os.path.join(split.rest_dirs[0], "app_server", "latest.bin"), "rb") as f:
-            assert f.read() == original == b"snapshot"
-
-    def test_a_symlinked_folder_stays_a_link(self, tmp_path):
-        run_dir = _run_folder(tmp_path / "run", {"data/a.csv": b"a", "app_server/FL_global_model.pt": b"m"})
-        os.symlink("data", run_dir / "data_link")
-
-        split = split_job_outputs([str(run_dir)])
-
-        linked = os.path.join(split.rest_dirs[0], "data_link")
-        assert os.path.islink(linked) and os.listdir(linked) == ["a.csv"]
-
     def test_a_source_replaced_right_after_its_link_was_made_rejects_the_split(self, tmp_path, monkeypatch):
         import nvflare.private.fed.server.job_outputs as job_outputs_module
 
@@ -211,11 +177,12 @@ class TestSplitJobOutputs:
         model = run_dir / "app_server" / "FL_global_model.pt"
         real_link = job_outputs_module._link
 
-        def link_then_replace(source, target):
-            real_link(source, target)
-            if source == str(model):
+        def link_then_replace(source, target, dir_fd, info):
+            identity = real_link(source, target, dir_fd, info)
+            if source == model.name:
                 model.unlink()
                 model.write_bytes(b"newer")  # the stored link still names the old file
+            return identity
 
         monkeypatch.setattr(job_outputs_module, "_link", link_then_replace)
         split = link_job_outputs([str(run_dir)])
@@ -224,6 +191,24 @@ class TestSplitJobOutputs:
         # the outputs archive would hold the old model and the workspace archive would leave out the newer one
         with pytest.raises(OSError):
             split.link_rest()
+
+    def test_a_file_swapped_for_a_symlink_before_linking_rejects_the_split(self, tmp_path, monkeypatch):
+        run_dir = _run_folder(tmp_path / "run", {"model.pt": b"model"})
+        model = run_dir / "model.pt"
+        outside = tmp_path / "outside.txt"
+        outside.write_bytes(b"outside")
+        real_link = os.link
+
+        def swap_then_link(source, target, **kwargs):
+            model.unlink()
+            model.symlink_to(outside)
+            real_link(source, target, **kwargs)
+
+        monkeypatch.setattr(os, "link", swap_then_link)
+
+        assert link_job_outputs([str(run_dir)]) is None
+        assert model.is_symlink()
+        assert sorted(os.listdir(tmp_path)) == ["outside.txt", "run"]
 
     def test_a_log_replaced_after_the_outputs_are_linked_is_kept_with_the_rest(self, tmp_path):
         run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model", "log.txt": b"old"})
@@ -253,7 +238,7 @@ class TestSplitJobOutputs:
 
         split.link_rest()
 
-        assert os.path.islink(os.path.join(split.rest_dirs[0], "metrics", "latest.json"))
+        assert _files(split.rest_dirs[0]) == []
 
     @pytest.mark.parametrize("change", ["replaced", "removed", "appended"])
     def test_a_stored_output_changed_afterwards_rejects_the_split(self, tmp_path, change):
@@ -273,14 +258,11 @@ class TestSplitJobOutputs:
 
     def test_an_unreadable_folder_falls_back_to_the_whole_workspace(self, tmp_path, monkeypatch):
         run_dir = _run_folder(tmp_path / "run", {"app_server/FL_global_model.pt": b"model"})
-        real_walk = os.walk
 
-        def failing_walk(top, onerror=None, **kwargs):
-            if onerror:
-                onerror(PermissionError(13, "Permission denied", str(top)))
-            return real_walk(top, **kwargs)
+        def failing_walk(directory_fd):
+            raise PermissionError("cannot scan archive source")
 
-        monkeypatch.setattr(os, "walk", failing_walk)
+        monkeypatch.setattr("nvflare.private.fed.server.job_outputs.walk_archive_directory", failing_walk)
 
         assert link_job_outputs([str(run_dir)]) is None
         assert sorted(os.listdir(tmp_path)) == ["run"]

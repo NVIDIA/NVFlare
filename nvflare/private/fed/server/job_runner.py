@@ -788,13 +788,10 @@ class JobRunner(FLComponent):
             ws_dirs = list(finished_state.workspace_archive_sources)
         else:
             workspace = fl_ctx.get_workspace()
-            run_dir = workspace.get_run_dir(job_id)
+            run_dir, result_root, log_root, audit_root = workspace.get_job_archive_dirs(job_id)
             # the archive is served by download_job; the job credential is dead and must not be in it
-            if os.path.isdir(run_dir):
+            if not os.path.islink(run_dir) and os.path.isdir(run_dir):
                 remove_job_cert(run_dir)
-            result_root = workspace.get_result_root(job_id)
-            log_root = workspace.get_log_root(job_id)
-            audit_root = workspace.get_audit_root(job_id)
 
             ws_dirs = []
             seen_paths = set()
@@ -802,7 +799,7 @@ class JobRunner(FLComponent):
                 if path in seen_paths:
                     continue
                 seen_paths.add(path)
-                if not os.path.isdir(path):
+                if os.path.islink(path) or not os.path.isdir(path):
                     self.log_warning(fl_ctx, f"Skipping unavailable workspace archive source for job {job_id}: {path}")
                     continue
                 ws_dirs.append(path)

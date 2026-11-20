@@ -74,6 +74,60 @@ def test_write_multi_preserves_sources_and_archive_layout(tmp_path):
         assert z.read("nested/model.pt") == b"model"
 
 
+def test_write_multi_preserves_dotdot_after_a_trusted_parent_symlink(tmp_path):
+    target = tmp_path / "target"
+    (target / "sub").mkdir(parents=True)
+    (target / "file.txt").write_bytes(b"expected")
+    (tmp_path / "file.txt").write_bytes(b"sibling")
+    link = tmp_path / "link"
+    link.symlink_to(target / "sub", target_is_directory=True)
+    archive = tmp_path / "archive.zip"
+
+    _write(str(archive), [str(link / ".." / "file.txt")])
+
+    with ZipFile(archive) as z:
+        assert z.read("file.txt") == b"expected"
+
+
+@pytest.mark.parametrize("suffix", ["/", "/."])
+def test_write_multi_refuses_a_symlink_as_an_explicit_source(tmp_path, suffix):
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "file.txt").write_bytes(b"outside")
+    link = tmp_path / "link"
+    link.symlink_to(target, target_is_directory=True)
+    archive = tmp_path / "archive.zip"
+
+    with pytest.raises(StorageException):
+        _write(str(archive), [str(link) + suffix])
+
+    assert not archive.exists()
+
+
+def test_write_multi_keeps_readable_files_when_a_child_directory_cannot_be_scanned(tmp_path, monkeypatch):
+    source = tmp_path / "workspace"
+    unreadable = source / "unreadable"
+    unreadable.mkdir(parents=True)
+    (unreadable / "file.txt").write_bytes(b"unavailable")
+    (source / "log.txt").write_bytes(b"log")
+    archive = tmp_path / "archive.zip"
+    child_info = unreadable.stat()
+    real_scan = os.scandir
+
+    def deny_scan(path):
+        if isinstance(path, int) and os.path.samestat(os.fstat(path), child_info):
+            raise PermissionError("unreadable child")
+        return real_scan(path)
+
+    monkeypatch.setattr(os, "scandir", deny_scan)
+
+    _write(str(archive), [str(source)])
+
+    with ZipFile(archive) as z:
+        assert set(z.namelist()) == {"log.txt", "unreadable/"}
+        assert z.read("log.txt") == b"log"
+
+
 def test_write_multi_zip_failure_preserves_sources_for_complete_retry(tmp_path):
     source_dir = tmp_path / "workspace"
     source_dir.mkdir()
@@ -81,7 +135,7 @@ def test_write_multi_zip_failure_preserves_sources_for_complete_retry(tmp_path):
     artifact.write_bytes(b"trained-model")
     archive = tmp_path / "archive.zip"
 
-    with patch("nvflare.app_common.storages.filesystem_storage.ZipFile.write", side_effect=OSError("disk full")):
+    with patch("nvflare.app_common.storages.filesystem_storage.shutil.copyfileobj", side_effect=OSError("disk full")):
         with pytest.raises(StorageException, match="disk full"):
             _write(str(archive), [str(source_dir)])
 
@@ -94,6 +148,39 @@ def test_write_multi_zip_failure_preserves_sources_for_complete_retry(tmp_path):
     assert artifact.read_bytes() == b"trained-model"
     with ZipFile(archive) as z:
         assert z.read("model.pt") == b"trained-model"
+
+
+@pytest.mark.parametrize("kind", ["file", "directory"])
+def test_write_multi_refuses_a_symlink_swapped_in_before_open(tmp_path, monkeypatch, kind):
+    source = tmp_path / "workspace"
+    source.mkdir()
+    entry = source / "entry"
+    outside = tmp_path / "outside"
+    if kind == "directory":
+        entry.mkdir()
+        outside.mkdir()
+        (outside / "sentinel.txt").write_bytes(b"outside")
+    else:
+        entry.write_bytes(b"inside")
+        outside.write_bytes(b"outside")
+    archive = tmp_path / "archive.zip"
+    archive.write_bytes(b"previous-archive")
+    real_open = os.open
+
+    def swap_then_open(path, flags, *args, **kwargs):
+        if path == entry.name and kwargs.get("dir_fd") is not None:
+            entry.rename(source / "original")
+            entry.symlink_to(outside, target_is_directory=kind == "directory")
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", swap_then_open)
+
+    with pytest.raises(StorageException):
+        _write(str(archive), [str(source)])
+
+    assert entry.is_symlink()
+    assert archive.read_bytes() == b"previous-archive"
+    assert not list(tmp_path.glob("archive.zip_*"))
 
 
 def test_write_multi_publish_failure_removes_temporary_archive_and_preserves_sources(tmp_path):

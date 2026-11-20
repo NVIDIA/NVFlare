@@ -12,20 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import json
 import os
 from contextlib import nullcontext
 from unittest.mock import ANY, MagicMock, call, patch
+from zipfile import ZipFile
 
 import pytest
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, RunProcessKey, SystemConfigs
+from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, RunProcessKey, SystemConfigs, WorkspaceConstants
 from nvflare.apis.fl_context import FLContextManager
+from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.utils.event import fire_event_to_components
+from nvflare.apis.workspace import Workspace
 from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
+from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.zip_utils import get_all_file_paths, zip_directory_to_file
@@ -86,10 +91,7 @@ def _make_workspace_save_inputs(run_dir, result_root, log_root, audit_root):
     runner.log_warning = MagicMock()
 
     workspace = MagicMock()
-    workspace.get_run_dir.return_value = run_dir
-    workspace.get_result_root.return_value = result_root
-    workspace.get_log_root.return_value = log_root
-    workspace.get_audit_root.return_value = audit_root
+    workspace.get_job_archive_dirs.return_value = (run_dir, result_root, log_root, audit_root)
 
     job_manager = MagicMock()
     # no stored job by default, so the workspace is archived whole; tests of the outputs split set one with
@@ -362,11 +364,8 @@ def test_save_workspace_skips_duplicate_missing_sources(tmp_path):
 
 def _deployed_job(job_manager, app_files=None, deploy_to=("server",), meta=None):
     """A stored job whose server app holds ``app_files``: path in the app -> content as deployed."""
-    import io
-    import zipfile
-
     data = io.BytesIO()
-    with zipfile.ZipFile(data, "w") as z:
+    with ZipFile(data, "w") as z:
         for name, content in dict(app_files or {}).items():
             z.writestr(name, content)
     job = MagicMock(meta=dict(meta or {}))
@@ -421,6 +420,64 @@ def test_save_workspace_stores_the_jobs_outputs_once_apart_from_the_rest(tmp_pat
     assert archived == {"outputs": ["app_server/FL_global_model.pt"], "workspace": ["log.txt"]}
     assert not run_dir.exists()
     assert _no_link_folders_left(tmp_path)
+
+
+@pytest.mark.parametrize("split", [True, False])
+def test_workspace_download_archives_omit_symlinks(tmp_path, monkeypatch, split):
+    job_id = "job-1"
+    workspace_root = tmp_path / "workspace"
+    (workspace_root / "startup").mkdir(parents=True)
+    (workspace_root / "local").mkdir()
+    result_root = tmp_path / "results"
+    monkeypatch.setenv(WorkspaceConstants.ENV_VAR_RESULT_ROOT, str(result_root))
+    monkeypatch.delenv(WorkspaceConstants.ENV_VAR_LOG_ROOT, raising=False)
+    monkeypatch.delenv(WorkspaceConstants.ENV_VAR_AUDIT_ROOT, raising=False)
+    workspace = Workspace(str(workspace_root), "server")
+
+    run_dir = workspace_root / f"{WorkspaceConstants.WORKSPACE_PREFIX}{job_id}"
+    run_dir.mkdir()
+    (run_dir / "model.pt").write_bytes(b"model")
+    (run_dir / "log.txt").write_bytes(b"log")
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "sentinel.txt").write_bytes(b"external")
+    (run_dir / "external.txt").symlink_to(external / "sentinel.txt")
+    (run_dir / "external_dir").symlink_to(external, target_is_directory=True)
+    (run_dir / "latest.pt").symlink_to("model.pt")
+    # A configured job result directory is also an archive input. Its name must
+    # be checked before a workspace getter can resolve it to another directory.
+    unrelated = result_root / "unrelated"
+    unrelated.mkdir()
+    (unrelated / "sentinel.txt").write_bytes(b"unrelated")
+    (result_root / "server" / job_id).symlink_to(unrelated, target_is_directory=True)
+
+    runner, fl_ctx, job = _make_workspace_save_inputs("", "", "", "")
+    fl_ctx.get_workspace.return_value = workspace
+    monkeypatch.delenv("NVFL_JOB_STORE_ROOT", raising=False)
+    store = FilesystemStorage()
+    manager = SimpleJobDefManager(uri_root=str(tmp_path / "jobs"))
+    store.create_object(manager.job_uri(job_id), b"job", {})
+    monkeypatch.setattr(manager, "_get_job_store", lambda ctx: store)
+    if split:
+        _deployed_job(job)
+    monkeypatch.setattr(manager, "get_job", job.get_job)
+    fl_ctx.get_engine.return_value.get_component.return_value = manager
+
+    runner._save_workspace(fl_ctx)
+
+    with ZipFile(io.BytesIO(manager.get_storage_component(job_id, "workspace", fl_ctx))) as archive:
+        expected = {"log.txt": b"log"}
+        if not split:
+            expected["model.pt"] = b"model"
+        assert {name: archive.read(name) for name in archive.namelist()} == expected
+
+    if split:
+        with ZipFile(io.BytesIO(manager.get_storage_component(job_id, "outputs", fl_ctx))) as archive:
+            assert archive.namelist() == ["model.pt"]
+            assert archive.read("model.pt") == b"model"
+    assert (unrelated / "sentinel.txt").read_bytes() == b"unrelated"
+    assert (external / "sentinel.txt").read_bytes() == b"external"
+    assert not run_dir.exists()
 
 
 def test_save_workspace_keeps_the_running_jobs_client_logs_in_the_workspace(tmp_path):
@@ -805,8 +862,7 @@ def test_save_workspace_uses_explicit_job_id_over_sticky_context_id(tmp_path):
     runner, fl_ctx, job_manager = _make_workspace_save_inputs("", "", "", "")
     fl_ctx.get_prop.return_value = "job-B"  # racy sticky CURRENT_JOB_ID points at another job
     workspace = fl_ctx.get_workspace.return_value
-    for getter in (workspace.get_run_dir, workspace.get_result_root, workspace.get_log_root, workspace.get_audit_root):
-        getter.side_effect = lambda job_id: str(tmp_path / job_id)
+    workspace.get_job_archive_dirs.side_effect = lambda job_id: (str(tmp_path / job_id),) * 4
 
     runner._save_workspace(fl_ctx, job_id="job-A")
 

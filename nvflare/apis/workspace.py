@@ -238,6 +238,19 @@ class Workspace:
     def get_run_dir(self, job_id: str) -> str:
         return self.run_dir_path(self.root_dir, job_id)
 
+    def get_job_archive_dirs(self, job_id: str) -> tuple[str, str, str, str]:
+        """Return the run, result, log and audit paths without resolving the per-job entries."""
+        job_id = self._check_job_id(job_id)
+        run_dir = os.path.join(os.path.realpath(self.root_dir), WorkspaceConstants.WORKSPACE_PREFIX + job_id)
+
+        def job_dir(root):
+            if not root:
+                return run_dir
+            site_dir = self._join_under_root(root, self.site_name)
+            return os.path.join(site_dir, job_id)
+
+        return run_dir, job_dir(self.result_root), job_dir(self.log_root), job_dir(self.audit_root)
+
     def get_app_dir(self, job_id: str) -> str:
         return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.APP_PREFIX + self.site_name)
 
