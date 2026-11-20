@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 import os
+from copy import copy
 from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel, field_validator
@@ -197,7 +199,7 @@ class EdgeFedBuffRecipe(Recipe):
         ```python
         # Basic configuration with model instance
         recipe = EdgeFedBuffRecipe(
-            job_name="my_edge_job",
+            name="my_edge_job",
             model=MyModel(),
             model_manager_config=ModelManagerConfig(...),
             device_manager_config=DeviceManagerConfig(...)
@@ -205,7 +207,7 @@ class EdgeFedBuffRecipe(Recipe):
 
         # With dict config and pre-trained checkpoint
         recipe = EdgeFedBuffRecipe(
-            job_name="my_edge_job",
+            name="my_edge_job",
             model={"class_path": "my_module.MyModel", "args": {"num_classes": 10}},
             initial_ckpt="/path/to/pretrained.pt",
             model_manager_config=ModelManagerConfig(...),
@@ -214,7 +216,19 @@ class EdgeFedBuffRecipe(Recipe):
         ```
 
     Args:
-        job_name: Name of the federated learning job.
+        job_name: Legacy name of the job. Prefer name; if both are supplied they must agree.
+        name: Name of the job (keyword-only). Either name or job_name is required.
+        num_rounds: Number of new global publications, excluding the initial version 1.
+            Maps to max_model_version=num_rounds+1. Default: 19.
+        buffer_size: Publication threshold in device updates, not an exact batch size.
+            All buffered updates are consumed when a batched report crosses the threshold.
+            Default: 100.
+        concurrency: Total selected devices across the hierarchy, not leaf clients.
+            Default: 100.
+        min_open_slots: Minimum empty device slots before refilling. Default: 1.
+        server_lr: Server update scale. Default: 0.01 (deliberately different from Collab).
+            Explicit keyword values override matching fields on copies of manager configs.
+            Omitted keywords preserve supplied config values and historical defaults.
         model: PyTorch model to be trained. Can be:
             - nn.Module instance: e.g., MyModel()
             - Dict config: {"class_path": "module.ClassName", "args": {"param": value}}
@@ -236,16 +250,64 @@ class EdgeFedBuffRecipe(Recipe):
 
     def __init__(
         self,
-        job_name: str,
-        model: Union[Any, Dict],
-        model_manager_config: ModelManagerConfig,
-        device_manager_config: DeviceManagerConfig,
+        job_name: Optional[str] = None,
+        model: Union[Any, Dict] = None,
+        model_manager_config: Optional[ModelManagerConfig] = None,
+        device_manager_config: Optional[DeviceManagerConfig] = None,
         initial_ckpt: Optional[str] = None,
         evaluator_config: EvaluatorConfig = None,
         simulation_config: SimulationConfig = None,
         custom_source_root: str = None,
         device_wait_timeout: Optional[float] = None,
+        *,
+        name: Optional[str] = None,
+        num_rounds: Optional[int] = None,
+        buffer_size: Optional[int] = None,
+        concurrency: Optional[int] = None,
+        min_open_slots: Optional[int] = None,
+        server_lr: Optional[float] = None,
     ):
+        if name is not None and job_name is not None and name != job_name:
+            raise ValueError("name and job_name must agree when both are supplied")
+        job_name = name if name is not None else job_name
+        if job_name is None:
+            raise ValueError("name (or legacy job_name) is required")
+        if model is None:
+            raise ValueError("model is required")
+
+        for key, value in (
+            ("num_rounds", num_rounds),
+            ("buffer_size", buffer_size),
+            ("concurrency", concurrency),
+            ("min_open_slots", min_open_slots),
+        ):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value <= 0):
+                raise ValueError(f"{key} must be a positive integer, got {value}")
+        if server_lr is not None and (
+            isinstance(server_lr, bool)
+            or not isinstance(server_lr, (int, float))
+            or not math.isfinite(server_lr)
+            or server_lr <= 0
+        ):
+            raise ValueError(f"server_lr must be a finite positive number, got {server_lr}")
+
+        model_manager_config = copy(model_manager_config) if model_manager_config is not None else ModelManagerConfig()
+        device_manager_config = (
+            copy(device_manager_config) if device_manager_config is not None else DeviceManagerConfig()
+        )
+        if num_rounds is not None:
+            model_manager_config.max_model_version = num_rounds + 1
+        if buffer_size is not None:
+            model_manager_config.num_updates_for_model = buffer_size
+        if server_lr is not None:
+            model_manager_config.global_lr = server_lr
+        if concurrency is not None:
+            device_manager_config.device_selection_size = concurrency
+        if min_open_slots is not None:
+            device_manager_config.min_hole_to_fill = min_open_slots
+        if device_manager_config.min_hole_to_fill > device_manager_config.device_selection_size:
+            raise ValueError("min_open_slots (min_hole_to_fill) must be <= concurrency (device_selection_size)")
+
         # Validate initial_ckpt
         _EdgeFedBuffValidator(initial_ckpt=initial_ckpt)
 

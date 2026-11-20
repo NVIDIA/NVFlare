@@ -42,7 +42,14 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
     This recipe extends EdgeFedBuffRecipe for edge devices with DeviceModel wrapper.
 
     Args:
-        job_name: Name of the federated learning job.
+        job_name: Legacy job name. Prefer the keyword-only name.
+        name: Job name. If both name and job_name are supplied they must agree.
+        num_rounds: New publications after initial version 1 (default 19).
+        buffer_size: Device-update publication threshold, possibly exceeded by batched reports (default 100).
+        concurrency: Total selected devices across the hierarchy (default 100).
+        min_open_slots: Empty device slots required before refilling (default 1).
+        server_lr: Server update scale (default 0.01). These keyword-only options follow
+            EdgeFedBuffRecipe: explicit values override matching fields on copied manager configs.
         device_model: DeviceModel wrapping the PyTorch model for edge devices.
         input_shape: Input shape for the model.
         output_shape: Output shape for the model.
@@ -64,18 +71,25 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
 
     def __init__(
         self,
-        job_name: str,
-        device_model: DeviceModel,
-        input_shape,
-        output_shape,
-        model_manager_config: ModelManagerConfig,
-        device_manager_config: DeviceManagerConfig,
+        job_name: Optional[str] = None,
+        device_model: DeviceModel = None,
+        input_shape=None,
+        output_shape=None,
+        model_manager_config: Optional[ModelManagerConfig] = None,
+        device_manager_config: Optional[DeviceManagerConfig] = None,
         initial_ckpt: Optional[str] = None,
         evaluator_config: EvaluatorConfig = None,
         simulation_config: SimulationConfig = None,
         device_training_params: Dict = None,
         custom_source_root: str = None,
         device_wait_timeout: Optional[float] = None,
+        *,
+        name: Optional[str] = None,
+        num_rounds: Optional[int] = None,
+        buffer_size: Optional[int] = None,
+        concurrency: Optional[int] = None,
+        min_open_slots: Optional[int] = None,
+        server_lr: Optional[float] = None,
     ):
         if importlib.util.find_spec("executorch.extension.training") is None:
             raise ImportError(
@@ -83,6 +97,9 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
                 "See installation instructions: "
                 "https://pytorch.org/executorch/stable/getting-started-setup.html"
             )
+
+        if device_model is None or input_shape is None or output_shape is None:
+            raise ValueError("device_model, input_shape and output_shape are required")
 
         self.device_model = device_model
         self.input_shape = input_shape
@@ -101,6 +118,12 @@ class ETFedBuffRecipe(EdgeFedBuffRecipe):
             simulation_config=simulation_config,
             custom_source_root=custom_source_root,
             device_wait_timeout=device_wait_timeout,
+            name=name,
+            num_rounds=num_rounds,
+            buffer_size=buffer_size,
+            concurrency=concurrency,
+            min_open_slots=min_open_slots,
+            server_lr=server_lr,
         )
 
     def create_job(self):
