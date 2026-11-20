@@ -168,7 +168,9 @@ class DFKDGenerator(nn.Module):
         return self.conv_blocks(output)
 
     def clone(self):
-        result = DFKDGenerator(self.latent_size, self.features, self.num_classes)
+        # The copied weights replace the CPU initialization. Preserve the RNG used for KD sampling.
+        with torch.random.fork_rng(devices=[]):
+            result = DFKDGenerator(self.latent_size, self.features, self.num_classes)
         result.load_state_dict(self.state_dict())
         return result.to(next(self.parameters()).device)
 

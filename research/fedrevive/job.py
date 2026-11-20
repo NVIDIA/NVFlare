@@ -58,7 +58,7 @@ class FedReviveSimEnv(SimEnv):
             reservation.mkdir(parents=True)
         except FileExistsError:
             raise FileExistsError(
-                f"FedRevive workspace is reserved: {workspace}. Choose a fresh workspace root."
+                f"FedRevive workspace is reserved by {reservation}. Choose a fresh workspace root."
             ) from None
         try:
             if workspace.exists() or workspace.is_symlink():

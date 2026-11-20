@@ -108,10 +108,6 @@ class TeacherBuffer:
             name = item.metadata["client_name"]
             yield TeacherState(item.model_state, self._proxies[name], name, item.metadata["base_version"])
 
-    def update_class_proxy(self, client_name, class_proxy):
-        if client_name in self._proxies:
-            self._proxies[client_name] = self._normalize(class_proxy)
-
 
 def cosine_staleness_beta(staleness: int, max_staleness: float) -> float:
     """Return the clipped cosine FedRevive mixing weight."""

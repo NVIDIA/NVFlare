@@ -217,8 +217,18 @@ def test_phase_coordinator_keeps_shared_base_until_last_acceptance(research, tmp
     assert not Path(outstanding.base_path).exists()
 
 
-@pytest.mark.parametrize("stop", ["version", "horizon", "failure", "abort"])
-def test_paper_workflow_reclaims_completed_uploads(research, tmp_path, monkeypatch, stop):
+@pytest.mark.parametrize(
+    ("stop", "drain_error"),
+    [
+        ("version", False),
+        ("version", True),
+        ("horizon", False),
+        ("horizon", True),
+        ("failure", False),
+        ("abort", False),
+    ],
+)
+def test_paper_workflow_reclaims_completed_uploads(research, tmp_path, monkeypatch, stop, drain_error):
     torch = pytest.importorskip("torch")
     coordinator = _paper_coordinator(research, tmp_path, monkeypatch, num_rounds=1, concurrency=3)
     workflow = research("workflow")
@@ -260,6 +270,8 @@ def test_paper_workflow_reclaims_completed_uploads(research, tmp_path, monkeypat
                 return site, assignment.assignment_id, None, "client failure"
         if name == "client-2":
             assert not list(uploads.glob("*.pt"))  # Drop obsolete files before draining this call.
+            if drain_error:
+                return site, assignment.assignment_id, None, "client timeout during drain"
         if name == "client-1" and stop == "abort":
             workflow.collab.is_aborted = True
         metadata = {"assignment_id": assignment.assignment_id, "model_version": 0, "logical_name": name}
@@ -409,6 +421,7 @@ def test_simulator_preserves_workspace_across_arrival_modes(research, tmp_path, 
     actual = job.make_sim_env(actual_args, {})
     fed_job = SimpleNamespace(name="fedrevive_fedrevive")
     workspace = tmp_path / fed_job.name
+    reservation = workspace.with_name(f".{workspace.name}.running")
     trace = workspace / "phases.jsonl"
     deployments = []
 
@@ -417,8 +430,9 @@ def test_simulator_preserves_workspace_across_arrival_modes(research, tmp_path, 
         deployments.append(env)
         # Another launch must be rejected even before the simulator creates its output directory.
         assert not workspace.exists()
-        with pytest.raises(FileExistsError, match="is reserved"):
+        with pytest.raises(FileExistsError, match="is reserved") as error:
             actual.deploy(submitted_job)
+        assert str(reservation) in str(error.value)
         workspace.mkdir()
         trace.write_text("paper run\n")
         return submitted_job.name

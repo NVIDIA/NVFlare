@@ -14,6 +14,7 @@
 
 """Research phase scheduling over core async acceptance and Collab lifecycle."""
 
+import logging
 import queue
 from pathlib import Path
 
@@ -138,8 +139,13 @@ class FedReviveWorkflow(FedBuffWorkflow):
             if inflight.pop(name) != identity:
                 raise ValueError("physical result identity mismatch")
             if error is not None or result is None:
-                raise RuntimeError(f"assignment {identity} failed: {error or 'no result'}")
-            if cache_result:
+                reason = error or "no result"
+                if cache_result:
+                    raise RuntimeError(f"assignment {identity} failed: {reason}")
+                logging.getLogger(__name__).warning(
+                    "Discarding failed assignment %s during drain: %s", identity, reason
+                )
+            elif cache_result:
                 results.retain(identity, result)
                 completed_sites[identity] = name
                 scheduler.on_result(name, identity)

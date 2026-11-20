@@ -116,7 +116,6 @@ class FedReviveUpdate:
             if self.estimator is not None
             else torch.tensor(self.proportions[name], dtype=torch.float32, device="cpu")
         )
-        self.teachers.update_class_proxy(name, proxy)
         self.teachers.add(returned, proxy, name, update.assignment.base_version)
         beta = cosine_staleness_beta(update.staleness, 75)
         eligible = update.current_version >= self.config.freeze_versions and beta > 0
