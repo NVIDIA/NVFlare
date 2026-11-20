@@ -316,13 +316,13 @@ def test_cj_end_run_is_bounded_when_cp_retains_unsettleable_execution(control):
     from nvflare.apis.fl_constant import ReservedKey
     from nvflare.apis.fl_context import FLContext
     from nvflare.apis.task_launcher_spec import TaskSettlementError
-    from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
     from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 
     backend, api, request, cell, service, owner, client = control
     proxy = K8sTaskLauncher("site", "trusted", request.cwd, "pvc", "no-api")
     proxy._client = client
-    adapter = TaskWorkerExecutor({}, (), TaskExecutionConfig(proxy))
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy(proxy))
     context = FLContext()
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
     handle = client.launch(request)

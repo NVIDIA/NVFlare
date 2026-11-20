@@ -440,9 +440,9 @@ the participant being checked. Use the intended Kubernetes context throughout.
         python - "$NVFLARE_TEST_WORKSPACE" "$NVFLARE_TEST_SITE" "$NVFLARE_TEST_IMAGE" <<'PY'
       import sys
       from nvflare.apis.workspace import Workspace
-      from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig
+      from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
       workspace = Workspace(sys.argv[1], site_name=sys.argv[2])
-      policy = TaskExecutionConfig.from_workspace(workspace)
+      policy = TaskExecutionPolicy.from_workspace(workspace)
       print(workspace.get_resources_file_path(), policy.launcher.image, sep="\n")
       assert policy.launcher.image == sys.argv[3]
       PY

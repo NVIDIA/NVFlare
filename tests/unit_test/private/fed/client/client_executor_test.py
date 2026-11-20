@@ -64,7 +64,7 @@ from nvflare.private.fed.client.client_executor import (
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.communicator import Communicator
-from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig
+from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.resource_stats.handoff import terminal_handoff_path, write_terminal_handoff
 from nvflare.private.fed.resource_stats.measurements import participant_measurements
 from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
@@ -1879,9 +1879,9 @@ def test_shared_admission_rejects_unsupported_task_cj_before_launch(tmp_path, bu
     from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
 
     task = object.__new__(SlurmTaskLauncher if backend == "slurm_server" else K8sTaskLauncher)
-    policy = TaskExecutionConfig(task)
+    policy = TaskExecutionPolicy(task)
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
-        with patch.object(TaskExecutionConfig, "from_workspace", return_value=policy):
+        with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
             with pytest.raises(ValueError, match="unsupported client-job/task launcher pairing"):
                 JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                     client,
@@ -1929,9 +1929,9 @@ def test_shared_admission_reaches_matching_native_cj_launcher(tmp_path, mode, mo
     from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
 
     task = object.__new__(SlurmTaskLauncher if mode == "slurm" else K8sTaskLauncher)
-    policy = TaskExecutionConfig(task)
+    policy = TaskExecutionPolicy(task)
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
-        with patch.object(TaskExecutionConfig, "from_workspace", return_value=policy) as load_policy:
+        with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy) as load_policy:
             with pytest.raises(RuntimeError, match="native launch boundary reached"):
                 JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                     client,
@@ -1955,7 +1955,7 @@ def test_shared_admission_keeps_job_site_independent_of_another_sites_task_polic
     launcher = Mock()
     launcher.launch_job.side_effect = RuntimeError("resident launch boundary reached")
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
-        with patch.object(TaskExecutionConfig, "from_workspace") as native_policy:
+        with patch.object(TaskExecutionPolicy, "from_workspace") as native_policy:
             with pytest.raises(RuntimeError, match="resident launch boundary reached"):
                 JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                     client,

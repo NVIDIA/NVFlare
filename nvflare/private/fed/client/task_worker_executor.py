@@ -49,7 +49,7 @@ from nvflare.private.fed.task_worker.protocol import (
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisor, TaskSupervisorOptions
 
 from .client_api_task_runner import result_wait_deadline
-from .task_execution_config import TaskExecutionConfig
+from .task_execution_policy import TaskExecutionPolicy
 
 TASK_ATTEMPT_IDENTITY = "__task_worker_attempt_identity__"
 _TASK_ROUTE = (CellChannel.SERVER_COMMAND, ServerCommandNames.GET_TASK)
@@ -60,7 +60,7 @@ class TaskWorkerExecutor(Executor):
 
     def __init__(self, executor, components, policy, *, worker_timeout=None, result_wait_timeout=None):
         super().__init__()
-        if not isinstance(policy, TaskExecutionConfig):
+        if not isinstance(policy, TaskExecutionPolicy):
             raise TypeError("task adapter requires trusted site policy")
         self.executor_spec = copy.deepcopy(executor)
         self.component_specs = copy.deepcopy(components)

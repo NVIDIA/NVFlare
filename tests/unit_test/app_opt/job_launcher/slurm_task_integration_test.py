@@ -328,9 +328,9 @@ def test_portable_compute_uses_per_task_allocation_and_independent_cj_reservatio
     assert get_resource_manager_spec(meta, "site-1") == ({"num_of_gpus": 1} if cj_gpu_count else {})
     assert (compute.cpus_per_node, compute.mem_per_node, compute.gpus_per_node) == (6, 3072, 2)
     # Shared policy must also accept normalized portable GPU compute admission.
-    from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 
-    policy = TaskExecutionConfig.from_config({"launcher": _site(root)["task_execution"]["launcher"]})
+    policy = TaskExecutionPolicy.from_config({"launcher": _site(root)["task_execution"]["launcher"]})
     assert policy.task_resources(meta, "site-1").is_empty()
 
 

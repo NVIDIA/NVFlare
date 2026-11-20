@@ -886,7 +886,7 @@ def test_cj_end_run_waits_for_native_settlement_after_cleanup_or_readiness_timeo
     from nvflare.apis.fl_context import FLContext
     from nvflare.apis.utils.event import fire_event_to_components
     from nvflare.private.fed.client.client_runner import ClientRunner
-    from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
     from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
     from nvflare.private.fed.task_worker.supervisor import _Attempt
     from nvflare.private.fed.tbi import TBI
@@ -896,7 +896,7 @@ def test_cj_end_run_waits_for_native_settlement_after_cleanup_or_readiness_timeo
     launcher.poll_interval = 1
     worker = launcher.launch_task(request)
     api.running()
-    adapter = TaskWorkerExecutor({}, (), TaskExecutionConfig(launcher, poll_interval=0.5, settlement_timeout=0.01))
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy(launcher, poll_interval=0.5, settlement_timeout=0.01))
     adapter.system_panic = Mock()
     attempt = _Attempt(bootstrap.identity, store, store.root_dir, handle=None if pending_launch else worker)
     adapter.supervisor._active = attempt

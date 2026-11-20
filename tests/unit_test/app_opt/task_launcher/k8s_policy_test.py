@@ -27,7 +27,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.k8s_launcher import ClientK8sJobLauncher
 from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskBackend, K8sTaskLauncher
-from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig
+from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import read_bootstrap
@@ -89,7 +89,7 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
     (tmp_path / "startup").mkdir()
     (tmp_path / "local" / "resources.json").write_text(json.dumps(config))
     workspace = Workspace(str(tmp_path), site_name="site-1")
-    policy = TaskExecutionConfig.from_workspace(workspace)
+    policy = TaskExecutionPolicy.from_workspace(workspace)
     assert type(policy.launcher) is K8sTaskLauncher
     assert policy.worker_environment() == {}
     context = FLContext()
@@ -212,7 +212,7 @@ def test_mixed_or_inconsistent_site_profiles_fail_before_backend_access(profile,
     api = Mock(side_effect=AssertionError("invalid site profile must fail before Kubernetes access"))
     monkeypatch.setattr(K8sTaskBackend, "_api", api)
     with pytest.raises(ValueError):
-        TaskExecutionConfig.from_workspace(Workspace(str(tmp_path), site_name="site-1"))
+        TaskExecutionPolicy.from_workspace(Workspace(str(tmp_path), site_name="site-1"))
     api.assert_not_called()
 
 
@@ -223,7 +223,7 @@ def test_kubernetes_site_cannot_default_to_a_local_task_launcher(profile, tmp_pa
     (tmp_path / "startup").mkdir()
     (tmp_path / "local" / "resources.json").write_text(json.dumps(config))
     with pytest.raises(ValueError, match="explicit site Kubernetes or Slurm"):
-        TaskExecutionConfig.from_workspace(Workspace(str(tmp_path), site_name="site-1"))
+        TaskExecutionPolicy.from_workspace(Workspace(str(tmp_path), site_name="site-1"))
 
 
 def test_positive_whole_job_gpu_reservation_is_rejected_before_cj_or_task_launch(profile, tmp_path):

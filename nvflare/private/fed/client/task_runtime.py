@@ -237,17 +237,17 @@ def validate_task_site(workspace):
     path = workspace.get_resources_file_path()
     site_config = ConfigService.load_config_dict(path) if path and os.path.isfile(path) else {}
     if "task_execution" in site_config:
-        from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig
+        from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 
-        return TaskExecutionConfig.from_workspace(workspace)
+        return TaskExecutionPolicy.from_workspace(workspace)
     return None
 
 
 def launch_task_job(launcher, job_meta, fl_ctx, workspace):
     """Validate the launcher pairing and set up CP ownership for task execution."""
-    from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig, _prepare_cp_host_cj
+    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy, _prepare_cp_host_cj
 
-    policy = TaskExecutionConfig.from_workspace(workspace)
+    policy = TaskExecutionPolicy.from_workspace(workspace)
     binding = _prepare_cp_host_cj(policy.launcher, launcher, job_meta, fl_ctx, launcher_config=policy.launcher_config)
     if binding is not None:
         return _launch_job_with_task_workers(binding, launcher, fl_ctx, cleanup_timeout=policy.finalization_timeout)

@@ -543,10 +543,10 @@ class ProcessTaskLauncher(TaskLauncherSpec):
 # Direct test injection only. Production from_config/from_workspace accepts
 # exact scheduler-backed classes and cannot select this helper.
 def local_policy(**kwargs):
-    from nvflare.private.fed.client.task_execution_config import FORBIDDEN_ENVIRONMENT_NAMES, TaskExecutionConfig
+    from nvflare.private.fed.client.task_execution_policy import FORBIDDEN_ENVIRONMENT_NAMES, TaskExecutionPolicy
 
     @dataclass(frozen=True)
-    class LocalPolicy(TaskExecutionConfig):
+    class LocalPolicy(TaskExecutionPolicy):
         environment_variables: tuple[str, ...] = ()
 
         def worker_environment(self):

@@ -1377,9 +1377,9 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         if execution_lifetime == "task":
             from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
             from nvflare.app_opt.task_launcher.k8s_task_service import K8sTaskService
-            from nvflare.private.fed.client.task_execution_config import GPU_ENVIRONMENT_NAMES, TaskExecutionConfig
+            from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
 
-            policy = TaskExecutionConfig.from_workspace(workspace)
+            policy = TaskExecutionPolicy.from_workspace(workspace)
             if type(policy.launcher) is not K8sTaskLauncher:
                 raise ValueError("Kubernetes task CJ requires the canonical site K8sTaskLauncher")
         if (

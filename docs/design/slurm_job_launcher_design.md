@@ -355,7 +355,7 @@ sequenceDiagram
         L-->>X: Job handle
     else Task mode
         X->>R: launch_task_job()
-        Note over R: task_execution_config.py loads site config and checks the launcher pairing
+        Note over R: task_execution_policy.py loads site config and checks the launcher pairing
         alt Process or Docker CJ with Slurm workers
             Note over R: slurm/task_launcher.py binds the worker backend and resolves resources
             R->>T: add_job() registers worker tracking in CP
@@ -478,7 +478,7 @@ roles, authorization, immutable completion and checkpoint/receipt retention:
 * Export validates resource shape while deferring receiving-site capability.
   Default-deny validation remains for unsupported backends; Process GPU work
   is separate.
-* `TaskExecutionConfig.from_config` lazily selects the exact supported
+* `TaskExecutionPolicy.from_config` lazily selects the exact supported
   class. `from_workspace` calls `launcher.validate_site_config(site_config)`
   with the complete canonical site dictionary. Slurm verifies the exact CJ
   adapter and shared bare workspace; mixed profiles fail closed.

@@ -35,7 +35,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.job_config.task_execution import CLIENT_API_EXECUTOR_PATH, STATISTICS_EXECUTOR_PATH, prepare_task_execution
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
-from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig
+from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
 from tests.local_task_launcher import local_policy
@@ -77,7 +77,7 @@ def _configure(tmp_path, config, authorizer=None):
     if authorizer:
         configurator.set_component_build_authorizer(authorizer)
     # Exercise wrapping/authorization separately from trusted backend selection.
-    with patch.object(TaskExecutionConfig, "from_workspace", return_value=local_policy()):
+    with patch.object(TaskExecutionPolicy, "from_workspace", return_value=local_policy()):
         configurator.configure()
     return configurator
 
