@@ -77,6 +77,7 @@ from nvflare.fuel.sec.admin_audit import prepare, record, reject, update_context
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.log_utils import get_obj_logger, read_log_tail
+from nvflare.fuel.utils.time_utils import job_start_bounds, utc_time_string
 from nvflare.private.admin_defs import MsgHeader
 from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
@@ -150,6 +151,16 @@ JSON_LOG_FILE_NAME = "log.json"
 
 def _active_study_from_conn(conn: Connection) -> str:
     return conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY) or DEFAULT_STUDY
+
+
+def _started_in_period(job: Job, bounds: dict[str, str]) -> bool:
+    if not bounds:
+        return True
+    try:
+        start = utc_time_string(job.meta.get(JobMetaKey.START_TIME.value))
+    except ValueError:
+        return False
+    return ("since" not in bounds or start >= bounds["since"]) and ("until" not in bounds or start < bounds["until"])
 
 
 def _resource_job_name(job: Job, job_id: str | None = None) -> str:
@@ -282,7 +293,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 CommandSpec(
                     name=AdminCommandNames.GET_STUDY_RESOURCES,
                     description="get resource statistics for accessible jobs in the active study",
-                    usage=AdminCommandNames.GET_STUDY_RESOURCES,
+                    usage=f"{AdminCommandNames.GET_STUDY_RESOURCES} [--since DATE_OR_TIME] [--until DATE_OR_TIME]",
                     handler_func=self.get_study_resources,
                     authz_func=self.command_authz_required,
                 ),
@@ -785,8 +796,14 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
 
     def get_study_resources(self, conn: Connection, args: List[str]):
-        if len(args) != 1:
-            detail = f"usage: {AdminCommandNames.GET_STUDY_RESOURCES}"
+        parser = SafeArgumentParser(prog=AdminCommandNames.GET_STUDY_RESOURCES, allow_abbrev=False)
+        parser.add_argument("--since")
+        parser.add_argument("--until")
+        try:
+            options = parser.parse_args(args[1:])
+            bounds = job_start_bounds(options.since, options.until)
+        except ValueError as e:
+            detail = str(e)
             conn.append_error(detail, meta=make_meta(MetaStatusValue.SYNTAX_ERROR, detail))
             return
         engine = conn.app_ctx
@@ -805,7 +822,9 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     jobs = [
                         job
                         for job in job_def_manager.get_all_jobs(fl_ctx)
-                        if get_job_meta_study(job.meta) == study and self._is_resource_job_authorized(conn, job)
+                        if get_job_meta_study(job.meta) == study
+                        and self._is_resource_job_authorized(conn, job)
+                        and _started_in_period(job, bounds)
                     ]
                 except Exception:
                     # Do not disclose job identities or policy details, or return partially checked results.
@@ -860,7 +879,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             result = {
                 "schema_version": SCHEMA_VERSION,
                 "kind": KIND_STUDY_SUMMARY,
-                "selection": {"study_name": study},
+                "selection": {"study_name": study, **bounds},
                 "generated_at": utc_timestamp(),
                 "coverage": {
                     "selected_jobs": len(rows),
@@ -870,6 +889,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 },
                 "jobs": rows,
             }
+            if bounds:
+                result["selection"]["time_scope"] = "whole_jobs_by_start_time"
             try:
                 result["totals"] = sum_study_totals(rows)
                 if len(canonical_json_bytes(result)) > MAX_STUDY_SUMMARY_BYTES:

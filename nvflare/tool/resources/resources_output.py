@@ -255,6 +255,14 @@ def render_study_resources(summary: dict) -> str:
         f"{coverage['unavailable_jobs']} without | {coverage['nonterminal_jobs']} not finalized (excluded)",
         "",
     ]
+    selection = summary["selection"]
+    if "since" in selection or "until" in selection:
+        period = []
+        if "since" in selection:
+            period.append(f"at or after {selection['since']}")
+        if "until" in selection:
+            period.append(f"before {selection['until']}")
+        lines.insert(1, f"Whole-job totals for jobs started {' and '.join(period)}.")
     show_message_traffic = any(
         job["resource_data"] == "included" and "sent_bytes" in _measurement(job["totals"], "message_traffic")
         for job in summary["jobs"]

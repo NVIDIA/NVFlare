@@ -213,7 +213,7 @@ class SessionSpec(ABC):
 
         raise NotImplementedError
 
-    def get_study_resources(self) -> dict:
+    def get_study_resources(self, *, since: str | None = None, until: str | None = None) -> dict:
         """Return the active study's rollup for jobs the caller may inspect.
 
         Each job requires the same permission as ``get_job_resources``.
