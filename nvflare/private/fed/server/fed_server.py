@@ -73,6 +73,7 @@ from nvflare.private.defs import (
     new_cell_message,
 )
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
+from nvflare.private.fed.resource_stats.coordinator import RESOURCE_REPORT_NOT_PROVIDED, RESOURCE_REPORT_SERVER_ERROR
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -864,6 +865,7 @@ class FederatedServer(BaseServer):
                     fl_ctx.set_prop(key=FLContextKey.CLIENT_TYPE, value=client_type, private=False, sticky=False)
 
                 client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+                fl_ctx.set_prop(key=FLContextKey.CLIENT_NAME, value=client_name, private=True, sticky=False)
                 site_config = self._get_validated_site_config(data, client_name)
                 if site_config is not None and client_type != ClientType.REGULAR:
                     self.logger.warning(f"dropping site config from non-regular client {client_name}: {client_type}")
@@ -978,9 +980,23 @@ class FederatedServer(BaseServer):
             return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, "", None)
         client_name = registered_client.name
         job_runner = self.engine.job_runner
+        resource_report = payload.get(JobOutcomeMsgKey.RESOURCE_REPORT)
+        accept_resource_report = getattr(job_runner, "accept_client_resource_report", None)
+        if callable(accept_resource_report) and resource_report is not None:
+            try:
+                resource_report_status = accept_resource_report(job_id, client_name, resource_report)
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to accept resource report for job/client {job_id}/{client_name}: "
+                    f"{secure_format_exception(e)}"
+                )
+                resource_report_status = RESOURCE_REPORT_SERVER_ERROR
+        else:
+            resource_report_status = RESOURCE_REPORT_NOT_PROVIDED
+        reply_payload = {JobOutcomeMsgKey.RESOURCE_REPORT_STATUS: resource_report_status}
         if not job_runner.is_client_outcome_pending(job_id, client_name):
             self.logger.warning(f"Dropped terminal outcome for untracked job/client {job_id}/{client_name}")
-            return make_cellnet_reply(F3ReturnCode.OK, "", None)
+            return make_cellnet_reply(F3ReturnCode.OK, "", reply_payload)
 
         if code in (
             ProcessExitCode.CONFIG_ERROR,
@@ -997,7 +1013,7 @@ class FederatedServer(BaseServer):
                 self.logger.info(f"Aborting job {job_id} due to reported failure from {client}: {reason}")
                 job_runner.stop_run(job_id, fl_ctx)
         job_runner.resolve_client_outcome(job_id, client_name)
-        return make_cellnet_reply(F3ReturnCode.OK, "", None)
+        return make_cellnet_reply(F3ReturnCode.OK, "", reply_payload)
 
     def process_job_failure(self, request: Message):
         """Compatibility entry point; use process_job_outcome for all terminal results."""

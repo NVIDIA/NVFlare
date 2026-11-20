@@ -18,6 +18,7 @@ from typing import List
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.reg import CommandEntry
+from nvflare.fuel.sec.admin_audit import reject
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 
 from .constants import ConnProps
@@ -56,12 +57,17 @@ class AuthzFilter(CommandFilter):
         if not authz_func:
             return True
 
-        return_code = authz_func(conn, args)
+        try:
+            return_code = authz_func(conn, args)
+        except Exception:
+            reject("admin.permission.error", reason="preprocessing_error")
+            raise
 
         if return_code == PreAuthzReturnCode.OK:
             return True
 
         if return_code == PreAuthzReturnCode.ERROR:
+            reject("admin.permission.rejected", reason="preprocessing_rejected")
             return False
 
         # authz required - the command name is the name of the right to be checked!
@@ -80,12 +86,18 @@ class AuthzFilter(CommandFilter):
         ctx = AuthzContext(user=user, submitter=submitter, right=cmd_entry.name)
 
         log.debug("User: {} Submitter: {}  Right: {}".format(user, submitter, cmd_entry.name))
-        authorized, err = AuthorizationService.authorize(ctx)
+        try:
+            authorized, err = AuthorizationService.authorize(ctx)
+        except Exception:
+            reject("admin.permission.error", reason="policy_evaluation_error")
+            raise
         if err:
+            reject("admin.permission.error", reason="policy_evaluation_error")
             conn.append_error(f"Authorization Error: {err}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED, err))
             return False
 
         if not authorized:
+            reject("admin.permission.denied", reason="policy_denied")
             conn.append_error(
                 f"This action is {ReplyKeyword.NOT_AUTHORIZED}",
                 meta=make_meta(MetaStatusValue.NOT_AUTHORIZED, ReplyKeyword.NOT_AUTHORIZED),

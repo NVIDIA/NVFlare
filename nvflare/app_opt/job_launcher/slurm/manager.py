@@ -58,6 +58,7 @@ from nvflare.private.fed.utils.job_cert_utils import stage_job_startup_dir
 
 _HEALTHY_MISSES = 5
 _ACCOUNTING_RETRY_INTERVAL = 6.0
+_CANCEL_FAST_POLL_WINDOW = 10.0
 _JOB_NAME_SITE_LENGTH = 32
 
 
@@ -400,7 +401,7 @@ class SlurmJobManager:
             if _is_terminal(record.state):
                 return self._poll_accounting(handle)
             if handle.cancel_requested:
-                self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
+                self._cancel_handle_once(handle)
                 return JobReturnCode.UNKNOWN
             if record.state in _PENDING_STATES:
                 now = self._monotonic()
@@ -410,8 +411,15 @@ class SlurmJobManager:
                     self.logger.warning("Slurm job %s exceeded pending_timeout", handle.job_id)
                     handle._request_cancel()
             if handle.cancel_requested:
-                self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
+                self._cancel_handle_once(handle)
             return JobReturnCode.UNKNOWN
+
+    def _cancel_handle_once(self, handle: "SlurmJobHandle") -> None:
+        # Called under operation_lock. Failed RPCs remain retryable; acknowledgement
+        # ends cancellation attempts, while observation continues independently.
+        if not handle.cancel_accepted:
+            result = self.adapter.cancel(handle.job_id, timeout=self.config.cancel_timeout)
+            handle.cancel_accepted = result.status == LookupStatus.FOUND
 
     def _abort_handle(self, handle: "SlurmJobHandle", user_abort: bool = True) -> None:
         if user_abort:
@@ -453,6 +461,8 @@ class SlurmJobHandle(JobHandleSpec):
         self.operation_lock = threading.Lock()
         self.job_id = job_id
         self.cancel_requested = False
+        self.cancel_accepted = False
+        self._cancel_requested_at = None
         self.user_abort = False
         self.terminal_result = None
         self.exit_confirmed = False
@@ -462,8 +472,11 @@ class SlurmJobHandle(JobHandleSpec):
 
     def _request_cancel(self, user_abort: bool = False) -> None:
         with self.condition:
+            if self._cancel_requested_at is None:
+                self._cancel_requested_at = self.manager._monotonic()
             self.cancel_requested = True
             self.user_abort = self.user_abort or user_abort
+            self.condition.notify_all()
 
     def _set_terminal(self, result: int) -> None:
         with self.condition:
@@ -493,5 +506,12 @@ class SlurmJobHandle(JobHandleSpec):
         while self.poll() == JobReturnCode.UNKNOWN:
             with self.condition:
                 if self.terminal_result is None:
-                    self.condition.wait(timeout=self.poll_interval)
+                    # Observe cancellation promptly during the parent's default
+                    # cleanup window, then restore the configured scheduler rate.
+                    interval = self.poll_interval
+                    if self._cancel_requested_at is not None:
+                        remaining = _CANCEL_FAST_POLL_WINDOW - (self.manager._monotonic() - self._cancel_requested_at)
+                        if remaining > 0:
+                            interval = min(interval, 1.0, remaining)
+                    self.condition.wait(timeout=interval)
         return None

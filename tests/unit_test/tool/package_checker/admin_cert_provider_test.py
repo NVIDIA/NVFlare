@@ -57,7 +57,9 @@ def test_server_check_uses_non_interactive_reachability_for_admin_cert_provider(
             result = rule(str(tmp_path), data=None)
 
     assert result.problem == CHECK_PASSED
-    socket_check.assert_called_once_with(startup=str(tmp_path / "startup"), host="localhost", port=8003, scheme="tcp")
+    socket_check.assert_called_once_with(
+        startup=str(tmp_path / "startup"), host="localhost", port=8003, scheme="tcp", tcp_only=True
+    )
     grpc_check.assert_not_called()
 
 

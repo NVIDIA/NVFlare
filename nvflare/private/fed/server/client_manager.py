@@ -28,6 +28,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
+from nvflare.fuel.sec.admin_audit import record, snapshot
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
@@ -115,45 +116,67 @@ class ClientManager:
             return client_name in self.disabled_clients
 
     def disable_client(self, client_name: str) -> list:
-        with self.lock:
-            already_disabled = client_name in self.disabled_clients
-            self.disabled_clients.add(client_name)
-            removed_clients = []
-            for token, client in list(self.clients.items()):
-                if client.name == client_name:
-                    removed_clients.append((token, client))
-                    self.clients.pop(token, None)
-            self.name_to_clients.pop(client_name, None)
-            disabled_snapshot = set(self.disabled_clients)
-            try:
-                self._save_disabled_clients(disabled_snapshot)
-            except Exception as ex:
-                if not already_disabled:
-                    self.disabled_clients.discard(client_name)
-                for token, client in removed_clients:
-                    self.clients[token] = client
-                    self.name_to_clients[client.name] = client
-                self.logger.error(f"failed to persist disabled-client state for {client_name}: {ex}")
-                raise
+        outcome = "error"
+        try:
+            with self.lock:
+                already_disabled = client_name in self.disabled_clients
+                self.disabled_clients.add(client_name)
+                removed_clients = []
+                for token, client in list(self.clients.items()):
+                    if client.name == client_name:
+                        removed_clients.append((token, client))
+                        self.clients.pop(token, None)
+                self.name_to_clients.pop(client_name, None)
+                disabled_snapshot = set(self.disabled_clients)
+                try:
+                    self._save_disabled_clients(disabled_snapshot)
+                except Exception as ex:
+                    if not already_disabled:
+                        self.disabled_clients.discard(client_name)
+                    for token, client in removed_clients:
+                        self.clients[token] = client
+                        self.name_to_clients[client.name] = client
+                    self.logger.error(f"failed to persist disabled-client state for {client_name}: {ex}")
+                    raise
+                outcome = "unchanged" if already_disabled and not removed_clients else "applied"
+        finally:
+            # Record the persisted fact after releasing the policy lock and before
+            # the engine's secondary removal notifications can fail.
+            if snapshot().command.rsplit(".", 1)[-1] == "disable_client":
+                record(
+                    f"client.disable.{outcome}",
+                    site=client_name,
+                    reason="policy_update_failed" if outcome == "error" else "policy_state",
+                )
         removed_tokens = [token for token, _client in removed_clients]
         self.logger.info(f"Client {client_name} disabled. Removed {len(removed_tokens)} active token(s).")
         return removed_tokens
 
     def enable_client(self, client_name: str) -> bool:
-        with self.lock:
-            was_disabled = client_name in self.disabled_clients
-            if was_disabled:
-                self.disabled_clients.remove(client_name)
-                disabled_snapshot = set(self.disabled_clients)
-            else:
-                disabled_snapshot = None
-            if was_disabled:
-                try:
-                    self._save_disabled_clients(disabled_snapshot)
-                except Exception as ex:
-                    self.disabled_clients.add(client_name)
-                    self.logger.error(f"failed to persist enabled-client state for {client_name}: {ex}")
-                    raise
+        outcome = "error"
+        try:
+            with self.lock:
+                was_disabled = client_name in self.disabled_clients
+                if was_disabled:
+                    self.disabled_clients.remove(client_name)
+                    disabled_snapshot = set(self.disabled_clients)
+                else:
+                    disabled_snapshot = None
+                if was_disabled:
+                    try:
+                        self._save_disabled_clients(disabled_snapshot)
+                    except Exception as ex:
+                        self.disabled_clients.add(client_name)
+                        self.logger.error(f"failed to persist enabled-client state for {client_name}: {ex}")
+                        raise
+                outcome = "applied" if was_disabled else "unchanged"
+        finally:
+            if snapshot().command.rsplit(".", 1)[-1] == "enable_client":
+                record(
+                    f"client.enable.{outcome}",
+                    site=client_name,
+                    reason="policy_update_failed" if outcome == "error" else "policy_state",
+                )
         self.logger.info(f"Client {client_name} enabled. Was disabled: {was_disabled}")
         return was_disabled
 

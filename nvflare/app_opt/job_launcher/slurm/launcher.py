@@ -65,6 +65,7 @@ from nvflare.app_opt.job_launcher.slurm.manager import SlurmJobManager
 from nvflare.app_opt.job_launcher.study_runtime import (
     StudyRuntime,
     load_study_runtime_file,
+    reject_legacy_study_data,
     resolve_study_runtime,
     study_runtime_file_path,
 )
@@ -296,16 +297,11 @@ def _file_attach_mount(workspace: Workspace, workspace_path: str) -> Optional[Bi
 
 def load_slurm_study_runtime(config, study, logger):
     runtime_file = study_runtime_file_path(config.workspace_path)
-    legacy_file = os.path.join(config.workspace_path, "local", "study_data.yaml")
-    runtime_exists = os.path.exists(runtime_file)
-    if os.path.exists(legacy_file):
-        message = (
-            f"study runtime file '{runtime_file}' cannot be combined with legacy '{legacy_file}'"
-            if runtime_exists
-            else f"legacy study data file '{legacy_file}' is unsupported by Slurm; migrate to study_runtime.yaml"
-        )
-        raise SlurmLauncherError(message)
-    if not runtime_exists:
+    try:
+        reject_legacy_study_data(config.workspace_path)
+    except RuntimeError as e:
+        raise SlurmLauncherError(str(e)) from None
+    if not os.path.exists(runtime_file):
         return StudyRuntime(study=study or "")
     try:
         runtime_map = load_study_runtime_file(runtime_file, launcher_mode="slurm", logger=logger)
