@@ -430,6 +430,30 @@ concurrency, buffer, refill and publication settings. For numerical replay, also
 keep the training configuration, including the server's `--run-seed`. The physical
 worker count can vary. Externally generated plans can use explicit per-assignment delays.
 
+### Generate standard and shifted plans offline
+
+From `research/fedrevive`, use the entry point that matches your prepared
+manifest. Both commands use the same seed, concurrency, and publication budget
+so the delay profiles determine the difference between plans.
+
+```bash
+python schedule_standard.py /tmp/fedrevive/cifar10/manifest.json standard.json \
+  --num-rounds 4 --concurrency 2 --run-seed 10
+python schedule_shifted.py /tmp/fedrevive/cifar10_shifted/manifest.json shifted.json \
+  --num-rounds 4 --concurrency 2 --run-seed 10
+```
+
+| Phase | Standard (`default` in the manifest) | Shifted |
+| --- | --- | --- |
+| Download | Fixed at 0.10 | Fixed at 0.02 |
+| Training | Exponential with a per-client mean of 1.0, 1.3, or 1.6 | Exponential with mean 0.10 |
+| Upload | Uniform around a per-client mean of 0.15 or 0.25, with half-width 0.02 | Uniform around a per-client mean of 0.05 or 0.10, with half-width 0.01 |
+
+The two files select the expected delay profile and share the paper event and
+reservation rules in `schedule.py`. Use either JSON file with the replay command
+above and the matching logical scheduling settings. Use `plot_plan.py` to
+compare the timelines before launching either run.
+
 ### Generate a custom paper schedule offline
 
 From `research/fedrevive`, generate a plan from the prepared manifest. This
@@ -445,13 +469,31 @@ Use `plan.json` in the replay command above. Keep `--buffer-size` and
 `--min-open-slots` consistent between generation and replay if you override
 them. Omit `--train-lognormal-sigma` to generate the paper's original delays.
 
-For measured traces or another distribution, call `make_paper_plan()` with a
-`delay_sampler(assignment_id, logical_name, phase, profile, rng)` callable.
-Return a finite nonnegative duration. Each invocation receives a NumPy RNG
-derived from the run seed, assignment ID, and phase. You can use
-`sample_paper_delay(phase, profile, rng)` for phases you keep from the paper.
-The planner writes concrete event times, so replay uses only the resulting
-JSON and compares execution with the training-free preflight.
+Copy either entry point and supply your own `delay_sampler` to keep the same
+assignment rules with different delays. This example uses gamma-distributed
+training times with the mean from the input manifest. Save it as
+`schedule_custom.py` beside the other planners and run it with the same
+manifest, output path, and scheduling options.
+
+```python
+from schedule import main, sample_paper_delay
+
+
+def custom_delay(assignment_id, logical_name, phase, profile, rng):
+    if phase == "train":
+        return float(rng.gamma(shape=2, scale=profile["train_mean"] / 2))
+    return sample_paper_delay(phase, profile, rng)
+
+
+if __name__ == "__main__":
+    main(delay_sampler=custom_delay)
+```
+
+The callback returns a finite nonnegative duration and receives a NumPy RNG
+derived from the run seed, assignment ID, and phase. For programmatic use, pass
+it directly to `make_paper_plan()`. If you also want a different participation
+or refill policy, emit an ordered SimEnv plan from your own generator. SimEnv
+preflights the resulting JSON against the workflow before training.
 
 ### Visualize a plan before running it
 
@@ -591,6 +633,8 @@ fedrevive/
 ├── client.py
 ├── server.py             # Model loader, operations, evaluation observer
 ├── schedule.py           # Generate seeded paper plans
+├── schedule_standard.py  # Standard delay manifest entry point
+├── schedule_shifted.py   # Shifted delay manifest entry point
 ├── plot_plan.py          # Inspect a plan and its storage bound offline
 ├── update.py             # Optional FedRevive update transform
 ├── fedrevive.py

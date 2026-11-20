@@ -192,9 +192,13 @@ def _client_index(name):
     raise ValueError(f"expected a logical client name of the form client-N, got {name!r}")
 
 
-def main():
+def main(*, expected_delay_schedule=None, delay_sampler=None):
+    """Generate plan JSON from a manifest, with an optional profile check or custom sampler."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("manifest", type=Path, help="Prepared FedRevive manifest.json")
+    manifest_help = "Prepared FedRevive manifest.json"
+    if expected_delay_schedule is not None:
+        manifest_help += f" with the {expected_delay_schedule} delay schedule"
+    parser.add_argument("manifest", type=Path, help=manifest_help)
     parser.add_argument("output", type=Path, help="Destination for the SimEnv plan JSON")
     parser.add_argument("--run-seed", type=int, default=10)
     parser.add_argument("--max-time", type=float, default=200.0)
@@ -205,7 +209,11 @@ def main():
     parser.add_argument("--train-lognormal-sigma", type=float, help="Use log-normal training delays with this sigma")
     args = parser.parse_args()
     try:
-        profiles = json.loads(args.manifest.read_text(encoding="utf-8"))["runtime_profiles"]
+        manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+        profiles = manifest["runtime_profiles"]
+        delay_schedule = manifest.get("delay_schedule", "default")
+        if expected_delay_schedule is not None and delay_schedule != expected_delay_schedule:
+            raise ValueError(f"expected the {expected_delay_schedule!r} delay schedule, got {delay_schedule!r}")
         sigma = args.train_lognormal_sigma
         plan = make_paper_plan(
             profiles,
@@ -215,7 +223,7 @@ def main():
             concurrency=args.concurrency,
             min_open_slots=args.min_open_slots,
             buffer_size=args.buffer_size,
-            delay_sampler=lognormal_training_sampler(sigma) if sigma is not None else None,
+            delay_sampler=lognormal_training_sampler(sigma) if sigma is not None else delay_sampler,
         )
         args.output.write_text(json.dumps(validate_simulation_plan(plan), indent=2) + "\n", encoding="utf-8")
     except (OSError, KeyError, TypeError, ValueError) as error:
