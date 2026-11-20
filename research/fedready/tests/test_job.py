@@ -1,0 +1,668 @@
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from fedready import job_data, job_train
+from fedready.data.contracts import segmentation, training
+from fedready.flare import fedready_training_client_runtime
+from fedready.flare.training_job import (
+    FedAvgTrainingConfig,
+    _add_training_package,
+    _format_client_runtime_task_args,
+    summarize_simulator_status,
+)
+from fedready.flare.training_preflight import _completed_preflight_before_aio_cleanup_error
+from fedready.job_data import (
+    _default_session_id,
+    _safe_workspace_slug,
+    build_agent_task_query_recipe,
+    export_fed_job_recipe,
+    resolve_recipe_workspace_root,
+)
+from fedready.job_train import _dataset_root_from_extraction_summary_path, _default_training_session_id
+from fedready.training_code import (
+    LOCAL_TRAINING_SIMULATION_SCHEMA_VERSION,
+    build_training_package_integrity,
+    validate_training_code_spec,
+)
+from fedready.utils.io import safe_path_slug
+from PIL import Image
+
+from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
+
+
+class NVFlareJobTestCase(unittest.TestCase):
+    def test_segmentation_preflight_matches_materialized_mask_encoding(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            Image.new("RGB", (16, 16)).save(root / "image.png")
+            mask = Image.new("L", (16, 16), 0)
+            mask.putpixel((8, 8), 255)
+            mask.save(root / "mask.png")
+            record = segmentation.materialize_pair(
+                pair={"image_path": root / "image.png", "mask_path": root / "mask.png", "split": "train"},
+                output_dir=root / "prepared",
+                source_label_type="disc",
+                update_intensity=lambda accumulator, image: None,
+                intensity_accumulator={},
+            )
+            with Image.open(root / "prepared" / record["mask"]) as stored_mask:
+                stored_values = sorted(value for _, value in stored_mask.getcolors())
+            self.assertEqual(stored_values, [0, 1])
+            contract = training.SEGMENTATION_TRAINING
+            training.write_mock_preflight_dataset(
+                dataset_root=root / "mock", contract=contract, client_id="SITE", target_size=(16, 16)
+            )
+            for mask_path in (root / "mock" / "SITE" / "masks").rglob("*.png"):
+                with Image.open(mask_path) as mock_mask:
+                    self.assertEqual(sorted(value for _, value in mock_mask.getcolors()), stored_values)
+            self.assertEqual(contract.mock_preflight["target"]["stored_values"], stored_values)
+
+    def test_training_validation_preserves_stage_feedback_and_attempt_budget(self) -> None:
+        for runtime_feedback in (None, {"failure": "simulator failed"}):
+            for budget in (1, 2):
+                with self.subTest(runtime=runtime_feedback is not None, budget=budget), TemporaryDirectory() as tmp:
+                    with (
+                        mock.patch.object(job_train.CodexWorkerBackend, "from_env"),
+                        mock.patch.object(job_train, "ServerAgent") as agent_type,
+                        mock.patch.object(job_train, "_training_plan_with_mock_simulation_contract", return_value={}),
+                        mock.patch.object(job_train, "build_training_code_validation_feedback", return_value={}),
+                        mock.patch.object(
+                            job_train,
+                            "_validate_training_code_with_local_preflight",
+                            side_effect=[
+                                job_train.TrainingCodePreflightError({"succeeded": False}),
+                                {"validated": True},
+                            ],
+                        ) as validate,
+                    ):
+                        agent = agent_type.return_value
+                        agent.implement_training_code.return_value.output = {"status": "implemented"}
+                        agent.revise_training_code.return_value.output = {"status": "implemented"}
+                        kwargs = dict(
+                            task="segmentation",
+                            extraction_summary={},
+                            training_plan={},
+                            run_dir=tmp,
+                            session_id="test",
+                            timeout_seconds=1,
+                            max_attempts=budget,
+                            previous_code_spec={"status": "implemented"},
+                            runtime_feedback=runtime_feedback,
+                        )
+                        if budget == 1:
+                            with self.assertRaisesRegex(RuntimeError, "after 1 attempt"):
+                                job_train.prepare_training_code_with_server_agent(**kwargs)
+                        else:
+                            self.assertEqual(
+                                job_train.prepare_training_code_with_server_agent(**kwargs), {"validated": True}
+                            )
+                        self.assertEqual(validate.call_count, budget)
+                        self.assertEqual(agent.implement_training_code.call_count, int(runtime_feedback is None))
+                        self.assertEqual(
+                            agent.revise_training_code.call_count, budget - 1 + int(runtime_feedback is not None)
+                        )
+                        stage = "runtime_revision" if runtime_feedback is not None else "initial"
+                        self.assertTrue(all(call.kwargs["stage"] == stage for call in validate.call_args_list))
+                        prefix = "runtime_" if runtime_feedback is not None else ""
+                        feedback = json.loads(
+                            (
+                                Path(tmp) / "training_phase/server" / f"{prefix}training_code_validation_attempt_1.json"
+                            ).read_text()
+                        )
+                        self.assertEqual(feedback["preflight_status"], {"succeeded": False})
+                        self.assertEqual(feedback.get("source_runtime_feedback"), runtime_feedback)
+
+    def test_training_preserves_approved_label_ids_and_counts(self) -> None:
+        labels = {"negative": 1, "positive": 2}
+        summary = {
+            "extraction_strategy": {"label_rule": {"canonical_labels": labels}},
+            "extraction_results": {
+                "SITE_A": {
+                    "data": "extracted",
+                    "extraction": {"classification_storage": {"class_counts": {"1": 4, "2": 6}}},
+                }
+            },
+        }
+        payload = job_train._training_data_contract_payload(
+            task="binary classification",
+            task_contract=job_train.training_contracts.CLASSIFICATION_TRAINING,
+            dataset_root="prepared",
+            extraction_summary=summary,
+        )
+        self.assertEqual(payload["canonical_labels"], labels)
+        self.assertEqual(payload["observed_label_values"], [1, 2])
+        self.assertEqual(payload["class_counts"], {"1": 4, "2": 6})
+        self.assertNotIn("label_harmonization", payload)
+
+    def test_training_package_export_uses_integrity_root(self) -> None:
+        with TemporaryDirectory() as tmp:
+            package_dir = Path(tmp) / "fedready_task_training"
+            package_dir.mkdir()
+            (package_dir / "__init__.py").touch()
+            job = mock.Mock()
+
+            _add_training_package(job, package_dir=package_dir, target="server")
+
+            job.add_file_to.assert_called_once_with(
+                str(package_dir),
+                "server",
+                dest_dir=package_dir.name,
+                app_folder_type="custom",
+            )
+
+    def test_training_package_must_match_local_preflight_digest(self) -> None:
+        with TemporaryDirectory() as tmp:
+            package_dir = Path(tmp) / "fedready_task_training"
+            package_dir.mkdir()
+            (package_dir / "__init__.py").touch()
+            (package_dir / "train.py").write_text("print('preflighted')\n", encoding="utf-8")
+            (package_dir / "model.py").write_text("class Model:\n    pass\n", encoding="utf-8")
+            spec = {
+                "schema_version": "fedready.training_code_spec.v1",
+                "status": "implemented",
+                "package_dir": str(package_dir),
+                "entry_script": "train.py",
+                "model_class_path": "fedready_task_training.model.Model",
+                "package_integrity": build_training_package_integrity(package_dir),
+                "local_simulation": {
+                    "schema_version": LOCAL_TRAINING_SIMULATION_SCHEMA_VERSION,
+                    "status": "passed",
+                    "client_deployment": False,
+                    "metric_artifact_available": True,
+                    "nonempty_metric_artifacts": ["fedready_training_metrics.jsonl"],
+                },
+            }
+
+            validate_training_code_spec(spec)
+            (package_dir / "train.py").write_text("raise RuntimeError('changed')\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "changed after local SimEnv preflight"):
+                validate_training_code_spec(spec)
+
+    def test_training_package_requires_the_fixed_program_interface(self) -> None:
+        with TemporaryDirectory() as tmp:
+            package = Path(tmp) / "fedready_task_training"
+            package.mkdir()
+            (package / "__init__.py").touch()
+            (package / "train.py").write_text("pass\n")
+            (package / "model.py").write_text("class Model: pass\n")
+            spec = {
+                "schema_version": "fedready.training_code_spec.v1",
+                "status": "implemented",
+                "package_dir": str(package),
+                "entry_script": "train.py",
+                "model_class_path": "fedready_task_training.model.Model",
+            }
+            validate_training_code_spec(spec, code_workspace=tmp, require_local_simulation=False)
+            validate_training_code_spec(
+                {**spec, "package_dir": "fedready_task_training"},
+                code_workspace=os.path.relpath(tmp),
+                require_local_simulation=False,
+            )
+            for change in (
+                {"entry_script": "fedready_task_training/train.py"},
+                {"entry_script": str(package / "train.py")},
+                {"model_class_path": "model.Model"},
+                {"model_class_path": "fedready_task_training.other.Model"},
+            ):
+                with self.subTest(change=change), self.assertRaises(ValueError):
+                    validate_training_code_spec({**spec, **change}, require_local_simulation=False)
+            other_root = Path(tmp) / "other_workspace"
+            with self.assertRaisesRegex(ValueError, "under code_workspace"):
+                validate_training_code_spec(spec, code_workspace=other_root, require_local_simulation=False)
+            alternate = package.with_name("src")
+            package.rename(alternate)
+            with self.assertRaisesRegex(ValueError, "package_dir must"):
+                validate_training_code_spec({**spec, "package_dir": str(alternate)}, require_local_simulation=False)
+            alternate.rename(package)
+            (package / "__init__.py").unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "__init__.py"):
+                validate_training_code_spec(spec, require_local_simulation=False)
+
+    def test_simulator_status_requires_valid_finite_metric_records(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            server_dir = workspace / "server"
+            client_dir = workspace / "MOCK_CLIENT"
+            server_dir.mkdir()
+            client_dir.mkdir()
+            (server_dir / "log.json").write_text(
+                json.dumps({"levelname": "INFO", "message": "Aggregated 1/1 results"})
+                + "\n"
+                + json.dumps({"levelname": "INFO", "message": "Finished FedAvg"})
+                + "\n",
+                encoding="utf-8",
+            )
+            (server_dir / "FL_global_model.pt").write_bytes(b"model")
+            metrics_path = client_dir / "fedready_training_metrics.jsonl"
+
+            for invalid in ("not JSON\n", '{"round": 0, "loss": NaN}\n'):
+                with self.subTest(invalid=invalid):
+                    metrics_path.write_text(invalid, encoding="utf-8")
+                    status = summarize_simulator_status(workspace)
+                    self.assertFalse(status["metric_artifact_available"])
+                    self.assertFalse(status["succeeded"])
+
+            metrics_path.write_text('{"round": 0, "loss": 0.25}\n', encoding="utf-8")
+            status = summarize_simulator_status(workspace)
+            self.assertTrue(status["metric_artifact_available"])
+            self.assertTrue(status["succeeded"])
+
+    def test_simulator_success_rejects_partial_results_and_training_errors(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            server = root / "server"
+            client = root / "site-1"
+            server.mkdir()
+            client.mkdir()
+            (server / "FL_global_model.pt").write_bytes(b"model")
+            (client / "fedready_training_metrics.jsonl").write_text('{"round": 0, "loss": 0.5}\n')
+            clean = [("INFO", "Aggregated 2/2 results"), ("INFO", "Finished FedAvg")]
+            cases = [
+                (
+                    [
+                        ("INFO", "Round 0 started."),
+                        ("INFO", "Aggregated 1/2 results"),
+                        ("INFO", "Aggregated 2/2 results"),
+                        *clean[-1:],
+                    ],
+                    True,
+                ),
+                (
+                    [
+                        ("INFO", "Round 0 started."),
+                        ("INFO", "Aggregated 1/2 results"),
+                        ("INFO", "Round 1 started."),
+                        *clean,
+                    ],
+                    False,
+                ),
+                ([("INFO", "Aggregated 1/2 results"), clean[-1]], False),
+                ([("WARNING", "Empty result from client site-2, skipping"), *clean], False),
+                ([("WARNING", "Communication error with client site-2"), *clean], False),
+                ([("ERROR", "trainer failed"), *clean], False),
+                ([("ERROR", "could not stop AIO loop"), *clean], False),
+                ([*clean, ("ERROR", "could not stop AIO loop")], True),
+                ([*clean, ("ERROR", "trainer failed")], False),
+                (clean, True),
+            ]
+            for log_format in ("json", "txt"):
+                log = server / f"log.{log_format}"
+                for messages, succeeded in cases:
+                    with self.subTest(log_format=log_format, messages=messages):
+                        log.write_text(
+                            "\n".join(
+                                (
+                                    json.dumps({"levelname": level, "message": message})
+                                    if log_format == "json"
+                                    else f"server - {level} - {message}"
+                                )
+                                for level, message in messages
+                            )
+                            + "\n"
+                        )
+                        self.assertEqual(summarize_simulator_status(root)["succeeded"], succeeded)
+                log.unlink()
+            (server / "log.json").write_text(
+                "\n".join(json.dumps({"levelname": level, "message": message}) for level, message in clean) + "\n"
+            )
+            (client / "log.json").write_text(json.dumps({"levelname": "ERROR", "message": "trainer failed"}) + "\n")
+            self.assertFalse(summarize_simulator_status(root)["succeeded"])
+
+    def test_task_script_runner_preserves_space_containing_preflight_path(self) -> None:
+        with TemporaryDirectory() as tmp:
+            dataset_root = Path(tmp) / "my project" / "mock_data"
+            dataset_root.mkdir(parents=True)
+            custom_dir = Path(tmp) / "custom"
+            package_dir = custom_dir / "fedready_task_training"
+            package_dir.mkdir(parents=True)
+            (package_dir / "train.py").write_text("pass\n")
+            script_args = _format_client_runtime_task_args(
+                client_id="MOCK_CLIENT",
+                training_plan={"data_contract": {"record_type": "classification"}},
+                training_code_spec={
+                    "entry_script": "train.py",
+                    "package_dir": str(package_dir),
+                },
+                config=FedAvgTrainingConfig(dataset_root=str(dataset_root)),
+                train_sample_count=1,
+                validation_sample_count=1,
+                test_sample_count=0,
+            )
+            launcher_path = Path(fedready_training_client_runtime.__file__).resolve()
+            runner = TaskScriptRunner(
+                custom_dir=str(launcher_path.parent),
+                script_path=launcher_path.name,
+                script_args=script_args,
+                redirect_print_to_log=False,
+            )
+            argv = runner.get_sys_argv()
+            forwarded_argv: list[str] = []
+
+            def capture_run_path(*_args, **_kwargs) -> None:
+                forwarded_argv.extend(sys.argv)
+
+            with (
+                mock.patch.object(fedready_training_client_runtime, "__file__", str(custom_dir / launcher_path.name)),
+                mock.patch.object(sys, "argv", ["test_job.py"]),
+                mock.patch.object(
+                    fedready_training_client_runtime,
+                    "_validate_prepared_dataset",
+                    return_value={},
+                ) as validate_dataset,
+                mock.patch.object(fedready_training_client_runtime, "_write_report"),
+                mock.patch.object(
+                    fedready_training_client_runtime.runpy,
+                    "run_path",
+                    side_effect=capture_run_path,
+                ),
+            ):
+                fedready_training_client_runtime.main(argv[1:])
+
+            self.assertEqual(validate_dataset.call_args.kwargs["dataset_root"], dataset_root.resolve())
+            dataset_arg = forwarded_argv.index("--dataset-root")
+            self.assertEqual(forwarded_argv[dataset_arg + 1], str(dataset_root.resolve()))
+
+    def test_task_script_runner_receives_unquoted_task_arguments(self) -> None:
+        package_dir = Path(job_train.__file__).resolve().parent
+        kwargs = dict(
+            training_plan={"data_contract": {"record_type": "classification"}},
+            training_code_spec={"entry_script": "train.py", "package_dir": str(package_dir)},
+            train_sample_count=1,
+            validation_sample_count=1,
+            test_sample_count=0,
+        )
+        script_args = _format_client_runtime_task_args(
+            client_id="SITE&A", config=FedAvgTrainingConfig(device="cuda:0"), **kwargs
+        )
+        launcher_path = Path(fedready_training_client_runtime.__file__).resolve()
+        argv = TaskScriptRunner(
+            custom_dir=str(launcher_path.parent),
+            script_path=launcher_path.name,
+            script_args=script_args,
+            redirect_print_to_log=False,
+        ).get_sys_argv()
+
+        self.assertEqual(argv[argv.index("--fedready-entry-script") + 1], "fedready_task_training/train.py")
+        self.assertEqual(argv[argv.index("--client-id") + 1], "SITE&A")
+        self.assertEqual(argv[argv.index("--device") + 1], "cuda:0")
+        with self.assertRaisesRegex(ValueError, "client_id"):
+            _format_client_runtime_task_args(client_id="SITE A", config=FedAvgTrainingConfig(), **kwargs)
+
+    def test_exact_task_session_ids_fit_one_filesystem_component(self) -> None:
+        task = "binary glaucoma classification " + ("with explicit local evidence " * 80)
+        data_session = _default_session_id(task)
+        training_session = _default_training_session_id(task)
+        data_slug = _safe_workspace_slug(task)
+        training_slug = safe_path_slug(task.lower(), fallback="training")
+
+        self.assertLessEqual(len(data_session), 128)
+        self.assertLessEqual(len(training_session), 135)
+        self.assertTrue(data_session.startswith(f"{data_slug}_"))
+        self.assertTrue(training_session.startswith(f"{training_slug}_fedavg_"))
+        self.assertEqual(data_slug, _safe_workspace_slug(task))
+        self.assertNotEqual(data_slug, _safe_workspace_slug(task + "different"))
+
+    def test_training_main_uses_showcased_100_round_profile(self) -> None:
+        with TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            summary = project / "runs" / "data_retinal" / "server" / "decisions" / "extraction_round_summary.json"
+            result = {
+                "session_id": "training_session",
+                "run_dir": str(project / "runs" / "training_session"),
+                "job_path": str(project / "jobs" / "fedready_train"),
+                "workspace": str(project / "workspace"),
+            }
+            with (
+                mock.patch(
+                    "fedready.job_train.load_extraction_summary",
+                    return_value={"task": "binary glaucoma classification"},
+                ),
+                mock.patch(
+                    "fedready.job_train.run_fedavg_training_job",
+                    return_value=result,
+                ) as run_job,
+            ):
+                self.assertEqual(job_train.main([str(summary), tmp]), 0)
+
+            config = run_job.call_args.kwargs["config"]
+            self.assertEqual(config.num_rounds, 100)
+            self.assertEqual(
+                config.dataset_root,
+                str(Path("data") / "dataset_fl_runs" / "data_retinal"),
+            )
+
+    def test_training_reuses_bounded_data_phase_dataset_slug(self) -> None:
+        source_session = _default_session_id("binary glaucoma classification " + ("local evidence " * 80))
+        summary = Path("runs") / source_session / "server" / "decisions" / "extraction_round_summary.json"
+
+        self.assertEqual(
+            _dataset_root_from_extraction_summary_path(summary),
+            str(Path("data") / "dataset_fl_runs" / _safe_workspace_slug(source_session)),
+        )
+
+    def test_accepts_aio_cleanup_error_only_after_complete_preflight(self) -> None:
+        complete = {
+            "succeeded": True,
+            "finished_fedavg": True,
+            "persisted_global_model": True,
+            "metric_artifact_available": True,
+            "nonempty_metric_artifacts": ["metrics.jsonl"],
+            "empty_result_clients": [],
+            "client_communication_error_clients": [],
+            "non_tensor_param_warnings": [],
+        }
+        terminal = {"matched_line": "ERROR - could not stop AIO loop"}
+        self.assertTrue(
+            _completed_preflight_before_aio_cleanup_error(simulator_status=complete, terminal_status=terminal)
+        )
+        self.assertFalse(
+            _completed_preflight_before_aio_cleanup_error(
+                simulator_status={**complete, "persisted_global_model": False},
+                terminal_status=terminal,
+            )
+        )
+        self.assertFalse(
+            _completed_preflight_before_aio_cleanup_error(
+                simulator_status=complete,
+                terminal_status={"matched_line": "ERROR - trainer crashed"},
+            )
+        )
+
+    def test_main_passes_documented_local_vlm_overrides_to_preflight(self) -> None:
+        with TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            run_result = {
+                "session_id": "unit_session",
+                "run_dir": str(project / "runs" / "unit_session"),
+                "workspace": str(project / "workspace"),
+                "client_ids": ["SITE_A"],
+            }
+            environment = {
+                "FEDREADY_VISION_AGENT_API_BASE_URL": "http://[::1]:8001/v1",
+                "FEDREADY_VISION_AGENT_MODEL": "local-test-vlm",
+                "FEDREADY_VISION_AGENT_API_KEY_ENV": "TEST_LOCAL_VLM_KEY",
+            }
+            with (
+                mock.patch.dict(os.environ, environment, clear=False),
+                mock.patch("fedready.agents.preflight.run_live_runtime_preflight") as preflight,
+                mock.patch(
+                    "fedready.job_data.run_agent_task_query_job",
+                    return_value=run_result,
+                ) as run_job,
+            ):
+                self.assertEqual(job_data.main(["site-meta.json", "classification task", tmp]), 0)
+
+            preflight_kwargs = preflight.call_args.kwargs
+            self.assertEqual(preflight_kwargs["local_vlm_base_url"], "http://[::1]:8001/v1")
+            self.assertEqual(preflight_kwargs["local_vlm_model"], "local-test-vlm")
+            self.assertEqual(preflight_kwargs["local_vlm_api_key_env"], "TEST_LOCAL_VLM_KEY")
+            run_kwargs = run_job.call_args.kwargs
+            self.assertTrue(
+                run_kwargs["extraction_output_root"].startswith("data/dataset_fl_runs/classification_task_")
+            )
+            self.assertEqual(run_kwargs["extraction_output_name"], run_kwargs["session_id"])
+
+    def test_resolves_recipe_workspace_to_job_subfolder(self) -> None:
+        with TemporaryDirectory() as tmp:
+            project = Path(tmp) / "FedReady"
+            workspace_root = project / "workspace"
+
+            self.assertEqual(
+                resolve_recipe_workspace_root(
+                    workspace_root,
+                    session_id="disc_segmentation_round2",
+                    job_name="fedready_task_query",
+                ),
+                workspace_root / "disc_segmentation_round2",
+            )
+            explicit_workspace = workspace_root / "smoke_test"
+            self.assertEqual(
+                resolve_recipe_workspace_root(
+                    explicit_workspace,
+                    session_id="disc_segmentation_round2",
+                    job_name="fedready_task_query",
+                ),
+                explicit_workspace,
+            )
+
+    def test_exports_task_query_job_with_server_controller_and_client_executors(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as tmp:
+            project = Path(tmp) / "FedReady"
+            meta = project / "meta" / "site-meta.json"
+            meta.parent.mkdir(parents=True)
+            meta.write_text(
+                json.dumps(
+                    {
+                        "client_count": 2,
+                        "clients": [
+                            {"client_id": "SITE_A", "data_path": "data/site_a"},
+                            {"client_id": "SITE_B", "data_path": "data/site_b"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            recipe, client_ids = build_agent_task_query_recipe(
+                site_meta_path=meta,
+                project_root=project,
+                output_dir=project / "runs",
+                session_id="unit_jobapi_export",
+                job_name="unit_fedready_query",
+                max_clients=1,
+                min_count=2,
+                max_image_samples=3,
+                histogram_bins=4,
+                extraction_output_name="unit_round2",
+                extraction_max_samples=5,
+                extraction_overwrite=True,
+            )
+
+            job_path = export_fed_job_recipe(recipe.job, project / "jobs")
+            self.assertEqual(client_ids, ["SITE_A"])
+            self.assertEqual(recipe.job.name, "unit_fedready_query")
+            self.assertTrue((job_path / "meta.json").exists())
+
+            server_config = json.loads(
+                (job_path / "app_server" / "config" / "config_fed_server.json").read_text(encoding="utf-8")
+            )
+            client_config = json.loads(
+                (job_path / "app_SITE_A" / "config" / "config_fed_client.json").read_text(encoding="utf-8")
+            )
+
+            workflow = server_config["workflows"][0]
+            self.assertEqual(workflow["path"], "fedready.server.FedReadyTaskQueryController")
+            self.assertEqual(workflow["args"]["session_id"], "unit_jobapi_export")
+            self.assertEqual(workflow["args"]["max_clients"], 1)
+            self.assertEqual(workflow["args"]["extraction_output_name"], "unit_round2")
+            self.assertEqual(workflow["args"]["extraction_max_samples"], 5)
+            self.assertTrue(workflow["args"]["extraction_overwrite"])
+
+            executor = client_config["executors"][0]
+            self.assertEqual(executor["tasks"], ["fedready_task_query"])
+            self.assertEqual(
+                executor["executor"]["path"],
+                "fedready.client.FedReadyTaskQueryExecutor",
+            )
+            self.assertEqual(executor["executor"]["args"]["extraction_output_name"], "unit_round2")
+            self.assertEqual(executor["executor"]["args"]["extraction_max_samples"], 5)
+            self.assertTrue(executor["executor"]["args"]["extraction_overwrite"])
+            server_custom = job_path / "app_server" / "custom" / "fedready"
+            client_custom = job_path / "app_SITE_A" / "custom" / "fedready"
+            self.assertTrue((server_custom / "server.py").exists())
+            self.assertTrue((server_custom / "flare" / "channel.py").exists())
+            self.assertTrue((server_custom / "prompts" / "server.json").exists())
+            self.assertFalse((server_custom / "client.py").exists())
+            self.assertTrue((client_custom / "client.py").exists())
+            self.assertTrue((client_custom / "flare" / "channel.py").exists())
+            self.assertTrue((client_custom / "data" / "extractor.py").exists())
+            self.assertTrue((client_custom / "prompts" / "client.json").exists())
+            self.assertFalse((client_custom / "server.py").exists())
+
+            for package_dir, entry_module in ((server_custom, "server"), (client_custom, "client")):
+                with self.subTest(entry_module=entry_module):
+                    for module in ("guardrail", "bridge", "common", "references"):
+                        self.assertTrue((package_dir / "agents" / f"{module}.py").is_file())
+                    self.assertTrue((package_dir / "agents" / entry_module / "agent.py").is_file())
+                    result = subprocess.run(
+                        [
+                            sys.executable,
+                            "-I",
+                            "-c",
+                            "import importlib, pathlib, sys; "
+                            "sys.path[:0] = sys.argv[1:3]; "
+                            "module = importlib.import_module('fedready.' + sys.argv[3]); "
+                            "assert pathlib.Path(module.__file__).is_relative_to(sys.argv[1]); "
+                            "other = 'client' if sys.argv[3] == 'server' else 'server'; "
+                            "assert not any(name.startswith('fedready.agents.' + other + '.') for name in sys.modules); "
+                            "from fedready.agents.guardrail import GuardrailAgent; "
+                            "from fedready.data.extraction_artifacts import EXTRACTION_SOURCE_FILES, _extractor_logic_fingerprint\n"
+                            "if sys.argv[3] == 'client':\n"
+                            "    for relative_path in EXTRACTION_SOURCE_FILES:\n"
+                            "        path = pathlib.Path(sys.argv[1]) / 'fedready' / relative_path\n"
+                            "        before = _extractor_logic_fingerprint()\n"
+                            "        path.write_text(path.read_text() + '\\n# fingerprint regression\\n')\n"
+                            "        assert _extractor_logic_fingerprint() != before\n"
+                            "else:\n"
+                            "    assert not (pathlib.Path(sys.argv[1]) / 'fedready/agents/client/adapter.py').exists()\n",
+                            str(package_dir.parent),
+                            str(Path(__file__).resolve().parents[3]),
+                            entry_module,
+                        ],
+                        cwd=tmp,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()
