@@ -442,13 +442,14 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
                         str(tmp_path),
                     ):
                         assert forbidden not in serialized, event
-        all_by_id = {event["event_id"]: event for events in job_records.values() for event in events}
-        for events in job_records.values():
+        records_by_site = {name: {event["event_id"]: event for event in events} for name, events in job_records.items()}
+        for name, events in job_records.items():
             for event in events:
                 if event.get("action", "").startswith(("task.", "workflow.")) and event.get("reference"):
-                    assert event["reference"] in all_by_id, event
+                    assert event["reference"] in records_by_site[name], event
 
         server_job_audit = job_records["localhost"]
+        server_by_id = records_by_site["localhost"]
         workflow_id = "scatter_and_gather"
         initialized = _one_task_record(server_job_audit, "workflow.execution.initialized", workflow=workflow_id)
         control = _one_task_record(server_job_audit, "workflow.control.returned", workflow=workflow_id)
@@ -461,11 +462,12 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
             # omitting an unused sentinel from the audit output would prove less.
             assert json.loads((children / f"result-{name}.json").read_text()) == {"private_result_seen": True}
             client_job_audit = job_records[name]
+            client_by_id = records_by_site[name]
             assignment = _one_task_record(server_job_audit, "task.assignment.prepared", site=name, task="train")
             identity = _task_details(assignment)
             assert identity["workflow"] == workflow_id
             assert identity["task_id"] and identity["attempt_id"]
-            legacy_assignment = all_by_id[assignment["reference"]]
+            legacy_assignment = server_by_id[assignment["reference"]]
             assert legacy_assignment["action"] == "train#" + identity["task_id"]
             assert legacy_assignment["message"] == f'sent task to client "{name}"'
             received = _one_task_record(client_job_audit, "task.assignment.received", task_id=identity["task_id"])
@@ -473,35 +475,59 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
             returned = _one_task_record(client_job_audit, "task.execution.returned", task_id=identity["task_id"])
             prepared = _one_task_record(client_job_audit, "task.result.prepared", task_id=identity["task_id"])
             published = _one_task_record(client_job_audit, "task.publication.received", task_id=identity["task_id"])
+            legacy_client_receipt = client_by_id[received["reference"]]
+            assert legacy_client_receipt["action"] == legacy_assignment["action"]
+            assert legacy_client_receipt["message"] == "received task from server"
+            assert legacy_client_receipt["reference"] == legacy_assignment["event_id"]
+            assert legacy_client_receipt["job"] == job_id
             for event in (received, started, returned):
-                assert event["reference"] == legacy_assignment["event_id"], event
+                assert event["reference"] == legacy_client_receipt["event_id"], event
             for event in (received, started, returned, prepared, published):
                 details = _task_details(event)
                 for key in ("task", "task_id", "workflow", "attempt_id"):
                     assert details[key] == identity[key], (event, identity)
                 assert details["site"] == name, event
-            assert "status=OK" in returned["message"]
-            assert "status=OK" in prepared["message"]
-            legacy_result = all_by_id[prepared["reference"]]
+            # The training executor returns a result without an explicit status.
+            for event in (returned, prepared):
+                assert "status=unspecified" in event["message"].split(), event
+            legacy_result = client_by_id[prepared["reference"]]
             assert legacy_result["action"] == legacy_assignment["action"]
             assert legacy_result["reference"] == legacy_assignment["event_id"]
+            assert legacy_result["job"] == job_id
             assert published["reference"] == legacy_result["event_id"]
             assert "reason=receipt_confirmed" in published["message"]
-            assert client_job_audit.index(received) < client_job_audit.index(started) < client_job_audit.index(returned)
+            assert (
+                client_job_audit.index(legacy_client_receipt)
+                < client_job_audit.index(received)
+                < client_job_audit.index(started)
+                < client_job_audit.index(returned)
+            )
             assert (
                 client_job_audit.index(returned) < client_job_audit.index(prepared) < client_job_audit.index(published)
             )
             result = _one_task_record(server_job_audit, "task.result.received", task_id=identity["task_id"])
             callback = _one_task_record(server_job_audit, "task.result_callback.returned", task_id=identity["task_id"])
             manager = _one_task_record(server_job_audit, "task.result_manager.returned", task_id=identity["task_id"])
-            for event in (result, callback, manager):
-                assert event["reference"] == legacy_result["event_id"], event
+            handling = _one_task_record(server_job_audit, "task.result.handling_returned", task_id=identity["task_id"])
+            legacy_server_receipt = server_by_id[result["reference"]]
+            assert legacy_server_receipt["action"] == legacy_result["action"]
+            assert legacy_server_receipt["message"] == f"received result from client '{name}'"
+            assert legacy_server_receipt["reference"] == legacy_result["event_id"]
+            assert legacy_server_receipt["job"] == job_id
+            for event in (result, callback, manager, handling):
+                assert event["reference"] == legacy_server_receipt["event_id"], event
                 details = _task_details(event)
                 assert details["site"] == name, event
                 for key in ("task", "task_id", "workflow", "attempt_id"):
                     assert details[key] == identity[key], (event, identity)
             assert "reason=complete_result" in result["message"]
-            assert server_job_audit.index(result) < server_job_audit.index(manager) < server_job_audit.index(callback)
+            assert (
+                server_job_audit.index(legacy_server_receipt)
+                < server_job_audit.index(result)
+                < server_job_audit.index(manager)
+                < server_job_audit.index(callback)
+                < server_job_audit.index(handling)
+            )
         summary["task_workflow_audit_records"] = (
             "verified job-process records, legacy references and private payload exclusion"
         )

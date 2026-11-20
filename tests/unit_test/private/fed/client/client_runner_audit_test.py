@@ -17,6 +17,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FilterKey, FLContextKey, ReservedKey, ReturnCode, TaskResultReceipt
 from nvflare.apis.fl_context import FLContext
@@ -87,8 +88,12 @@ def system(tmp_path, monkeypatch):
     writer.close()
 
 
+def _all_records(path):
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
 def _records(path):
-    all_records = [json.loads(line) for line in path.read_text().splitlines()]
+    all_records = _all_records(path)
     records = [r for r in all_records if r.get("action", "").startswith("task.")]
     for event in records:
         assert set(event) <= FIELDS
@@ -111,8 +116,10 @@ def _publication(path):
     return events[0]
 
 
-def test_success_records_observed_boundaries_and_legacy_reference(system):
+@pytest.mark.parametrize("reference", ["private-opaque-reference", {"private-not-a-string": True}])
+def test_success_uses_locally_written_receipt_without_copying_untrusted_reference(system, reference):
     runner, executor, ctx, task, _, path = system
+    task.data.set_header(ReservedKey.AUDIT_EVENT_ID, reference)
     result = runner._process_task(task, ctx)
     assert result.get_return_code() == ReturnCode.OK
     assert executor.calls == 1
@@ -124,7 +131,10 @@ def test_success_records_observed_boundaries_and_legacy_reference(system):
         "task.execution.returned",
         "task.result.prepared",
     ]
-    assert [r["reference"] for r in records[:3]] == ["server-audit"] * 3
+    receipt = next(r for r in _all_records(path) if r.get("message") == "received task from server")
+    assert task.data.get_header(ReservedKey.AUDIT_EVENT_ID) == reference
+    assert receipt["reference"] == str(reference)
+    assert [r["reference"] for r in records[:3]] == [receipt["event_id"]] * 3
     assert records[-1]["reference"] == result.get_header(ReservedKey.AUDIT_EVENT_ID)
     for event in records:
         assert 'task="train"' in event["message"]
@@ -133,6 +143,30 @@ def test_success_records_observed_boundaries_and_legacy_reference(system):
         assert 'workflow="workflow-1"' in event["message"]
         assert 'site="site-1"' in event["message"]
     assert current_context() == TaskAuditContext()
+
+
+def test_direct_assignment_does_not_link_the_supplied_reference(system):
+    runner, executor, ctx, task, _, path = system
+    request = task.data
+    request.set_header(ReservedHeaderKey.TASK_NAME, task.name)
+    request.set_header(ReservedHeaderKey.TASK_ID, task.task_id)
+    request.set_header(ReservedKey.AUDIT_EVENT_ID, "private-direct-reference")
+
+    result = runner._handle_do_task("do_task", request, ctx)
+
+    assert result.get_return_code() == ReturnCode.OK
+    assert executor.calls == 1
+    received, started, returned, prepared = _records(path)
+    assert [event["action"] for event in (received, started, returned)] == [
+        "task.assignment.received",
+        "task.execution.started",
+        "task.execution.returned",
+    ]
+    assert all("reference" not in event for event in (received, started, returned))
+    assert prepared["action"] == "task.result.prepared"
+    assert prepared["reference"] == result.get_header(ReservedKey.AUDIT_EVENT_ID)
+    receipt = next(r for r in _all_records(path) if r.get("message") == "received task from server")
+    assert receipt["reference"] == "private-direct-reference"
 
 
 @pytest.mark.parametrize("peer", [None, "bad-type", "other-job"])
@@ -230,7 +264,8 @@ def test_filter_result_boundaries_and_immutable_task_identity(system, monkeypatc
     assert executor.calls == (stage == FilterKey.OUT)
     event = next(r for r in _records(path) if r["action"].startswith("task.filter."))
     assert f"stage={'data_filter' if stage == FilterKey.IN else 'result_filter'}" in event["message"]
-    assert event["reference"] == "server-audit"
+    receipt = next(r for r in _all_records(path) if r.get("message") == "received task from server")
+    assert event["reference"] == receipt["event_id"]
     assert 'task_id="task-1"' in event["message"]
     assert _actions(path)[-1] == "task.result.prepared"
 
@@ -243,6 +278,20 @@ def test_custom_application_code_is_not_exposed_as_audit_detail(system):
     records = _records(path)
     assert "status=custom_return_code" in records[-1]["message"]
     assert "status=custom_return_code" in records[-2]["message"]
+
+
+def test_missing_application_code_is_not_recorded_as_success(system):
+    runner, executor, ctx, task, _, path = system
+    executor.callback = lambda *_args: Shareable()
+
+    result = runner._process_task(task, ctx)
+
+    assert result.get_return_code() == ReturnCode.OK  # Preserve the application default.
+    assert result.get_return_code(default=None) is None
+    returned, prepared = _records(path)[-2:]
+    assert returned["action"] == "task.execution.returned"
+    assert prepared["action"] == "task.result.prepared"
+    assert all("status=unspecified" in event["message"] for event in (returned, prepared))
 
 
 def test_filter_mutation_cannot_change_approved_snapshot(system, monkeypatch):
@@ -388,6 +437,68 @@ def test_publication_emits_one_terminal_fact_across_retries(system, monkeypatch,
         assert f"reason={'before_submission' if mode == 'abort_before' else 'after_submission'}" in event["message"]
     if mode == "exception":
         assert "stage=after_submission" in event["message"]
+
+
+def test_publication_uses_snapshot_taken_before_send_hook(system, monkeypatch):
+    runner, executor, ctx, task, _, path = system
+    runner.engine.get_task_assignment.return_value = task
+    runner._check_task_once = Mock(return_value=subject._TASK_CHECK_RESULT_OK)
+    monkeypatch.setattr(subject, "delete_msg_root", lambda _msg: None)
+    sent_ids = []
+
+    def mutate_before_send(event, fl_ctx):
+        if event == EventType.BEFORE_SEND_TASK_RESULT:
+            reply = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
+            reply.set_header(ReservedKey.AUDIT_EVENT_ID, "private-wire-replacement")
+            fl_ctx.set_prop(
+                subject._TASK_AUDIT_RESULT_REFERENCE, "private-context-replacement", private=True, sticky=False
+            )
+
+    def send(reply, fl_ctx, **_kwargs):
+        sent_ids.append(reply.get_header(ReservedKey.AUDIT_EVENT_ID))
+        fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
+        return True
+
+    runner.fire_event = mutate_before_send
+    runner.engine.send_task_result = send
+
+    _, processed = runner.fetch_and_run_one_task(ctx)
+
+    assert processed
+    assert executor.calls == 1
+    assert sent_ids == ["private-wire-replacement"]  # The legacy transport stays unchanged.
+    prepared = next(r for r in _records(path) if r["action"] == "task.result.prepared")
+    event = _publication(path)
+    assert event["action"] == "task.publication.received"
+    assert event["reference"] == prepared["reference"]
+    written = next(r for r in _all_records(path) if r["event_id"] == event["reference"])
+    assert written["message"] == "submit result OK"
+
+
+def test_parent_closure_wins_when_stop_arrives_during_check(system):
+    runner, executor, ctx, task, _, path = system
+    result = runner._process_task(task, ctx)
+    reply = make_reply(ReturnCode.TASK_UNKNOWN)
+    reply.set_header(ReservedHeaderKey.TASK_ID, task.task_id)
+    reply.set_header(ReservedHeaderKey.TASK_ATTEMPT_ID, task.attempt_id)
+    reply.set_header(ReservedHeaderKey.WORKFLOW, task.workflow_id)
+    reply.set_header(ReservedHeaderKey.TASK_RESULT_RECEIPT, TaskResultReceipt.TASK_CLOSED)
+
+    def receive_closure(**_kwargs):
+        runner.run_abort_signal.trigger(True)
+        return {runner.parent_target: reply}
+
+    runner.engine.send_aux_request.side_effect = receive_closure
+
+    assert runner._send_task_result(result, task.task_id, ctx) is False
+
+    runner.engine.send_aux_request.assert_called_once()
+    runner.engine.send_task_result.assert_not_called()
+    assert executor.calls == 1
+    assert ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.TASK_CLOSED
+    event = _publication(path)
+    assert event["action"] == "task.publication.closed"
+    assert "reason=task_closed" in event["message"]
 
 
 def test_lost_acknowledgement_can_be_confirmed_without_new_upload(system):

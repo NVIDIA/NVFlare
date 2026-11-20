@@ -15,6 +15,7 @@ import fnmatch
 import threading
 import time
 import uuid
+from contextvars import ContextVar
 from dataclasses import replace
 
 from nvflare.apis.event_type import EventType
@@ -47,10 +48,10 @@ from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.sec.task_audit import (
     TaskAuditContext,
     build_context,
-    code_status,
     current_context,
     prepare,
     record,
+    reply_status,
     set_context,
     use_context,
 )
@@ -69,7 +70,12 @@ from .utils import determine_parent_name
 _TASK_CHECK_RESULT_OK = 0
 _TASK_CHECK_RESULT_TRY_AGAIN = 1
 _TASK_CHECK_RESULT_TASK_GONE = 2
+_TASK_CHECK_RESULT_ABORTED = 3
 _TASK_AUDIT_CONTEXT = "_task_audit_context"
+_TASK_AUDIT_RESULT_REFERENCE = "_task_audit_result_reference"
+_USE_STORED_AUDIT_CONTEXT = object()
+_publication_audit_snapshot = ContextVar("publication_audit_snapshot", default=_USE_STORED_AUDIT_CONTEXT)
+_auxiliary_task = ContextVar("auxiliary_task", default=False)
 
 
 class TaskRouter:
@@ -252,30 +258,36 @@ class ClientRunner(TBI):
     def _reply_and_audit(reply: Shareable, ref, msg, fl_ctx: FLContext) -> Shareable:
         audit_event_id = add_job_audit_event(fl_ctx=fl_ctx, ref=ref, msg=msg)
         reply.set_header(ReservedKey.AUDIT_EVENT_ID, audit_event_id)
+        # Keep the identifier from our writer separately from the mutable reply.
+        prepare(
+            lambda: fl_ctx.set_prop(
+                _TASK_AUDIT_RESULT_REFERENCE,
+                audit_event_id if isinstance(audit_event_id, str) else "",
+                private=True,
+                sticky=False,
+            )
+        )
         return reply
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
         local_context = build_context(fl_ctx)
         with use_context(local_context):
             prepare(lambda: fl_ctx.set_prop(_TASK_AUDIT_CONTEXT, local_context, private=True, sticky=False))
+            prepare(lambda: fl_ctx.set_prop(_TASK_AUDIT_RESULT_REFERENCE, "", private=True, sticky=False))
             reply = self._process_task_impl(task, fl_ctx)
             record(
                 "task.result.prepared",
-                context=self._publication_audit_context(reply, fl_ctx),
-                status=self._audit_code(reply),
+                context=self._publication_audit_context(fl_ctx),
+                status=reply_status(reply),
             )
             return reply
 
     @staticmethod
-    def _audit_code(reply):
-        return prepare(lambda: code_status(reply.get_return_code()), default="unavailable")
-
-    @staticmethod
-    def _publication_audit_context(result, fl_ctx):
+    def _publication_audit_context(fl_ctx):
         context = prepare(lambda: fl_ctx.get_prop(_TASK_AUDIT_CONTEXT))
         if not isinstance(context, TaskAuditContext):
             context = build_context(fl_ctx)
-        reference = prepare(lambda: result.get_header(ReservedKey.AUDIT_EVENT_ID, ""), default="")
+        reference = prepare(lambda: fl_ctx.get_prop(_TASK_AUDIT_RESULT_REFERENCE, ""), default="")
         return prepare(
             lambda: replace(context, reference=reference if isinstance(reference, str) else ""),
             default=build_context(fl_ctx),
@@ -344,7 +356,9 @@ class ClientRunner(TBI):
         fl_ctx.set_prop(FLContextKey.WORKFLOW, value=task.workflow_id, private=True, sticky=False)
 
         server_audit_event_id = task.data.get_header(ReservedKey.AUDIT_EVENT_ID, "")
-        add_job_audit_event(fl_ctx=fl_ctx, ref=server_audit_event_id, msg="received task from server")
+        receipt_audit_event_id = add_job_audit_event(
+            fl_ctx=fl_ctx, ref=server_audit_event_id, msg="received task from server"
+        )
 
         peer_ctx = fl_ctx.get_peer_context()
         if not peer_ctx:
@@ -389,7 +403,11 @@ class ClientRunner(TBI):
                 task_id=task.task_id,
                 workflow_id=task.workflow_id or "",
                 attempt_id=task.attempt_id or "",
-                reference=server_audit_event_id,
+                reference=(
+                    receipt_audit_event_id
+                    if not _auxiliary_task.get() and isinstance(receipt_audit_event_id, str)
+                    else ""
+                ),
                 site=fl_ctx.get_identity_name() or "",
             ),
             default=build_context(fl_ctx),
@@ -592,7 +610,7 @@ class ClientRunner(TBI):
         finally:
             fl_ctx.set_prop(FLContextKey.TASK_DATA, value=None, private=True, sticky=False)
 
-        record("task.execution.returned", status=self._audit_code(reply))
+        record("task.execution.returned", status=reply_status(reply))
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=reply, private=True, sticky=False)
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_EXECUTION")
@@ -731,11 +749,18 @@ class ClientRunner(TBI):
         task_fetch_interval = task_data.get_header(TaskConstant.WAIT_TIME, default_task_fetch_interval)
 
         task_reply = self._process_task(task, fl_ctx)
+        # Callbacks may alter the result headers and context properties. Keep
+        # the audit evidence captured before invoking them.
+        audit_context = self._publication_audit_context(fl_ctx)
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_SEND_TASK_RESULT")
         self.fire_event(EventType.BEFORE_SEND_TASK_RESULT, fl_ctx)
 
-        send_success = self._send_task_result(task_reply, task.task_id, fl_ctx)
+        token = _publication_audit_snapshot.set(audit_context)
+        try:
+            send_success = self._send_task_result(task_reply, task.task_id, fl_ctx)
+        finally:
+            _publication_audit_snapshot.reset(token)
         fl_ctx.set_prop(FLContextKey.TASK_RESULT_SEND_SUCCESS, send_success, private=True, sticky=False)
         self.log_debug(fl_ctx, "firing event EventType.AFTER_SEND_TASK_RESULT")
         self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
@@ -743,9 +768,12 @@ class ClientRunner(TBI):
         return task_fetch_interval, True
 
     def _send_task_result(self, result: Shareable, task_id: str, fl_ctx: FLContext):
-        with use_context(self._publication_audit_context(result, fl_ctx)):
+        audit_context = _publication_audit_snapshot.get()
+        if audit_context is _USE_STORED_AUDIT_CONTEXT:
+            audit_context = self._publication_audit_context(fl_ctx)
+        with use_context(audit_context):
             try:
-                sent = self._send_task_result_impl(result, task_id, fl_ctx)
+                return self._send_task_result_impl(result, task_id, fl_ctx)
             except Exception:
                 attempted = prepare(lambda: fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED))
                 stage = (
@@ -755,27 +783,16 @@ class ClientRunner(TBI):
                 )
                 record("task.publication.error", reason="publication_error", stage=stage)
                 raise
-            receipt = prepare(lambda: fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT))
-            attempted = prepare(lambda: fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED))
-            aborted = prepare(lambda: self.run_abort_signal.triggered)
-            if sent:
-                if receipt == TaskResultReceipt.RECEIVED:
-                    record("task.publication.received", reason="receipt_confirmed")
-                else:
-                    record("task.publication.acknowledged", reason="legacy_transport_acknowledgement")
-            elif aborted:
-                reason = (
-                    "after_submission"
-                    if attempted is True
-                    else "before_submission" if attempted is False else "submission_unknown"
-                )
-                record("task.publication.aborted", reason=reason)
-            else:
-                record(
-                    "task.publication.closed",
-                    reason="task_closed" if receipt == TaskResultReceipt.TASK_CLOSED else "task_unavailable",
-                )
-            return sent
+
+    @staticmethod
+    def _record_publication_aborted(fl_ctx):
+        attempted = prepare(lambda: fl_ctx.get_prop(FLContextKey.TASK_RESULT_SUBMISSION_ATTEMPTED))
+        reason = (
+            "after_submission"
+            if attempted is True
+            else "before_submission" if attempted is False else "submission_unknown"
+        )
+        record("task.publication.aborted", reason=reason)
 
     def _send_task_result_impl(self, result: Shareable, task_id: str, fl_ctx: FLContext):
         # This fact spans retries: False proves the result never reached the
@@ -789,14 +806,28 @@ class ClientRunner(TBI):
 
             if self.run_abort_signal.triggered:
                 self.log_info(fl_ctx, "job aborted: stopped trying to send result")
+                self._record_publication_aborted(fl_ctx)
                 return False
 
             try_count += 1
             rc = self._try_send_result_once(result, task_id, fl_ctx)
 
             if rc == _TASK_CHECK_RESULT_OK:
+                receipt = prepare(lambda: fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT))
+                if receipt == TaskResultReceipt.RECEIVED:
+                    record("task.publication.received", reason="receipt_confirmed")
+                else:
+                    record("task.publication.acknowledged", reason="legacy_transport_acknowledgement")
                 return True
             elif rc == _TASK_CHECK_RESULT_TASK_GONE:
+                receipt = prepare(lambda: fl_ctx.get_prop(FLContextKey.TASK_RESULT_RECEIPT))
+                record(
+                    "task.publication.closed",
+                    reason="task_closed" if receipt == TaskResultReceipt.TASK_CLOSED else "task_unavailable",
+                )
+                return False
+            elif rc == _TASK_CHECK_RESULT_ABORTED:
+                self._record_publication_aborted(fl_ctx)
                 return False
             else:
                 # retry
@@ -809,7 +840,7 @@ class ClientRunner(TBI):
 
         while True:
             if self.run_abort_signal.triggered:
-                return _TASK_CHECK_RESULT_TASK_GONE
+                return _TASK_CHECK_RESULT_ABORTED
 
             rc = self._check_task_once(task_id, fl_ctx)
             if rc == _TASK_CHECK_RESULT_OK:
@@ -826,7 +857,7 @@ class ClientRunner(TBI):
         # Readiness checking may race an abort. Do not hand an already
         # cancelled publication to transport or mark it as an attempted send.
         if self.run_abort_signal.triggered:
-            return _TASK_CHECK_RESULT_TASK_GONE
+            return _TASK_CHECK_RESULT_ABORTED
 
         # try to send the result
         self.log_info(fl_ctx, f"start to send task result to {self.parent_target}")
@@ -1218,5 +1249,8 @@ class ClientRunner(TBI):
         task_name = request.get_header(ReservedHeaderKey.TASK_NAME)
         task_id = request.get_header(ReservedHeaderKey.TASK_ID)
         task = TaskAssignment(name=task_name, task_id=task_id, data=request)
-        reply = self._process_task(task, fl_ctx)
-        return reply
+        token = _auxiliary_task.set(True)
+        try:
+            return self._process_task(task, fl_ctx)
+        finally:
+            _auxiliary_task.reset(token)

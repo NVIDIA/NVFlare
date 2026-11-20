@@ -58,6 +58,12 @@ def _new_records(path):
     return events
 
 
+def _legacy_result_receipt(path):
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    (receipt,) = [record for record in records if record.get("message") == "received result from client 'site-1'"]
+    return receipt
+
+
 def _runner():
     runner = subject.ServerRunner.__new__(subject.ServerRunner)
     runner.job_id = "job-1"
@@ -234,7 +240,9 @@ def test_result_handling_outcomes_preserve_receipt_and_write_outside_gate(audit_
     action = "task.result.handling_error" if failure == "communicator" else "task.result.handling_returned"
     observed = [event for event in events if event["action"] == action]
     assert len(observed) == 1
-    assert observed[0]["reference"] == "client-result-event"
+    legacy_receipt = _legacy_result_receipt(path)
+    assert legacy_receipt["reference"] == "client-result-event"
+    assert observed[0]["reference"] == legacy_receipt["event_id"]
     assert ("task.result.filter_error" in [e["action"] for e in events]) == (failure == "filter")
     assert context.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     if failure == "callback":
@@ -242,14 +250,57 @@ def test_result_handling_outcomes_preserve_receipt_and_write_outside_gate(audit_
     assert task_audit.current_context() == task_audit.TaskAuditContext()
 
 
-def test_unfenced_unknown_result_does_not_gain_unverified_reference(audit_file):
+@pytest.mark.parametrize(
+    "peer_reference", ["private-forged-result-reference", {"value": "private-forged-result-reference"}]
+)
+def test_matched_result_uses_local_receipt_without_copying_peer_reference(audit_file, peer_reference):
+    _, path = audit_file
+    runner, assigned, context = _assignment()
+    result = _result(assigned)
+    result.set_header(ReservedHeaderKey.AUDIT_EVENT_ID, peer_reference)
+
+    runner.process_submission(assigned.client, "train", assigned.id, result, context)
+
+    assert context.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
+    assigned.task.result_received_cb.assert_called_once()
+    assert result.get_header(ReservedHeaderKey.AUDIT_EVENT_ID) == peer_reference
+    legacy_receipt = _legacy_result_receipt(path)
+    assert legacy_receipt["reference"] == str(peer_reference)
+    events = _new_records(path)
+    assert {event["action"] for event in events} == {
+        "task.result.received",
+        "task.result_manager.returned",
+        "task.result_callback.returned",
+        "task.result.handling_returned",
+    }
+    assert all(event["reference"] == legacy_receipt["event_id"] for event in events)
+    assert all(f"task_id={json.dumps(assigned.id)}" in event["message"] for event in events)
+
+
+def test_matched_result_keeps_approved_attribution_without_local_receipt(audit_file, monkeypatch):
+    _, path = audit_file
+    runner, assigned, context = _assignment()
+    monkeypatch.setattr(subject, "add_job_audit_event", Mock(return_value=""))
+
+    runner.process_submission(assigned.client, "train", assigned.id, _result(assigned), context)
+
+    assigned.task.result_received_cb.assert_called_once()
+    events = _new_records(path)
+    assert "task.result.handling_returned" in {event["action"] for event in events}
+    assert all("reference" not in event for event in events)
+    assert all(f"task_id={json.dumps(assigned.id)}" in event["message"] for event in events)
+
+
+@pytest.mark.parametrize("task_name,task_id", [("private-unknown-task", "private-unknown-id"), ("", "")])
+def test_unfenced_unknown_result_does_not_gain_unverified_reference(audit_file, task_name, task_id):
     _, path = audit_file
     runner, assigned, context = _assignment()
     result = Shareable()
     result.set_header(ReservedHeaderKey.AUDIT_EVENT_ID, "private-unverified-reference")
-    runner.process_submission(assigned.client, "private-unknown-task", "private-unknown-id", result, context)
-    (event,) = [e for e in _new_records(path) if e["action"] == "task.result.handling_returned"]
-    assert "reference" not in event and "task_id=" not in event.get("message", "")
+    runner.process_submission(assigned.client, task_name, task_id, result, context)
+    events = _new_records(path)
+    assert "task.result.handling_returned" in {event["action"] for event in events}
+    assert all("reference" not in event and "task_id=" not in event.get("message", "") for event in events)
     runner.current_wf.controller.communicator.controller.process_result_of_unknown_task.assert_called_once()
 
 
@@ -402,7 +453,7 @@ def test_result_filter_cannot_replace_approved_scope_or_workflow(audit_file, mon
     assert {event["action"] for event in observed} == owners
     assert all(event["scope"] == "research cohort" for event in events)
     assert all('workflow="workflow-1"' in event.get("message", "") for event in observed)
-    assert all(event["reference"] == "client-result-event" for event in observed)
+    assert all(event["reference"] == _legacy_result_receipt(path)["event_id"] for event in observed)
     assert context.get_prop(FLContextKey.EFFECTIVE_JOB_SCOPE_NAME) == "private-replacement-scope"
     assert context.get_prop(FLContextKey.TASK_RESULT_RECEIPT) == TaskResultReceipt.RECEIVED
     assigned.task.result_received_cb.assert_called_once()

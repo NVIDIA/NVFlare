@@ -23,7 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_filters
-from nvflare.fuel.sec.task_audit import build_context, code_status, collect_events, prepare, record
+from nvflare.fuel.sec.task_audit import build_context, collect_events, prepare, record, reply_status
 from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.private.fed.utils.fed_utils import get_target_names
 from nvflare.private.privacy_manager import Scope
@@ -210,11 +210,13 @@ class TaskController(FLComponent, ControllerSpec):
             # get the client task for the target
             for client_task in task.client_tasks:
                 if client_task.client.name == target:
-                    rc = reply.get_return_code()
                     if target in audit_sites:
+                        # Transport can synthesize an outcome for an unanswered request.
+                        # Capture the supplied status before result handling can change it.
                         self._audit_direct(
-                            "task.auxiliary.reply_received", audit_context, site=target, status=code_status(rc)
+                            "task.auxiliary.outcome_reported", audit_context, site=target, status=reply_status(reply)
                         )
+                    rc = reply.get_return_code()
                     if rc and rc == ReturnCode.OK:
                         # apply result filters
                         try:
