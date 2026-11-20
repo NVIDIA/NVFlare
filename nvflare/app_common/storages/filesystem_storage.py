@@ -18,14 +18,15 @@ import logging
 import os
 import shutil
 import stat
+import time
 import uuid
 from pathlib import Path
 from typing import List, Tuple
-from zipfile import ZipFile
+from zipfile import ZipFile, ZipInfo
 
 from nvflare.apis.storage import DATA, META, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
-from nvflare.fuel.utils.zip_utils import get_all_file_paths, normpath_for_zip
+from nvflare.fuel.utils.archive_source import open_archive_entry, walk_archive_directory
 from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
@@ -78,17 +79,44 @@ def _write(path: str, content, mv_file=True):
 
 
 def _write_multi(output_zip_file_name: str, content: List[str]):
-    """Build an archive without modifying its sources so a failed write can be safely retried."""
+    """Archive regular files and directories without following links or modifying the sources."""
     with ZipFile(output_zip_file_name, "w") as z:
-        for c in content:
-            if os.path.isfile(c):
-                z.write(c, arcname=os.path.basename(c))
-            elif os.path.isdir(c):
-                base = normpath_for_zip(c)
-                for full_path in get_all_file_paths(base):
-                    z.write(full_path, arcname=full_path[len(base) + 1 :])
+        for source in content:
+            source = os.fspath(source)
+            directory_only = source.endswith((os.sep, os.sep + os.curdir))
+            # Remove trailing separators and "." components without collapsing
+            # ".." through a caller-supplied parent directory.
+            source = os.fspath(Path(source)) if source else source
+            info = os.lstat(source)
+            if not directory_only and stat.S_ISREG(info.st_mode):
+                _write_zip_file(z, source, os.path.basename(source))
+            elif stat.S_ISDIR(info.st_mode):
+                with open_archive_entry(source, directory=True) as (root_fd, _):
+                    for dir_fd, relative_root, dirs, files in walk_archive_directory(
+                        root_fd, skip_unreadable_children=True
+                    ):
+                        for name in files:
+                            _write_zip_file(z, name, os.path.join(relative_root, name), dir_fd=dir_fd)
+                        for name, info in dirs.items():
+                            entry = _zip_entry(os.path.join(relative_root, name) + "/", info)
+                            entry.external_attr |= 0x10  # DOS directory flag
+                            z.writestr(entry, b"")
             else:
-                raise ValueError(f"items in content list must be existing file or directory paths but got {c!r}")
+                raise ValueError(f"items in content list must be regular file or directory paths but got {source!r}")
+
+
+def _zip_entry(name: str, info: os.stat_result) -> ZipInfo:
+    entry = ZipInfo(name, time.localtime(info.st_mtime)[:6])
+    entry.external_attr = (info.st_mode & 0xFFFF) << 16
+    return entry
+
+
+def _write_zip_file(z: ZipFile, source: str, name: str, *, dir_fd=None):
+    with open_archive_entry(source, dir_fd=dir_fd) as (fd, info):
+        entry = _zip_entry(name, info)
+        entry.file_size = info.st_size
+        with os.fdopen(fd, "rb", closefd=False) as src, z.open(entry, "w") as dst:
+            shutil.copyfileobj(src, dst)
 
 
 def _read(path: str) -> bytes:

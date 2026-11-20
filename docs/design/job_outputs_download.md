@@ -429,8 +429,9 @@ Known limitations:
 - The command, its authorization and its permission category are unchanged,
   so no new data becomes reachable. Outputs-only download returns a subset of what
   `download_job` already returns.
-- The server links only files under the job's workspace folders, and never
-  treats a symlink as an output.
+- The server stages regular files from the job's workspace folders. The filesystem
+  store omits symlinks and special files from both output and workspace archives,
+  including when the workspace is archived whole.
 - The job's credentials (`job_cert/`) are removed before archiving, as today,
   and are never treated as outputs.
 - The admin client unzips a downloaded archive only into a plain folder name
@@ -451,17 +452,17 @@ Unit tests:
   deployment; when it cannot be read, the workspace is stored whole. A retry that cannot read the job clears a record
   an earlier attempt left.
 - At job end, hard-link folders name the outputs and the rest at their paths,
-  beside each workspace folder, without changing it: the same file, logs and
-  symlinks with the rest. The outputs are stored as
+  beside each workspace folder, without changing it. Regular files such as logs
+  stay with the rest, and symlinks are skipped. The outputs are stored as
   `outputs` and the rest as `workspace`. The workspace is archived whole when
   nothing was produced, links cannot be made, or `save_job_outputs` fails or
   saves nothing. A retry after a failed workspace save stores the same outputs
   again, and leftover links from an interrupted attempt are replaced.
-- The rest is linked from a fresh walk after the outputs are stored; relative
-  symlinks to outputs still resolve and linked folders stay links; an
-  unreadable folder stores the workspace whole; the split is recorded in the
-  job's meta, cleared by a later fallback, and skipped for job stores without
-  `save_job_outputs`; a submitted record is removed.
+- The rest is linked from a fresh walk after the outputs are stored. An
+  unreadable child folder triggers a whole-workspace save that keeps the directory
+  entry and the readable siblings. The split is recorded
+  in the job's meta, cleared by a later fallback, and skipped for job stores
+  without `save_job_outputs`. A submitted record is removed.
 - A source replaced right after its link was made, a new output written after
   the outputs are linked, or a stored output replaced or removed meanwhile,
   stores the workspace whole; a server log written meanwhile does not; a failed

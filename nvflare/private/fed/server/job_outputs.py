@@ -19,8 +19,8 @@ deployed with the job and left unchanged (its server app and job files), the ser
 Python's ``__pycache__`` folders.
 
 When a job ends, the server stores its run folder as the workspace archive and deletes the folder. It first builds two
-folders of hard links next to each workspace folder: one naming the output files, one naming everything else. It
-stores the first as the outputs archive and the second as the workspace archive, so every file is stored once. The
+folders of hard links next to each workspace folder: one naming the output files, one naming the other regular files.
+It stores the first as the outputs archive and the second as the workspace archive. The
 run folder itself is never changed until both are stored, so a retry or a crash loses nothing: the link folders are
 only extra names for the same files.
 
@@ -31,11 +31,13 @@ download sends both, unzipped into the same ``workspace/`` folder.
 import os
 import re
 import shutil
+import stat
 import zlib
 from typing import Collection, Dict, List, Mapping, Optional, Tuple
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.job_def import JobMetaKey, RunStatus
+from nvflare.fuel.utils.archive_source import open_archive_entry, walk_archive_directory
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 
 # Files the server writes for itself, not the job's result. A log file may carry a ".<n>" rotation suffix and the
@@ -84,6 +86,8 @@ def is_produced(
     deployed: Optional[DeployedFiles] = None,
     path: Optional[str] = None,
     clients: Collection[str] = (),
+    *,
+    dir_fd: Optional[int] = None,
 ) -> bool:
     """Whether a file at ``relative`` (a ``/``-separated path in a workspace folder) was produced by the job.
 
@@ -97,7 +101,7 @@ def is_produced(
     if relative in _DEPLOYED_RUN_FILES:
         return False
     if deployed and relative in deployed:
-        return path is not None and _differs(path, deployed[relative])
+        return path is not None and _differs(path, deployed[relative], dir_fd)
     parts = relative.split("/")
     if any(part in _SYSTEM_FOLDERS for part in parts[:-1]):
         return False
@@ -110,14 +114,15 @@ def is_produced(
     return not (len(parts) == 2 and parts[0] in clients and _SYSTEM_LOG_RE.match(name))
 
 
-def _differs(path: str, deployed: Tuple[int, int]) -> bool:
+def _differs(path: str, deployed: Tuple[int, int], dir_fd: Optional[int]) -> bool:
     size, crc = deployed
-    if os.path.getsize(path) != size:
-        return True
-    value = 0
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            value = zlib.crc32(chunk, value)
+    with open_archive_entry(path, dir_fd=dir_fd) as (fd, info):
+        if info.st_size != size:
+            return True
+        value = 0
+        with os.fdopen(fd, "rb", closefd=False) as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                value = zlib.crc32(chunk, value)
     return value != crc
 
 
@@ -155,25 +160,17 @@ class SplitWorkspace:
         found = set()
         for source_dir, output_dir, linked in zip(self.source_dirs, self.output_dirs, self._linked):
             os.makedirs(output_dir)
-            for root, _dirs, files in _walk(source_dir):
-                relative_root = os.path.relpath(root, source_dir)
-                for name in files:
-                    source = os.path.join(root, name)
-                    relative = os.path.normpath(os.path.join(relative_root, name))
-                    if self._is_output(source, relative):
-                        found.add(relative.replace(os.sep, "/"))
-                        target = os.path.join(output_dir, relative)
-                        _link(source, target)
-                        # the file as stored: read from the link, so a replacement of the source in between is
-                        # seen as a change by link_rest
-                        linked[relative] = _identity(target)
+            with open_archive_entry(source_dir, directory=True) as (root_fd, _):
+                for dir_fd, relative_root, _dirs, files in walk_archive_directory(root_fd):
+                    for name, info in files.items():
+                        relative = os.path.join(relative_root, name)
+                        if self._is_output(relative, name, dir_fd):
+                            found.add(relative.replace(os.sep, "/"))
+                            linked[relative] = _link(name, os.path.join(output_dir, relative), dir_fd, info)
         self.found = sorted(found)
 
-    def _is_output(self, source: str, relative: str) -> bool:
-        # a symlink is never an output: it stays with the rest
-        return not os.path.islink(source) and is_produced(
-            relative.replace(os.sep, "/"), self.deployed, source, self.clients
-        )
+    def _is_output(self, relative: str, name: str, dir_fd: int) -> bool:
+        return is_produced(relative.replace(os.sep, "/"), self.deployed, name, self.clients, dir_fd=dir_fd)
 
     def link_rest(self):
         """Name everything but the outputs in the rest folders, from a fresh walk of the workspace.
@@ -191,27 +188,22 @@ class SplitWorkspace:
             seen = set()
             shutil.rmtree(rest_dir, ignore_errors=True)
             os.makedirs(rest_dir)
-            for root, dirs, files in _walk(source_dir):
-                relative_root = os.path.relpath(root, source_dir)
-                for name in dirs:
-                    folder = os.path.join(root, name)
-                    if os.path.islink(folder):
-                        _link(folder, os.path.join(rest_dir, relative_root, name))  # a linked folder stays a link
-                    else:
+            with open_archive_entry(source_dir, directory=True) as (root_fd, _):
+                for dir_fd, relative_root, dirs, files in walk_archive_directory(root_fd):
+                    for name in dirs:
                         os.makedirs(os.path.join(rest_dir, relative_root, name), exist_ok=True)
-                for name in files:
-                    source = os.path.join(root, name)
-                    relative = os.path.normpath(os.path.join(relative_root, name))
-                    if relative in linked:
-                        seen.add(relative)
-                        if _identity(source) != linked[relative]:
-                            raise OSError(f"output {relative} changed after it was stored")
-                        continue  # stored in the outputs archive
-                    if relative in stored:
-                        raise OSError(f"{relative} is an output in one workspace folder and not in another")
-                    if self._is_output(source, relative):
-                        raise OSError(f"output {relative} was created after the outputs were stored")
-                    _link(source, os.path.join(rest_dir, relative))
+                    for name, info in files.items():
+                        relative = os.path.join(relative_root, name)
+                        if relative in linked:
+                            seen.add(relative)
+                            if _identity(info) != linked[relative]:
+                                raise OSError(f"output {relative} changed after it was stored")
+                            continue  # stored in the outputs archive
+                        if relative in stored:
+                            raise OSError(f"{relative} is an output in one workspace folder and not in another")
+                        if self._is_output(relative, name, dir_fd):
+                            raise OSError(f"output {relative} was created after the outputs were stored")
+                        _link(name, os.path.join(rest_dir, relative), dir_fd, info)
             if seen != set(linked):
                 raise OSError("an output was removed after it was stored")
 
@@ -226,33 +218,18 @@ class SplitWorkspace:
         return failed
 
 
-def _walk(source_dir: str):
-    def _raise(error):
-        raise error  # an unreadable folder: store the workspace whole rather than lose its files
-
-    return os.walk(source_dir, onerror=_raise)
-
-
-def _identity(path: str) -> Tuple[int, int, int, int]:
-    # the file and its content as stored: a replacement changes the inode, an append or overwrite the size or time
-    info = os.stat(path)
+def _identity(info: os.stat_result) -> Tuple[int, int, int, int]:
+    # A replacement changes the inode. An append or overwrite changes the size or time.
     return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns
 
 
-def _link(source: str, target: str):
+def _link(source: str, target: str, dir_fd: int, info: os.stat_result):
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    if os.path.islink(source):
-        # point at what the original resolves to, in the untouched workspace, so it reads the same as before
-        destination = os.readlink(source)
-        if not os.path.isabs(destination):
-            # joined, never normalized: "a/../b" through a linked folder "a" must resolve as the original does
-            folder = os.path.dirname(source)
-            if not os.path.isabs(folder):
-                folder = os.path.join(os.getcwd(), folder)
-            destination = os.path.join(folder, destination)
-        os.symlink(destination, target)
-    else:
-        os.link(source, target)  # another name for the same file: nothing is copied
+    os.link(source, target, src_dir_fd=dir_fd, follow_symlinks=False)
+    linked = os.lstat(target)
+    if not stat.S_ISREG(linked.st_mode) or not os.path.samestat(info, linked):
+        raise OSError(f"archive source {source} was replaced while linking")
+    return _identity(linked)
 
 
 def link_job_outputs(
