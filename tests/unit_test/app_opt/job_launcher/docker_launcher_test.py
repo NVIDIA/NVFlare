@@ -63,27 +63,17 @@ _docker_models_containers.RUN_HOST_CONFIG_KWARGS = ["shm_size", "ipc_mode", "dev
 _docker_models.containers = _docker_models_containers
 _docker_mock.models = _docker_models
 
-for _mod_name, _mod_obj in [
-    ("docker", _docker_mock),
-    ("docker.errors", _docker_errors),
-    ("docker.types", _docker_types),
-    ("docker.models", _docker_models),
-    ("docker.models.containers", _docker_models_containers),
-]:
-    sys.modules[_mod_name] = _mod_obj
-
-# Patch docker.from_env and docker.errors at import time so DockerJobLauncher.__init__
-# doesn't actually try to connect to the Docker daemon.
 _docker_mock.from_env = MagicMock
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
+from nvflare.app_opt.job_launcher import docker_launcher as docker_module
 from nvflare.app_opt.job_launcher.docker_launcher import (
     ClientDockerJobLauncher,
     DockerJobHandle,
@@ -95,6 +85,24 @@ from nvflare.app_opt.job_launcher.docker_launcher import (
 )
 from nvflare.utils.job_launcher_utils import get_resource_manager_spec
 from tests.timing_utils import isolate_time
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _isolated_docker_boundary():
+    # Scope the stub to this suite, including when another suite imported the
+    # launcher first. Collection must not replace the SDK for unrelated tests.
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(docker_module, "docker", _docker_mock)
+        for name, module in (
+            ("docker", _docker_mock),
+            ("docker.errors", _docker_errors),
+            ("docker.types", _docker_types),
+            ("docker.models", _docker_models),
+            ("docker.models.containers", _docker_models_containers),
+        ):
+            patcher.setitem(sys.modules, name, module)
+        yield
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1862,8 +1870,8 @@ class TestDockerJobLauncherStudyRuntime:
 
 def test_local_job_mode_still_delegates_to_docker_launcher():
     launcher = _make_launcher()
-    context = MagicMock()
-    context.get_identity_name.return_value = "site-1"
+    context = FLContext()
+    context.set_prop(ReservedKey.IDENTITY_NAME, "site-1")
     meta = {"resource_spec": {"site-1": {"num_of_gpus": 1}}}
     with patch.object(DockerJobLauncher, "launch_job", return_value="job-handle") as launch:
         assert launcher.launch_job(meta, context) == "job-handle"

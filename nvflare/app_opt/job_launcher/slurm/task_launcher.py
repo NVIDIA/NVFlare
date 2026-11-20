@@ -18,6 +18,7 @@ the backend worker command are separate integration prerequisites; see the
 deployment documentation. It never interprets job metadata as site policy.
 """
 
+import copy
 import hashlib
 import ipaddress
 import json
@@ -32,7 +33,7 @@ import time
 from dataclasses import dataclass, replace
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.job_launcher_spec import JobProcessEnv
 from nvflare.apis.task_launcher_spec import (
     TaskExecutionPhase,
@@ -54,19 +55,41 @@ from nvflare.app_opt.job_launcher.slurm.config import (
     LaunchPlan,
     LookupStatus,
     SlurmConfig,
+    _require_int,
     _require_positive_number,
     _require_string,
     normalize_slurm_directives,
     normalize_slurm_executables,
     normalize_slurm_workspace_path,
 )
+from nvflare.app_opt.job_launcher.slurm.launcher import (
+    ClientSlurmJobLauncher,
+    _resolve_resources,
+    effective_slurm_study_values,
+    load_slurm_study_runtime,
+)
 from nvflare.app_opt.job_launcher.slurm.manager import SlurmJobManager, _ensure_dir, _is_terminal, _write_exclusive
 from nvflare.app_opt.job_launcher.slurm.scheduler_client import _command_diagnostic
 from nvflare.app_opt.job_launcher.slurm.task_scheduler import SlurmTaskCliAdapter, submission_was_rejected
+from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN, SlurmTaskService
 from nvflare.client.api_spec import CLIENT_API_TYPE_KEY
 from nvflare.client.cell.bootstrap import BOOTSTRAP_FILE_ENV_VAR
+from nvflare.job_config.task_execution import reject_job_gpu_reservation
+from nvflare.private.fed.client.task_runtime import TaskExecutionBinding
 from nvflare.private.fed.task_worker.protocol import CELL_SESSION_CREDENTIALS, _open_regular, read_bootstrap
 from nvflare.private.fed.utils.job_cert_utils import job_cert_paths
+from nvflare.utils.job_launcher_utils import (
+    get_compute_resource_manager_spec,
+    get_job_launcher_spec,
+    get_launcher_resource_spec,
+    get_portable_resource_spec,
+    validate_portable_resource_conflicts,
+)
+
+TASK_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher"
+CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher"
+DOCKER_CJ_LAUNCHER_PATH = "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher"
+PROCESS_CJ_LAUNCHER_PATH = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
 
 WORKER_MODULE = "nvflare.private.fed.app.client.task_worker_process"
 
@@ -550,6 +573,97 @@ class SlurmTaskHandle(TaskHandleSpec):
         return self.cancel()
 
 
+def component_args(config):
+    if not isinstance(config, dict):
+        raise ValueError("Slurm site component must be a dictionary")
+    args = config.get("args", {})
+    if not isinstance(args, dict):
+        raise ValueError("Slurm site component args must be a dictionary")
+    args = args.get("class_attributes", args)
+    if not isinstance(args, dict):
+        raise ValueError("Slurm site class_attributes must be a dictionary")
+    return args
+
+
+def component_path(config):
+    if not isinstance(config, dict):
+        raise ValueError("Slurm site component must be a dictionary")
+    path = config.get("path", config.get("class_path"))
+    # deploy prepare uses the public package re-export of this exact class.
+    if path == "nvflare.app_opt.job_launcher.slurm.ClientSlurmJobLauncher":
+        return CJ_LAUNCHER_PATH
+    return path
+
+
+def validate_slurm_site(launcher, site_config):
+    if not isinstance(site_config, dict) or not isinstance(site_config.get("components", []), list):
+        raise ValueError("Slurm canonical site configuration must contain a component list")
+    components = site_config.get("components", [])
+    matches = [item for item in components if str(component_path(item)).endswith("JobLauncher")]
+    runtimes = {PROCESS_CJ_LAUNCHER_PATH: "process", DOCKER_CJ_LAUNCHER_PATH: "docker", CJ_LAUNCHER_PATH: "slurm"}
+    if len(matches) != 1 or component_path(matches[0]) not in runtimes:
+        raise ValueError(
+            "Slurm task profile requires exactly one supported Process, Docker or Slurm client job launcher; "
+            "different CP/CJ job launchers cannot be combined"
+        )
+    runtime = runtimes[component_path(matches[0])]
+    if runtime == "process":
+        return runtime
+    if runtime == "docker":
+        from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher
+
+        args = dict(component_args(matches[0]))
+        # Ordinary Docker sites obtain this from CP's environment. CJ has no
+        # parent-only environment, so validate against the native site path.
+        args["workspace"] = args.get("workspace") or launcher.manager.config.workspace_path
+        cj = ClientDockerJobLauncher(**args)
+        cj._validate_task_coordinator_profile(launcher.manager.config.workspace_path, network=cj.network)
+        return runtime
+    cj = ClientSlurmJobLauncher(**component_args(matches[0]))
+    if cj.config.workspace_path != launcher.manager.config.workspace_path or cj.config.sandbox != "none":
+        raise ValueError("Slurm CP/CJ/task profile requires the same bare shared workspace")
+    if cj.config.image:
+        raise ValueError("Slurm task profile does not support a CJ container image")
+    return runtime
+
+
+def task_resources(launcher, meta, site_name):
+    """Resolve native/default resources without retaining whole-job GPU tokens."""
+    validate_portable_resource_conflicts(meta)
+    reject_job_gpu_reservation(meta, site_name)
+    compute_admission = get_compute_resource_manager_spec(meta, site_name)
+    unsupported = set(compute_admission) - {"num_of_gpus", "mem_per_gpu_in_GiB"}
+    if unsupported or compute_admission.get("mem_per_gpu_in_GiB", 0):
+        raise ValueError("Slurm task allocations cannot enforce custom resource-manager or GPU-memory requirements")
+    portable = get_portable_resource_spec(meta, site_name)
+    native = get_job_launcher_spec(meta, site_name, "slurm")
+    if native.get("nodes", 1) != 1 or native.get("additional_node_command"):
+        raise ValueError("Slurm task profile supports one node without additional_node_command")
+    if native.get("image"):
+        raise ValueError("Slurm task profile does not support container images")
+    default = launcher.resources
+    # RM admission drops zero GPU counts; preserve an explicit legacy zero.
+    compute_gpus = get_launcher_resource_spec(meta, site_name, "process").get(
+        "num_of_gpus", compute_admission.get("num_of_gpus", default.gpu_count)
+    )
+    gpu_count = native.get("gpus_per_node", portable.get("num_of_gpus", compute_gpus))
+    _require_int(gpu_count, "gpus_per_node", 0)
+    spec = {"cpus_per_node": int(default.cpu_cores or 1), **native}
+    if default.memory_mb is not None:
+        spec.setdefault("mem_per_node", default.memory_mb)
+    spec["gpus_per_node"] = gpu_count
+    resolved = _resolve_resources(
+        meta, site_name, "none", launcher.manager.config.pending_timeout, spec=spec, allow_zero_gpus=True
+    )
+    if resolved.cpus_per_node is None or resolved.mem_per_node is None:
+        raise ValueError("Slurm task allocations require CPU and memory requests, including GPU tasks")
+    return replace(resolved, gpus_per_node=gpu_count)
+
+
+def resource_request(resources):
+    return TaskResourceRequest(resources.cpus_per_node, resources.mem_per_node, resources.gpus_per_node or 0)
+
+
 class _SlurmTaskBackend(TaskLauncherSpec):
     """Trusted site adapter; construction does not contact or submit to Slurm.
 
@@ -585,6 +699,7 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         worker_listener_host=None,
     ):
         super().__init__()
+        self.cj_runtime = "slurm"  # Replaced from the canonical job launcher when policy loads.
         if shared_filesystem is not True or cgroup_enforced is not True:
             raise ValueError("Slurm tasks require coherent shared paths and enforced Slurm cgroup tracking")
         config = SlurmConfig(
@@ -625,6 +740,20 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         self._binding_lock = threading.Lock()
         self._initialization_lock = threading.Lock()
 
+    def _validate_cp_host_listener(self):
+        if self.cj_runtime in ("docker", "process"):
+            worker_listener_host = self.worker_listener_host
+            if not worker_listener_host:
+                raise ValueError(f"{self.cj_runtime} CJ requires an explicit worker_listener_host on the CP host")
+            host = self.get_worker_listener_host()
+            try:
+                loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                name = host.rstrip(".").lower()
+                loopback = name == "localhost" or name.endswith(".localhost")
+            if loopback:
+                raise ValueError(f"{self.cj_runtime} CJ worker_listener_host must be reachable from compute nodes")
+
     def get_worker_listener_host(self):
         """Advertise this CJ's host to workers in independent Slurm allocations."""
         host = self.worker_listener_host or socket.getfqdn()
@@ -647,13 +776,10 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         return host
 
     def validate_site_config(self, site_config):
-        from nvflare.app_opt.job_launcher.slurm.task_policy import validate_slurm_site
-
-        validate_slurm_site(self, site_config)
+        self.cj_runtime = validate_slurm_site(self, site_config)
+        self._validate_cp_host_listener()
 
     def runtime_policy(self, meta, *, runtime=None):
-        from nvflare.app_opt.job_launcher.slurm.launcher import effective_slurm_study_values, load_slurm_study_runtime
-
         config = self._site_config
         if runtime is None:
             runtime = load_slurm_study_runtime(config, meta.get("study"), self.logger)
@@ -679,8 +805,6 @@ class _SlurmTaskBackend(TaskLauncherSpec):
         )
 
     def bind_job(self, job_id, site_name, workspace, meta, *, runtime=None):
-        from nvflare.app_opt.job_launcher.slurm.task_policy import task_resources
-
         if (
             not job_id
             or not site_name
@@ -761,8 +885,6 @@ class _SlurmTaskBackend(TaskLauncherSpec):
             or os.stat(artifact_root).st_dev != os.stat(root).st_dev
         ):
             raise TaskLauncherError("Slurm artifacts/checkpoints must share the canonical workspace filesystem")
-        from nvflare.app_opt.job_launcher.slurm.task_policy import resource_request
-
         if not request.resources.is_empty() and request.resources != resource_request(binding.resources):
             raise TaskLauncherError("Slurm staged resources differ from the owning START_RUN binding")
         return replace(
@@ -810,6 +932,25 @@ class _SlurmTaskBackend(TaskLauncherSpec):
     max_attempts = 10000
 
 
+def _prepare_task_binding(job_meta, fl_ctx, options, *, launcher_config, workspace=None):
+    """Bind the CP's physical backend independently of the CJ's proxy."""
+    workspace = workspace or fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+    backend = _SlurmTaskBackend(**component_args(launcher_config))
+    backend.bind_job(job_meta[JobConstants.JOB_ID], fl_ctx.get_identity_name(), workspace, job_meta)
+    environment = dict(options.environment or {})
+    for name in tuple(environment):
+        if name.startswith(("SLURM_", "SBATCH_", "SQUEUE_", "SACCT_", "SCANCEL_")):
+            environment.pop(name)
+    return TaskExecutionBinding(
+        backend,
+        SlurmTaskService,
+        ENV_TASK_OWNER,
+        ENV_TASK_TOKEN,
+        copy.deepcopy(job_meta),
+        replace(options, environment=environment),
+    )
+
+
 class SlurmTaskLauncher(_SlurmTaskBackend):
     """CJ proxy; CP retains every accepted allocation through CJ loss."""
 
@@ -820,7 +961,9 @@ class SlurmTaskLauncher(_SlurmTaskBackend):
         from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskClient
 
         if event_type == EventType.START_RUN:
-            if os.environ.get(SLURM_CHILD_PROCESS_ENV) != "1" or not os.environ.get("SLURM_JOB_ID", "").isdigit():
+            if self.cj_runtime == "slurm" and (
+                os.environ.get(SLURM_CHILD_PROCESS_ENV) != "1" or not os.environ.get("SLURM_JOB_ID", "").isdigit()
+            ):
                 raise TaskLauncherError("Slurm task proxy requires a Slurm Client Job allocation")
             super().handle_event(event_type, fl_ctx)
             self._client = SlurmTaskClient(

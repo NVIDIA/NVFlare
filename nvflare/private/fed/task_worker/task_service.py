@@ -43,6 +43,7 @@ from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 _TOPIC = "request"
 _MAX_MESSAGE = 65536
 _CJ_OBSERVATION_INTERVAL = 10.0
+_MANAGED_CJ_OBSERVATION_INTERVAL = 1.0
 logger = logging.getLogger(__name__)
 
 
@@ -90,12 +91,64 @@ class _Job:
         self.released = False
         self.on_done = None
         self.cj_handle = None
+        self.cj_launch_pending = False
+        self.manage_cj = False
+        self.cj_settled = False
+        self._cj_cleanup_pending = False
+        self._cj_cleanup_warning_logged = False
+        self.cj_control_thread = None
+        self.released_event = threading.Event()
 
     def attach_cj(self, handle):
         with self.lock:
             self.cj_handle = handle
             self.next_cj_observation = 0.0
         self.wake.set()
+
+    def finish_cj_launch(self):
+        with self.lock:
+            self.cj_launch_pending = False
+        self.wake.set()
+
+    def terminate_cj(self):
+        """Request cleanup without blocking the caller on coordinator I/O."""
+        self.release()
+        self.observe_cj()
+
+    def _control_cj(self, handle, cleanup):
+        try:
+            if not cleanup:
+                if not self._cj_is_dead(handle):
+                    return
+                self.release()
+                cleanup = True
+            # Confirm physical exit in the same observation. An exited Process
+            # leader can still own children that need group termination.
+            if handle._is_cleanup_complete() is not True:
+                handle.terminate()
+            settled = handle._is_cleanup_complete() is True
+            with self.lock:
+                self.cj_settled = settled
+        except Exception:
+            # Unavailable control cannot prove death; retain this job for retry.
+            pass
+        finally:
+            if cleanup:
+                with self.lock:
+                    # Give a successful signal a second observation to settle.
+                    warn = self._cj_cleanup_pending and not self.cj_settled
+                    self._cj_cleanup_pending = not self.cj_settled
+                if warn:
+                    self.warn_cleanup_pending()
+            if cleanup and self.cj_settled:
+                self.wake.set()
+
+    def warn_cleanup_pending(self):
+        with self.lock:
+            if self._cj_cleanup_warning_logged:
+                return
+            self._cj_cleanup_warning_logged = True
+        logger.warning("Coordinator cleanup unconfirmed for job %s; CP retains ownership and retries", self.job_id)
 
     def close(self):
         with self.lock:
@@ -107,7 +160,10 @@ class _Job:
     def release(self):
         self.close()
         with self.lock:
+            if not self.released:
+                self.next_cj_observation = 0.0
             self.released = True
+            self.released_event.set()
         self.wake.set()
 
     def _cj_is_dead(self, handle):
@@ -120,14 +176,26 @@ class _Job:
         with self.lock:
             handle, released = self.cj_handle, self.released
             now = time.monotonic()
-            if released or handle is None or now < self.next_cj_observation:
+            cleanup = self.manage_cj and released and not self.cj_settled
+            if handle is None or (released and not cleanup) or now < self.next_cj_observation:
+                return
+            if self.manage_cj:
+                if self.cj_control_thread is not None and self.cj_control_thread.is_alive():
+                    return
+                self.next_cj_observation = now + _MANAGED_CJ_OBSERVATION_INTERVAL
+                # One in-flight operation, owned by this job. A stalled Docker
+                # daemon must not prevent cancellation of Slurm task workers.
+                self.cj_control_thread = threading.Thread(
+                    target=self._control_cj, args=(handle, cleanup), name="cj-control", daemon=True
+                )
+                self.cj_control_thread.start()
                 return
             self.next_cj_observation = now + _CJ_OBSERVATION_INTERVAL
+        # Keep the native Slurm and Kubernetes observation paths unchanged.
         try:
             if self._cj_is_dead(handle):
                 self.release()
         except Exception:
-            # An unavailable scheduler cannot prove CJ death. The owner remains.
             pass
 
     def run(self):
@@ -180,14 +248,24 @@ class _Job:
                 except Exception as error:
                     logger.warning("CP task observation failed for %s: %s", self.job_id, type(error).__name__)
             with self.lock:
-                done = self.released and all(a.status.settled for a in self.attempts.values())
+                done = (
+                    self.released
+                    and not self.cj_launch_pending
+                    and (not self.manage_cj or self.cj_handle is None or self.cj_settled)
+                    and (self.cj_control_thread is None or not self.cj_control_thread.is_alive())
+                    and all(a.status.settled for a in self.attempts.values())
+                )
                 settlement_waiting = any(
                     a.settlement_wait_until > time.monotonic() and not a.status.settled for a in self.attempts.values()
                 )
             if done:
                 self.on_done()
                 return
-            self.wake.wait(min(self.backend.poll_interval, 1.0) if settlement_waiting else self.backend.poll_interval)
+            self.wake.wait(
+                min(self.backend.poll_interval, 1.0)
+                if settlement_waiting or self.manage_cj
+                else self.backend.poll_interval
+            )
             self.wake.clear()
 
 
@@ -222,8 +300,9 @@ class CPTaskService:
                 cell.__dict__[key] = service
             return service
 
-    def add_job(self, backend, job_id, site_name, token):
+    def add_job(self, backend, job_id, site_name, token, *, cj_launch_pending=False):
         job = self.job_class(backend, job_id, site_name, token, FQCN.join([self.cell.get_fqcn(), job_id]))
+        job.cj_launch_pending = job.manage_cj = cj_launch_pending
         with self.lock:
             if job_id in self.jobs:
                 raise ValueError(f"CP already owns this {self.backend_name} task job")

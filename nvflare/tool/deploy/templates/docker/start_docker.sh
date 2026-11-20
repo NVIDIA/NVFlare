@@ -142,6 +142,13 @@ if [ "${CUDA_VISIBLE_DEVICES+x}" = "x" ]; then
     GPU_ENV_ARGS=(-e "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES")
 fi
 
+# Slurm task workers use the native shared path. Keep it visible to CP as
+# an alias while preserving the ordinary Docker workspace and job-mode layout.
+SHARED_WORKSPACE_ARGS=()
+if [ "$HOST_WORKSPACE" != "@@NVFLARE_WORKSPACE_MOUNT_PATH@@" ]; then
+    SHARED_WORKSPACE_ARGS=(-v "$HOST_WORKSPACE:$HOST_WORKSPACE")
+fi
+
 docker "${DOCKER_CLI_ARGS[@]}" run --name "$CONTAINER_NAME" \
     "${GPU_ENV_ARGS[@]}" \
     --user "$(id -u):$(id -g)" \
@@ -149,6 +156,7 @@ docker "${DOCKER_CLI_ARGS[@]}" run --name "$CONTAINER_NAME" \
     --network "$NETWORK_NAME" \
     "${NETWORK_ALIAS_ARGS[@]}" \
 @@NVFLARE_NETWORK_ALIAS@@    -v "$HOST_WORKSPACE":@@NVFLARE_WORKSPACE_MOUNT_PATH@@ \
+    "${SHARED_WORKSPACE_ARGS[@]}" \
     --mount "type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock" \
     -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" \
     -e NVFL_DOCKER_NETWORK="$NETWORK_NAME" \
