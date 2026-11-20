@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.fl_constant import AdminCommandNames
-from nvflare.fuel.flare_api.api_spec import CommandError, MonitorReturnCode, TargetType
+from nvflare.fuel.flare_api.api_spec import CommandError, InvalidArgumentError, MonitorReturnCode, TargetType
 from nvflare.fuel.hci.client.api import ResultKey
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
@@ -127,6 +127,32 @@ class TestGetResources:
         with patch.object(session, "_do_command", return_value=self._reply(payload)) as mock_cmd:
             assert session.get_study_resources() == payload
         mock_cmd.assert_called_once_with(AdminCommandNames.GET_STUDY_RESOURCES, enforce_meta=False)
+
+    def test_study_time_arguments(self):
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=self._reply({})) as send:
+            session.get_study_resources(since="2026-09-30T20:00:00.123456789-04:00", until="2026-11-01")
+        assert split_to_args(send.call_args.args[0]) == [
+            AdminCommandNames.GET_STUDY_RESOURCES,
+            "--since",
+            "2026-10-01T00:00:00.123456789+00:00",
+            "--until",
+            "2026-11-01T00:00:00+00:00",
+        ]
+
+    @pytest.mark.parametrize(
+        "bounds",
+        [
+            {"since": "yesterday"},
+            {"until": "2026-02-29"},
+            {"since": 5},
+            {"since": "2026-10-01", "until": "2026-09-30T20:00-04:00"},
+            {"since": "2026-11-01", "until": "2026-10-01"},
+        ],
+    )
+    def test_invalid_study_time_arguments(self, bounds):
+        with pytest.raises(InvalidArgumentError, match="since|until"):
+            _make_session().get_study_resources(**bounds)
 
 
 class TestDeleteJob:

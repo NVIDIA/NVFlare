@@ -45,6 +45,7 @@ from nvflare.fuel.hci.cmd_arg_utils import (
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, ReplyKeyword
 from nvflare.fuel.utils.deprecated import warn_deprecated
 from nvflare.fuel.utils.log_utils import get_obj_logger, validate_site_log_config
+from nvflare.fuel.utils.time_utils import job_start_bounds
 
 from .api_spec import (
     AuthenticationError,
@@ -450,7 +451,7 @@ class Session(SessionSpec):
         reply = self._do_command(join_args(parts), enforce_meta=False)
         return self._get_dict_data(reply)
 
-    def get_study_resources(self) -> dict:
+    def get_study_resources(self, *, since: str | None = None, until: str | None = None) -> dict:
         """Return resource statistics across accessible retained jobs in the active study.
 
         See :ref:`flare_api_initialization` for study selection. Each job requires
@@ -462,12 +463,23 @@ class Session(SessionSpec):
         timeout takes precedence. Timing out does not cancel the server's
         sequential scan.
 
+        Args:
+            since: inclusive job start, as a date or ISO timestamp (default timezone UTC)
+            until: exclusive job start, in the same format; matching jobs contribute in full
+
         Returns: a dict describing the study-level rollup (``jobs``,
             ``coverage``, and ``totals``). See :ref:`resource_statistics`
             for the field reference.
 
         """
-        reply = self._do_command(AdminCommandNames.GET_STUDY_RESOURCES, enforce_meta=False)
+        try:
+            bounds = job_start_bounds(since, until)
+        except ValueError as e:
+            raise InvalidArgumentError(str(e)) from e
+        parts = [AdminCommandNames.GET_STUDY_RESOURCES]
+        for key, value in bounds.items():
+            parts.extend([f"--{key}", value])
+        reply = self._do_command(join_args(parts), enforce_meta=False)
         return self._get_dict_data(reply)
 
     def list_jobs(

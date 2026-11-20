@@ -194,6 +194,57 @@ def test_registered_single_job_command_matches_study_policy(policy, command, sub
     assert conn.app_ctx.job_def_manager.get_storage_for_download.call_count == int(authorized)
 
 
+@pytest.mark.parametrize(
+    "options, matching, running_count",
+    [
+        ("--since 2026-09-01 --until 2026-10-01", 1, 0),
+        ("--since 2026-10-01 --until 2026-11-01", 2, 1),
+        ("--since 2026-09-30T20:00:00-04:00", 2, 1),
+        ("--until 2026-10-01T00:00:00", 1, 0),
+    ],
+)
+def test_study_bounds_select_whole_authorized_jobs_before_staging(policy, options, matching, running_count):
+    jobs = [_job(1), _job(2), _job(3, status=RunStatus.RUNNING), _job(4, submitter="bob"), _job(5), _job(6), _job(7)]
+    # Job 1's one second of work spans midnight. Only its start selects the archive.
+    starts = [
+        "2026-09-30T23:59:59.5Z",
+        "2026-10-01T02:00:00+02:00",
+        "2026-10-15T12:00:00Z",
+        "2026-10-01T00:00:00Z",
+        "2026-10-01 08:00:00",
+        "",
+        "invalid",
+    ]
+    for job, start in zip(jobs, starts):
+        job.meta.update({JobMetaKey.START_TIME.value: start, JobMetaKey.SUBMIT_TIME_ISO.value: "2026-10-01T00:00:00Z"})
+    conn = _connection(jobs)
+    result = _result(_dispatch(conn, f"get_study_resources {options}"))
+    included_id = jobs[matching - 1].job_id
+    expected_ids = [included_id] + ([jobs[2].job_id] if running_count else [])
+    assert [row["job_id"] for row in result["jobs"]] == expected_ids
+    assert result["coverage"] == {
+        "selected_jobs": len(expected_ids),
+        "included_jobs": 1,
+        "nonterminal_jobs": running_count,
+        "unavailable_jobs": 0,
+    }
+    assert result["totals"]["resource_time"]["cpu"]["unit_seconds"] == 2
+    assert result["selection"]["time_scope"] == "whole_jobs_by_start_time"
+    assert (
+        result["selection"].get("since") if matching == 2 else result["selection"]["until"]
+    ) == "2026-10-01T00:00:00+00:00"
+    assert [call.kwargs["jid"] for call in conn.app_ctx.job_def_manager.get_storage_for_download.call_args_list] == [
+        included_id
+    ]
+
+
+def test_invalid_study_period_is_rejected_before_listing_jobs(policy):
+    conn = _connection([])
+    reply = _dispatch(conn, "get_study_resources --since 2026-10-01 --until 2026-10-01")
+    assert reply[ProtoKey.META][MetaKey.STATUS] == MetaStatusValue.SYNTAX_ERROR
+    conn.app_ctx.job_def_manager.get_all_jobs.assert_not_called()
+
+
 def test_all_denied_is_indistinguishable_from_an_empty_study(policy):
     denied = _job(1, submitter="bob")
     conn = _connection([denied])
