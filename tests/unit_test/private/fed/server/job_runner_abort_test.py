@@ -117,6 +117,7 @@ def test_abort_wins_prevents_launch(admission, window):
         assert a.statuses["job-1"] == RunStatus.FINISHED_ABORTED
         a.runner._start_run.assert_not_called()
     assert not a.runner._starting_jobs
+    assert not hasattr(a.runner, "f3_counters")
 
 
 @pytest.mark.parametrize("stage", ["deploy", "metadata", "start"])
