@@ -14,8 +14,9 @@ accounts, namespace and storage. Jobs supply separate resource budgets:
   task mode and to CJ in job mode.
 * ``cj_resource_spec`` applies only to task-mode coordinators. Site defaults are
   0.25 CPU, 512Mi and zero GPUs; explicit coordinator GPUs are independent.
-* The worker image comes from trusted ``task_execution`` configuration. A job's
-  Kubernetes image setting selects its CJ image.
+* The site selects the worker image in its study runtime or ``task_execution``
+  configuration. A job can override the CJ image, which otherwise comes from
+  the study runtime.
 
 Workers use their CJ's configured namespace. CP can share that namespace or use
 a separate control namespace with explicit permissions and compatible storage.
@@ -317,7 +318,8 @@ both local files::
    }
 
 The job retains its existing ``execution_lifetime="task"`` application flag.
-Its metadata specifies the CJ image and independent resource budgets, for example::
+Its ``meta.json`` can specify independent resource budgets and a CJ image override,
+for example::
 
    {
      "resource_spec": {
@@ -338,8 +340,16 @@ portable compute fields, including distinct native requests and limits. Jobs
 can set the new field through ``meta_props`` or
 ``set_recipe_meta(recipe, JobMetaKey.CJ_RESOURCE_SPEC, ...)``. The same metadata
 without a task-lifetime client must omit ``cj_resource_spec``; job mode keeps
-its existing resource semantics. Images must contain the same reviewed
-framework source and the required application dependencies.
+its existing resource semantics.
+
+To pick a different CJ image, a submitter can set ``launcher_spec.default.k8s.image``
+in ``meta.json`` and override it for a particular site with
+``launcher_spec.<site>.k8s.image``. A recipe can set the same metadata with
+``set_recipe_meta(recipe, JobMetaKey.JOB_LAUNCHER_SPEC, launcher_spec)``.
+When the job omits the image, the CJ uses the study's ``container.image``.
+If neither source specifies a CJ image, the launcher reports a configuration
+error. Images must contain the same reviewed framework source and the required
+application dependencies.
 
 Task cleanup and CJ recovery require kubelet ``PodReadyToStartContainers`` teardown
 evidence and terminal container statuses. The condition is
@@ -352,6 +362,71 @@ init and ephemeral container before cleanup. No force deletion, in-place
 worker retry, Job controller or TTL deletion is used. See Kubernetes
 `Pod lifecycle <https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/>`_
 and `finalizers <https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/>`_.
+
+.. _kubernetes_task_study_runtime:
+
+Per-study worker settings
+-------------------------
+
+Configure study datasets, secrets, environment, image, and scheduling in the
+site's ``local/study_runtime.yaml``:
+
+.. code-block:: yaml
+
+   format_version: 2
+   studies:
+     study-a:
+       container:
+         image: registry.example.com/site/training:2.10
+       datasets:
+         training:
+           source: training-pvc
+           mode: ro
+       env:
+         TRAINING_DIR: /data/study-a/training
+       secret_env:
+         API_TOKEN:
+           source: study-credentials
+           key: api-token
+       secret_mounts:
+         trust:
+           source: study-trust
+           mount_path: /var/run/study-trust
+       pod_template: pod_specs/cpu-cj.yaml
+       worker_scheduling:
+         nodeSelector:
+           pool: gpu
+         tolerations:
+           - key: dedicated
+             operator: Equal
+             value: gpu
+             effect: NoSchedule
+
+In task mode the client parent resolves these settings when launching the job
+and applies them to each worker. Datasets mount at ``/data/<study>/<dataset>``
+with the configured ``ro`` or ``rw`` access. Secret mounts are read-only and
+``secret_env`` uses Kubernetes Secret key references. The claims and Secrets
+must exist in the worker namespace. Dataset claims must be separate from the
+jobs PVC, and study mounts must be outside the workspace. For a private
+registry, set the pull Secret on the worker service account.
+
+Study image and environment entries override the defaults in
+``task_execution.launcher.args``. The optional ``worker_scheduling`` mapping
+accepts Kubernetes ``nodeSelector``, ``affinity``, and ``tolerations`` fields.
+The existing ``pod_template`` still configures the CJ independently. Put any
+environment variables needed only by the CJ in its Pod template. If a CJ template previously included training
+mounts or Secret references directly, remove those entries and configure them
+in ``datasets``, ``secret_mounts``, or ``secret_env`` instead. Job-mode pods use
+their existing study settings and ignore ``worker_scheduling``.
+
+The worker always starts with the site's
+``task_execution.launcher.args.python_path`` (default ``/usr/local/bin/python``).
+If a study overrides the worker image, that image must have an executable Python
+with NVFlare installed at the configured path. For example, a site using
+``/opt/conda/bin/python`` can set that path in its worker launcher settings and
+use compatible images for all studies at the site. If the study image also runs
+the CJ, its Python must match the CJ launcher's ``default_python_path`` or the
+job's ``launcher_spec.<site>.k8s.python_path`` override.
 
 Deployment readiness runbook
 ----------------------------
@@ -418,23 +493,22 @@ the participant being checked. Use the intended Kubernetes context throughout.
    node, ``127.0.0.1`` names that other node. A multi-node profile needs image
    access from every node on which its Pods can schedule.
 
-   **Check all three image configuration locations.** Parent images come from
-   the Deployment/Helm configuration. Job metadata
-   ``launcher_spec[site]["k8s"]["image"]`` selects the SJ/CJ image. The worker
-   image comes independently from canonical site
-   ``task_execution.launcher.args.image``. Updating one location does not
-   update the others. Record the intended digest for each role. When a lab
-   uses one image for all roles, generate all three settings from that one
-   image input. Include reset/redeployment templates in that update; a reset
-   must not restore a stale local tag. Inspect the actual parent references::
+   **Check the image selected for each role.** Parent images come from the
+   Deployment/Helm configuration. The SJ/CJ launcher prefers the image in job
+   metadata and falls back to the study's ``container.image``. The task worker
+   launcher prefers the study image and falls back to
+   ``task_execution.launcher.args.image``. Record the intended digest for each
+   role. Include reset/redeployment templates when updating image settings.
+   Inspect the actual parent references::
 
       kubectl -n "$NVFLARE_TEST_NAMESPACE" get deployments \
         -o 'custom-columns=NAME:.metadata.name,IMAGES:.spec.template.spec.containers[*].image'
 
    Compare the job metadata and actual mounted policy in every CP and fresh CJ;
    editing a host-side file alone does not update an already mounted kit.
-   This diagnostic prints the selected policy file and requires its worker
-   image to match ``NVFLARE_TEST_IMAGE``::
+   For a site without a study image override, this diagnostic checks the worker
+   default against ``NVFLARE_TEST_IMAGE``. For a study that sets ``container.image``,
+   check the actual worker Pod's image instead::
 
       kubectl -n "$NVFLARE_TEST_NAMESPACE" exec -i "$NVFLARE_TEST_CP_POD" -- \
         python - "$NVFLARE_TEST_WORKSPACE" "$NVFLARE_TEST_SITE" "$NVFLARE_TEST_IMAGE" <<'PY'
@@ -642,10 +716,10 @@ resources preserved and task-mode GPU admission delegated to workers. The
 worker tests also run the unmodified NPTrainer in a real CPU interpreter and
 check authorization before custom imports. They do not launch Kubernetes pods.
 
-The initial worker mount profile contains the job subtree and read-only site
-configuration/startup only. Additional dataset volumes mounted into a resident
-CJ are not automatically mounted into workers; extending those bindings requires
-its own explicit site profile and qualification.
+For studies with :ref:`kubernetes_task_study_runtime`, verify the worker can read
+the configured dataset and Secret, and runs on the selected node pool. Inspect
+both manifests to confirm the CJ has no study dataset or Secret entries and
+that the worker's jobs PVC mount still uses the assigned job subPath.
 
 With separately authorized infrastructure, qualify matching Kubernetes CP ->
 CPU CJ -> disposable task pods using that
