@@ -35,9 +35,9 @@ from client import FedReviveClient
 from data import DELAY_SCHEDULES, load_manifest, prepare_cifar10
 from fedrevive import FIGURE_2_METHOD_CONFIGS, ClassProportionSource, Method, SynthesisLabelDistribution
 from model import set_seed
+from schedule import make_paper_plan
 from server import FedReviveModelLoader, FedReviveModelOps, FedReviveObserver
 from update import FedAvgUpdate, FedReviveUpdate
-from workflow import FedReviveRecipe
 
 from nvflare.apis.simulation_plan import ASYNC_EXECUTION, load_simulation_plan
 from nvflare.collab import FedBuffRecipe
@@ -76,7 +76,7 @@ def define_parser():
         "--arrival-mode",
         choices=("simulated", "actual", "replay"),
         default="simulated",
-        help="Seeded paper phases, live arrivals, or a SimEnv plan",
+        help="Preplanned paper phases, live arrivals, or a supplied SimEnv plan",
     )
     parser.add_argument("--simulation-plan", help="SimEnv JSON plan required for --arrival-mode replay")
     parser.add_argument(
@@ -211,13 +211,22 @@ def validate_args(args):
         raise ValueError("class-proportion and synthesis options require --method fedrevive")
 
 
+def _scheduling_options(args, preset):
+    concurrency = preset.concurrency if args.concurrency is None else args.concurrency
+    buffer_size = preset.buffer_size if args.buffer_size is None else args.buffer_size
+    open_slots = preset.min_open_slots if args.min_open_slots is None else args.min_open_slots
+    if concurrency < 1:
+        raise ValueError("concurrency must be positive")
+    if buffer_size < 1 or not 1 <= open_slots <= concurrency:
+        raise ValueError("buffer_size must be positive and min_open_slots must be between 1 and concurrency")
+    return concurrency, buffer_size, open_slots
+
+
 def make_recipe(args):
     validate_args(args)
     method = Method(args.method)
     preset = FIGURE_2_METHOD_CONFIGS[method]
-    concurrency = preset.concurrency if args.concurrency is None else args.concurrency
-    buffer_size = preset.buffer_size if args.buffer_size is None else args.buffer_size
-    open_slots = preset.min_open_slots if args.min_open_slots is None else args.min_open_slots
+    concurrency, buffer_size, open_slots = _scheduling_options(args, preset)
     class_proportion_source = args.class_proportion_source
     if class_proportion_source is None:
         class_proportion_source = (
@@ -228,11 +237,6 @@ def make_recipe(args):
     generation_interval = args.generation_interval
     if generation_interval is None:
         generation_interval = 10 if method is Method.FEDREVIVE else 1
-    if concurrency < 1:
-        raise ValueError("concurrency must be positive")
-    if buffer_size < 1 or not 1 <= open_slots <= concurrency:
-        raise ValueError("buffer_size must be positive and min_open_slots must be between 1 and concurrency")
-
     if args.arrival_mode == "actual" and (
         concurrency > args.num_clients or args.num_clients > args.num_logical_clients
     ):
@@ -287,17 +291,10 @@ def make_recipe(args):
     # Bound Collab's call pools to that small pool instead of retaining the
     # recipe default of 100 threads in every process.  This prevents a concurrency=100
     # experiment from multiplying thread stacks and queued RPC state while the
-    # server-side event scheduler still reproduces all 100 logical jobs.
+    # simulator still reproduces all 100 logical jobs.
     server_call_threads = max(8, 2 * args.num_clients)
     client_call_threads = 4
-    paper_schedule = args.arrival_mode == "simulated"
-    recipe_class = FedReviveRecipe if paper_schedule else FedBuffRecipe
-    schedule_options = (
-        dict(prepared_data_root=args.prepared_data_root, run_seed=args.run_seed, max_time=args.max_time)
-        if paper_schedule
-        else {}
-    )
-    recipe = recipe_class(
+    recipe = FedBuffRecipe(
         name=f"fedrevive_{method.value}",
         model_loader=FedReviveModelLoader(setup_seed=args.setup_seed),
         model_ops=FedReviveModelOps(),
@@ -314,7 +311,6 @@ def make_recipe(args):
         sync_task_timeout=600,
         max_call_threads_for_server=server_call_threads,
         max_call_threads_for_client=client_call_threads,
-        **schedule_options,
     )
     recipe.set_client_prop("data_root", args.data_root)
     recipe.set_client_prop("prepared_data_root", args.prepared_data_root)
@@ -328,20 +324,30 @@ def make_recipe(args):
         "update.py",
     ):
         recipe.add_server_file(str(PROJECT_DIR / filename))
-    if paper_schedule:
-        for filename in ("schedule.py", "storage.py", "workflow.py"):
-            recipe.add_server_file(str(PROJECT_DIR / filename))
     return recipe, (concurrency, buffer_size, open_slots)
 
 
 def make_sim_env(args, manifest):
     options = dict(num_clients=args.num_clients, workspace_root=args.workspace_root)
-    if args.arrival_mode != "replay":
+    if args.arrival_mode == "actual":
         return FedReviveSimEnv(**options)
-    plan = load_simulation_plan(args.simulation_plan)
-    missing = set(plan[ASYNC_EXECUTION]["logical_sequence"]) - set(manifest["runtime_profiles"])
-    if missing:
-        raise ValueError(f"Simulation plan names unprepared logical clients: {sorted(missing)}")
+    profiles = manifest["runtime_profiles"]
+    if args.arrival_mode == "simulated":
+        concurrency, buffer_size, open_slots = _scheduling_options(args, FIGURE_2_METHOD_CONFIGS[Method(args.method)])
+        plan = make_paper_plan(
+            profiles,
+            args.run_seed,
+            args.max_time,
+            num_rounds=args.max_model_versions,
+            concurrency=concurrency,
+            min_open_slots=open_slots,
+            buffer_size=buffer_size,
+        )
+    else:
+        plan = load_simulation_plan(args.simulation_plan)
+        missing = set(plan[ASYNC_EXECUTION]["logical_sequence"]) - set(profiles)
+        if missing:
+            raise ValueError(f"Simulation plan names unprepared logical clients: {sorted(missing)}")
     return FedReviveSimEnv(reprod=True, plan=plan, **options)
 
 

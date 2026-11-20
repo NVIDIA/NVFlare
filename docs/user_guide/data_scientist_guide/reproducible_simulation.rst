@@ -55,7 +55,7 @@ physical completion order:
    run = recipe.execute(SimEnv(num_clients=2, reprod=True, plan=plan))
 
 The physical sites execute the logical assignments; their names do not
-determine the assignment base or acceptance order. The plan must have
+determine the assignment base or acceptance order. An arrival-sequence or start-time plan must have
 ``num_rounds * buffer_size`` assignments, and its acceptance order must be
 compatible with the workflow's concurrency and refill threshold. A logical
 client cannot be reserved again while an earlier assignment for that client
@@ -101,15 +101,50 @@ reserved as a batch; at equal times, starts precede phase completions. The
 plan must leave enough free workflow slots at each start. A virtual deadline
 limits logical progress; it is not a wall-clock timeout for client calls.
 
+An external scheduler can supply one concrete duration per phase and
+assignment in ``timing.delays`` in place of ``seed`` and ``profiles``.
+For example, ``{"download": 0.1, "train": 2.0, "upload": 0.3}`` specifies
+the three phase durations for one assignment. This supports measured traces
+and samplers with correlated delays without registering Python code in FLARE.
+
+To specify the exact order at equal times, use ``timing.events`` with
+``timing.horizon`` in place of ``timing.starts`` and the delay controls.
+Each event contains ``virtual_time``, ``assignment_id`` and ``phase``.
+List phases in execution order and start assignments in sequential ID order.
+Consecutive starts at the same time form one reservation batch. An upload can
+therefore precede a same-time start, allowing that start to bind to the model
+published by the upload. Specify ``async_execution.base_versions`` to require
+a particular base version for each assignment.
+
+Ordered plans can end after the final publication or include one final phase
+at or beyond the horizon. The simulator records that boundary phase and stops
+before accepting any upload at that time. ``timing.release_on_train`` allows a
+logical client to start again after its training phase. Its pending upload
+still occupies a concurrency slot. ``timing.speculative`` allows reservations
+within the concurrency limit even when fewer contributions are needed for
+the remaining publications. Both options default to false. The
+:github_nvflare_link:`FedRevive paper planner <research/fedrevive/schedule.py>`
+uses these options to produce a plan before starting SimEnv. It also shows
+how to plug in a custom sampler with assignment- and phase-specific RNGs and
+export a log-normal delay example as a standard SimEnv plan.
+
 Evidence and Limits
 -------------------
 
-The simulator writes plan traces under
-``<workspace>/<job>/server/simulate_job/simulation/``. Buffered plans write
-``assignments.jsonl``, ``accepted.jsonl``, and retained ``models/`` and
-``results/`` files; timed plans also write ``phases.jsonl`` and
-``dispatch.jsonl``. ``run.jsonl`` reports wall seconds and virtual time
-separately. Unknown plan controls and unused sections fail the run.
+FedBuff preflights every plan before the first training call. It applies the
+same reservation and acceptance rules using placeholder uploads and a version
+counter. Invalid capacity, client eligibility, and base-version expectations
+fail before any client trains. Actual logical events are checked against the
+preflight during execution. Physical dispatch order can vary with the worker pool.
+
+The reusable input is saved at ``<workspace>/<job>/server/local/simulation_plan.json``.
+The run directory ``<workspace>/<job>/server/simulate_job/simulation/`` contains
+the expected events in ``preflight.jsonl`` and actual events in
+``assignments.jsonl``, ``accepted.jsonl``, ``dispatch.jsonl``, and, for timed
+plans, ``phases.jsonl``. ``run.jsonl`` reports wall seconds and virtual time
+separately. By default, ``models/`` and ``results/`` retain intermediate payloads.
+Set ``async_execution.retain_artifacts`` to false to keep the traces and reclaim
+temporary payloads after use. Unknown plan controls and unused sections fail the run.
 
 This controls logical assignments and server acceptance. Matching numerical
 models also requires deterministic initialization, client training, data
@@ -153,7 +188,12 @@ The port can supply ``make_assignment`` when the algorithm needs a different
 assignment class; that factory receives the stored base path instead of an
 in-memory model. ``submit(site, assignment, **kwargs)`` schedules a physical
 call; ``receive()`` returns ``(site, assignment_id, result, error)``.
-``FedBuffWorkflow`` is one implementation of this port.
+``FedBuffWorkflow`` is one implementation of this port. Provide
+``make_planning_state`` to enable preflight and ordered timing. This callback
+returns a fresh state with the same reservation and publication rules using
+only logical state. Its ``accept`` receives a placeholder result. A workflow
+that supports speculative reservations or release at training completion
+also accepts ``speculative`` or ``released_assignments`` in ``reserve``.
 The shared runner owns the live-versus-planned choice; a new algorithm must
 still expose these real decisions rather than expecting ``SimEnv`` to infer
 them from opaque workflow code. Other workflow families can use the same

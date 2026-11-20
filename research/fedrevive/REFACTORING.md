@@ -16,16 +16,16 @@ The [README](README.md) covers data preparation, CLI options, and experiment art
   blend uses a zero KD delta through current version 100, so the client delta
   is still scaled by its staleness weight. A separate FedAvg transform checks
   that each publication uses contributions from a single base version.
-- **Live arrivals and explicit replay.** Both use `FedBuffRecipe` with the same
-  model operations, observer, and update transform. `SimEnv` supplies any replay
-  plan at execution. It keeps a logical client reserved until its result is
-  accepted.
+- **Execution.** Every arrival mode uses `FedBuffRecipe` with the same model
+  operations, observer, and update transform. `SimEnv` preflights a supplied or
+  generated plan before training and compares actual logical events with the
+  preflight during execution.
 - **Paper scheduling.** The reference scheduler releases a logical client after
   its training phase, so it can receive a new assignment while an earlier upload
-  is pending. The research workflow uses FedBuff's transport, lifecycle and
-  acceptance with seeded phase events and disk-backed assignments. It preserves
-  the NumPy `RandomState` draw order, heap tie handling, the simulated-time
-  cutoff, and the training seed formula `run_seed * 1_000_000 + assignment_id + 1`.
+  is pending. The paper planner generates the ordered events and expected base
+  versions before launch. It preserves the NumPy `RandomState` draw order,
+  heap tie handling, the simulated-time cutoff, and the training seed formula
+  `run_seed * 1_000_000 + assignment_id + 1`.
 - **Distillation and synthesis.** The shared teacher buffer, ordinary KD loss,
   feature-statistics objective, and mean-probability probe supply reusable
   primitives. FedRevive owns its conditional generator, learned latent and
@@ -39,11 +39,10 @@ The [README](README.md) covers data preparation, CLI options, and experiment art
 
 The shared feature objective groups each layer's mean and variance losses before
 summing. In one ResNet CPU comparison, the scalar changed from 299.679016 to
-299.679047 with identical input gradients. The paper-phase workflow surfaces
-physical call errors on receipt, including while draining at the horizon.
-It reclaims temporary upload and assignment-base files when their last
-consumer finishes. The run retains the schedule, metrics, and final global
-model for experiment inspection.
+299.679047 with identical input gradients. Ordered replay fails on physical call
+errors during execution and records errors from drained calls after completion.
+The simulator reclaims temporary uploads and bases after their last consumer
+finishes. The run retains the plan, verified traces, metrics, and final model.
 
 ## Historical migration checks
 

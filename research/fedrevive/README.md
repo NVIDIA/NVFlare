@@ -20,11 +20,12 @@ It uses the model, data partition, runtime distributions, and training settings
 reported in the paper. It is intentionally separate from the other NVIDIA
 FLARE CIFAR-10 examples.
 
-The default `--arrival-mode simulated` uses the paper's seeded phase scheduler on
-a small physical worker pool. For live training and explicit simulator plans,
-`--arrival-mode actual` and `--arrival-mode replay` use the shared
-`FedBuffRecipe` with the same FedRevive update transform. The plan is supplied
-through `SimEnv`.
+The default `--arrival-mode simulated` generates the paper's seeded schedule
+before launching SimEnv. SimEnv preflights it with placeholder uploads, then
+executes and verifies its logical events on the physical worker pool.
+All arrival modes use the same `FedBuffRecipe` and FedRevive update transform.
+Use `--arrival-mode actual` for live arrivals or `--arrival-mode replay` to
+supply a saved or externally generated plan.
 
 CIFAR-100, FEMNIST, 20NewsGroups, DD-FedRevive, and AFL-DW are outside this
 initial contribution.
@@ -123,16 +124,11 @@ behavior.
 | `SimEnv` with a replay plan | Explicit assignment and acceptance order or timing, with evidence in the run's `simulation/` directory |
 | `server.py` | Separate initial model loader, FedRevive model operations, and CIFAR evaluation/artifact observer |
 
-`FedReviveWorkflow` inherits the protected call/lifecycle implementation from
-`FedBuffWorkflow`; `PhaseCoordinator` inherits its numerical acceptance from
-`FedBuffTrainingCoordinator`. Concurrency bounds active logical assignments.
-Physical sites bound concurrent calls and the core receipt queue. One exact
-base file is shared by every outstanding assignment for its version.
-`TensorStore.retain` records these references at reservation and
-`TensorStore.release` deletes the file after the last assignment is consumed.
-Completed uploads wait on disk for their logical acceptance, then their files
-are deleted as soon as the coordinator consumes them. This bounds temporary
-model storage by outstanding assignments even in long or shifted runs.
+Concurrency bounds active logical assignments. Physical sites bound concurrent
+training calls and the receipt queue. The paper plan keeps intermediate payloads
+on disk only while needed. Outstanding assignments share the base file for their
+version, and completed uploads wait on disk for their logical acceptance. The
+shared runner reclaims these files as their last consumer finishes.
 
 The observer retains experiment evidence:
 
@@ -140,12 +136,17 @@ The observer retains experiment evidence:
 | --- | --- |
 | `run_config.json` | Resolved experiment options |
 | `dfkd_config.json` | Resolved synthesis/KD defaults when FedRevive is enabled |
-| `phases.jsonl` | Paper mode's incremental download/train/upload events and simulated times |
 | `schedule.jsonl` | Dispatch/accept identities, versions and training seeds |
 | `updates.jsonl` | Validated upload metadata/metrics, including actual-arrival seeds and shards |
 | `revival.jsonl` | FedRevive gate decisions, blend weights and DFKD metrics |
 | `accuracy_history.json`, `results.json` | Centralized evaluations and final run summary |
 | `final_model/global_model.pt` | Final model |
+| `simulation/preflight.jsonl` | Expected logical assignments, phases, and acceptance/publication versions |
+| `simulation/phases.jsonl`, `simulation/accepted.jsonl` | Observed timed phases and acceptance events checked against preflight |
+
+The generated plan is saved under `server/local/simulation_plan.json` in
+the job workspace. Pass this file to `--simulation-plan` with a fresh
+workspace to replay the schedule.
 
 The workflow discards pending uploads at its horizon and drains active calls
 before releasing outstanding bases. Normal shutdown, managed aborts, and
@@ -421,10 +422,35 @@ omits `train_seeds`, the client uses the existing seed derived from
 `--run-seed` and assignment ID. For timing plans and the evidence layout, see
 the [simulation guide](../../docs/user_guide/data_scientist_guide/reproducible_simulation.rst).
 
-To reproduce the paper schedule, use `--arrival-mode simulated`. Its logical
-clients become eligible again after training while an earlier upload can
-still be pending. Shared replay plans keep a logical client reserved until
-its result is accepted and use their own timing and contribution rules.
+The default paper planner emits ordered events with eligibility at training
+completion, so a logical client can start again while its earlier upload is
+pending. To replay that schedule, pass the saved plan with the same logical
+concurrency, buffer, refill and publication settings. For numerical replay, also
+keep the training configuration, including the server's `--run-seed`. The physical
+worker count can vary. Externally generated plans can use explicit per-assignment delays.
+
+### Generate a custom paper schedule offline
+
+From `research/fedrevive`, generate a plan from the prepared manifest. This
+example replaces exponential training delays with log-normal delays of the
+same per-client mean.
+
+```bash
+python schedule.py /tmp/fedrevive/cifar10/manifest.json plan.json \
+  --num-rounds 4 --concurrency 2 --train-lognormal-sigma 0.6
+```
+
+Use `plan.json` in the replay command above. Keep `--buffer-size` and
+`--min-open-slots` consistent between generation and replay if you override
+them. Omit `--train-lognormal-sigma` to generate the paper's original delays.
+
+For measured traces or another distribution, call `make_paper_plan()` with a
+`delay_sampler(assignment_id, logical_name, phase, profile, rng)` callable.
+Return a finite nonnegative duration. Each invocation receives a NumPy RNG
+derived from the run seed, assignment ID, and phase. You can use
+`sample_paper_delay(phase, profile, rng)` for phases you keep from the paper.
+The planner writes concrete event times, so replay uses only the resulting
+JSON and compares execution with the training-free preflight.
 
 ## Adapt the workflow to another image dataset
 

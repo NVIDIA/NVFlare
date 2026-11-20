@@ -24,7 +24,9 @@ import math
 import pickle
 import random
 import time
+from contextlib import contextmanager
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 SIMULATION_PLAN_FILE = "simulation_plan.json"
 SIMULATION_PLAN_PROP = "__simulation_plan_runtime__"
@@ -53,20 +55,39 @@ def _sample_delay(spec, rng):
 
 
 def _validate_timing(value, names):
-    if not isinstance(value, dict) or set(value) != {"starts", "seed", "profiles", "horizon"}:
-        raise ValueError("timing requires starts, seed, profiles, and horizon")
+    profile_keys = {"starts", "seed", "profiles", "horizon"}
+    explicit_keys = {"starts", "delays", "horizon"}
+    if isinstance(value, dict) and "events" in value:
+        return _validate_ordered_timing(value, len(names))
+    if not isinstance(value, dict) or set(value) not in (profile_keys, explicit_keys):
+        raise ValueError("timing requires starts and horizon, with either delays or seed and profiles")
     starts = value["starts"]
     if not isinstance(starts, list) or len(starts) != len(names):
         raise ValueError("timing.starts must contain one time per assignment")
     starts = [_nonnegative_number(v, "logical start") for v in starts]
     if starts != sorted(starts):
         raise ValueError("timing.starts must be nondecreasing")
-    seed = value["seed"]
-    if type(seed) is not int or seed < 0:
-        raise ValueError("timing.seed must be a nonnegative integer")
     horizon = _nonnegative_number(value["horizon"], "timing.horizon")
     if horizon <= 0:
         raise ValueError("timing.horizon must be positive")
+    if "delays" in value:
+        delays = value["delays"]
+        if not isinstance(delays, list) or len(delays) != len(names):
+            raise ValueError("timing.delays must contain one set of phase delays per assignment")
+        normalized_delays = []
+        for identity, durations in enumerate(delays):
+            if not isinstance(durations, dict) or set(durations) != set(PHASES):
+                raise ValueError(f"timing.delays[{identity}] must define download, train, and upload")
+            normalized_delays.append(
+                {
+                    phase: _nonnegative_number(durations[phase], f"assignment {identity} {phase} delay")
+                    for phase in PHASES
+                }
+            )
+        return {"starts": starts, "delays": normalized_delays, "horizon": horizon}
+    seed = value["seed"]
+    if type(seed) is not int or seed < 0:
+        raise ValueError("timing.seed must be a nonnegative integer")
     profiles = value["profiles"]
     if not isinstance(profiles, dict) or set(profiles) != set(names):
         raise ValueError("timing.profiles must cover exactly the logical clients")
@@ -98,20 +119,75 @@ def _validate_timing(value, names):
     return {"starts": starts, "seed": seed, "profiles": normalized_profiles, "horizon": horizon}
 
 
+def _validate_ordered_timing(value, count):
+    if set(value) - {"events", "horizon", "release_on_train", "speculative"} or "horizon" not in value:
+        raise ValueError("ordered timing requires events and horizon")
+    horizon = _nonnegative_number(value["horizon"], "timing.horizon")
+    if horizon <= 0:
+        raise ValueError("timing.horizon must be positive")
+    options = {key: value[key] for key in ("release_on_train", "speculative") if key in value}
+    for key, enabled in options.items():
+        if type(enabled) is not bool:
+            raise ValueError(f"timing.{key} must be a boolean")
+    events = value["events"]
+    if not isinstance(events, list) or not events:
+        raise ValueError("timing.events must be a nonempty list")
+    normalized = []
+    next_phase = [0] * count
+    phases = ("start", *PHASES)
+    last_time = 0.0
+    next_assignment = 0
+    for index, event in enumerate(events):
+        if not isinstance(event, dict) or set(event) != {"virtual_time", "assignment_id", "phase"}:
+            raise ValueError(f"timing.events[{index}] requires virtual_time, assignment_id, and phase")
+        instant = _nonnegative_number(event["virtual_time"], "event virtual time")
+        identity = event["assignment_id"]
+        phase = event["phase"]
+        if type(identity) is not int or not 0 <= identity < count:
+            raise ValueError(f"timing.events[{index}] names an invalid assignment")
+        if next_phase[identity] == len(phases) or phase != phases[next_phase[identity]]:
+            raise ValueError(f"unexpected phase for assignment {identity}: {phase}")
+        if instant < last_time or (instant >= horizon and (index != len(events) - 1 or phase == "start")):
+            raise ValueError(
+                "ordered events must be nondecreasing, with at most one final phase at or beyond the horizon"
+            )
+        if phase == "start":
+            if identity != next_assignment:
+                raise ValueError("ordered starts must reserve sequential assignment IDs")
+            next_assignment += 1
+        next_phase[identity] += 1
+        last_time = instant
+        normalized.append({"virtual_time": instant, "assignment_id": identity, "phase": phase})
+    if next_assignment != count:
+        raise ValueError("timing.events must start every listed assignment")
+    return {"horizon": horizon, "events": normalized, **options}
+
+
 class PlannedAsyncEvents:
     """Deterministic virtual events independent of worker completion timing."""
 
     def __init__(self, names: list[str], timing: dict):
         self.horizon = timing["horizon"]
+        self._ordered = "events" in timing
+        if self._ordered:
+            self.events = [
+                (event["virtual_time"], 0, event["assignment_id"], event["phase"]) for event in timing["events"]
+            ]
+            return
         self.events = []
+        delays = timing.get("delays")
         for identity, (name, start) in enumerate(zip(names, timing["starts"])):
             self.events.append((start, 0, identity, "start"))
             instant = start
             for priority, phase in enumerate(PHASES, 1):
-                spec = timing["profiles"][name][phase]
-                digest = hashlib.sha256(f"{timing['seed']}:{identity}:{name}:{phase}".encode()).digest()
-                rng = random.Random(int.from_bytes(digest[:8], "big"))
-                instant += _sample_delay(spec, rng)
+                if delays is None:
+                    spec = timing["profiles"][name][phase]
+                    digest = hashlib.sha256(f"{timing['seed']}:{identity}:{name}:{phase}".encode()).digest()
+                    rng = random.Random(int.from_bytes(digest[:8], "big"))
+                    duration = _sample_delay(spec, rng)
+                else:
+                    duration = delays[identity][phase]
+                instant += duration
                 if not math.isfinite(instant):
                     raise ValueError(f"non-finite virtual time for assignment {identity}")
                 self.events.append((instant, priority, identity, phase))
@@ -119,7 +195,7 @@ class PlannedAsyncEvents:
 
     def __iter__(self):
         for instant, _, identity, phase in self.events:
-            if instant >= self.horizon:
+            if not self._ordered and instant >= self.horizon:
                 break
             yield instant, identity, phase
 
@@ -146,6 +222,8 @@ def validate_simulation_plan(value: dict) -> dict:
             "train_seeds",
             "timing",
             "physical_sites",
+            "base_versions",
+            "retain_artifacts",
         }:
             raise ValueError("unsupported async_execution control")
         names = async_plan.get("logical_sequence")
@@ -173,6 +251,20 @@ def validate_simulation_plan(value: dict) -> dict:
             result[ASYNC_EXECUTION]["timing"] = _validate_timing(timing, names)
         if seeds is not None:
             result[ASYNC_EXECUTION]["train_seeds"] = list(seeds)
+        versions = async_plan.get("base_versions")
+        if versions is not None:
+            if (
+                not isinstance(versions, list)
+                or len(versions) != len(names)
+                or any(type(v) is not int or v < 0 for v in versions)
+            ):
+                raise ValueError("async_execution.base_versions must contain one nonnegative integer per assignment")
+            result[ASYNC_EXECUTION]["base_versions"] = list(versions)
+        if "retain_artifacts" in async_plan:
+            retain = async_plan["retain_artifacts"]
+            if type(retain) is not bool:
+                raise ValueError("async_execution.retain_artifacts must be a boolean")
+            result[ASYNC_EXECUTION]["retain_artifacts"] = retain
         sites = async_plan.get("physical_sites")
         if sites is not None:
             if (
@@ -196,6 +288,7 @@ class SimulationPlanRuntime:
     def __init__(self, plan: dict, trace_dir: str | Path):
         self.plan = validate_simulation_plan(plan)
         self.trace_dir = Path(trace_dir)
+        self._artifact_dir = self.trace_dir
         self._consumed = set()
         self._started_at = time.monotonic()
         self.virtual_time = None
@@ -212,8 +305,27 @@ class SimulationPlanRuntime:
         self._consumed.add(section)
         return self.plan[section]
 
+    @contextmanager
+    def artifacts(self, retain: bool):
+        if retain:
+            yield
+            return
+        self.trace_dir.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix="work-", dir=self.trace_dir) as directory:
+            self._artifact_dir = Path(directory)
+            try:
+                yield
+            finally:
+                self._artifact_dir = self.trace_dir
+
+    def _model_path(self, version):
+        return self._artifact_dir / "models" / f"{version:08d}.pkl"
+
+    def _result_path(self, identity):
+        return self._artifact_dir / "results" / f"{identity:08d}.pkl"
+
     def save_model(self, version: int, model) -> str:
-        path = self.trace_dir / "models" / f"{version:08d}.pkl"
+        path = self._model_path(version)
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
             with path.open("xb") as stream:
@@ -221,15 +333,20 @@ class SimulationPlanRuntime:
         return str(path)
 
     def save_result(self, assignment_id: int, result) -> None:
-        path = self.trace_dir / "results" / f"{assignment_id:08d}.pkl"
+        path = self._result_path(assignment_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("xb") as stream:
             pickle.dump(result, stream, protocol=pickle.HIGHEST_PROTOCOL)
 
     def load_result(self, assignment_id: int):
-        path = self.trace_dir / "results" / f"{assignment_id:08d}.pkl"
+        path = self._result_path(assignment_id)
         with path.open("rb") as stream:
             return pickle.load(stream)
+
+    def discard_assignment(self, assignment_id: int, unused_base_version: int | None) -> None:
+        self._result_path(assignment_id).unlink()
+        if unused_base_version is not None:
+            self._model_path(unused_base_version).unlink()
 
     def trace(self, filename: str, record: dict) -> None:
         self._trace(filename, record)
