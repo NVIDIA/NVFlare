@@ -55,7 +55,7 @@ from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.utils.tensor_disk_offload_context import server_root_dir_prefix
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message as CellMessage
@@ -69,6 +69,7 @@ from nvflare.private.defs import (
     AUTH_CLIENT_NAME_FOR_SJ,
     CellChannel,
     CellMessageHeaderKeys,
+    InternalFLContextKey,
     RequestHeader,
     TrainingTopic,
     new_cell_message,
@@ -607,6 +608,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 private=True,
                 sticky=False,
             )
+            grant = request.get_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT)
+            if grant:
+                fl_ctx.set_prop(InternalFLContextKey.ADMIN_TRANSPORT_GRANT, grant, private=True, sticky=False)
             reply = self.run_manager.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
             shared_fl_ctx = gen_new_peer_ctx(fl_ctx)
             reply.set_peer_context(shared_fl_ctx)

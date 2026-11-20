@@ -15,7 +15,7 @@ import logging
 import threading
 from typing import Callable, Optional
 
-from nvflare.fuel.f3.cellnet.defs import Encoding
+from nvflare.fuel.f3.cellnet.defs import Encoding, MessagePropKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
@@ -296,6 +296,7 @@ class BlobStreamer:
             secure=secure,
             optional=optional,
             reliable=reliable,
+            target_peer=message.get_prop(MessagePropKey.TARGET_AUTH_PEER),
         )
 
     def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):

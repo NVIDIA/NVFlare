@@ -16,6 +16,7 @@ import os
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from hashlib import sha256
 from typing import Dict, List, Optional
 
 import msgpack
@@ -230,7 +231,9 @@ class ConnManager(ConnMonitor):
 
         return sfm_endpoint.connections
 
-    def send_message(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
+    def send_message(
+        self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike, *, target_peer=None
+    ):
         """Send a message to endpoint for app
 
         The message is asynchronous, no response is expected.
@@ -252,6 +255,8 @@ class ConnManager(ConnMonitor):
             flat_payload = payload
 
         if endpoint.name == self.local_endpoint.name:
+            if target_peer is not None:
+                raise CommError(CommError.CLOSED, "Authenticated peer is unavailable")
             self.send_loopback_message(endpoint, app_id, headers, flat_payload)
             return
 
@@ -270,6 +275,12 @@ class ConnManager(ConnMonitor):
         if not sfm_conn:
             log.error("Logic error, ready endpoint has no connections")
             raise CommError(CommError.ERROR, f"Endpoint {endpoint.name} has no connection")
+
+        if target_peer is not None:
+            cert = get_param(sfm_conn.conn.get_conn_properties(), DriverParams.PEER_CERT)
+            actual_peer = sha256(cert).digest() if cert else sfm_conn.conn
+            if target_peer != actual_peer:
+                raise CommError(CommError.CLOSED, "Authenticated peer changed")
 
         # TODO: If multiple connections, should retry a diff connection on errors
         start = time.perf_counter()

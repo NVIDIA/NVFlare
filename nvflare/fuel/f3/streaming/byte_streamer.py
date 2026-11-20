@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey, ReturnCode
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
@@ -234,6 +234,7 @@ class TxTask(StreamTaskSpec):
         reliable: Optional[bool],
         secure: bool,
         optional: bool,
+        target_peer=None,
     ):
         self.cell = cell
         self.chunk_size = chunk_size
@@ -245,6 +246,7 @@ class TxTask(StreamTaskSpec):
         self.channel = channel
         self.topic = topic
         self.target = target
+        self.target_peer = target_peer
         self.headers = headers
         self.stream = stream
         self.stream_future = None
@@ -398,6 +400,8 @@ class TxTask(StreamTaskSpec):
             payload = _snapshot_payload(payload)
 
         message = Message(None, payload)
+        if self.target_peer is not None:
+            message.set_prop(MessagePropKey.TARGET_AUTH_PEER, self.target_peer)
 
         if self.headers:
             message.add_headers(self.headers)
@@ -854,9 +858,10 @@ class ByteStreamer:
         secure=False,
         optional=False,
         reliable: Optional[bool] = None,
+        target_peer=None,
     ) -> StreamFuture:
         tx_task = TxTask(
-            self.cell, self.chunk_size, channel, topic, target, headers, stream, reliable, secure, optional
+            self.cell, self.chunk_size, channel, topic, target, headers, stream, reliable, secure, optional, target_peer
         )
         with ByteStreamer.map_lock:
             ByteStreamer.error_context_map.pop(tx_task.sid, None)

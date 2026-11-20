@@ -32,6 +32,8 @@ import pytest
 from nvflare.apis.fl_constant import AdminCommandNames, WorkspaceConstants
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.flare_api.flare_api import new_secure_session
+from nvflare.fuel.hci.client.api import APIStatus, ResultKey
+from nvflare.fuel.hci.proto import InternalCommands
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.lighter.constants import CtxKey
@@ -165,6 +167,22 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         admin = new_secure_session("admin@test.org", str(prod / "admin@test.org"), timeout=10)
         stack.callback(admin.close)
         wait_for(lambda: len(admin.get_system_info().client_info) == 2)
+        if not with_relay:
+            # Two certificate logins for the same user have independent origins.
+            # Exercise rejection over the real streamed HCI command path.
+            peer_admin = new_secure_session("admin@test.org", str(prod / "admin@test.org"), timeout=10)
+            stack.callback(peer_admin.close)
+            caller = peer_admin.api
+            check = InternalCommands.CHECK_SESSION
+            token = caller.token
+            assert caller.server_execute(check)[ResultKey.STATUS] == APIStatus.SUCCESS
+            caller.token = admin.api.token
+            assert caller.server_execute(check)[ResultKey.STATUS] == APIStatus.ERROR_INACTIVE_SESSION
+            caller.token = token
+            assert caller.server_execute(check)[ResultKey.STATUS] == APIStatus.SUCCESS
+            assert caller.server_execute(InternalCommands.LOGOUT)[ResultKey.STATUS] == APIStatus.SUCCESS
+            assert caller.server_execute(check)[ResultKey.STATUS] == APIStatus.ERROR_INACTIVE_SESSION
+            assert admin.api.server_execute(check)[ResultKey.STATUS] == APIStatus.SUCCESS
         marker = json.loads((evidence["site-2"] / "ready.json").read_text())["marker"]
         own_marker = json.loads((evidence["site-1"] / "ready.json").read_text())["marker"]
         assert marker != own_marker

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from datetime import timezone
+
 from cryptography import x509
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
@@ -69,6 +71,13 @@ def reject_job_credential(cert: x509.Certificate, intermediate_certs=None):
     for chain_cert in (cert, *(intermediate_certs or ())):
         if JOB_CA_URI_VALUE in cert_uri_values(chain_cert, CA_URI_KIND):
             raise AdminCertValidationError("certificate issued by the job CA cannot assert site identity or sign jobs")
+
+
+def admin_cert_expiry(cert: x509.Certificate) -> float:
+    expiry = getattr(cert, "not_valid_after_utc", None)
+    if expiry is None:
+        expiry = cert.not_valid_after.replace(tzinfo=timezone.utc)
+    return expiry.timestamp()
 
 
 def validate_admin_leaf_cert(cert: x509.Certificate, reject_placeholder_cn: bool = True):

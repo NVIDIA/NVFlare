@@ -149,8 +149,17 @@ def test_admin_api_renews_expiring_provider_cert_and_resets_connection(monkeypat
     api.server_sess_active = True
     api.token = "old-token"
     api.login_result = "old-result"
+    sent = []
+
+    def logout(command):
+        assert api.cell is old_cell
+        assert api.token == "old-token"
+        sent.append(command)
+
+    api.server_execute = logout
 
     assert api.ensure_client_cert_valid()
+    assert sent == [InternalCommands.LOGOUT]
 
     assert api.client_key == str(new_key_file)
     assert api.client_cert == str(new_cert_file)

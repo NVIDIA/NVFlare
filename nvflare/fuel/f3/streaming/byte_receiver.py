@@ -127,6 +127,7 @@ class RxTask:
         # Out-of-sequence chunks to be assembled
         self.out_seq_chunks: Dict[int, Tuple[bool, BytesAlike]] = {}
         self.stream_future = None
+        self.admin_transport_grant = None
         self.sender_flow_control_received = False
         self.next_seq = 0
         self.offset = 0
@@ -174,6 +175,7 @@ class RxTask:
         reliable = message.get_header(StreamHeaderKey.RELIABLE, False)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
         task_to_stop = None
+        grant = message.get_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT)
 
         with cls.map_lock:
             if cls._shutting_down:
@@ -185,6 +187,7 @@ class RxTask:
                     return None
 
                 task = RxTask(sid, origin, cell, reliable)
+                task.admin_transport_grant = grant
                 # Routing and correlation headers are repeated on every frame.
                 # Preserve them immediately so errors raised before sequence 0
                 # can still be correlated by the sender.
@@ -192,9 +195,10 @@ class RxTask:
                 task.topic = message.get_header(StreamHeaderKey.TOPIC)
                 task.headers = message.headers
                 cls.rx_task_map[(origin, sid)] = task
-            else:
-                if error:
-                    task_to_stop = task
+            elif task.admin_transport_grant is not grant:
+                return None
+            elif error:
+                task_to_stop = task
 
         if task_to_stop:
             task_to_stop.stop(StreamError(f"{task_to_stop} Received error from {origin}: {error}"), notify=False)
@@ -317,6 +321,7 @@ class RxTask:
 
         self.stream_future = StreamFuture(self.sid, self.headers)
         self.stream_future.receiving_endpoint = message.get_prop(MessagePropKey.ENDPOINT)
+        self.stream_future.receiving_admin_grant = self.admin_transport_grant
         self.stream_future.set_size(self.size)
 
     def _update_sender_flow_control(self, message: Message):

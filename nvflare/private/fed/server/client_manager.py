@@ -29,9 +29,16 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.f3.cellnet.defs import IdentityChallengeKey, MessageHeaderKey
 from nvflare.fuel.sec.admin_audit import record, snapshot
+from nvflare.fuel.sec.admin_cert import validate_admin_leaf_cert
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.defs import CellMessageHeaderKeys, ClientRegSession, ClientType, InternalFLContextKey
+from nvflare.private.defs import (
+    ADMIN_TRANSPORT_TOKEN_PREFIX,
+    CellMessageHeaderKeys,
+    ClientRegSession,
+    ClientType,
+    InternalFLContextKey,
+)
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.utils.identity_utils import get_org_from_cert, load_crt_bytes, load_crt_chain_bytes
 from nvflare.security.logging import secure_format_exception
@@ -298,6 +305,9 @@ class ClientManager:
             return None
 
         secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
+        if client_type == ClientType.ADMIN and not secure_mode:
+            return None
+
         client_org = ""
         asserter_cert_data = shareable.get(IdentityChallengeKey.CERT)
         if secure_mode:
@@ -332,6 +342,9 @@ class ClientManager:
                     intermediate_certs=asserter_cert_chain[1:],
                     expected_eku=ExtendedKeyUsageOID.CLIENT_AUTH,
                 )
+                if client_type == ClientType.ADMIN:
+                    validate_admin_leaf_cert(asserter_cert)
+                    fl_ctx.set_prop(InternalFLContextKey.VERIFIED_ADMIN_CERT, asserter_cert, private=True, sticky=False)
             except Exception as ex:
                 self.logger.error(f"failed to verify client identity: {secure_format_exception(ex)}")
                 return None
@@ -359,7 +372,10 @@ class ClientManager:
                     self.name_to_clients.pop(client.name, None)
                 self.logger.info(f"Client: {client_name} already registered. Re-login the client with a new token.")
 
-        client = Client(client_name, str(uuid.uuid4()))
+        token = str(uuid.uuid4())
+        if client_type == ClientType.ADMIN:
+            token = ADMIN_TRANSPORT_TOKEN_PREFIX + token
+        client = Client(client_name, token)
         client.set_prop(ClientPropKey.ORG, client_org)
         client_fqcn = request.get_header(MessageHeaderKey.ORIGIN)
         self._set_client_props(client, client_fqcn, fl_ctx)

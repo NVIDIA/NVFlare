@@ -26,10 +26,11 @@ from nvflare.fuel.hci.server.authz import AuthzFilter, PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.login import LoginModule
 from nvflare.fuel.hci.server.reg import CommandFilter, ServerCommandRegister
-from nvflare.fuel.hci.server.sess import Session, SessionManager
+from nvflare.fuel.hci.server.sess import SessionManager
 from nvflare.fuel.sec.admin_audit import AdminContext, audit_context, snapshot, update_context
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
+from tests.admin_session_test_utils import register_admin_transport
 
 
 @pytest.fixture
@@ -198,7 +199,7 @@ def _login_conn(monkeypatch, *, study="default", verifier=True, asserter=True):
     identity = SimpleNamespace(verify_common_name=verify)
     signer = SimpleNamespace(sign=lambda *_args, **_kwargs: "session-signature") if asserter else None
     hci = SimpleNamespace(get_id_verifier=lambda: identity, get_id_asserter=lambda: signer)
-    cert = SimpleNamespace(not_valid_after_utc=SimpleNamespace(timestamp=lambda: 9999999999))
+    cert = SimpleNamespace(fingerprint=lambda _: b"admin-cert")
     monkeypatch.setattr(login_module, "load_crt_chain_bytes", lambda _: [cert])
     monkeypatch.setattr(login_module, "validate_admin_leaf_cert", lambda _: None)
     monkeypatch.setattr(login_module, "get_admin_study_entitlements", lambda _: ())
@@ -275,6 +276,8 @@ def test_login_success_links_created_session_and_never_writes_its_secrets(audit_
 
     _, records = audit_log
     conn = _login_conn(monkeypatch, study=DEFAULT_STUDY)
+    _, grant = register_admin_transport(session_manager)
+    conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
     with audit_context(AdminContext(request_id="request-login")):
         LoginModule(session_manager).handle_cert_login(conn, [InternalCommands.CERT_LOGIN, "admin@example.com"])
     entries = records()
@@ -285,13 +288,14 @@ def test_login_success_links_created_session_and_never_writes_its_secrets(audit_
     text = json.dumps(entries)
     assert session.sess_id not in text
     assert "private" not in text
-    assert "session-signature" not in text
+    assert next(d["data"] for d in conn.buffer.data if d["type"] == "token") not in text
 
 
 @pytest.mark.parametrize("reason", ["logout", "inactivity", "certificate_expired"])
 def test_actual_session_termination_once_with_fixed_reason(audit_log, session_manager, reason):
     _, records = audit_log
-    session = session_manager.create_session("admin@example.com", "org", "role", "admin/example")
+    _, grant = register_admin_transport(session_manager)
+    session, _ = session_manager.create_session(grant, "org", "role")
     creation = records()[0]
     session_manager.end_session_by_id(session.sess_id, audit_reason=reason)
     session_manager.end_session_by_id(session.sess_id, audit_reason=reason)
@@ -301,19 +305,6 @@ def test_actual_session_termination_once_with_fixed_reason(audit_log, session_ma
     assert entries[1]["reference"] == creation["event_id"]
     assert f"reason={reason}" in entries[1]["message"]
     assert session.sess_id not in json.dumps(entries)
-
-
-def test_restored_session_has_verified_actor_and_termination_reference(audit_log, session_manager, monkeypatch):
-    _, records = audit_log
-    session = Session("private-session", "restored@example.com", "org", "role", "")
-    monkeypatch.setattr(Session, "decode_token", lambda *_: session)
-    session_manager.recreate_session("private-token", "admin/example", None)
-    session_manager.end_session_by_id(session.sess_id)
-    entries = records()
-    assert [r["action"] for r in entries] == ["admin.session.restored", "admin.session.ended"]
-    assert all(r["user"] == "restored@example.com" for r in entries)
-    assert entries[1]["reference"] == entries[0]["event_id"]
-    assert "private" not in json.dumps(entries)
 
 
 def test_session_emits_outside_shared_lock_and_before_cleanup(audit_log, session_manager, monkeypatch):
@@ -329,7 +320,8 @@ def test_session_emits_outside_shared_lock_and_before_cleanup(audit_log, session
         return original(*args, **kwargs)
 
     monkeypatch.setattr(auditor, "add_event", checked_add)
-    session = session_manager.create_session("admin@example.com", "org", "role", "admin/example")
+    _, grant = register_admin_transport(session_manager)
+    session, _ = session_manager.create_session(grant, "org", "role")
 
     def bad_cancel():
         assert records()[-1]["action"] == "admin.session.ended"
@@ -354,7 +346,8 @@ def test_invalid_session_record_has_unknown_actor_and_no_token(audit_log, sessio
 
 def test_all_new_records_use_only_existing_string_fields(audit_log, session_manager):
     _, records = audit_log
-    session = session_manager.create_session("admin@example.com", "org", "role", "admin/example")
+    _, grant = register_admin_transport(session_manager)
+    session, _ = session_manager.create_session(grant, "org", "role")
     session_manager.end_session_by_id(session.sess_id)
     allowed = {"event_id", "reference", "timestamp", "user", "action", "job", "scope", "message"}
     for entry in records():
@@ -414,9 +407,8 @@ def test_session_monitor_records_the_actual_expiry_reason(audit_log, session_man
     _, records = audit_log
     clock = isolate_time(monkeypatch, "nvflare.fuel.hci.server.sess")
     monkeypatch.setattr(clock, "time", lambda: 0)
-    session_manager.create_session(
-        "admin@example.com", "org", "role", "admin/example", cert_exp=5 if certificate_expired else None
-    )
+    _, grant = register_admin_transport(session_manager, cert_exp=5 if certificate_expired else 100)
+    session_manager.create_session(grant, "org", "role")
     monkeypatch.setattr(clock, "time", lambda: 5 if certificate_expired else 11)
     session_manager.check_sessions()
     entries = records()
@@ -426,17 +418,11 @@ def test_session_monitor_records_the_actual_expiry_reason(audit_log, session_man
     assert session_manager.sessions == {}
 
 
-def test_failed_session_restoration_never_accepts_supplied_identity(audit_log, session_manager, monkeypatch):
+def test_unknown_session_token_never_accepts_supplied_identity(audit_log, session_manager, monkeypatch):
     _, records = audit_log
     conn = _login_conn(monkeypatch)
     conn.set_prop(ConnProps.USER_NAME, "unverified@example.com")
     monkeypatch.setattr(conn, "get_token", lambda: "private-session-token")
-    monkeypatch.setattr(session_manager, "get_session", lambda *_: None)
-
-    def failed_restore(*_):
-        raise ValueError("private-session-token")
-
-    monkeypatch.setattr(session_manager, "recreate_session", failed_restore)
     with audit_context(AdminContext()):
         assert not LoginModule(session_manager).pre_command(conn, ["delete_job"])
     assert len(records()) == 1
