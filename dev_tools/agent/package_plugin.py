@@ -117,6 +117,8 @@ def collect_files(root: Path) -> tuple[dict[str, tuple[bytes, int]], dict]:
     files["README.md"] = read_file(root, "PLUGIN.md")
     files["evals.json"] = read_file(root, "evals.json")
     files["LICENSE"] = read_file(root, "LICENSE")
+    files["LICENSE-CC-BY-4.0"] = read_file(root, "LICENSE-CC-BY-4.0")
+    files["SKILLS-LICENSE.md"] = read_file(root, "SKILLS-LICENSE.md")
     files["CONTRIBUTING.md"] = read_file(root, "CONTRIBUTING.md")
     canonical = json.loads(files["plugin.json"][0])
     if canonical["name"] != "nvidia-nvflare" or not re.fullmatch(r"\d+\.\d+\.\d+", canonical["version"]):
@@ -131,6 +133,8 @@ def collect_files(root: Path) -> tuple[dict[str, tuple[bytes, int]], dict]:
         "PLUGIN.md",
         "evals.json",
         "LICENSE",
+        "LICENSE-CC-BY-4.0",
+        "SKILLS-LICENSE.md",
         "CONTRIBUTING.md",
         "dev_tools/agent/package_plugin.py",
     ]

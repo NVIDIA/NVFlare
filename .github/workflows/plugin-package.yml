@@ -21,6 +21,8 @@ on:
       - 'evals.json'
       - 'PLUGIN.md'
       - 'LICENSE'
+      - 'LICENSE-CC-BY-4.0'
+      - 'SKILLS-LICENSE.md'
       - 'CONTRIBUTING.md'
       - '.claude-plugin/**'
       - '.codex-plugin/**'

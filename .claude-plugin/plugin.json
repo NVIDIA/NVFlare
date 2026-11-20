@@ -8,6 +8,6 @@
   },
   "homepage": "https://nvidia.github.io/NVFlare/",
   "repository": "https://github.com/NVIDIA/NVFlare",
-  "license": "Apache-2.0",
+  "license": "Apache-2.0 AND CC-BY-4.0",
   "keywords": ["nvidia", "nvflare", "federated-learning", "pytorch", "lightning", "huggingface", "autofl"]
 }

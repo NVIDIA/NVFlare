@@ -22,7 +22,7 @@ NVIDIA Verified status and an evaluator-generated publication verdict are pendin
 | Maintainer | NVIDIA FLARE Team — federatedlearning@nvidia.com |
 | Source repository | [NVIDIA/NVFlare](https://github.com/NVIDIA/NVFlare), `2.9` branch |
 | Product website | [NVIDIA FLARE](https://nvidia.github.io/NVFlare/) |
-| License | [Apache-2.0](LICENSE); existing component notices are retained |
+| License | `Apache-2.0 AND CC-BY-4.0`: [Apache 2.0 for code](LICENSE), [CC BY 4.0 for skill content](LICENSE-CC-BY-4.0); see [scope and attribution](SKILLS-LICENSE.md) |
 | Package contents | Eight user workflows and one shared support component |
 | Integration formats | Agent Plugins 1.0.0, Codex, Claude Code, and Cursor |
 | Execution | Local workspace and Python runtime; no bundled MCP server, hooks, or automatic installer |
@@ -110,15 +110,18 @@ the host's data-handling settings before exposing sensitive inputs.
 
 ## Validation evidence
 
-The local preparation used the `2.9` component tree at source revision
+The initial local preparation used the `2.9` component tree at source revision
 `5f2250f1cd63ca2b3aff1952d950e3c3e9af5496`. All nine component directories,
 including their instructions, scripts, references, datasets, reports, and retained
-signatures, were preserved.
+signatures, were preserved at that time. The subsequent licensing update changes
+license metadata and Python copyright headers while preserving instructions,
+executable behavior, and evaluation tasks. Fresh member cards and signatures,
+plus evaluation and verification of the final plugin, remain required.
 
 | Check | Result and scope |
 | --- | --- |
 | Package structure | Agent Plugins schema, Claude strict manifest validation, and repository skill lint passed for the initial candidate |
-| Component integrity | All 165 resource hashes in nine retained signature manifests matched packaged files; cryptographic signing trust was not checked locally |
+| Component integrity | Initial candidate: all 165 resource hashes matched. Current licensing candidate: retained signatures do not match changed resources; fresh member attestations are required |
 | Native loading and routing | Passed the host probes listed above |
 | Plugin security scan | Earlier candidate blocked: OSS SkillEvaluator 0.8.0 with SkillSpector 2.13.3 reported findings and incomplete analysis; final package scan remains required |
 | Plugin evaluation inputs | 107 plugin cases including `pytorch-convert-basic-v2`; the planned Codex/Claude skill and baseline matrix contains 428 attempts |
@@ -148,7 +151,8 @@ generated report must still confirm correct interpretation. The retained member
 benchmark and card describe their earlier evaluation and are not plugin results.
 
 The incomplete security scan also requires review and resolution. Retained
-per-skill signatures cover component content; they do not attest to the plugin's
+per-skill signatures describe the earlier component revision and require refresh
+after the licensing update; they do not attest to the plugin's
 new manifests, this card, or catalog-generated metadata.
 
 ## Release qualification

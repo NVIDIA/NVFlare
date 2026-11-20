@@ -62,11 +62,30 @@ for desktop execution.
 
 The build copies real files and preserves executable permissions. It packages
 only tracked skill files, the four manifests, this guide as `README.md`,
-the plugin-level `evals.json`, `LICENSE`, and `CONTRIBUTING.md` with the DCO text.
+the plugin-level `evals.json`, `LICENSE`, `LICENSE-CC-BY-4.0`,
+`SKILLS-LICENSE.md`, and `CONTRIBUTING.md` with the DCO text.
 The maintainer-authored root `plugin-card.md` is preparation material, excluded
 from the bundle; verification CI supplies the final card. Repository development
 settings and unrelated source code are excluded.
 No component symlinks are used.
+
+## Licensing
+
+The plugin and mixed skill files declare `Apache-2.0 AND CC-BY-4.0`.
+Code, scripts, configuration, and code examples use Apache 2.0. Skill instructions,
+reference prose, non-code examples, and NVIDIA-authored evaluation content and
+example datasets use CC BY 4.0. This scope includes future skills and their
+examples; see [the scope and attribution policy](SKILLS-LICENSE.md).
+Both full license texts are included. Other NVFlare code and documentation retain
+their existing licensing, and third-party terms and attributions remain in force.
+
+The licensing update changes member metadata and source headers while preserving
+instructions, executable behavior, and evaluation tasks. Retained member cards,
+benchmarks, and signatures describe the earlier revision. The old signatures do
+not match the changed resources, and the old cards still show the earlier license.
+Regenerate those artifacts through the verification service before release.
+The package check and archive build reject the resource mismatch until refreshed
+member signatures are available. Do not edit signatures or suppress this check.
 
 ## Build and validate
 
@@ -146,7 +165,8 @@ retained check evidence for probes already completed.
 ### Local evaluation and publication CI
 
 The bundled root `evals.json` contains 107 cases in the native NVCARPS plugin
-schema. Member datasets and their signatures remain unchanged. The suite
+schema. Member evaluation datasets remain unchanged. The licensing update requires
+refreshed member cards and signatures before release. The suite
 promotes routing expectations into `expected_skill` and `routing`, retains
 assertions and expected outcomes as private grading references, and rebases
 fixture paths. Prompts with fixtures identify the staged working directory;
