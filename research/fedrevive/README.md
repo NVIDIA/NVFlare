@@ -453,6 +453,23 @@ derived from the run seed, assignment ID, and phase. You can use
 The planner writes concrete event times, so replay uses only the resulting
 JSON and compares execution with the training-free preflight.
 
+### Visualize a plan before running it
+
+Install the optional Matplotlib dependency and run this from `research/fedrevive`.
+
+```bash
+python -m pip install matplotlib
+python plot_plan.py plan.json plan.png --first-assignment 0 --limit 30
+```
+
+The chart shows virtual-time download, training, and upload phases for timed
+plans and acceptance positions for fixed plans. Faded spans show phases still
+open at the displayed plan boundary. Use `--first-assignment` to inspect later
+reservations by zero-based assignment ID. In Python, import
+`plot_simulation_plan` from `plot_plan` to get a Matplotlib figure from a plan
+dictionary or JSON path. Use SimEnv preflight to check feasibility against the
+configured recipe.
+
 ## Adapt the workflow to another image dataset
 
 1. Update `data.py` to prepare logical shards and class proportions for the
