@@ -252,9 +252,7 @@ def test_unavailable_or_nonacknowledging_writer_is_diagnosed(writer, monkeypatch
 
 
 @pytest.mark.parametrize("boundary", ["write", "flush"])
-def test_real_writer_failure_does_not_fabricate_acknowledgement_or_leak_exception(
-    writer, monkeypatch, boundary, caplog
-):
+def test_real_writer_failure_does_not_fabricate_acknowledgement_or_leak_exception(writer, monkeypatch, boundary, capfd):
     instance, path = writer
     underlying = instance.audit_file
 
@@ -274,7 +272,7 @@ def test_real_writer_failure_does_not_fabricate_acknowledgement_or_leak_exceptio
     # A failed flush can follow a write; the diagnostic counts attempts, not exact lost records.
     assert len(records(path)) == (1 if boundary == "flush" else 0)
     assert admin_audit._failed_attempts == 1
-    assert "secret-private-path" not in caplog.text
+    assert capfd.readouterr().err == "Audit recording failed; failed attempts since startup: 1\n"
     assert "secret-private-path" not in path.read_text()
 
 

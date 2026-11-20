@@ -1,9 +1,9 @@
 # Audit log improvements, part 3: task execution and workflow results
 
-This increment depends on [part 1, pull request #5806](https://github.com/NVIDIA/NVFlare/pull/5806)
-and [part 2, pull request #5823](https://github.com/NVIDIA/NVFlare/pull/5823).
-Keep its pull request in draft until both dependencies and required reviews are
-complete. It covers task execution and workflow results. Model saving/loading,
+This increment builds on the merged changes from
+[part 1, pull request #5806](https://github.com/NVIDIA/NVFlare/pull/5806) and
+[part 2, pull request #5823](https://github.com/NVIDIA/NVFlare/pull/5823).
+It covers task execution and workflow results. Model saving/loading,
 algorithm-specific aggregation decisions and external application protocols are
 later increments.
 
@@ -140,7 +140,7 @@ validation. Scoped context is reset on every exit.
 A collector temporarily stores immutable facts while an operation owns shared
 locks. Nested collectors join the outer operation. The outermost collector
 restores its caller's context and detaches its pending facts before invoking any
-writer or diagnostic logger. This keeps new audit writes and diagnostics outside
+writer or diagnostic output. This keeps new audit writes and diagnostics outside
 the server workflow lock, communicator controller/task locks and task callback
 locks. Each collector is bounded to 1,024 facts; overflow counts as failed
 recording attempts without interrupting the operation. A collector must never
@@ -164,8 +164,9 @@ The simulator's explicit no-operation marker remains intentionally silent.
 Task/workflow failures share part 2's protected process-wide diagnostics and
 one-warning-per-minute limit. Counts describe failed recording attempts, not
 exact numbers of lost records: a flush failure may follow a completed write.
-Diagnostic failure uses protected fixed standard-error text. No audit failure
-is recursively audited.
+The fixed message and failure count go directly to standard error, independently
+of the site's logging settings. Errors writing the diagnostic are contained.
+No audit failure is recursively audited.
 
 Existing legacy task records, helper calls, audit-header values, return codes,
 receipts, retries and operation cleanup keep their behavior. In particular,
@@ -198,5 +199,4 @@ preserving other workloads. Run affected tests, project style/license and
 documentation-link checks; obtain independent quality and plan-compliance
 review. Publish signed commits with sign-offs on
 `codex/audit-task-workflow-coverage`. The third pull request targets NVIDIA's
-current `main`, explicitly depends on #5806 and #5823, and stays draft pending
-those dependencies and review.
+current `main` and stays draft pending review.

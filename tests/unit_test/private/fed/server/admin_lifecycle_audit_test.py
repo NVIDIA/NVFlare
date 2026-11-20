@@ -23,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
+from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.admin_audit import audit_context
 from nvflare.fuel.sec.audit import Auditor, AuditService
@@ -182,6 +183,41 @@ def test_remove_unknown_entry_is_unchanged_and_never_exposes_token(tmp_path, aud
     records = read()
     assert [item["action"] for item in records] == ["client.remove.unchanged"]
     assert "site=" not in records[0]["message"]
+
+
+def test_remove_command_preserves_validated_names_after_disconnect(tmp_path, audit_records):
+    _, read = audit_records
+    manager = _manager(tmp_path)
+    alive = Client("site-alive", "secret-token-alive")
+    gone = Client("site-gone", "secret-token-gone")
+    manager.set_clients({client.token: client for client in (alive, gone)})
+    engine = _engine(manager)
+    engine.client_manager = manager
+    module = TrainingCommandModule()
+    conn = Connection(app_ctx=engine, props={})
+    args = ["remove_client", alive.name, gone.name]
+    assert module.authorize_client_operation(conn, args) == PreAuthzReturnCode.REQUIRE_AUTHZ
+    assert manager.remove_client(gone.token) is gone
+
+    def cleanup(token):
+        if token == alive.token:
+            conn.get_prop(module.TARGET_CLIENTS).pop(gone.token)
+
+    engine.server.remove_client_data.side_effect = cleanup
+    with _context("training.remove_client"):
+        module.remove_client(conn, args)
+        records = read()
+        assert [item["action"] for item in records] == ["client.remove.applied", "client.remove.unchanged"]
+        assert "site=site-alive" in records[0]["message"]
+        assert "site=site-gone" in records[1]["message"]
+        assert conn.buffer.data[-1][ProtoKey.TYPE] == ProtoKey.SUCCESS
+        assert manager.clients == {}
+        assert [call.args[0] for call in engine.server.remove_client_data.call_args_list] == [alive.token, gone.token]
+
+        # A later direct engine call cannot reuse the command's target snapshot.
+        assert engine.remove_clients([gone.token]) == ""
+    assert read()[-1]["action"] == "client.remove.unchanged"
+    assert "site=" not in read()[-1]["message"]
 
 
 @pytest.mark.parametrize("operation", ["shutdown", "restart"])

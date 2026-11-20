@@ -14,13 +14,24 @@
 
 """CIFAR-10 ResNet-18 and model-state helpers for FedRevive."""
 
+import random
 from collections import OrderedDict
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 ModelState = dict[str, torch.Tensor]
+
+
+def set_seed(seed: int) -> None:
+    """Seed Python, NumPy, and PyTorch's CPU and CUDA RNGs for this process."""
+    random.seed(seed)
+    # Replay assignment seeds can exceed NumPy's 32-bit seed range.
+    np.random.seed(seed % 2**32)
+    # PyTorch also queues CUDA seeding without initializing CUDA before a fork.
+    torch.manual_seed(seed)
 
 
 class StatTracker(nn.Module):
