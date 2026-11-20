@@ -19,6 +19,7 @@ on:
     paths:
       - 'plugin.json'
       - 'evals.json'
+      - 'evals/**'
       - 'PLUGIN.md'
       - 'LICENSE'
       - 'LICENSE-CC-BY-4.0'

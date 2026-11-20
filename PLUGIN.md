@@ -43,8 +43,8 @@ workspace and local simulation for initial testing.
 The distributable plugin is committed under `plugins/nvidia-nvflare/`. The
 existing repository `skills/` directories remain the source of truth; edit skills
 there and regenerate the bundle. The root manifests, plugin-level `evals.json`,
-and this guide are also packaging inputs. The paths below are relative to the
-generated plugin directory.
+`evals/config.json`, and this guide are also packaging inputs. The paths below
+are relative to the generated plugin directory.
 
 | Target | Entry point | Skill discovery |
 | --- | --- | --- |
@@ -62,7 +62,7 @@ for desktop execution.
 
 The build copies real files and preserves executable permissions. It packages
 only tracked skill files, the four manifests, this guide as `README.md`,
-the plugin-level `evals.json`, `LICENSE`, `LICENSE-CC-BY-4.0`,
+the plugin-level `evals.json` and `evals/config.json`, `LICENSE`, `LICENSE-CC-BY-4.0`,
 `SKILLS-LICENSE.md`, and `CONTRIBUTING.md` with the DCO text.
 The maintainer-authored root `plugin-card.md` is preparation material, excluded
 from the bundle; verification CI supplies the final card. Repository development
@@ -192,13 +192,48 @@ Use the current NVCARPS CLI, configured with model credentials outside the
 repository, and its supported local container runtime. The compute image also
 needs NVFlare and the frameworks exercised by the tasks; precheck does not check
 these application dependencies. Select the same compatible image for skill and
-baseline attempts. From the repository root, evaluate the committed bundle:
+baseline attempts.
+
+The bundled `evals/config.json` declares Git/curl, read-only access to the
+sandbox's own `/proc` for NVFlare parent-process checks, and three Hugging Face
+Xet origins in addition to the managed destinations. These grants apply to
+both skill and baseline attempts when selected with `--allow-declared-access`;
+they do not mount the host's `/proc`. NVCARPS 1.3.1429 supplies the default CPU
+metadata permissions. Application dependencies belong in a compatible compute
+image selected by the operator, not in the task prompts.
+
+To authorize the additional Xet origins for runtime and Security grading,
+save this operator file outside the plugin as `/tmp/nvflare-operator.json`:
+
+```json
+{
+  "schema_version": 1,
+  "network": {
+    "allowed_origins": [
+      "https://cas-bridge.xethub.hf.co",
+      "https://cas-server.xethub.hf.co",
+      "https://transfer.xethub.hf.co"
+    ]
+  }
+}
+```
+
+Select an installed compatible compute image with `NVCARPS_EVAL_IMAGE`, then
+run from the repository root. The CLI discovers the bundled configuration
+automatically. Keep the operator file separate: passing the bundled file
+directly as `--config` in 1.3.1429 selects standalone defaults instead of the
+managed Codex/Claude, skill/baseline, and native-platform defaults.
 
 ```bash
-nvcarps update
+nvcarps update --stable
 nvcarps --version
-nvcarps plugin precheck plugins/nvidia-nvflare --evals
-nvcarps plugin eval plugins/nvidia-nvflare --output /absolute/path/to/new-eval-output
+nvcarps plugin precheck plugins/nvidia-nvflare --evals \
+  --config /tmp/nvflare-operator.json --allow-declared-access
+nvcarps plugin eval plugins/nvidia-nvflare --readiness \
+  --config /tmp/nvflare-operator.json --allow-declared-access --json
+nvcarps plugin eval plugins/nvidia-nvflare \
+  --config /tmp/nvflare-operator.json --allow-declared-access \
+  --output /absolute/path/to/new-eval-output
 nvcarps plugin eval verify /path/printed/by/the/cli/eval-result.json
 ```
 

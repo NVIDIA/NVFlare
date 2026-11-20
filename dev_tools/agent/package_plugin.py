@@ -116,6 +116,7 @@ def collect_files(root: Path) -> tuple[dict[str, tuple[bytes, int]], dict]:
         files[path] = read_file(root, path)
     files["README.md"] = read_file(root, "PLUGIN.md")
     files["evals.json"] = read_file(root, "evals.json")
+    files["evals/config.json"] = read_file(root, "evals/config.json")
     files["LICENSE"] = read_file(root, "LICENSE")
     files["LICENSE-CC-BY-4.0"] = read_file(root, "LICENSE-CC-BY-4.0")
     files["SKILLS-LICENSE.md"] = read_file(root, "SKILLS-LICENSE.md")
@@ -132,6 +133,7 @@ def collect_files(root: Path) -> tuple[dict[str, tuple[bytes, int]], dict]:
         *MANIFESTS,
         "PLUGIN.md",
         "evals.json",
+        "evals/config.json",
         "LICENSE",
         "LICENSE-CC-BY-4.0",
         "SKILLS-LICENSE.md",
