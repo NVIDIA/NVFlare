@@ -301,6 +301,25 @@ def study_secret_volume_name(study: str, name: str) -> str:
     return site_name_to_rfc1123(f"secret-{study}-{name}", max_length=63)
 
 
+def study_pod_bindings(runtime):
+    """Return Kubernetes volume, mount, and Secret env entries for a resolved study."""
+    volumes, mounts, secret_env = [], [], []
+    if runtime is not None:
+        for dataset in runtime.datasets:
+            name = study_dataset_volume_name(dataset.study, dataset.dataset)
+            volumes.append({"name": name, "persistentVolumeClaim": {"claimName": dataset.source}})
+            mounts.append({"name": name, "mountPath": dataset.mount_path, "readOnly": dataset.read_only})
+        for secret in runtime.secret_mounts:
+            name = study_secret_volume_name(secret.study, secret.name)
+            source = {"secretName": secret.source}
+            if secret.items:
+                source["items"] = [{"key": key, "path": path} for key, path in secret.items]
+            volumes.append({"name": name, "secret": source})
+            mounts.append({"name": name, "mountPath": secret.mount_path, "readOnly": True})
+        secret_env = [{"name": ref.name, "source": ref.source, "key": ref.key} for ref in runtime.secret_env]
+    return volumes, mounts, secret_env
+
+
 class K8sJobHandle(JobHandleSpec):
     def __init__(
         self,
@@ -1028,10 +1047,16 @@ class K8sJobLauncher(JobLauncherSpec):
         study = job_meta.get(JobMetaKey.STUDY.value)
         workspace_root = args.workspace
         study_runtime = self._resolve_study_runtime(workspace_root, study)
-        if not job_image and study_runtime is not None:
-            # job-supplied image wins; the study's container.image is the site default
-            job_image = study_runtime.container_image
+        # In task mode, training uses the study image while the CJ has its own image and template.
+        pod_runtime = study_runtime if execution_lifetime == "job" else None
+        if not job_image and pod_runtime is not None:
+            job_image = pod_runtime.container_image
         if not job_image:
+            if execution_lifetime == "task":
+                raise RuntimeError(
+                    f"Kubernetes task mode requires a CJ image in launcher_spec['{site_name}']['k8s']['image'] "
+                    "or launcher_spec['default']['k8s']['image']. The study image configures the task worker."
+                )
             raise RuntimeError(
                 f"K8sJobLauncher is configured for site '{site_name}' but no job image "
                 f"was specified in meta.json for this site. "
@@ -1040,12 +1065,8 @@ class K8sJobLauncher(JobLauncherSpec):
                 f"resource_spec['{site_name}']['k8s']['image'] (legacy), "
                 f"or studies.<study>.container.image in local/study_runtime.yaml (site default)."
             )
-        if study_runtime is not None:
-            pod_manifest_template = study_runtime.pod_template
-            data_mounts = study_runtime.datasets
-        else:
-            pod_manifest_template = None
-            data_mounts = []
+        pod_manifest_template = study_runtime.pod_template if study_runtime is not None else None
+        study_volumes, study_mounts, study_secret_env = study_pod_bindings(pod_runtime)
         native_resources = k8s_spec
         if execution_lifetime == "task":
             # Existing fields describe compute; none leak into the persistent CJ.
@@ -1061,7 +1082,7 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in {FLContextKey.JOB_PROCESS_ARGS}")
         _, job_cmd = exe_module_entry
 
-        env = dict(study_runtime.env) if study_runtime is not None else {}
+        env = dict(pod_runtime.env) if pod_runtime is not None else {}
         if app_custom_folder:
             workspace_root_abs = os.path.abspath(workspace_root)
             custom_folder_abs = os.path.abspath(app_custom_folder)
@@ -1112,45 +1133,22 @@ class K8sJobLauncher(JobLauncherSpec):
                     "readOnly": True,
                 },
             ]
-            for dataset_mount in data_mounts:
-                volume_name = study_dataset_volume_name(dataset_mount.study, dataset_mount.dataset)
-                volume_list.append({"name": volume_name, "persistentVolumeClaim": {"claimName": dataset_mount.source}})
-                volume_mount_list.append(
-                    {
-                        "name": volume_name,
-                        "mountPath": dataset_mount.mount_path,
-                        "readOnly": dataset_mount.read_only,
-                    }
-                )
-            secret_mounts = study_runtime.secret_mounts if study_runtime is not None else []
-            for secret_mount in secret_mounts:
-                volume_name = study_secret_volume_name(secret_mount.study, secret_mount.name)
-                secret_source = {"secretName": secret_mount.source}
-                if secret_mount.items:
-                    secret_source["items"] = [{"key": key, "path": path} for key, path in secret_mount.items]
-                volume_list.append({"name": volume_name, "secret": secret_source})
-                volume_mount_list.append({"name": volume_name, "mountPath": secret_mount.mount_path, "readOnly": True})
-
             job_config = {
                 "name": pod_name,
                 "image": job_image,
                 "container_name": f"container-{job_id}",
                 "command": job_cmd,
-                "volume_mount_list": volume_mount_list,
-                "volume_list": volume_list,
+                "volume_mount_list": volume_mount_list + study_mounts,
+                "volume_list": volume_list + study_volumes,
                 "module_args": self.get_module_args(job_id, fl_ctx),
                 "env": env,
             }
             secret_env_refs = [{"name": name, "source": credential_secret_name, "key": name} for name in credential_env]
-            if study_runtime is not None:
-                if study_runtime.secret_env:
-                    secret_env_refs.extend(
-                        {"name": ref.name, "source": ref.source, "key": ref.key} for ref in study_runtime.secret_env
-                    )
-                if pod_manifest_template is not None:
-                    # Credential secretKeyRefs attach to every job, so a multi-container
-                    # template must always name its main container.
-                    job_config["require_main_container"] = True
+            secret_env_refs.extend(study_secret_env)
+            if pod_manifest_template is not None:
+                # Credential secretKeyRefs attach to every job, so a multi-container
+                # template must always name its main container.
+                job_config["require_main_container"] = True
             if secret_env_refs:
                 job_config["secret_env"] = secret_env_refs
             if self.image_pull_secrets:
@@ -1210,6 +1208,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 site_name,
                 workspace_obj,
                 execution_lifetime=execution_lifetime,
+                study_runtime=study_runtime,
                 job_meta=job_meta,
                 fl_ctx=fl_ctx,
                 transfer_token=workspace_transfer_token,
@@ -1396,6 +1395,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         workspace,
         *,
         execution_lifetime="job",
+        study_runtime=None,
         job_meta=None,
         fl_ctx=None,
         transfer_token=None,
@@ -1485,6 +1485,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             job_id,
             site_name,
             startup_secret_name=startup_secret_name,
+            study_runtime=study_runtime,
         )
         cell = fl_ctx.get_engine().cell
         return K8sTaskService.get_or_create(cell).add_job(backend, job_id, site_name, transfer_token)

@@ -14,11 +14,13 @@
 
 """Site-owned Kubernetes task execution with native CPU/GPU admission."""
 
+import copy
 import hashlib
 import ipaddress
 import json
 import math
 import os
+import posixpath
 import tempfile
 import threading
 import time
@@ -44,6 +46,7 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
     is_cpu_memory_gpu_shortage,
     job_workspace_subpath,
     site_name_to_rfc1123,
+    study_pod_bindings,
     task_security_context,
     validate_dns_name,
     validate_startup_secret_name,
@@ -308,9 +311,31 @@ class _K8sTaskProfile(TaskLauncherSpec):
 class K8sTaskBackend(_K8sTaskProfile):
     """CP-only Kubernetes authority. Never construct this from a CJ request."""
 
-    def __init__(self, *args, startup_secret_name, **kwargs):
+    def __init__(self, *args, startup_secret_name, study_runtime=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.startup_secret_name = validate_startup_secret_name(startup_secret_name)
+        self.study_volumes, self.study_mounts, self.study_secret_env = study_pod_bindings(study_runtime)
+        self.worker_scheduling = {}
+        if study_runtime is not None:
+            if any(dataset.source == self.workspace_pvc for dataset in study_runtime.datasets):
+                raise ValueError("the jobs PVC may only be mounted through the assigned job subPath")
+            mount_paths = {self.workspace_root}
+            for mount in self.study_mounts:
+                path = mount["mountPath"]
+                normalized = posixpath.normpath("/" + path.lstrip("/"))
+                if any(posixpath.commonpath([normalized, other]) in (normalized, other) for other in mount_paths):
+                    raise ValueError(f"study mount path {path!r} overlaps the worker workspace or another study mount")
+                mount_paths.add(normalized)
+            secret_names = {ref["name"] for ref in self.study_secret_env}
+            forbidden = (set(study_runtime.env) | secret_names) & FORBIDDEN_ENVIRONMENT_NAMES
+            if forbidden:
+                raise ValueError(f"study worker environment cannot override reserved names: {sorted(forbidden)}")
+
+            self.image = study_runtime.container_image or self.image
+            self.environment.update(study_runtime.env)
+            for name in secret_names:
+                self.environment.pop(name, None)
+            self.worker_scheduling = copy.deepcopy(study_runtime.worker_scheduling)
 
     def handle_event(self, event_type, fl_ctx):
         if event_type != EventType.START_RUN:
@@ -406,13 +431,15 @@ class K8sTaskBackend(_K8sTaskProfile):
                 "module_args": {"--bootstrap": path, "--execution_scope": "native"},
                 "resources": resources,
                 "env": environment,
+                "secret_env": self.study_secret_env,
                 "volume_list": [
                     {"name": "workspace", "persistentVolumeClaim": {"claimName": self.workspace_pvc}},
                     {
                         "name": "startup-kit",
                         "secret": {"secretName": self.startup_secret_name},
                     },
-                ],
+                ]
+                + self.study_volumes,
                 "volume_mount_list": [
                     {
                         "name": "workspace",
@@ -430,7 +457,8 @@ class K8sTaskBackend(_K8sTaskProfile):
                         "readOnly": True,
                         "subPath": job_workspace_subpath(request.job_id, request.site_name) + "/local",
                     },
-                ],
+                ]
+                + self.study_mounts,
             },
             python_path=self.python_path,
             preserve_empty_env=True,
@@ -445,6 +473,7 @@ class K8sTaskBackend(_K8sTaskProfile):
             },
             annotations={_OWNER_ANNOTATION: owner, _IDENTITY_ANNOTATION: json.dumps(request.identity)},
         )
+        manifest["spec"].update(copy.deepcopy(self.worker_scheduling))
         manifest["spec"].update(
             automountServiceAccountToken=False,
             serviceAccountName=self.worker_service_account,
@@ -736,10 +765,13 @@ class K8sTaskLauncher(_K8sTaskProfile):
             raise RuntimeError("Kubernetes task proxy has no START_RUN binding")
         return client.launch(request)
 
-    def create_backend(self, api, storage_root, job_meta, job_id, site_name, *, startup_secret_name):
+    def create_backend(
+        self, api, storage_root, job_meta, job_id, site_name, *, startup_secret_name, study_runtime=None
+    ):
         """Called only by CP with canonical site policy and admitted job metadata."""
         backend = K8sTaskBackend(
             startup_secret_name=startup_secret_name,
+            study_runtime=study_runtime,
             namespace=self.namespace,
             image=self.image,
             workspace_root=self.workspace_root,

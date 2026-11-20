@@ -472,7 +472,9 @@ cannot add a second full jobs-claim mount. Site seccomp/supplemental-group setti
 are preserved while required nonroot/no-escalation settings are enforced. CJ and
 workers receive no Kubernetes API token. This profile does not allocate per-job
 UIDs/claims or isolate worker access from files already inside its own job subtree.
-Additional CJ dataset volumes are not automatically inherited by task workers.
+CP applies the study runtime's datasets and secrets directly to task workers.
+The CJ's Pod template configures its own environment and placement, while
+the study's worker scheduling settings control placement of task pods.
 
 Persistent job subtrees are retained after success as well as failure. Operators
 budget capacity, archive and remove them only after the job, runtimes, in-flight

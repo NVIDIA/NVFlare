@@ -84,7 +84,8 @@ The schema is common across launchers but values are launcher-specific (`source`
 `secret_env.*.source`: Secret name vs parent environment variable; `pod_template`: K8s-only; `slurm`: Slurm-only).
 A file is authored per deployment, not portable across launcher types.
 
-Inline `pod_template` example — pinning a study to H100 nodes needs only this file:
+This inline `pod_template` places a job-mode training pod on H100 nodes. For task mode, put
+`nodeSelector` and `tolerations` under the study's `worker_scheduling` instead.
 
 ```yaml
 format_version: 2
@@ -174,6 +175,10 @@ Kubernetes:
 - `pod_template`: inline mapping or path relative to `local/`; becomes the study's base manifest. Templates mark
   the main container with the `nvflare_job` sentinel; the launcher renames it to the per-job generated name
   (`container-<job-id>`).
+- In task mode, datasets, env, Secret references, and `container.image` apply to the worker. The worker falls
+  back to the site task launcher's image. The CJ uses its own job image and `pod_template`.
+- `worker_scheduling`: optional Kubernetes-only mapping of `nodeSelector`, `affinity`, and `tolerations` for task
+  workers. The site configures worker placement independently of the CJ.
 - `docker_kwargs`: hard error (Docker-only).
 
 Docker:
@@ -236,7 +241,7 @@ Merge order (later wins):
 
 ## Future: Image Enforce Mode
 
-For Docker and Kubernetes, `container.image` (implemented) is the site default job image; resolution is
+For Docker and Kubernetes job mode, `container.image` is the site default job image; resolution is
 job-supplied image → study `container.image` → error. FLARE-3027 tracks the follow-up enforce/pin mode for those
 launchers. Slurm follows the same override principle, with an additional site launcher fallback:
 job-supplied image → study `container.image` → site `job_launcher.image` → error for a container backend.

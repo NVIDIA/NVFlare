@@ -42,6 +42,7 @@ _RESERVED_DATASET_TYPES = {"databricks"}
 _STUDY_KEYS = {
     "container",
     "pod_template",
+    "worker_scheduling",
     "docker_kwargs",
     "datasets",
     "env",
@@ -149,6 +150,7 @@ class StudyRuntime:
     secret_mounts: list = field(default_factory=list)  # list[SecretMount]
     container_image: Optional[str] = None
     pod_template: Optional[dict] = None
+    worker_scheduling: dict = field(default_factory=dict)
     docker_kwargs: dict = field(default_factory=dict)
     slurm: dict = field(default_factory=dict)
 
@@ -447,6 +449,25 @@ def _parse_slurm(study: str, entry, file_path: str) -> dict:
     return result
 
 
+def _parse_worker_scheduling(study: str, entry, file_path: str, launcher_mode: str) -> dict:
+    label = f"studies.{study}.worker_scheduling"
+    if launcher_mode != "k8s":
+        raise _error(file_path, f"{label} is Kubernetes-only.")
+    entry = _require_dict(entry, label, file_path)
+    _require_known_keys(entry, {"nodeSelector", "affinity", "tolerations"}, label, file_path)
+    if "nodeSelector" in entry:
+        selector = _require_dict(entry["nodeSelector"], f"{label}.nodeSelector", file_path)
+        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in selector.items()):
+            raise _error(file_path, f"{label}.nodeSelector keys and values must be strings.")
+    if "affinity" in entry:
+        _require_dict(entry["affinity"], f"{label}.affinity", file_path)
+    if "tolerations" in entry and (
+        not isinstance(entry["tolerations"], list) or any(not isinstance(t, dict) for t in entry["tolerations"])
+    ):
+        raise _error(file_path, f"{label}.tolerations must be a list of mappings.")
+    return entry
+
+
 def _parse_study(
     study: str,
     entry,
@@ -468,6 +489,10 @@ def _parse_study(
         runtime.container_image = _parse_container(study, entry["container"], file_path, launcher_mode)
     if "pod_template" in entry:
         runtime.pod_template = _parse_pod_template(entry["pod_template"], file_path, launcher_mode)
+    if "worker_scheduling" in entry:
+        runtime.worker_scheduling = _parse_worker_scheduling(
+            study, entry["worker_scheduling"], file_path, launcher_mode
+        )
     if "docker_kwargs" in entry:
         runtime.docker_kwargs = _parse_docker_kwargs(study, entry["docker_kwargs"], file_path, launcher_mode)
     if "datasets" in entry:
