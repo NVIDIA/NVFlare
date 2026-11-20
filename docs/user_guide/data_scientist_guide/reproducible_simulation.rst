@@ -148,7 +148,10 @@ what was loaded at launch. A mismatch fails the run. ``run.jsonl`` records
 ``logical_trace_verified``, the normalized input's ``plan_sha256``, wall seconds,
 and virtual time. By default, ``models/`` and ``results/`` retain intermediate payloads.
 Set ``async_execution.retain_artifacts`` to false to keep the traces and reclaim
-temporary payloads after use. Unknown plan controls and unused sections fail the run.
+temporary payloads after use. With preflight, the runner saves uploads only for
+planned acceptances and reuses each version's base until its last planned
+consumer finishes. Any call still in flight at the stop can read its base until
+its result arrives. Unknown plan controls and unused sections fail the run.
 
 This controls logical assignments and server acceptance. Matching numerical
 models also requires deterministic initialization, client training, data

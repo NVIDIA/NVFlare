@@ -118,17 +118,17 @@ behavior.
 | `nvflare.collab.fedbuff_recipe` | Shared assignment acceptance, buffered publication, Collab calls, one bounded receipt queue and lifecycle |
 | `update.py` | Optional `FedReviveUpdate`: proxies, shared teacher history, revival gates and delta blending |
 | `dfkd.py` | Conditional generator, optimized latent/embedding tensors, Reptile update, weighted per-teacher objectives and sampling |
-| `schedule.py` | Paper mode: seeded download/train/upload phases and logical-client eligibility |
-| `workflow.py` | Paper mode: research reservations and physical-worker mapping over core calls/acceptance |
-| `storage.py` | Paper mode: run-owned temporary tensor files with reference counts |
+| `schedule.py` | Generate the ordered paper plan with seeded phases and logical-client eligibility |
+| `plot_plan.py` | Plot a saved plan and estimate peak temporary payload storage |
 | `SimEnv` with a replay plan | Explicit assignment and acceptance order or timing, with evidence in the run's `simulation/` directory |
 | `server.py` | Separate initial model loader, FedRevive model operations, and CIFAR evaluation/artifact observer |
 
 Concurrency bounds active logical assignments. Physical sites bound concurrent
 training calls and the receipt queue. The paper plan keeps intermediate payloads
-on disk only while needed. Outstanding assignments share the base file for their
-version, and completed uploads wait on disk for their logical acceptance. The
-shared runner reclaims these files as their last consumer finishes.
+on disk only while needed. Assignments share one base file per version. The
+runner releases it after its last planned consumer finishes and writes uploads
+to disk only when the plan calls for their acceptance. Each cached upload is
+removed after acceptance and its callbacks.
 
 The observer retains experiment evidence:
 
@@ -149,10 +149,10 @@ The generated plan is saved under `server/local/simulation_plan.json` in
 the job workspace. Pass this file to `--simulation-plan` with a fresh
 workspace to replay the schedule.
 
-The workflow discards pending uploads at its horizon and drains active calls
-before releasing outstanding bases. Normal shutdown, managed aborts, and
-handled failures remove temporary model files. A process killed before
-cleanup can leave temporary files in that run's directory.
+At the horizon the workflow releases bases for assignments that will never
+dispatch and releases the remaining bases as active calls finish. Normal
+shutdown, managed aborts, and handled failures remove temporary model files.
+A process killed before cleanup can leave temporary files in that run's directory.
 Before starting the simulator, the launcher rejects a job directory that
 already exists or is reserved by another run under the effective workspace root.
 Use a distinct `--workspace-root` for each repeat of the same method, including
@@ -470,6 +470,13 @@ reservations by zero-based assignment ID. In Python, import
 dictionary or JSON path. Use SimEnv preflight to check feasibility against the
 configured recipe.
 
+Timed plans with explicit `base_versions` and `retain_artifacts: false` show a
+peak bound for temporary base and upload files over the full plan. The estimate
+assumes each accepted upload could be ready as soon as its assignment is
+reserved. Physical readiness can lower actual usage. For a size estimate, add
+`--base-mib` and `--upload-mib` with the sizes of one serialized base and one
+serialized upload. The estimate covers model payloads in the replay workspace.
+
 ## Adapt the workflow to another image dataset
 
 1. Update `data.py` to prepare logical shards and class proportions for the
@@ -583,10 +590,9 @@ fedrevive/
 ├── model.py
 ├── client.py
 ├── server.py             # Model loader, operations, evaluation observer
-├── schedule.py           # Seeded research phases
-├── storage.py            # Reference-counted temporary tensor files
+├── schedule.py           # Generate seeded paper plans
+├── plot_plan.py          # Inspect a plan and its storage bound offline
 ├── update.py             # Optional FedRevive update transform
-├── workflow.py           # Research composition over core async
 ├── fedrevive.py
 ├── dfkd.py
 ├── job.py

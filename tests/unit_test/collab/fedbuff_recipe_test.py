@@ -279,6 +279,32 @@ def test_timed_plan_stops_acceptance_at_horizon_and_drains_started_results(tmp_p
     assert not (tmp_path / "accepted.jsonl").exists()
 
 
+def test_transient_replay_keeps_a_base_until_its_last_planned_reservation(tmp_path):
+    delays = {"download": 0.25, "train": 0.5, "upload": 0.25}
+    plan = {
+        "format_version": 1,
+        "async_execution": {
+            "logical_sequence": ["a", "b"],
+            "timing": {"starts": [0, 2], "delays": [delays, delays], "horizon": 4},
+            "retain_artifacts": False,
+        },
+    }
+    observer = _Observer()
+    snapshot_between_assignments = []
+
+    def on_time(instant):
+        if instant == 2:
+            snapshot_between_assignments.extend(tmp_path.glob("work-*/models/00000000.pkl"))
+            assert not list(tmp_path.glob("work-*/results/*.pkl"))
+
+    observer.on_time = on_time
+    _execute(
+        observer, [_Client()], runtime=SimulationPlanRuntime(plan, tmp_path), num_rounds=1, concurrency=1, buffer_size=2
+    )
+    assert len(snapshot_between_assignments) == 1
+    assert not snapshot_between_assignments[0].exists()
+
+
 def test_planned_replay_rejects_repeated_active_logical_client(tmp_path):
     runtime = SimulationPlanRuntime(
         {
@@ -329,6 +355,14 @@ def test_ordered_plan_releases_client_at_train_and_validates_refill_base(tmp_pat
         },
     }
     runtime = SimulationPlanRuntime(plan, tmp_path)
+    saved_uploads = []
+    save_result = runtime.save_result
+
+    def record_result(identity, result):
+        saved_uploads.append(identity)
+        save_result(identity, result)
+
+    monkeypatch.setattr(runtime, "save_result", record_result)
     client = _Client(failure=scenario == "client_failure")
     observer = _Observer()
     if scenario == "wrong_base":
@@ -348,6 +382,7 @@ def test_ordered_plan_releases_client_at_train_and_validates_refill_base(tmp_pat
 
     _execute(observer, [client], runtime=runtime, num_rounds=2, concurrency=2)
     assert client.assignments == [(0, 0), (1, 0), (2, 1)]
+    assert saved_uploads == [1]
     assert observer.finish_version == 1 and runtime.virtual_time == 2
     accepted = json.loads((tmp_path / "accepted.jsonl").read_text())
     preflight = [json.loads(line) for line in (tmp_path / "preflight.jsonl").read_text().splitlines()]

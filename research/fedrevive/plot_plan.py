@@ -15,7 +15,8 @@
 """Plot the assignment order or virtual-time phases of a SimEnv plan."""
 
 import argparse
-from collections import defaultdict
+import math
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from nvflare.apis.simulation_plan import (
@@ -29,16 +30,34 @@ from nvflare.apis.simulation_plan import (
 _PHASE_COLORS = dict(zip(PHASES, ("#4477AA", "#228833", "#CC6677")))
 
 
-def plot_simulation_plan(plan: dict | str | Path, *, first_assignment: int = 0, limit: int = 30):
+def plot_simulation_plan(
+    plan: dict | str | Path,
+    *,
+    first_assignment: int = 0,
+    limit: int = 30,
+    base_mib: float | None = None,
+    upload_mib: float | None = None,
+):
     """Return a Matplotlib figure for consecutive reservation IDs in a plan.
 
     Timed plans use the simulator's virtual event calculator. Fixed plans
     show acceptance rank. The plot includes base versions when the plan
-    supplies them. Use SimEnv preflight to check feasibility against a recipe.
+    supplies them. Timed plans with explicit base versions and temporary
+    storage also show a peak file bound for the full plan. Supply both
+    serialized payload sizes in MiB to estimate a size bound.
     """
     normalized = validate_simulation_plan(plan) if isinstance(plan, dict) else load_simulation_plan(plan)
     execution = normalized[ASYNC_EXECUTION]
     names = execution["logical_sequence"]
+    versions = execution.get("base_versions")
+    has_storage_bound = "timing" in execution and versions is not None and not execution.get("retain_artifacts", True)
+    if base_mib is not None or upload_mib is not None:
+        if not all(size is not None and math.isfinite(size) and size >= 0 for size in (base_mib, upload_mib)):
+            raise ValueError("base_mib and upload_mib must both be finite nonnegative sizes")
+        if not has_storage_bound:
+            raise ValueError(
+                "a storage size estimate requires a timed plan with base_versions and retain_artifacts=false"
+            )
     if not 0 <= first_assignment < len(names):
         raise ValueError(f"first_assignment must be between 0 and {len(names) - 1}")
     if limit < 1:
@@ -50,7 +69,11 @@ def plot_simulation_plan(plan: dict | str | Path, *, first_assignment: int = 0, 
     figure = Figure(figsize=(9, max(3, 1.8 + 0.32 * len(identities))), layout="constrained")
     axes = figure.subplots()
     if "timing" in execution:
-        _plot_timing(axes, names, execution["timing"], identities)
+        timing = execution["timing"]
+        events = [event for event in PlannedAsyncEvents(names, timing) if event[0] < timing["horizon"]]
+        _plot_timing(axes, timing, events, identities)
+        if has_storage_bound:
+            figure.suptitle(_storage_summary(events, versions, base_mib, upload_mib), x=0.02, ha="left", fontsize=10)
     else:
         positions = {identity: rank for rank, identity in enumerate(execution["arrival_sequence"], start=1)}
         axes.scatter([positions[identity] for identity in identities], list(identities), color="#4477AA", s=42)
@@ -58,7 +81,6 @@ def plot_simulation_plan(plan: dict | str | Path, *, first_assignment: int = 0, 
         axes.set_xlabel("Acceptance position (1-based)")
         axes.xaxis.get_major_locator().set_params(integer=True)
 
-    versions = execution.get("base_versions")
     names_by_row = [
         f"#{identity}  {names[identity]}" + (f"  (base v{versions[identity]})" if versions is not None else "")
         for identity in identities
@@ -71,14 +93,40 @@ def plot_simulation_plan(plan: dict | str | Path, *, first_assignment: int = 0, 
     return figure
 
 
-def _plot_timing(axes, names, timing, identities):
+def _storage_summary(events, versions, base_mib, upload_mib):
+    accepted = {identity for _, identity, phase in events if phase == "upload"}
+    base_users = Counter(versions[identity] for _, identity, phase in events if phase == "start")
+    bases = set()
+    uploads = peak_files = peak_bases = peak_uploads = 0
+    peak_mib = 0.0
+    for _, identity, phase in events:
+        version = versions[identity]
+        if phase == "start":
+            bases.add(version)
+            # A physical upload may arrive at any point before logical acceptance.
+            uploads += identity in accepted
+            peak_files = max(peak_files, len(bases) + uploads)
+            peak_bases = max(peak_bases, len(bases))
+            peak_uploads = max(peak_uploads, uploads)
+            if base_mib is not None:
+                peak_mib = max(peak_mib, len(bases) * base_mib + uploads * upload_mib)
+        elif phase == "upload":
+            uploads -= 1
+            base_users[version] -= 1
+            if base_users[version] == 0:
+                bases.remove(version)
+    summary = f"Peak payload bound  ≤ {peak_files} files  ·  Bases ≤ {peak_bases}  ·  Uploads ≤ {peak_uploads}"
+    return summary if base_mib is None else f"{summary}  ·  ~{peak_mib:.2f} MiB"
+
+
+def _plot_timing(axes, timing, events, identities):
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
 
     horizon = timing["horizon"]
     events_by_id = defaultdict(list)
-    for instant, identity, phase in PlannedAsyncEvents(names, timing):
-        if identity in identities and instant < horizon:
+    for instant, identity, phase in events:
+        if identity in identities:
             events_by_id[identity].append((instant, phase))
 
     # An ordered plan can end at the publication budget before its horizon.
@@ -125,11 +173,19 @@ def main():
     parser.add_argument("output", type=Path, help="Chart destination, such as plan.png or plan.pdf")
     parser.add_argument("--first-assignment", type=int, default=0, help="First zero-based reservation ID to plot")
     parser.add_argument("--limit", type=int, default=30, help="Maximum assignments to plot")
+    parser.add_argument("--base-mib", type=float, help="Estimated serialized size of one base model in MiB")
+    parser.add_argument("--upload-mib", type=float, help="Estimated serialized size of one accepted upload in MiB")
     args = parser.parse_args()
     try:
         if args.plan.resolve() == args.output.resolve():
             raise ValueError("output must differ from the input plan")
-        figure = plot_simulation_plan(args.plan, first_assignment=args.first_assignment, limit=args.limit)
+        figure = plot_simulation_plan(
+            args.plan,
+            first_assignment=args.first_assignment,
+            limit=args.limit,
+            base_mib=args.base_mib,
+            upload_mib=args.upload_mib,
+        )
         figure.savefig(args.output, dpi=150)
     except ImportError as error:
         if error.name != "matplotlib":

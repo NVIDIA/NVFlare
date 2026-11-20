@@ -17,7 +17,7 @@
 import logging
 import pickle
 import queue
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -98,9 +98,13 @@ class PlannedAsyncExecution:
         self.runtime = runtime
         self.expected = None
         self.retain_artifacts = True
+        self._base_users = Counter()
+        self._planned_acceptances = None
 
     def _make_assignment(self, identity, logical_name, version, model, metadata):
         path = self.runtime.save_model(version, model)
+        if not self.retain_artifacts and self._planned_acceptances is None:
+            self._base_users[version] += 1
         if self.port.make_assignment is not None:
             return self.port.make_assignment(identity, logical_name, version, path, metadata)
         return StoredAssignment(identity, logical_name, logical_name, version, path, metadata)
@@ -136,6 +140,14 @@ class PlannedAsyncExecution:
             self.expected = iter(preflight.records)
 
         self.retain_artifacts = plan.get("retain_artifacts", True)
+        if preflight is not None and not self.retain_artifacts:
+            # Future reservations can reuse a base after its current assignments finish.
+            self._base_users.update(
+                record["base_version"] for filename, record in preflight.records if filename == "assignments.jsonl"
+            )
+            self._planned_acceptances = {
+                record["assignment_id"] for filename, record in preflight.records if filename == "accepted.jsonl"
+            }
         with self.runtime.artifacts(self.retain_artifacts):
             self._run_plan(plan, events)
         if preflight is not None:
@@ -272,10 +284,15 @@ class PlannedAsyncExecution:
 
     def _discard_consumed_assignment(self, assignment):
         if not self.retain_artifacts:
-            unused_base = assignment.base_version
-            if any(active.base_version == unused_base for active in self.state.active.values()):
-                unused_base = None
-            self.runtime.discard_assignment(assignment.assignment_id, unused_base)
+            self.runtime.discard_result(assignment.assignment_id)
+            self._release_base(assignment)
+
+    def _release_base(self, assignment):
+        version = assignment.base_version
+        self._base_users[version] -= 1
+        if not self._base_users[version]:
+            self.runtime.discard_model(version)
+            del self._base_users[version]
 
     def _run_timed(self, sequence, seeds, events, timing):
         """Apply logical events on a virtual clock; wall time only gates result readiness."""
@@ -312,6 +329,8 @@ class PlannedAsyncExecution:
                 return
             if inflight.pop(site, None) != identity:
                 raise ValueError("physical result identity mismatch")
+            if not dispatch_pending and not self.retain_artifacts:
+                self._release_base(self.state.active[identity])
             if error is not None or result is None:
                 if ordered and not dispatch_pending:
                     logging.getLogger(__name__).warning(
@@ -320,9 +339,13 @@ class PlannedAsyncExecution:
                     return
                 raise RuntimeError(f"assignment {identity} failed: {error or 'no result'}")
             if dispatch_pending:
-                self.runtime.save_result(identity, result)
+                if self._planned_acceptances is None or identity in self._planned_acceptances:
+                    self.runtime.save_result(identity, result)
+                    completed_sites[identity] = site
+                else:
+                    # Readiness can still gate the horizon even when the upload is discarded.
+                    self._release_base(self.state.active[identity])
                 ready.add(identity)
-                completed_sites[identity] = site
                 available.append(site)
                 dispatch()
             elif self.retain_artifacts:
@@ -423,8 +446,10 @@ class PlannedAsyncExecution:
             self._trace("phases.jsonl", {"phase": "horizon", "virtual_time": self.runtime.virtual_time})
 
         if not self.retain_artifacts:
-            for identity in ready:
-                self.runtime.discard_assignment(identity, None)
+            for identity in completed_sites:
+                self._discard_consumed_assignment(self.state.active[identity])
+            for assignment in pending:
+                self._release_base(assignment)
 
         # Drain active calls without admitting pending work after the stop.
         while inflight:

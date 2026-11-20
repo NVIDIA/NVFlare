@@ -355,10 +355,11 @@ class SimulationPlanRuntime:
         with path.open("rb") as stream:
             return pickle.load(stream)
 
-    def discard_assignment(self, assignment_id: int, unused_base_version: int | None) -> None:
+    def discard_result(self, assignment_id: int) -> None:
         self._result_path(assignment_id).unlink()
-        if unused_base_version is not None:
-            self._model_path(unused_base_version).unlink()
+
+    def discard_model(self, version: int) -> None:
+        self._model_path(version).unlink()
 
     def trace(self, filename: str, record: dict) -> None:
         self._trace(filename, record)
