@@ -44,6 +44,7 @@ from nvflare.app_opt.flower.http_transport import (
     http_response,
 )
 from nvflare.app_opt.flower.process import FlowerProcessManager
+from nvflare.private.fed.resource_stats import cpu_consumed
 from tests.process_test_utils import OwnedProcesses, process_running
 from tests.timing_utils import ManualClock, ThreadGroup, wait_for
 
@@ -424,6 +425,8 @@ def detached_flower_factory(flower_process_factory, tmp_path):
 
 @pytest.mark.parametrize("scenario", ["running", "parent-exited", "unobserved-parent-exit"])
 def test_stops_owned_detached_descendant(detached_flower_factory, monkeypatch, scenario):
+    accountant = cpu_consumed.CpuConsumedAccountant()
+    monkeypatch.setattr(cpu_consumed, "_active", accountant)
     if scenario == "unobserved-parent-exit":
         # Force the window where a worker is orphaned before any tree snapshot.
         monkeypatch.setattr(FlowerProcessManager, "_monitor_descendants", lambda self: self._monitor_stop.wait())
@@ -444,6 +447,9 @@ def test_stops_owned_detached_descendant(detached_flower_factory, monkeypatch, s
     assert manager.process.stdout.closed
     assert manager.log_file is None
     assert manager.stop(timeout=0.2) == manager.process.returncode
+    cpu = accountant.finish()
+    assert cpu["status"] == "partial" and cpu["issues"] == ["attribution_incomplete"]
+    assert cpu["cpu_seconds"] >= 0
 
 
 def test_failed_worker_cleanup_releases_log_reader(detached_flower_factory, tmp_path):

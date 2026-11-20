@@ -28,38 +28,65 @@ The audit files are located in different directories depending on the process ty
    - Contains job-specific events for the client
 
 To access the audit files for a job, run `download_job <job_id>` and look in the downloaded job's workspace folder
-for the SJ and CJ logs (by default named audit.log).
+for the SJ and CJ logs (by default named ``audit.jsonl``). Existing audit, log and result
+directory overrides continue to determine the output location. Use a full job download: an outputs-only
+download intentionally omits audit files.
 
 Audit File Format
-^^^^^^^^^^^^^^^^^^
-The audit file is a text file. Each line in the file is an event. Each event contains headers and an optional message.
-Event headers are enclosed in square brackets. The following are some examples of events:
+^^^^^^^^^^^^^^^^^
+JSON (JavaScript Object Notation) represents a record as named values. JSONL (JSON Lines) stores one JSON
+record per line. Each audit event is a JSON object, and every field value is a string. Embedded line breaks,
+quotes and other special characters are escaped by JSON encoding, so an event occupies one physical line.
 
-.. code-block::
+UTC (Coordinated Universal Time) is the shared time standard used for new event timestamps. A timestamp
+contains the year, month and day separated by hyphens, the letter ``T`` separating the date from the time,
+hours, minutes and seconds separated by colons, and six fractional-second digits following a period.
+The final ``+00:00`` indicates an offset of zero hours and zero minutes from UTC.
 
-    [E:b6ac4a2a-eb01-4123-b898-758f20dc028d][T:2022-09-13 13:56:01.280558][U:?][A:_cert_login admin@b.org]
-    [E:16392ed4-d6c7-490a-a84b-12685297e912][T:2022-09-14 12:59:47.691957][U:trainer@b.org][A:train.deploy]
-    [E:636ee230-3534-45a2-9689-d0ec6c90ed45][R:9dbf4179-991b-4d67-be2f-8e4bac1b8eb2][T:2022-09-14 15:08:33.181712][J:c4886aa3-9547-4ba7-902e-eb5e52085bc2][A:train#39027d22-3c70-4438-9c6b-637c380b8669]received task from server
-
-Event Headers
-^^^^^^^^^^^^^^^^^^
-Event headers specify meta information about the event. Each header is expressed with the header type (one character),
-followed by a colon (:) and the value of the header. The following are defined header types and their values.
+Event Fields
+^^^^^^^^^^^^
+Field names use snake_case: lowercase words separated by underscores. The following mapping uses the
+established meanings of the documented field codes. No additional event information is introduced.
 
 .. csv-table::
-    :header: Header Type,Meaning,Value
-    :widths: 5, 10, 20
+    :header: Documented code,Field name,Meaning
+    :widths: 10, 20, 70
 
-    E,Event ID,A UUID for the ID of the event
-    T,Timestamp,Time of the event
-    U,User,Name of the user
-    A,Action,User issued command or job's task name and ID
-    J,Job,ID of the job
-    S,Scope,Name of the job scope
-    R,Reference,Reference to peer's event ID
-    M,Message,Optional message describing the event
+    E,event_id,Identifier of the event
+    T,timestamp,UTC time of the event with an explicit timezone offset
+    U,user,Name of the user
+    A,action,User-issued command or the existing combined task name and task identifier
+    J,job,Identifier of the job
+    S,scope,Name of the job scope
+    R,reference,Supplied reference value
+    M,message,Optional message describing the event
 
-Most of the headers are self-explanatory, except for the R header. Events can be related. For example, a user command
-could cause an event to be recorded on both the server and clients. Similarly, a client's action could cause the server
-to act on it (e.g. client submitting task results). The R header records the related event ID on the peer. Reference
-event IDs can help to correlate events across the system.
+Ordinary command events always include ``event_id``, ``timestamp``, ``user`` and ``action``.
+Job events always include ``event_id``, ``timestamp`` and ``job``. The optional fields ``reference``,
+``scope`` and ``message`` are omitted when their supplied values are empty; a job event includes
+``action`` only when a task name is supplied. The task action retains the task name followed by a
+number sign (``#``) and the task identifier. It is not split into new fields.
+
+The ``reference`` field commonly identifies a related event on another site, allowing events to be correlated across the system. Some existing callers supply a
+resource identifier instead; the field does not establish that every reference identifies an event.
+
+In the examples below, braces enclose each object, double quotes enclose field names and string values,
+a colon separates each field name from its value, and commas separate fields. The event identifiers
+distinguish individual events; the second example's reference points to the first event. The names
+``trainer@b.org``, ``train.deploy``, ``training`` and ``job-1`` are illustrative user, command, scope and
+job values. The task action ``train#task-1`` combines the task name ``train`` and identifier ``task-1``.
+
+.. code-block:: json
+
+    {"event_id": "16392ed4-d6c7-490a-a84b-12685297e912", "timestamp": "2026-11-16T12:59:47.691957+00:00", "user": "trainer@b.org", "action": "train.deploy"}
+    {"event_id": "636ee230-3534-45a2-9689-d0ec6c90ed45", "reference": "16392ed4-d6c7-490a-a84b-12685297e912", "timestamp": "2026-11-16T15:08:33.181712+00:00", "scope": "training", "job": "job-1", "action": "train#task-1", "message": "received task from server"}
+
+File Writing
+^^^^^^^^^^^^
+The default filename is ``audit.jsonl``. Callers that supply their own audit filename can use any
+filename extension. The writer creates the file when needed and appends events when the service
+restarts. It does not read or convert previously written records.
+
+Each call waits for the local write and flush before returning the event identifier. Flushing passes
+buffered data to the operating system; it is not a guarantee that the record will survive a machine
+failure. Excluded actions are not written, and the simulator's auditor remains inactive.

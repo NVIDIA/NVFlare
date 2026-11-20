@@ -15,8 +15,18 @@
 import json
 import os
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
+from pathlib import Path
 
+from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.x509.oid import ExtendedKeyUsageOID
+from cryptography.x509.verification import VerificationError
+
+from nvflare.apis.fl_constant import SecureTrainConst
+from nvflare.lighter.utils import load_crt, load_crt_chain, load_private_key_file, verify_cert_chain
+from nvflare.private.fed.utils.identity_utils import validate_identity_cert_usage
 from nvflare.tool.package_checker.utils import (
+    SUPPORTED_SCHEMES,
     NVFlareConfig,
     NVFlareRole,
     check_grpc_server_running,
@@ -55,6 +65,58 @@ class CheckRule(ABC):
             A "CheckResult".
         """
         pass
+
+
+class CheckEndpointCredentials(CheckRule):
+    def __init__(self, role: str):
+        super().__init__("Check endpoint credentials")
+        self.role = role
+
+    def __call__(self, package_path, data=None):
+        startup = Path("startup")
+        kit = Path(package_path)
+        is_server = self.role == NVFlareRole.SERVER
+        config_file = startup / (NVFlareConfig.SERVER if is_server else NVFlareConfig.CLIENT)
+        config = json.loads((kit / config_file).read_text())
+        config = config["servers"][0] if is_server else config["client"]
+        solution = "Install the configured endpoint certificate chain, matching key, and project root CA."
+
+        def load(field, loader):
+            path = startup / config[field]
+            try:
+                return path, loader(kit / path)
+            except (OSError, ValueError, TypeError, UnsupportedAlgorithm) as e:
+                reason = e.strerror if isinstance(e, OSError) else str(e)
+                raise ValueError(f"{path}: {reason}") from e
+
+        try:
+            ca_path, root = load(SecureTrainConst.SSL_ROOT_CERT, load_crt)
+            cert_path, chain = load(SecureTrainConst.SSL_CERT, load_crt_chain)
+            key_path, key = load(SecureTrainConst.PRIVATE_KEY, load_private_key_file)
+            leaf, *intermediates = chain
+            if key.public_key() != leaf.public_key():
+                return CheckResult(f"{key_path} does not match the public key in {cert_path}", solution)
+
+            now = datetime.now(timezone.utc)
+            if now > leaf.not_valid_after_utc:
+                return CheckResult(f"{cert_path} expired at {leaf.not_valid_after_utc}", solution)
+            if now < leaf.not_valid_before_utc:
+                return CheckResult(f"{cert_path} is not valid until {leaf.not_valid_before_utc}", solution)
+            try:
+                verify_cert_chain(leaf, intermediates, root, now)
+            except VerificationError as e:
+                return CheckResult(f"{cert_path} failed chain validation against {ca_path}: {e}", solution)
+
+            purpose = ExtendedKeyUsageOID.SERVER_AUTH if is_server else ExtendedKeyUsageOID.CLIENT_AUTH
+            try:
+                validate_identity_cert_usage(leaf, purpose, intermediates)
+            except ValueError as e:
+                return CheckResult(f"{cert_path} cannot be used for {self.role}Auth: {e}", solution)
+        except KeyError as e:
+            return CheckResult(f"{config_file} is missing {e.args[0]}", solution)
+        except (TypeError, ValueError) as e:
+            return CheckResult(str(e), solution)
+        return CheckResult(CHECK_PASSED, "N/A")
 
 
 class CheckAddressBinding(CheckRule):
@@ -155,8 +217,7 @@ class CheckServerAvailable(CheckRule):
             scheme = get_communication_scheme(package_path, nvf_config, default_scheme="grpc")
             uses_admin_cert_provider = False
 
-        supported_schemes = {"grpc", "agrpc", "http", "https", "tcp", "stcp"}
-        if scheme not in supported_schemes:
+        if scheme not in SUPPORTED_SCHEMES:
             return CheckResult(
                 f"Unsupported communication scheme: {scheme}",
                 f"Scheme '{scheme}' is not supported for connectivity check.",
@@ -166,7 +227,9 @@ class CheckServerAvailable(CheckRule):
         if uses_admin_cert_provider:
             # Preflight must not trigger interactive SSO. A TCP connection proves
             # endpoint reachability; the real command validates mTLS after login.
-            server_running = check_socket_server_running(startup=startup, host=host, port=int(port), scheme="tcp")
+            server_running = check_socket_server_running(
+                startup=startup, host=host, port=int(port), scheme="tcp", tcp_only=True
+            )
         elif scheme in ["grpc", "agrpc"]:
             server_running = check_grpc_server_running(startup=startup, host=host, port=int(port))
         else:

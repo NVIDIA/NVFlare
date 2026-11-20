@@ -1,0 +1,66 @@
+{
+  "scope": "One-seed reference validation of the standalone NVFlare KD component using a separate FedDF composition.",
+  "displayed_rounds": [
+    0,
+    100
+  ],
+  "accuracy_units": "percent",
+  "results": {
+    "fedavg": {
+      "round_100_accuracy_percent": 39.88,
+      "best_accuracy_percent_in_window": 51.74,
+      "first_round_reaching_75_percent": null
+    },
+    "feddf": {
+      "round_100_accuracy_percent": 69.28,
+      "best_accuracy_percent_in_window": 71.87,
+      "first_round_reaching_75_percent": null
+    }
+  },
+  "reference_repository": "https://github.com/epfml/federated-learning-public-code",
+  "reference_commit": "44dd5551071969eb354ee2ed091a9ba36c1d5b08",
+  "nvflare_commit": "c79c69f08bf307c3b1473d3857c365ec2e8f57e1",
+  "model": "original FP32 ResNet-8-BN",
+  "parameters": 78042,
+  "seed": 7,
+  "alpha": 0.1,
+  "participation_fraction": 0.8,
+  "clients": 20,
+  "clients_per_round": 16,
+  "local_epochs": 40,
+  "local_batch_size": 64,
+  "local_optimizer": "SGD",
+  "local_lr": 0.1,
+  "momentum": 0,
+  "weight_decay": 0,
+  "lr_decay": false,
+  "private_training_images": 45000,
+  "held_out_validation_images": 5000,
+  "official_test_images": 10000,
+  "feddf_proxy_images": 50000,
+  "feddf_proxy_dataset": "CIFAR-100 training set, labels unused",
+  "initial_model_sha256": "73c0c8e0b1bd80fc50c02f72c29ea4ae862634eac3919b9fe82b73a14f065b14",
+  "indices_sha256": "bf1f48636a777b89e7a4599a7a07a6ace20ca80b80153d0eaa6f08751e632f96",
+  "aggregation": "uniform parameter averaging; BN buffers retained from last selected client, as in reference ModuleState.copy_to_module",
+  "server": {
+    "optimizer": "Adam",
+    "lr": 0.001,
+    "temperature": 1.0,
+    "target": "uniform mean teacher logits",
+    "batch_size": 64,
+    "max_steps": 10000,
+    "validation_interval": 100,
+    "patience_steps": 1000,
+    "scheduler": "cosine to zero over 10000 steps, recreated every round",
+    "gradient_clip_norm": 5.0,
+    "selection": "best server-validation checkpoint; original default excludes initial average from best tracker"
+  },
+  "limitations": [
+    "Table 1 tunes the local learning rate but does not publish the selected value for this cell; start at README lr=0.1, no search performed.",
+    "One chosen seed (7) initially; original table mean/std uses three unspecified seeds.",
+    "Modern PyTorch, persistent worker pools and sequential client simulation replace old MPI worker scheduling.",
+    "Released proxy loader uses conf.batch_size=64 although the paper describes 128 distillation batches; follow released loader.",
+    "The compact runnable example uses the same FedDF composition but different model, data split, participation and training/stopping defaults.",
+    "Neither method reached 75% during the displayed 100-round window; this is not a reproduction of the published Table 1 target-round counts."
+  ]
+}

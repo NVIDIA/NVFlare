@@ -685,11 +685,15 @@ class TestDownloadService:
         with service._tx_lock:
             service._tx_table[tx.tid] = tx
             service._ref_table[ref.rid] = ref
-            ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.SUCCESS)
+
+        data_reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+        terminal_state = data_reply.payload["state"]
+        service._handle_download(_make_download_request(ref.rid, "receiver1", terminal_state))
+        with service._tx_lock:
             tx.transaction_done(TransactionDoneStatus.FINISHED)
             service._delete_tx(tx, tombstone_finished_refs=True)
 
-        reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+        reply = service._handle_download(_make_download_request(ref.rid, "receiver1", terminal_state))
 
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
         assert reply.payload == {"status": ProduceRC.EOF}
@@ -709,7 +713,10 @@ class TestDownloadService:
         with service._tx_lock:
             service._tx_table[tx.tid] = tx
             service._ref_table[ref.rid] = ref
-            ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.SUCCESS)
+
+        data_reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+        terminal_state = data_reply.payload["state"]
+        service._handle_download(_make_download_request(ref.rid, "receiver1", terminal_state))
 
         _run_monitor_once(service, fake_start_time + 1.0)
 
@@ -717,7 +724,7 @@ class TestDownloadService:
         assert ref.rid not in service._ref_table
         assert ref.rid in service._finished_refs
 
-        reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+        reply = service._handle_download(_make_download_request(ref.rid, "receiver1", terminal_state))
 
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
         assert reply.payload == {"status": ProduceRC.EOF}
@@ -792,7 +799,7 @@ class TestDownloadService:
         for ref in refs:
             for receiver_index in range(num_receivers):
                 requester = f"site-{receiver_index}.site-{receiver_index}_job_active"
-                retry_reply = service._handle_download(_make_download_request(ref.rid, requester))
+                retry_reply = service._handle_download(_make_download_request(ref.rid, requester, {"chunk_idx": 1}))
                 assert retry_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
                 assert retry_reply.payload == {"status": ProduceRC.EOF}
 
@@ -900,7 +907,10 @@ class TestDownloadService:
         with service._tx_lock:
             service._tx_table[tx.tid] = tx
             service._ref_table[ref.rid] = ref
-            ref.obj_downloaded(to_receiver="receiver1", status=DownloadStatus.SUCCESS)
+
+        data_reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+        terminal_state = data_reply.payload["state"]
+        service._handle_download(_make_download_request(ref.rid, "receiver1", terminal_state))
 
         with patch.object(download_service_module.time, "time", return_value=100.0):
             with service._tx_lock:
@@ -908,14 +918,14 @@ class TestDownloadService:
                 service._delete_tx(tx, tombstone_finished_refs=True)
 
         with patch.object(download_service_module.time, "time", return_value=100.0 + service.FINISHED_REFS_TTL - 1.0):
-            retry_reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+            retry_reply = service._handle_download(_make_download_request(ref.rid, "receiver1", terminal_state))
 
         assert retry_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
         assert retry_reply.payload == {"status": ProduceRC.EOF}
         assert service._finished_refs[ref.rid].last_active_time == 100.0
 
         with patch.object(download_service_module.time, "time", return_value=100.0 + service.FINISHED_REFS_TTL + 1.0):
-            expired_retry_reply = service._handle_download(_make_download_request(ref.rid, "receiver1"))
+            expired_retry_reply = service._handle_download(_make_download_request(ref.rid, "receiver1", terminal_state))
 
         assert expired_retry_reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.INVALID_REQUEST
         assert ref.rid not in service._finished_refs
