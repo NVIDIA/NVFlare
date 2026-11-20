@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from unittest.mock import Mock, call, patch
 
@@ -36,7 +39,14 @@ from nvflare.apis.streaming import StreamableEngine, StreamContextKey
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.logging.constants import LIVE_LOG_TOPIC, Channels, client_log_staging_root
 from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
-from nvflare.app_common.streamers.log_streamer import KEY_DATA, KEY_DATA_SIZE, KEY_EOF, KEY_FILE_NAME, KEY_HEARTBEAT
+from nvflare.app_common.streamers.log_streamer import (
+    KEY_DATA,
+    KEY_DATA_SIZE,
+    KEY_EOF,
+    KEY_FILE_NAME,
+    KEY_HEARTBEAT,
+    _LogTailProducer,
+)
 from nvflare.private.event import fire_event
 from nvflare.private.fed.tbi import TBI
 from nvflare.private.stream_runner import TOPIC_STREAM_REQUEST, HeaderKey, ObjectStreamer
@@ -315,12 +325,14 @@ def log_transports(tmp_path, receiver_clock):
         streamer.shutdown()
 
 
-def _log_request(tx_id, seq=0, data=b"", eof=False, heartbeat=False, stream_ctx=None):
-    request = Shareable()
-    request[KEY_DATA] = data
-    request[KEY_DATA_SIZE] = len(data)
-    request[KEY_EOF] = eof
-    request[KEY_HEARTBEAT] = heartbeat
+def _log_request(tx_id, seq=0, data=b"", eof=False, heartbeat=False, stream_ctx=None, chunk=None):
+    request = chunk
+    if request is None:
+        request = Shareable()
+        request[KEY_DATA] = data
+        request[KEY_DATA_SIZE] = len(data)
+        request[KEY_EOF] = eof
+        request[KEY_HEARTBEAT] = heartbeat
     request.set_header(HeaderKey.TX_ID, tx_id)
     request.set_header(HeaderKey.SEQ, seq)
     request.set_header(HeaderKey.CHANNEL, Channels.LOG_STREAMING_CHANNEL)
@@ -398,6 +410,87 @@ def test_rejected_replacement_leaves_the_active_stream_usable(leased_log_transpo
     assert list(streamer.tx_table) == ["active"]
     assert send("active", seq=1, data=b"line 2\n") == ReturnCode.OK
     assert path.read_bytes() == b"line 1\nline 2\n"
+
+
+@pytest.fixture
+def client_log(tmp_path):
+    """A rotating client log and the chunks real senders tailing it would send next."""
+    (tmp_path / "client").mkdir()
+    handler = RotatingFileHandler(tmp_path / "client" / "log.txt", backupCount=1)
+    producers = []
+
+    def write(line):
+        handler.emit(logging.makeLogRecord({"msg": line}))
+
+    def tail():
+        producers.append(_LogTailProducer(handler.baseFilename, 1024, 1.0, 0.01, threading.Event(), 60.0))
+        produce = partial(producers[-1].produce, {}, FLContext())
+        return lambda: produce()[0]
+
+    yield write, handler.doRollover, tail
+
+    for producer in producers:
+        producer.close()
+    handler.close()
+
+
+@pytest.mark.parametrize("first_stream", ["unfinished", "idle_timeout"])
+def test_replacement_keeps_lines_rotated_out_of_the_client_log(leased_log_transport, client_log, first_stream):
+    receiver, streamer, fl_ctx, path, send = leased_log_transport
+    write, rotate, tail = client_log
+    crashed = tail()
+    write("rotated away")
+    assert send("crashed", chunk=crashed()) == ReturnCode.OK
+    rotate()
+    write("run 1")
+    assert send("crashed", seq=1, chunk=crashed()) == ReturnCode.OK
+    if first_stream == "idle_timeout":
+        streamer.tx_table["crashed"].stream_ctx[StreamContextKey.END_STREAM](ReturnCode.TIMEOUT, fl_ctx)
+
+    # A restarted job process tails only the current client file.
+    write("run 2")
+    assert send("replacement", chunk=tail()()) == ReturnCode.OK
+
+    assert path.read_bytes() == b"rotated away\nrun 1\nrun 2\n"
+
+
+def test_replacement_starting_with_a_newer_client_file_keeps_everything_received(leased_log_transport, client_log):
+    receiver, streamer, fl_ctx, path, send = leased_log_transport
+    write, rotate, tail = client_log
+    crashed = tail()
+    write("run 1")
+    assert send("crashed", chunk=crashed()) == ReturnCode.OK
+
+    rotate()
+    write("run 2")
+    assert send("replacement", chunk=tail()()) == ReturnCode.OK
+
+    assert path.read_bytes() == b"run 1\nrun 2\n"
+
+
+def test_replacement_waits_for_a_log_that_is_being_released(leased_log_transport):
+    receiver, streamer, fl_ctx, path, send = leased_log_transport
+    job_manager = fl_ctx.get_engine().get_component.return_value
+    assert send("idle", data=b"run 1\n") == ReturnCode.OK
+    # The idle watchdog has taken the transaction but has yet to run the receiver's callback.
+    idle = streamer.tx_table.pop("idle")
+    replacement_arrived = threading.Event()
+    job = job_manager.get_job.return_value
+    job_manager.get_job.side_effect = lambda *args: replacement_arrived.set() or job
+
+    def release():
+        assert replacement_arrived.wait(timeout=5)
+        idle.stream_done(ReturnCode.TIMEOUT, fl_ctx)
+
+    releasing = threading.Thread(target=release, daemon=True)
+    releasing.start()
+    try:
+        assert send("replacement", data=b"run 1\nrun 2\n") == ReturnCode.OK
+    finally:
+        releasing.join(timeout=5)
+
+    assert list(streamer.tx_table) == ["replacement"]
+    assert path.read_bytes() == b"run 1\nrun 2\n"
 
 
 @pytest.mark.parametrize("ended_by", ["replacement", "idle_timeout"])
