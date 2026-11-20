@@ -25,7 +25,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ConfigVarName, FLContextKey, ReturnCode, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.storage import DataTypes
-from nvflare.apis.streaming import StreamContext
+from nvflare.apis.streaming import StreamContext, StreamContextKey
 from nvflare.app_common.logging.constants import (
     ALLOW_LOG_STREAMING_VAR,
     LIVE_LOG_TOPIC,
@@ -45,6 +45,16 @@ from nvflare.widgets.widget import Widget
 # repeat violation from a long-quiescent job.
 _UNAUTHORIZED_LOG_CAP = 4096
 
+# Set once a stream's file is closed. A sender that forges it only rejects its own stream.
+_STREAM_ENDED = "JobLogReceiver.stream_ended"
+
+# Cap on remembered log origins, evicted FIFO like the entries above. A log
+# whose origin was evicted is truncated by its next stream, as an unknown one is.
+_LOG_ORIGIN_CAP = 4096
+
+# How long a new stream waits for an ending stream of the same log to close its file.
+_RELEASE_TIMEOUT = 2.0
+
 
 class JobLogReceiver(Widget):
     """Receives live log data streamed by :class:`JobLogStreamer`.
@@ -54,6 +64,9 @@ class JobLogReceiver(Widget):
     ``tail -f`` on the server while the job runs. Successful streams are handed
     to the job manager for storage. Interrupted streams retain partial logs;
     explicit job deletion removes managed logs after active streams drain.
+    A new stream from the same client for the same job and file ends the
+    unfinished one, so a restarted job process can re-send its log. Lines the
+    client has since rotated out of that file are kept.
     The storage backend may consume the staging file.
 
     By default the staging file is written to
@@ -102,6 +115,11 @@ class JobLogReceiver(Widget):
         # validated owner must remain in receiver-owned state, never in it.
         self._stream_files = {}
         self._stream_lock = threading.RLock()
+        # Logs whose stream has ended but whose file is still being closed.
+        self._releasing = []
+        self._log_released = threading.Condition(self._stream_lock)
+        # Per log, the id of the client file being received and where it starts in the staged copy.
+        self._log_origins: OrderedDict = OrderedDict()
         self._temporary_dest = None
         # Tracks (client, job_id) pairs we've already logged a "site does not allow
         # streaming" error for, so the warning is emitted at most once per job.
@@ -147,7 +165,7 @@ class JobLogReceiver(Widget):
         return self._temporary_dest
 
     @staticmethod
-    def _open_log(root, job_id, client, file_name, leased=False):
+    def _open_log(root, job_id, client, file_name, leased=False, keep=0):
         if leased and client in (ClientLogStaging.DELETED_MARKER, ClientLogStaging.DELETE_INTENT):
             raise ValueError("Reserved client log path component")
         path = client_log_path(root, job_id, client, file_name)
@@ -170,7 +188,8 @@ class JobLogReceiver(Widget):
                 raise ValueError("Client log already has an active stream")
             if hasattr(os, "fchmod"):
                 os.fchmod(fd, 0o600)
-            os.ftruncate(fd, 0)
+            os.ftruncate(fd, min(keep, os.fstat(fd).st_size))
+            os.lseek(fd, 0, os.SEEK_END)
             return path, os.fdopen(fd, "wb")
         except BaseException:
             os.close(fd)
@@ -290,11 +309,67 @@ class JobLogReceiver(Widget):
             self._quiet_since = None
             self._quiet_period = None
 
+    @staticmethod
+    def _require_streamable_job(staging, job_id, fl_ctx):
+        """Reject logs of a deleted or unknown job. Caller holds the staging mutex."""
+        if not staging:
+            return
+        job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
+        if staging.is_deleting(job_id) and job_manager is not None:
+            staging.recover_delete(job_id, job_manager, fl_ctx)
+        if staging.is_deleted(job_id):
+            staging.remove_closed_job_logs(job_id)
+            raise ValueError("Cannot stream logs for a deleted or unknown job")
+        if staging.is_deleting(job_id) or (job_manager is not None and job_manager.get_job(job_id, fl_ctx) is None):
+            raise ValueError("Cannot stream logs for a deleted or unknown job")
+
+    def _endable_streams(self, log):
+        return [s for s in self._stream_files.values() if s["log"] == log and callable(s["end_stream"])]
+
+    def _end_superseded_stream(self, log, staging, fl_ctx):
+        """Hand the log to its owner's newest stream. Caller holds the stream lock.
+
+        A job process that dies never closes its stream, and its replacement
+        re-sends the log. Runs before the staging mutex is taken because
+        ending a stream finalizes it under that mutex.
+        """
+        client, job_id, file_name = log
+        superseded = self._endable_streams(log)
+        if superseded:
+            # A replacement that is going to be rejected must leave the stream it would replace usable.
+            with staging.locked() if staging else nullcontext():
+                self._require_streamable_job(staging, job_id, fl_ctx)
+            for state in superseded:
+                self.log_info(fl_ctx, f"New live log stream replaces '{file_name}' from {client} for job {job_id}")
+                state["end_stream"](ReturnCode.TASK_ABORTED, fl_ctx)
+        # A stream that was already ending (for example by its idle timeout)
+        # closes the file on its own thread, which needs the stream lock.
+        self._log_released.wait_for(
+            lambda: log not in self._releasing and not self._endable_streams(log), timeout=_RELEASE_TIMEOUT
+        )
+
+    def _replayed_from(self, log, file_id):
+        """Staged size to keep for a new stream of the log. Caller holds the stream lock.
+
+        A sender replays only its current file, so what was received before
+        that file is kept, as is everything when the sender starts with a newer file.
+        """
+        origin = self._log_origins.get(log)
+        if origin is None or not isinstance(file_id, int):
+            return 0
+        return origin[1] if origin[0] == file_id else float("inf")
+
     def _on_chunk_received(self, data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext):
         client, job_id = self._get_trusted_stream_identity(fl_ctx)
+        # Set when this chunk holds the first bytes of a client file.
+        file_id = LogStreamer.get_file_id(stream_ctx)
         with self._stream_lock:
             state = self._stream_files.get(id(stream_ctx))
             if state is None:
+                # A chunk can pass the consumer's closed check just before its
+                # stream ends; it must not reopen and truncate the log.
+                if stream_ctx.get(_STREAM_ENDED):
+                    raise ValueError("Log stream has already ended")
                 if not self._is_site_allowed_to_stream(client, fl_ctx):
                     if self._record_unauthorized((client, job_id)):
                         self.log_error(
@@ -304,22 +379,22 @@ class JobLogReceiver(Widget):
                         )
                     return
                 file_name = LogStreamer.get_file_name(stream_ctx) or WorkspaceConstants.LOG_FILE_NAME
+                log = (client, job_id, file_name)
                 workspace = getattr(fl_ctx.get_engine(), "get_workspace", lambda: None)()
                 staging = ClientLogStaging(workspace) if self._dest_dir is None and workspace is not None else None
+                self._end_superseded_stream(log, staging, fl_ctx)
+                if stream_ctx.get(_STREAM_ENDED):
+                    # Ended while waiting for the log: nothing would close a file opened now.
+                    raise ValueError("Log stream has already ended")
                 with staging.locked() if staging else nullcontext():
-                    job_manager = fl_ctx.get_engine().get_component(SystemComponents.JOB_MANAGER)
-                    if staging and staging.is_deleting(job_id) and job_manager is not None:
-                        staging.recover_delete(job_id, job_manager, fl_ctx)
-                    if staging and staging.is_deleted(job_id):
-                        staging.remove_closed_job_logs(job_id)
-                        raise ValueError("Cannot stream logs for a deleted or unknown job")
-                    if staging and (
-                        staging.is_deleting(job_id)
-                        or (job_manager is not None and job_manager.get_job(job_id, fl_ctx) is None)
-                    ):
-                        raise ValueError("Cannot stream logs for a deleted or unknown job")
+                    self._require_streamable_job(staging, job_id, fl_ctx)
                     path, stream = self._open_log(
-                        self._staging_root(fl_ctx), job_id, client, file_name, leased=staging is not None
+                        self._staging_root(fl_ctx),
+                        job_id,
+                        client,
+                        file_name,
+                        leased=staging is not None,
+                        keep=self._replayed_from(log, file_id),
                     )
                 state = {
                     "file": stream,
@@ -327,11 +402,18 @@ class JobLogReceiver(Widget):
                     "client": client,
                     "job_id": job_id,
                     "file_name": file_name,
+                    "log": log,
                     "staging": staging,
+                    "end_stream": stream_ctx.get(StreamContextKey.END_STREAM),
                 }
                 self._stream_files[id(stream_ctx)] = state
             elif (state["client"], state["job_id"]) != (client, job_id):
                 raise ValueError("Log stream owner changed")
+            if isinstance(file_id, int):
+                self._log_origins[state["log"]] = (file_id, state["file"].tell())
+                self._log_origins.move_to_end(state["log"])
+                if len(self._log_origins) > _LOG_ORIGIN_CAP:
+                    self._log_origins.popitem(last=False)
             state["file"].write(data)
             state["file"].flush()
 
@@ -344,12 +426,23 @@ class JobLogReceiver(Widget):
     def _finalize_stream(self, stream_ctx: StreamContext, fl_ctx: FLContext):
         with self._stream_lock:
             state = self._stream_files.pop(id(stream_ctx), None)
+            stream_ctx[_STREAM_ENDED] = True
+            if state is not None:
+                self._releasing.append(state["log"])
         if state is None:
             if LogStreamer.get_file_name(stream_ctx) == WorkspaceConstants.ERROR_LOG_FILE_NAME:
                 return
             client, job_id = self._get_trusted_stream_identity(fl_ctx)
             self.log_warning(fl_ctx, f"No log data received from {client} for job {job_id}")
             return
+        try:
+            self._close_stream(state, stream_ctx, fl_ctx)
+        finally:
+            with self._stream_lock:
+                self._releasing.remove(state["log"])
+                self._log_released.notify_all()
+
+    def _close_stream(self, state, stream_ctx, fl_ctx):
         staging = state["staging"]
         with staging.locked() if staging else nullcontext():
             state["file"].close()
