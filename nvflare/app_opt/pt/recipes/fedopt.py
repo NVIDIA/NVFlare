@@ -101,8 +101,8 @@ class FedOptRecipe(Recipe):
         enable_tensor_disk_offload (bool): Download streamed PyTorch tensors to disk on the server during
             FOBS deserialization instead of keeping all incoming client tensors in memory. Defaults to False.
         execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
-            Task lifetime supports CPU in-process clients. Scripts retaining local optimizer or RNG state
-            must save and restore it through the native ``task_checkpoint`` file contract.
+            Task lifetime requires a configured Kubernetes or Slurm site and in-process script execution.
+            Scripts retaining local optimizer or RNG state must restore it from a native checkpoint.
 
     Example:
         ```python

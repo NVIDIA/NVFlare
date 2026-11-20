@@ -175,6 +175,7 @@ class FLContextKey:
     COMMUNICATION_ERROR = "Flare_communication_error__"
     UNAUTHENTICATED = "Flare_unauthenticated__"
     CLIENT_RESOURCE_SPECS = "__client_resource_specs"
+    ALLOCATED_RESOURCES = "__allocated_resources"
     RESOURCE_CHECK_RESULT = "__resource_check_result"
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
@@ -187,6 +188,7 @@ class FLContextKey:
     SITE_OBJ = "_site_obj_"
     JOB_LAUNCHER = "_job_launcher"
     JOB_HANDLE_CALLBACK = "_job_handle_callback"
+    JOB_RESTART_HANDLE = "_job_restart_handle"  # Confirmed previous execution, only during replacement launch.
     SNAPSHOT = "job_snapshot"
 
     CLIENT_REGISTER_DATA = "_client_register_data"
@@ -285,6 +287,8 @@ class AdminCommandNames:
     SHOW_ERRORS = "show_errors"
     RESET_ERRORS = "reset_errors"
     GET_JOB_LOG = "get_job_log"
+    GET_JOB_RESOURCES = "get_job_resources"
+    GET_STUDY_RESOURCES = "get_study_resources"
     AUX_COMMAND = "aux_command"
     SYS_INFO = "sys_info"
     REPORT_RESOURCES = "report_resources"
@@ -367,6 +371,7 @@ class NonSerializableKeys:
         ReservedKey.RUNNER,
         FLContextKey.SCOPE_PROPERTIES,
         FLContextKey.SCOPE_OBJECT,
+        FLContextKey.CLIENT_HIERARCHY,
         FLContextKey.WORKSPACE_OBJECT,
         FLContextKey.TASK_DATA,
         FLContextKey.SHAREABLE,
@@ -444,7 +449,7 @@ class WorkspaceConstants:
 
     LOGGING_CONFIG = "log_config.json"
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
-    AUDIT_LOG = "audit.log"
+    AUDIT_LOG = "audit.jsonl"
     LOG_FILE_NAME = "log.txt"
     ERROR_LOG_FILE_NAME = "error_log.txt"
     STATS_POOL_SUMMARY_FILE_NAME = "stats_pool_summary.json"

@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ from contextlib import nullcontext
 from typing import Any, List, Optional, Tuple
 
 import torch
+from safetensors import safe_open
 from safetensors.torch import load as load_tensors
 from safetensors.torch import save as save_tensors
 
@@ -34,7 +35,7 @@ from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.f3.streaming.stream_types import DownloadCancelled
 from nvflare.fuel.f3.streaming.stream_utils import stream_thread_pool
 
-from .lazy_tensor_dict import LazyTensorDict, _cleanup_temp_dir, _LazyRef, read_safetensors_metadata
+from .lazy_tensor_dict import _MODEL_ID, LazyTensorDict, _cleanup_temp_dir, _LazyRef, read_safetensors_metadata
 
 _TWO_MB = 2 * 1024 * 1024
 _ACTIVE_DISK_TENSOR_CONSUMERS = weakref.WeakSet()
@@ -64,6 +65,7 @@ class TensorDownloadable(CacheableObject):
         self.keys = list(tensors.keys())
         self._prefetch_lock = threading.Lock()
         self._prefetch_futures = {}
+        self._readers = {}
         self._released = False
         super().__init__(tensors, max_chunk_size)
         if any(isinstance(value, _LazyRef) for value in tensors.values()):
@@ -85,8 +87,30 @@ class TensorDownloadable(CacheableObject):
             raise RuntimeError(f"item {index} requested after tensors were released")
         tensor = base_obj[key]
         if isinstance(tensor, _LazyRef):
-            tensor = tensor.materialize()
+            reader = self._get_reader(tensor)
+            tensor = reader.get_tensor(tensor.key)
         return save_tensors({key: tensor})
+
+    def _get_reader(self, ref: _LazyRef):
+        # Use pread to reuse the file and header without retaining a full-model memory mapping.
+        with self._prefetch_lock:
+            if self._released:
+                raise RuntimeError("tensors were released")
+            path = ref.file_path
+            key = (path, ref._model_id)
+            entry = self._readers.get(key)
+            if entry is None:
+                identity = os.stat(path)
+                reader = safe_open(path, framework="pt", backend="pread")
+                if (reader.metadata() or {}).get(_MODEL_ID) != ref._model_id:
+                    raise RuntimeError("disk-backed model was replaced before tensor read")
+                entry = (identity, reader)
+            # Check cached readers too, including replacement during the initial open.
+            if not os.path.samestat(os.stat(path), entry[0]):
+                raise RuntimeError("disk-backed model was replaced before tensor read")
+            self._readers[key] = entry
+            # A local reference keeps an in-flight reader alive during release.
+            return entry[1]
 
     def prefetch_item(self, index: int):
         with self._prefetch_lock:
@@ -117,6 +141,8 @@ class TensorDownloadable(CacheableObject):
             self._released = True
             futures = list(self._prefetch_futures.values())
             self._prefetch_futures.clear()
+            # Dropping the last reference closes the reader; active calls retain theirs.
+            self._readers.clear()
         for future in futures:
             future.cancel()
         super().release()
@@ -197,6 +223,9 @@ def download_tensors(
         tensors_received_cb: the callback to be called when one set of tensors are received
 
     Returns: tuple of (error message if any, downloaded state dict).
+
+    Raises:
+        DownloadUnavailable: another attempt completed this source; retry the enclosing submission.
 
     """
     consumer = TensorConsumer(tensors_received_cb, cb_kwargs)
@@ -321,7 +350,9 @@ def download_tensors_to_disk(
 
     Returns: tuple of (error message if any, LazyTensorDict for lazy access).
 
-    Raises: DownloadCancelled if workflow cleanup cancelled this download.
+    Raises:
+        DownloadCancelled: workflow cleanup cancelled this download.
+        DownloadUnavailable: another attempt completed this source; retry the enclosing submission.
     """
     cell_ctx = cell.get_fobs_context()
     if root_dir is None:

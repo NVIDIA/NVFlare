@@ -181,12 +181,12 @@ performance using area-under the curve (AUC) is:
 
 ## Client execution lifetime
 
-See [Client Execution Lifetime](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/available_recipes.html#client-execution-lifetime)
-for platform and execution prerequisites and guidance on when to use task lifetime.
-Select task lifetime with:
+See [Client Execution Lifetime](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/available_recipes.html#recipe-execution-lifetime)
+for deployment prerequisites. Local simulation uses job lifetime. Export a
+task-lifetime job for submission to a configured Kubernetes or Slurm deployment:
 
 ```bash
-python job.py --execution_lifetime task
+python job.py --execution_lifetime task --export
 ```
 
 The client saves and restores its native joblib classifier checkpoint, including its initialization settings and estimator state. The current server model still supplies the coefficients for each training round.

@@ -15,6 +15,7 @@
 """Apply CI's gRPC launch defaults before importing integration test modules."""
 
 import os
+from functools import partial
 
 import pytest
 
@@ -39,3 +40,13 @@ def single_threaded_torch(monkeypatch):
         yield
     finally:
         torch.set_num_threads(previous_threads)
+
+
+@pytest.fixture
+def replay_recipe_tasks(monkeypatch, isolated_fobs):
+    if not hasattr(os, "waitid") or not hasattr(os, "WNOWAIT"):
+        pytest.skip("The test-only process launcher requires waitid/WNOWAIT")
+
+    from tests.recipe_task_test_utils import replay_exported_recipe_tasks
+
+    return partial(replay_exported_recipe_tasks, monkeypatch=monkeypatch)

@@ -134,6 +134,7 @@ All Python files must include Apache 2.0 license header:
 ## Test Conventions
 
 - Before adding, changing, or moving tests, follow the [test placement and authoring rules](tests/README.md#choosing-the-test-layer), including the review checklist.
+- Review real runtime boundaries in helpers and fixtures on the target branch. Fake tools inside a real shell/CLI workflow do not make it a unit test; release-only cases require their own audit.
 - Unit test files: `tests/unit_test/` following `[module_name]_test.py` pattern
 - Integration tests: `tests/integration_test/fast/` or `tests/integration_test/slow/`, with explicit CI selection
 - Framework: pytest with pytest-xdist (parallel) and pytest-cov (coverage)

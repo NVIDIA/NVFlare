@@ -20,6 +20,8 @@ from unittest.mock import patch
 
 import pytest
 from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.x509.oid import NameOID
 
 from nvflare.fuel.sec.cert_uri import CA_URI_KIND, JOB_CA_URI_VALUE, cert_uri_values
 from nvflare.lighter.constants import CtxKey, ParticipantType, ProvFileName
@@ -35,7 +37,9 @@ from nvflare.lighter.utils import (
     load_crt,
     load_private_key,
     serialize_cert,
+    serialize_pri_key,
     verify_cert,
+    verify_cert_chain,
 )
 
 
@@ -129,6 +133,77 @@ def test_existing_root_with_matching_validity_is_reused(tmp_path):
 
     assert not second_ctx.get(CtxKey.BUILD_ERROR)
     assert second_ctx[CtxKey.ROOT_CERT].serial_number == first_ctx[CtxKey.ROOT_CERT].serial_number
+
+
+@pytest.mark.parametrize("root_source", ["project", "state"])
+def test_full_root_subject_is_preserved_in_issued_certificates(tmp_path, root_source):
+    root_key, root_pub = generate_keys()
+    template = generate_cert(Identity("root"), Identity("root"), root_key, root_pub, ca=True)
+    subject = x509.Name(
+        [
+            x509.RelativeDistinguishedName([x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Root Org")]),
+            x509.RelativeDistinguishedName(
+                [
+                    x509.NameAttribute(NameOID.COMMON_NAME, "root"),
+                    x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "Research"),
+                ]
+            ),
+        ]
+    )
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(subject)
+        .public_key(root_pub)
+        .serial_number(template.serial_number)
+        .not_valid_before(template.not_valid_before_utc)
+        .not_valid_after(template.not_valid_after_utc)
+    )
+    for extension in template.extensions:
+        builder = builder.add_extension(extension.value, extension.critical)
+    root = builder.sign(root_key, hashes.SHA256())
+    root.verify_directly_issued_by(root)
+
+    project = _make_project()
+    project.get_clients()[0].set_prop("listening_host", "site-1")
+    project.add_participant(Participant(ParticipantType.RELAY, "relay-1", "test_org", {"listening_host": "relay-1"}))
+    project.add_participant(
+        Participant(ParticipantType.ADMIN, "admin@example.com", "test_org", {"role": "project_admin"})
+    )
+    workspace = tmp_path / "workspace"
+    if root_source == "project":
+        project.serialized_root_cert = serialize_cert(root)
+        project.root_private_key = root_key
+    else:
+        state_dir = workspace / project.name / "state"
+        state_dir.mkdir(parents=True)
+        (state_dir / "cert.json").write_text(
+            json.dumps(
+                {
+                    CtxKey.ROOT_CERT: serialize_cert(root).decode("ascii"),
+                    CtxKey.ROOT_PRI_KEY: serialize_pri_key(root_key).decode("ascii"),
+                }
+            )
+        )
+
+    ctx = Provisioner(str(workspace), [WorkspaceBuilder(), CertBuilder()]).provision(project)
+
+    assert not ctx.get(CtxKey.BUILD_ERROR), ctx.get_errors()
+    assert ctx[CtxKey.ROOT_CERT] == root
+    for participant, basename in (
+        ("server1", "server"),
+        ("server1", "job_ca"),
+        ("site-1", "client"),
+        ("site-1", "server"),
+        ("relay-1", "client"),
+        ("relay-1", "server"),
+        ("admin@example.com", "client"),
+    ):
+        cert = load_crt(str(_kit_dir(workspace, participant) / f"{basename}.crt"))
+        assert cert.issuer == root.subject
+        cert.verify_directly_issued_by(root)
+        if basename != "job_ca":
+            verify_cert_chain(cert, [], root)
 
 
 def test_leaf_validity_is_bounded_by_shorter_root(tmp_path):

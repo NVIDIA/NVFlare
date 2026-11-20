@@ -39,7 +39,6 @@ FED_ADMIN_JSON = "fed_admin.json"
 RESOURCES_JSON_DEFAULT = "resources.json.default"
 RESOURCES_JSON = "resources.json"
 COMM_CONFIG_JSON = "comm_config.json"
-STUDY_DATA_YAML = "study_data.yaml"
 STUDY_RUNTIME_YAML = "study_runtime.yaml"
 START_SH = "start.sh"
 SUB_START_SH = "sub_start.sh"
@@ -62,6 +61,9 @@ SLURM_SERVER_LAUNCHER = "nvflare.app_opt.job_launcher.slurm.ServerSlurmJobLaunch
 PROCESS_CLIENT_LAUNCHER = "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher"
 PROCESS_SERVER_LAUNCHER = "nvflare.app_common.job_launcher.server_process_launcher.ServerProcessJobLauncher"
 GPU_RESOURCE_CONSUMER = "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer"
+PASSTHROUGH_RESOURCE_CONSUMER = (
+    "nvflare.app_common.resource_consumers.passthrough_resource_consumer.PassthroughResourceConsumer"
+)
 LAUNCHER_IDS = {"process_launcher", "docker_launcher", "k8s_launcher", "slurm_launcher"}
 BUILTIN_LAUNCHER_PATHS = {
     DOCKER_CLIENT_LAUNCHER,
@@ -74,7 +76,7 @@ BUILTIN_LAUNCHER_PATHS = {
     PROCESS_SERVER_LAUNCHER,
 }
 BUILTIN_RESOURCE_MANAGER_PATHS = {GPU_RESOURCE_MANAGER, PASSTHROUGH_RESOURCE_MANAGER}
-BUILTIN_RESOURCE_CONSUMER_PATHS = {GPU_RESOURCE_CONSUMER}
+BUILTIN_RESOURCE_CONSUMER_PATHS = {GPU_RESOURCE_CONSUMER, PASSTHROUGH_RESOURCE_CONSUMER}
 RESOURCE_CONSUMER_IDS = {"resource_consumer"}
 _STUDY_RUNTIME_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / STUDY_RUNTIME_YAML
 
@@ -203,18 +205,36 @@ def _patch_resources(kit_dir: Path, launcher_id: str, launcher_path: str, launch
     if not isinstance(components, list):
         _fail("INVALID_KIT", "resources.json.default components must be a list.", "Fix the startup kit resources file.")
 
-    _warn_for_replaced_components(components, launcher_id, launcher_path)
+    resource_manager = None
+    resource_consumer = None
+    if launcher_path == DOCKER_CLIENT_LAUNCHER:
+        for component in components:
+            if component.get("id") == "resource_manager" and component.get("path") == GPU_RESOURCE_MANAGER:
+                args = component.get("args") or {}
+                if args.get("num_of_gpus", 0) > 0:
+                    resource_manager = {**component, "args": {**args, "ignore_host": True, "exclusive": True}}
+                    resource_consumer = PASSTHROUGH_RESOURCE_CONSUMER
+                break
+
+    _warn_for_replaced_components(
+        [c for c in components if not (resource_manager and c.get("id") == "resource_manager")],
+        launcher_id,
+        launcher_path,
+    )
     components[:] = [
         c for c in components if c.get("id") not in LAUNCHER_IDS and c.get("id") not in RESOURCE_CONSUMER_IDS
     ]
     components[:] = [c for c in components if c.get("id") != "resource_manager"]
     components.append(
-        {
+        resource_manager
+        or {
             "id": "resource_manager",
             "path": PASSTHROUGH_RESOURCE_MANAGER,
             "args": {},
         }
     )
+    if resource_consumer:
+        components.append({"id": "resource_consumer", "path": resource_consumer, "args": {}})
     components.append({"id": launcher_id, "path": launcher_path, "args": launcher_args})
     _write_resources(local_dir, resources)
 
@@ -233,7 +253,7 @@ def _warn_for_replaced_components(components: list[dict[str, Any]], launcher_id:
             component, BUILTIN_RESOURCE_MANAGER_PATHS
         ):
             _warn(
-                "deploy prepare replaces component 'resource_manager' with PassthroughResourceManager; "
+                "deploy prepare replaces component 'resource_manager' with generated runtime configuration; "
                 "existing resource manager path/args will not be used by the prepared runtime."
             )
         elif component_id in LAUNCHER_IDS and _launcher_replacement_discards_config(
@@ -302,9 +322,6 @@ def _internal_resources(comm_config: dict[str, Any]) -> dict[str, Any]:
 def _ensure_study_runtime_template(kit_dir: Path) -> None:
     local_dir = kit_dir / "local"
     if (local_dir / STUDY_RUNTIME_YAML).exists():
-        return
-    if (local_dir / STUDY_DATA_YAML).exists():
-        # legacy v1 kit: study_data.yaml and study_runtime.yaml must not coexist
         return
     (local_dir / STUDY_RUNTIME_YAML).write_bytes(_STUDY_RUNTIME_TEMPLATE_PATH.read_bytes())
 

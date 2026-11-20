@@ -18,6 +18,7 @@ import os
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")
@@ -28,6 +29,7 @@ from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 from nvflare.recipe import SimEnv, add_cross_site_evaluation, add_final_global_evaluation
 from tests.hello_pt_test_utils import HELLO_PT_DIR, REPO_ROOT, load_hello_pt_module
+from tests.recipe_task_test_utils import RecipeTaskRecorder
 
 FIXTURE_DIR = REPO_ROOT / "tests/integration_test/data/fedopt_task"
 
@@ -35,6 +37,8 @@ FIXTURE_DIR = REPO_ROOT / "tests/integration_test/data/fedopt_task"
 def _equal(left, right):
     if isinstance(left, torch.Tensor):
         assert torch.equal(left, right)
+    elif isinstance(left, np.ndarray):
+        np.testing.assert_array_equal(left, right)
     elif isinstance(left, dict):
         assert left.keys() == right.keys()
         for key in left:
@@ -55,7 +59,7 @@ def _client_file(root, site, name):
 
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("exchange_format", [ExchangeFormat.NUMPY, ExchangeFormat.PYTORCH])
-def test_fedopt_job_task_model_and_optimizer_continuity(tmp_path, monkeypatch, exchange_format):
+def test_fedopt_job_task_model_and_optimizer_continuity(tmp_path, monkeypatch, exchange_format, replay_recipe_tasks):
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO_ROOT), os.environ.get("PYTHONPATH", ""))))
     for variable in ("OMP_NUM_THREADS", "MKL_NUM_THREADS"):
         monkeypatch.setenv(variable, "1")
@@ -90,6 +94,10 @@ def test_fedopt_job_task_model_and_optimizer_continuity(tmp_path, monkeypatch, e
                 for name in ("client.py", "model.py", "prepare_data.py"):
                     recipe.add_client_file(str(HELLO_PT_DIR / name))
                 add_final_global_evaluation(recipe)
+                if lifetime == "task":
+                    results[lifetime] = replay_recipe_tasks(recipe, results["job"], tmp_path / lifetime, _equal)
+                    continue
+                recipe._add_to_client_apps(RecipeTaskRecorder())
                 env = SimEnv(num_clients=2, num_threads=2, workspace_root=str(tmp_path / lifetime / "simulation"))
                 run = recipe.execute(env)
                 result = run.get_result(timeout=240, clean_up=False)
@@ -101,18 +109,13 @@ def test_fedopt_job_task_model_and_optimizer_continuity(tmp_path, monkeypatch, e
     finally:
         sys.modules.pop("fedopt_observer", None)
 
-    server_pids = {mode: set() for mode in results}
+    server_pids = set()
     # Independently reconstruct the server SGD recurrence from the actual DIFFs.
     expected = initial
     momentum = {name: torch.zeros_like(value) for name, value in initial.items()}
     for current_round in range(3):
-        states = [
-            torch.load(tmp_path / mode / "rounds" / f"round_{current_round}.pt", weights_only=True) for mode in results
-        ]
-        for mode, state in zip(results, states):
-            server_pids[mode].add(state.pop("pid"))
-        _equal(*states)
-        state = states[0]
+        state = torch.load(tmp_path / "job" / "rounds" / f"round_{current_round}.pt", weights_only=True)
+        server_pids.add(state["pid"])
         assert state["scheduler"]["last_epoch"] == current_round + 1
         assert state["optimizer"]["param_groups"][0]["lr"] == pytest.approx(0.5 * 0.8 ** (current_round + 1))
         for index, name in enumerate(expected):
@@ -128,7 +131,7 @@ def test_fedopt_job_task_model_and_optimizer_continuity(tmp_path, monkeypatch, e
                 output.pop("pid")
             _equal(*outputs)
             assert outputs[0]["steps"] > 0
-    assert all(len(pids) == 1 for pids in server_pids.values())
+    assert len(server_pids) == 1
 
     for site in ("site-1", "site-2"):
         for mode, root in results.items():
@@ -146,20 +149,17 @@ def test_fedopt_job_task_model_and_optimizer_continuity(tmp_path, monkeypatch, e
         for key in ("optimizer", "train_rng", "torch_rng"):
             _equal(saved[key], last[key])
 
-    models = [
-        torch.load(next(root.rglob("FL_global_model.pt")), weights_only=True)["model"] for root in results.values()
-    ]
-    _equal(*models)
-    evaluations = [json.loads(next(root.rglob("cross_val_results.json")).read_text()) for root in results.values()]
-    assert evaluations[0] == evaluations[1]
-    assert set(evaluations[0]) == {"site-1", "site-2"}
+    model = torch.load(next(results["job"].rglob("FL_global_model.pt")), weights_only=True)["model"]
+    _equal(model, state["model"])
+    evaluations = json.loads(next(results["job"].rglob("cross_val_results.json")).read_text())
+    assert set(evaluations) == {"site-1", "site-2"}
     completions = [json.loads(path.read_text()) for path in results["task"].rglob("completion.json")]
     training = [item for item in completions if item["identity"]["task_name"] == "train"]
     assert len(training) == 6
     assert (
         len(completions)
         == len({item["worker_pid"] for item in completions})
-        == 6 + sum(len(s) for s in evaluations[0].values())
+        == 6 + sum(len(models) for models in evaluations.values())
     )
     assert {item["identity"]["task_name"] for item in completions} == {"train", "validate"}
     assert all("checkpoint" in item["diagnostics"] for item in training)

@@ -23,7 +23,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.flare_api.api_spec import ClientInfo, ServerInfo
 from nvflare.fuel.sec.admin_cert_provider import AdminCertProviderError
 from nvflare.tool import cli_output
-from tests.timing_utils import isolate_time
+from tests.timing_utils import WAIT_TIMEOUT, isolate_time, join_thread
 
 
 def _synchronize_probe_start(monkeypatch, entered):
@@ -572,8 +572,11 @@ def test_certificate_acquisition_failures_retry_with_real_session(tmp_path, monk
     monkeypatch.setattr(flare_api.Session, "get_system_info", lambda self: info)
     monkeypatch.setattr(api_utils, "Session", construct)
     wait_timeouts = _synchronize_probe_start(monkeypatch, entered)
+    # Recovery includes real session construction and renewal cleanup. Its
+    # deadline is a failure guard, not a throughput assertion.
+    timeout = WAIT_TIMEOUT if recovers else 0.1
     try:
-        kwargs = dict(second_to_wait=0, timeout_in_sec=0.1, poll_interval=0.01, secure_mode=True)
+        kwargs = dict(second_to_wait=0, timeout_in_sec=timeout, poll_interval=0.01, secure_mode=True)
         if recovers:
             assert api_utils.wait_for_system_start(1, str(tmp_path), **kwargs) is info
             assert len(requests) == failed_at + 1
@@ -581,11 +584,10 @@ def test_certificate_acquisition_failures_retry_with_real_session(tmp_path, monk
             with pytest.raises(api_utils.SystemStartTimeout, match="certificate service temporarily unavailable"):
                 api_utils.wait_for_system_start(1, str(tmp_path), **kwargs)
         assert len(wait_timeouts) == 1
-        assert 0 <= wait_timeouts[0] <= 0.1
+        assert 0 <= wait_timeouts[0] <= timeout
     finally:
         for worker in workers:
-            worker.join(1)
-            assert not worker.is_alive()
+            join_thread(worker)
     assert len(requests) >= 2
     assert all(session.api.closed for session in sessions)
 

@@ -19,9 +19,10 @@ import argparse
 import json
 import os
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -38,6 +39,7 @@ from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.utils.fed_utils import nvflare_fobs_initialize
+from tests.local_task_launcher import local_policy
 
 
 def _config(**args):
@@ -75,7 +77,9 @@ def _configure(tmp_path, config, authorizer=None):
     configurator = ClientJsonConfigurator(workspace, str(config_file), args, str(tmp_path))
     if authorizer:
         configurator.set_component_build_authorizer(authorizer)
-    configurator.configure()
+    # Exercise wrapping/authorization separately from trusted backend selection.
+    with patch.object(TaskExecutionPolicy, "from_workspace", return_value=local_policy()):
+        configurator.configure()
     return configurator
 
 
@@ -83,6 +87,12 @@ def _configure(tmp_path, config, authorizer=None):
 def native_task(tmp_path, monkeypatch, isolated_fobs):
     if not hasattr(os, "waitid"):
         pytest.skip("CPU Process task execution requires waitid/WNOWAIT")
+    with task_worker_workspace(tmp_path, monkeypatch) as worker:
+        yield worker
+
+
+@contextmanager
+def task_worker_workspace(tmp_path, monkeypatch, *, site="site-1", job_id="job-1"):
     from nvflare.fuel.f3.cellnet.cell import Cell
     from nvflare.fuel.f3.cellnet.core_cell import CoreCell
     from nvflare.fuel.f3.stats_pool import StatsPoolManager
@@ -92,20 +102,20 @@ def native_task(tmp_path, monkeypatch, isolated_fobs):
     root = tmp_path / "workspace"
     (root / "startup").mkdir(parents=True)
     (root / "local").mkdir()
-    custom = root / "job-1" / "app_site-1" / "custom"
+    custom = root / job_id / f"app_{site}" / "custom"
     custom.mkdir(parents=True)
     (custom.parent / "config").mkdir()
-    (root / "job-1" / "meta.json").write_text(json.dumps({"byoc": True}))
+    (root / job_id / "meta.json").write_text(json.dumps({"byoc": True}))
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1]))
     monkeypatch.setenv("TASK_TEST_SECRET", "local-placeholder")
-    workspace = Workspace(str(root), site_name="site-1")
+    workspace = Workspace(str(root), site_name=site)
     # Workers join the Client Job cell, so the executor needs a real one; it connects nowhere itself.
     # A unique name keeps it clear of cells other tests in this process may leave behind, and the
     # process-wide tables that stop() leaves alone are restored afterwards.
     original_cells, original_pools = dict(CoreCell.ALL_CELLS), dict(StatsPoolManager.pools)
-    cell = Cell(f"site-1.job-{uuid.uuid4().hex}", "tcp://127.0.0.1:0", secure=False, credentials={})
-    cell.start()
+    cell = Cell(f"{site}.job-{uuid.uuid4().hex}", "tcp://127.0.0.1:0", secure=False, credentials={})
     try:
+        cell.start()
         context = FLContext()
         context.set_prop(
             ReservedKey.ENGINE,
@@ -114,20 +124,24 @@ def native_task(tmp_path, monkeypatch, isolated_fobs):
             sticky=True,
         )
         for key, value in (
-            (ReservedKey.RUN_NUM, "job-1"),
-            (ReservedKey.IDENTITY_NAME, "site-1"),
+            (ReservedKey.RUN_NUM, job_id),
+            (ReservedKey.IDENTITY_NAME, site),
             (FLContextKey.WORKSPACE_OBJECT, workspace),
             (FLContextKey.TASK_ID, "task-1"),
             (FLContextKey.TASK_NAME, "train"),
             (FLContextKey.TASK_ATTEMPT_ID, "attempt-1"),
         ):
             context.set_prop(key, value, private=True, sticky=True)
-        policy = TaskExecutionPolicy.from_config({"worker_timeout": 30, "environment_variables": ["TASK_TEST_SECRET"]})
+        policy = local_policy(worker_timeout=30, environment_variables=("TASK_TEST_SECRET",))
         yield root, custom, context, policy
     finally:
-        cell.stop()
-        CoreCell.ALL_CELLS.clear(), CoreCell.ALL_CELLS.update(original_cells)
-        StatsPoolManager.pools.clear(), StatsPoolManager.pools.update(original_pools)
+        try:
+            cell.stop()
+        finally:
+            CoreCell.ALL_CELLS.clear()
+            CoreCell.ALL_CELLS.update(original_cells)
+            StatsPoolManager.pools.clear()
+            StatsPoolManager.pools.update(original_pools)
 
 
 SCRIPT = """

@@ -39,6 +39,7 @@ from nvflare.lighter.utils import (
     serialize_cert,
     serialize_pri_key,
     write_pri_key_file,
+    x509_name,
 )
 
 MAX_CN_LENGTH = 64
@@ -206,7 +207,7 @@ class CertBuilder(Builder):
             self.pri_key = project.root_private_key
             self.pub_key = self.pri_key.public_key()
             self.subject = self.root_cert.subject
-            self.issuer = self.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+            self.issuer = self.subject
             state.is_available = True
         elif state.is_available:
             state_root_cert = state.get_root_cert()
@@ -220,7 +221,7 @@ class CertBuilder(Builder):
 
             self.pub_key = self.pri_key.public_key()
             self.subject = self.root_cert.subject
-            self.issuer = self.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+            self.issuer = self.subject
             self._validate_existing_root_validity()
 
     def _initialize_public_root(self, project):
@@ -290,7 +291,7 @@ class CertBuilder(Builder):
         assert isinstance(self.persistent_state, _CertState)
         if not self.persistent_state.is_available:
             pri_key, pub_key = generate_keys()
-            self.issuer = subject
+            self.issuer = x509_name(subject, subject_org)
             self.root_cert = self._generate_cert(
                 subject,
                 subject_org,
@@ -534,7 +535,7 @@ class CertBuilder(Builder):
 
         return generate_cert(
             subject=Identity(subject, subject_org, role),
-            issuer=Identity(issuer),
+            issuer=issuer if isinstance(issuer, x509.Name) else Identity(issuer),
             signing_pri_key=signing_pri_key,
             subject_pub_key=subject_pub_key,
             valid_days=valid_days,

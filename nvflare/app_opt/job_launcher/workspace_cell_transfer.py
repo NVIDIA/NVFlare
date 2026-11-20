@@ -50,12 +50,14 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.download_service import DownloadService
 from nvflare.fuel.f3.streaming.file_downloader import add_file, download_file
 from nvflare.fuel.f3.streaming.obj_downloader import ObjectDownloader
 from nvflare.fuel.sec.authn import set_add_auth_headers_filters
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.private.defs import AUTH_CLIENT_NAME_FOR_SJ
 from nvflare.private.fed.utils.job_cert_utils import (
     JOB_CERT_DIR_NAME,
@@ -73,6 +75,8 @@ ENV_WORKSPACE_OWNER_FQCN = "NVFL_WORKSPACE_OWNER_FQCN"
 ENV_WORKSPACE_TRANSFER_TOKEN = "NVFL_WORKSPACE_TRANSFER_TOKEN"
 
 WORKSPACE_TRANSFER_CHANNEL = "workspace_transfer"
+ENV_PERSISTENT_WORKSPACE = "NVFL_PERSISTENT_WORKSPACE"
+WORKSPACE_READY_FILE = ".nvflare_workspace_ready"
 TOPIC_PREPARE_DOWNLOAD = "prepare_download"
 TOPIC_PUBLISH_RESULTS = "publish_results"
 
@@ -82,8 +86,6 @@ BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
 _DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_runtime.yaml"})
-_RESOURCE_CONFIG_NAMES = ("resources.json", "resources.json.default")
-_K8S_LAUNCHER_COMPONENT_ID = "k8s_launcher"
 
 
 @dataclass
@@ -105,56 +107,6 @@ def _safe_rel_path(path: str) -> str | None:
     if rel_path.is_absolute() or ".." in rel_path.parts:
         return None
     return normalized
-
-
-def _config_path_to_workspace_rel(path, workspace_root: str, workspace_mount_path=None) -> str | None:
-    if not isinstance(path, str) or not path:
-        return None
-    normalized = path.replace("\\", "/").replace(os.sep, "/")
-    if not posixpath.isabs(normalized):
-        return _safe_rel_path(normalized)
-
-    prefixes = []
-    if isinstance(workspace_mount_path, str) and workspace_mount_path:
-        prefixes.append(workspace_mount_path.replace("\\", "/").replace(os.sep, "/").rstrip("/"))
-    prefixes.append(os.path.abspath(workspace_root).replace(os.sep, "/").rstrip("/"))
-
-    for prefix in prefixes:
-        if normalized.startswith(f"{prefix}/"):
-            return _safe_rel_path(normalized[len(prefix) + 1 :])
-    return None
-
-
-def _add_legacy_study_data_excludes(excluded_paths: set[str], workspace_root: str) -> None:
-    """Exclude a legacy kit's custom study_data_pvc_file_path from job workspace bundles."""
-    local_dir = os.path.join(workspace_root, "local")
-    for resource_config_name in _RESOURCE_CONFIG_NAMES:
-        try:
-            with open(os.path.join(local_dir, resource_config_name), "rt") as f:
-                resource_config = json.load(f)
-        except FileNotFoundError:
-            continue
-        except Exception as e:
-            logger.debug(
-                "could not inspect resource config '%s' for workspace download excludes: %s", resource_config_name, e
-            )
-            continue
-        if not isinstance(resource_config, dict):
-            continue
-        components = resource_config.get("components")
-        if not isinstance(components, list):
-            continue
-        for component in components:
-            if not isinstance(component, dict) or component.get("id") != _K8S_LAUNCHER_COMPONENT_ID:
-                continue
-            args = component.get("args")
-            if not isinstance(args, dict):
-                continue
-            rel_path = _config_path_to_workspace_rel(
-                args.get("study_data_pvc_file_path"), workspace_root, args.get("workspace_mount_path")
-            )
-            if rel_path:
-                excluded_paths.add(rel_path)
 
 
 def _add_study_runtime_excludes(excluded_paths: set[str], workspace_root: str) -> None:
@@ -186,7 +138,6 @@ def _add_study_runtime_excludes(excluded_paths: set[str], workspace_root: str) -
 
 def _workspace_download_excludes(workspace_root: str) -> frozenset[str]:
     excluded_paths = set(_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES)
-    _add_legacy_study_data_excludes(excluded_paths, workspace_root)
     _add_study_runtime_excludes(excluded_paths, workspace_root)
     return frozenset(excluded_paths)
 
@@ -683,6 +634,23 @@ def _install_job_cert(args) -> None:
         write_job_cert(_run_dir(args.workspace, args.job_id), cert_pem.encode("ascii"), key_pem.encode("ascii"))
 
 
+def workspace_download_complete(workspace_root: str) -> bool:
+    try:
+        return stat.S_ISREG(os.lstat(os.path.join(workspace_root, WORKSPACE_READY_FILE)).st_mode)
+    except OSError:
+        return False
+
+
+def _initialize_workspace_config(workspace_root: str) -> None:
+    """Use site communication settings for both downloaded and retained workspaces."""
+    # A job's comm_config.json must not override the site, even if the site has no config.
+    site_config_dir = os.path.join(workspace_root, "local")
+    config_path = [site_config_dir, workspace_root] if os.path.isdir(site_config_dir) else [workspace_root]
+    CommConfigurator.reload_from_dir(site_config_dir)
+    # Clear scalar values last so bootstrap reads during reload cannot leave cached defaults.
+    ConfigService.refresh_config_path(config_path)
+
+
 def download_workspace(args, secure_mode: bool) -> None:
     owner_fqcn = os.environ.get(ENV_WORKSPACE_OWNER_FQCN, "")
     if not owner_fqcn:
@@ -694,6 +662,15 @@ def download_workspace(args, secure_mode: bool) -> None:
     os.makedirs(args.workspace, exist_ok=True)
     # the bootstrap cell authenticates with the job credential, so install it before creating the cell
     _install_job_cert(args)
+    persistent = os.environ.get(ENV_PERSISTENT_WORKSPACE) == "1"
+    ready_file = os.path.join(args.workspace, WORKSPACE_READY_FILE)
+    if persistent and os.path.lexists(ready_file):
+        if not workspace_download_complete(args.workspace):
+            raise RuntimeError("persistent workspace initialization marker must be a regular file")
+        # CP has already confirmed the previous CJ and its workers exited.
+        # Downloading again could overwrite their checkpoints with CP's old copy.
+        _initialize_workspace_config(args.workspace)
+        return
     temp_dir = tempfile.mkdtemp(prefix="workspace-download-")
     try:
         cell = _get_bootstrap_cell(args, owner_fqcn, secure_mode)
@@ -714,6 +691,9 @@ def download_workspace(args, secure_mode: bool) -> None:
         with zipfile.ZipFile(bundle_path) as zf:
             _validate_relative_zip_members(zf)
             zf.extractall(args.workspace)
+        _initialize_workspace_config(args.workspace)
+        if persistent:
+            open(ready_file, "x").close()
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 

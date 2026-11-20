@@ -17,7 +17,7 @@ from typing import Dict, Tuple
 
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
 from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
-from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.config_service import ConfigService
 
 
 def _config_exists(app_root: str, config_folder: str, site_type: str) -> str:
@@ -28,7 +28,13 @@ def _config_exists(app_root: str, config_folder: str, site_type: str) -> str:
     else:
         config_to_check = None
 
-    if config_to_check and ConfigFactory.load_config(config_to_check, [os.path.join(app_root, config_folder)]) is None:
+    if (
+        config_to_check
+        and ConfigService.load_config_dict(
+            config_to_check, [os.path.join(app_root, config_folder)], raise_exception=False
+        )
+        is None
+    ):
         return f"Missing required config {config_to_check} inside {os.path.join(app_root, config_folder)} folder."
     return ""
 

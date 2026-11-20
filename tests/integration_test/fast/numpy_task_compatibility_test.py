@@ -23,6 +23,7 @@ import pytest
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.np.recipes.fedavg import NumpyFedAvgRecipe
 from nvflare.recipe import SimEnv
+from tests.recipe_task_test_utils import RecipeTaskRecorder
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = ROOT / "tests/integration_test/data/numpy_task/numpy_observer.py"
@@ -37,7 +38,7 @@ def _site_record(root, site, name):
 
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("update_type", ["full", "diff"])
-def test_shipped_numpy_fedavg_matches_job_and_task(tmp_path, monkeypatch, update_type):
+def test_shipped_numpy_fedavg_matches_job_and_task(tmp_path, monkeypatch, update_type, replay_recipe_tasks):
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(ROOT), os.environ.get("PYTHONPATH", ""))))
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
     monkeypatch.delenv("NVFLARE_HOME", raising=False)
@@ -60,6 +61,12 @@ def test_shipped_numpy_fedavg_matches_job_and_task(tmp_path, monkeypatch, update
             key_metric="weight_mean",
         )
         recipe.add_client_file(str(script))
+        if lifetime == "task":
+            results[lifetime] = replay_recipe_tasks(
+                recipe, results["job"], tmp_path / lifetime, np.testing.assert_equal
+            )
+            continue
+        recipe._add_to_client_apps(RecipeTaskRecorder())
         env = SimEnv(num_clients=2, num_threads=2, workspace_root=str(tmp_path / lifetime))
         run = recipe.execute(env)
         result = run.get_result(timeout=240, clean_up=False)

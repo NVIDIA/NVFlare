@@ -32,6 +32,7 @@ from nvflare.app_opt.sklearn.recipes.svm import SVMFedAvgRecipe
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity
 from nvflare.recipe import SimEnv, set_per_site_config
+from tests.recipe_task_test_utils import RecipeTaskRecorder
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = ROOT / "tests/integration_test/data/sklearn_task"
@@ -75,7 +76,7 @@ def _ordered_support_records(params):
 
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("algorithm", ["linear", "kmeans", "svm", "svm-linear"])
-def test_shipped_sklearn_clients_continue_after_round_zero(tmp_path, monkeypatch, algorithm):
+def test_shipped_sklearn_clients_continue_after_round_zero(tmp_path, monkeypatch, algorithm, replay_recipe_tasks):
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(ROOT), os.environ.get("PYTHONPATH", ""))))
     for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
         monkeypatch.setenv(name, "1")
@@ -90,6 +91,7 @@ def test_shipped_sklearn_clients_continue_after_round_zero(tmp_path, monkeypatch
     script = tmp_path / "shipped_client.py"
     shutil.copy2(source, script)
     results = {}
+    tolerance = 1e-12 if algorithm == "kmeans" else 0
     is_svm = algorithm.startswith("svm")
     num_rounds = 2 if is_svm else 3
     try:
@@ -130,6 +132,12 @@ def test_shipped_sklearn_clients_continue_after_round_zero(tmp_path, monkeypatch
             )
             recipe.add_client_file(str(script))
             recipe._job.to_server(observer.SeededServerRun())
+            if lifetime == "task":
+                results[lifetime] = replay_recipe_tasks(
+                    recipe, results["job"], tmp_path / lifetime, lambda left, right: _equal(left, right, tolerance)
+                )
+                continue
+            recipe._add_to_client_apps(RecipeTaskRecorder())
             env = SimEnv(clients=["site-1", "site-2"], num_threads=2, workspace_root=str(tmp_path / lifetime))
             run = recipe.execute(env)
             result = run.get_result(timeout=240, clean_up=False)
@@ -140,8 +148,6 @@ def test_shipped_sklearn_clients_continue_after_round_zero(tmp_path, monkeypatch
     finally:
         sys.modules.pop("sklearn_observer", None)
 
-    # K-means reductions can differ at floating-point roundoff precision.
-    tolerance = 1e-12 if algorithm == "kmeans" else 0
     for site in ("site-1", "site-2"):
         pids = {}
         for lifetime, root in results.items():
@@ -179,10 +185,6 @@ def test_shipped_sklearn_clients_continue_after_round_zero(tmp_path, monkeypatch
             _equal(observer.classifier_state(saved["model"]), _read_site(results["job"], site, "2_classifier.joblib"))
         else:
             assert not checkpoints
-    models = [joblib.load(next(root.rglob("model_param.joblib"))) for root in results.values()]
-    if is_svm:
-        models = [_ordered_support_records(model) for model in models]
-    _equal(*models, tolerance=tolerance)
     completions = [json.loads(p.read_text()) for p in results["task"].rglob("completion.json")]
     assert len(completions) == len({c["worker_pid"] for c in completions}) == 2 * num_rounds
     assert sum("checkpoint" in c["diagnostics"] for c in completions) == (

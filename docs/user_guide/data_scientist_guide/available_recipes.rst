@@ -34,24 +34,24 @@ see :ref:`recipe_api`.
 Client Execution Lifetime
 =========================
 
-NVFlare 2.10 adds the task-lifetime options below. Recipes default to
-``execution_lifetime="job"``: client compute stays alive across tasks. With ``execution_lifetime="task"``, each client task runs in a fresh
-CPU worker process. The server workflow and its aggregation state continue
-across rounds.
+NVFlare 2.10 adds the task-lifetime options below. With the default
+``execution_lifetime="job"`` setting, client compute stays alive across tasks.
+With ``execution_lifetime="task"``, each client task runs in a fresh worker on
+a configured Kubernetes or Slurm site. The server workflow and its
+aggregation state continue across rounds.
 
 Use task lifetime when releasing worker memory between tasks is worth the
 repeated process startup, data loading, and checkpoint I/O. Use job lifetime
-when retaining that state in memory is preferable. GPU training remains
-supported with the default job lifetime.
+when retaining that state in memory is preferable. Job-lifetime deployments
+also support GPU training.
 
-Restarting workers adds overhead and does not imply higher throughput. The
-lifetime option does not provide cross-job scheduling, resource admission, or
-shared-GPU arbitration.
+Restarting workers adds overhead. The site backend manages CPU and GPU
+allocation independently of the recipe's lifetime choice.
 
 The table below lists how to select task lifetime for the built-in recipe
 catalog. Names match ``nvflare recipe list``. For rows marked **Constructor**,
 pass ``execution_lifetime="task"`` to the recipe constructor. For rows marked
-**Client config**, call the common helper before exporting or executing:
+**Client config**, call the common helper before exporting the job:
 
 .. code-block:: python
 
@@ -93,7 +93,7 @@ below.
      - Client config; the statistics generator is recreated for each stage
    * - ``fedavg-he-pt``
      - Client config; requires provisioned HE contexts and a supported HE
-       environment (``PocEnv`` or ``ProdEnv``)
+       deployment
    * - ``scaffold-pt``, ``scaffold-tf``
      - Use job lifetime; client control variates are not restored between workers
    * - ``swarm-pt``
@@ -101,13 +101,15 @@ below.
    * - ``xgb-bagging``, ``xgb-horizontal``, ``xgb-vertical``
      - Use job lifetime
 
-Task lifetime currently requires CPU Process execution on Linux, or on macOS
-with Python 3.13 or newer. The platform must support POSIX process groups and
-``waitid``/``WNOWAIT``. Client API recipes must use in-process script execution
-(``launch_external_process=False``). External
-process and Attach execution, GPU resource requests, and custom or legacy
-Learner executors are unsupported in this profile. Collab, Flower, PSI, and
-edge recipes also require job lifetime.
+Export task-lifetime recipes with ``--export`` or ``recipe.export(...)`` and submit
+the exported job to sites configured for
+:doc:`Kubernetes <../admin_guide/deployment/kubernetes_task_launcher>` or
+:doc:`Slurm <../admin_guide/deployment/slurm_task_launcher>`.
+Local simulation and sites using the local Process or Docker launcher require
+job lifetime. Client API recipes in task mode must use in-process script
+execution (``launch_external_process=False``). Attach execution and custom or
+legacy Learner executors require job lifetime, as do Collab, Flower, PSI, and
+edge recipes.
 
 Application State And Evaluation
 --------------------------------
@@ -183,7 +185,7 @@ PyTorch FedAvg
 
 For large PyTorch model updates, ``FedAvgRecipe`` also supports
 ``enable_tensor_disk_offload=True`` to reduce server memory use by materializing
-incoming streamed tensors to temporary files. See
+incoming streamed tensors to temporary files. Aggregation and the global model remain in memory. See
 :ref:`Starting Federated Learning Servers <starting_fl_servers>` for deployment
 notes about configuring the server temporary directory.
 
@@ -191,6 +193,27 @@ notes about configuring the server temporary directory.
 
 - `examples/hello-world/hello-pt <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-pt>`_
 - `examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedavg <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10/pt/cifar10-sim/cifar10_fedavg>`_
+
+.. _disk_backed_fedavg:
+
+Disk-backed aggregation
+~~~~~~~~~~~~~~~~~~~~~~~
+
+To also keep aggregation and global model weights on disk, start from a safetensors checkpoint:
+
+.. code-block:: python
+
+    from nvflare.app_opt.pt.recipes import FedAvgRecipe
+
+    recipe = FedAvgRecipe(
+        min_clients=2,
+        train_script="client.py",
+        initial_ckpt="/models/initial.safetensors",
+        enable_disk_aggregation=True,
+    )
+
+The recipe enables incoming tensor offload and PyTorch exchange automatically. Omit ``model`` and custom
+server model components. Checkpoints contain model weights only. For storage setup, see :ref:`starting_fl_servers`.
 
 TensorFlow FedAvg
 -----------------
@@ -427,6 +450,7 @@ FedProx
 FedProx is FedAvg with a proximal term added to client optimization to handle data heterogeneity.
 PyTorch provides a concrete ``FedProxRecipe`` with a finite positive ``fedprox_mu`` (default ``0.01``).
 It inherits the aggregation, persistence, transfer, and memory options of PyTorch ``FedAvgRecipe``.
+See :ref:`disk_backed_fedavg` for the same option in ``FedProxRecipe``.
 
 .. warning::
 

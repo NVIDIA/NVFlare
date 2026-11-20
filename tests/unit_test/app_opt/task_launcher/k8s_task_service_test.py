@@ -24,35 +24,12 @@ import pytest
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskLaunchError
-from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN, ENV_WORKSPACE_TRANSFER_TOKEN
+from nvflare.app_opt.job_launcher.workspace_cell_transfer import ENV_WORKSPACE_OWNER_FQCN
 from nvflare.app_opt.task_launcher.k8s_launcher import SETTLEMENT_FINALIZER, K8sTaskLauncher
-from nvflare.app_opt.task_launcher.k8s_task_service import K8sTaskClient, K8sTaskService
+from nvflare.app_opt.task_launcher.k8s_task_service import K8sTaskClient
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.utils import new_cell_message
-from tests.unit_test.app_opt.task_launcher.k8s_launcher_test import ApiError, setup  # noqa: F401
-
-
-class LoopbackCell:
-    def __init__(self, service):
-        self.service = service
-        self.origin = "site-parent.job"
-        self.drop_reply = False
-        self.decode_pass_through_topics = set()
-
-    def send_request(self, *, request, **kwargs):
-        request.set_header(MessageHeaderKey.ORIGIN, self.origin)
-        reply = self.service._request(request)
-        if self.drop_reply:
-            raise TimeoutError("reply lost after CP accepted the request")
-        return reply
-
-
-def wire_client(monkeypatch):
-    cp = SimpleNamespace(get_fqcn=lambda: "site-parent", register_request_cb=Mock())
-    service = K8sTaskService(cp)
-    monkeypatch.setenv(ENV_WORKSPACE_OWNER_FQCN, "site-parent")
-    monkeypatch.setenv(ENV_WORKSPACE_TRANSFER_TOKEN, "job-token")
-    return LoopbackCell(service), service
+from tests.k8s_task_test_utils import ApiError, wire_client
 
 
 def eventually(check, timeout=2):
@@ -65,8 +42,21 @@ def eventually(check, timeout=2):
     pytest.fail("CP owner did not reach the expected state")
 
 
+@pytest.mark.parametrize("exit_code", [0, 137, 143])
+def test_worker_exit_recovery_evidence_reaches_cj(control, exit_code):
+    _backend, api, request, cell, _service, _owner, client = control
+    handle = client.launch(request)
+    eventually(lambda: api.pod is not None)
+    api.finish(exit_code=exit_code)
+    status = eventually(lambda: (status := handle.poll()).settled and status)
+    assert status.retryable == (exit_code != 0)
+    # A lost later observation must not erase already confirmed execution loss.
+    cell.drop_reply = True
+    assert handle.poll().retryable == status.retryable
+
+
 @pytest.fixture
-def control(setup, monkeypatch):  # noqa: F811
+def control(setup, monkeypatch):
     backend, api, request, store, bootstrap = setup
     cell, service = wire_client(monkeypatch)
     owner = service.add_job(backend, "job", "site-1", "job-token")
@@ -198,7 +188,7 @@ def test_lost_reply_cancel_fences_delayed_launch_before_acquisition(control):
 
 
 def test_cp_retains_and_cancels_a_create_returning_after_cj_exit(control):
-    _, api, request, _, service, owner, client = control
+    backend, api, request, cell, service, owner, client = control
     entered, release = threading.Event(), threading.Event()
 
     def block_create():
@@ -210,15 +200,26 @@ def test_cp_retains_and_cancels_a_create_returning_after_cj_exit(control):
     handle = client.launch(request)
     assert entered.wait(2)
     owner.release()  # CP may now tear down CJ without losing the in-flight create.
+    assert owner.thread.is_alive()
     assert service.jobs["job"] is owner
     release.set()
     eventually(lambda: "delete" in api.calls)
     assert not owner.attempts[(request.task_id, request.attempt_id)].status.settled
+    assert owner.thread.is_alive()
+    with pytest.raises(ValueError, match="already owns"):
+        service.add_job(backend, "job", "site-1", "replacement-token")
     api.finish(exit_code=143)
     owner.thread.join(2)
     assert api.deleted
     assert "job" not in service.jobs
     assert not owner.thread.is_alive()
+    replacement = service.add_job(backend, "job", "site-1", "replacement-token")
+    try:
+        assert raw(cell).get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+    finally:
+        replacement.release()
+        replacement.thread.join(2)
+        assert not replacement.thread.is_alive()
 
 
 def test_cj_death_cancels_workers_without_cj_rpc(control):
@@ -234,9 +235,7 @@ def test_cj_death_cancels_workers_without_cj_rpc(control):
         return read_worker(name=name, **kwargs)
 
     api.read_namespaced_pod = read
-    with owner.lock:
-        owner.cj_name, owner.cj_uid = "cj", "cj-uid"
-    owner.wake.set()
+    owner.attach_cj("cj", "cj-uid")
     eventually(lambda: "delete" in api.calls)
     assert owner.released
     assert not owner.attempts[(request.task_id, request.attempt_id)].status.settled
@@ -365,7 +364,8 @@ def test_unknown_cancel_flood_seals_admission_without_evicting_fences(control, m
 
 
 def test_cj_observer_is_a_slow_backstop_not_the_task_poll_loop():
-    from nvflare.app_opt.task_launcher.k8s_task_service import _CJ_OBSERVATION_INTERVAL, _Job
+    from nvflare.app_opt.task_launcher.k8s_task_service import _Job
+    from nvflare.private.fed.task_worker.task_service import _CJ_OBSERVATION_INTERVAL
 
     backend = SimpleNamespace(core_v1=Mock(), namespace="site", request_timeout=1)
     backend.core_v1.read_namespaced_pod.return_value = SimpleNamespace(

@@ -83,7 +83,8 @@ class NumpyFedAvgRecipe(UnifiedFedAvgRecipe):
         aggregation_weights: Per-client aggregation weights dict. Defaults to equal weights.
 
         execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
-            Task lifetime requires CPU in-process execution and application-owned native state restoration.
+            Task lifetime requires a configured Kubernetes or Slurm site and in-process script execution.
+            Scripts retaining local state must restore it from a native checkpoint.
 
     Example:
         ```python

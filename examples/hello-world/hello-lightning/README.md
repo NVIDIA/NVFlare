@@ -7,15 +7,12 @@ configurations.
 For the complete installation instructions, see
 [Installation](https://nvflare.readthedocs.io/en/main/installation.html).
 
-For an installed stable or nightly package, add the PyTorch extra to that same
+For an installed release package, add the PyTorch extra to that same
 distribution. Choose the matching installation command:
 
 ```bash
 # Stable installation
 python -m pip install "nvflare[PT]"
-
-# Nightly installation
-python -m pip install "nvflare-nightly[PT]"
 ```
 
 Then download the matching example without a repository checkout:

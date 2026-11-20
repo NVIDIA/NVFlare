@@ -494,7 +494,7 @@ class CrossSiteModelEval(Controller):
             str: Path to the file saved.
         """
         # Save the model with name as the filename to shareable directory
-        data_filename = os.path.join(save_dir, name)
+        data_filename = resolve_path_under_root(save_dir, name, "DXO name")
 
         try:
             dxo.to_file(data_filename)

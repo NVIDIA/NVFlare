@@ -18,12 +18,15 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.hci.proto import ReplyKeyword
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.admin_audit import AdminContext, audit_context, is_sensitive, prepare, record
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
-from nvflare.private.defs import CellChannel, RequestHeader, new_cell_message
+from nvflare.private.defs import CellChannel, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.site_security import SiteSecurity
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -108,71 +111,167 @@ class FedAdminAgent(object):
         assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
         topic = req.topic
 
-        # create audit record
-        if self.auditor:
-            user_name = req.get_header(RequestHeader.USER_NAME, "")
-            ref_event_id = req.get_header(ConnProps.EVENT_ID, "")
-            self.auditor.add_event(user=user_name, action=topic, ref=ref_event_id)
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        endpoint = request.get_prop(MessagePropKey.ENDPOINT)
+        from_server = (
+            origin == FQCN.ROOT_SERVER
+            and endpoint
+            and endpoint.name in (FQCN.ROOT_SERVER, FQCN.get_parent(self.cell.get_fqcn()))
+        )
+        # The only client-originated command is a job child's status notification
+        # to its own CP. Do not trust authorization headers supplied by a peer.
+        from_job = (
+            topic == TrainingTopic.NOTIFY_JOB_STATUS
+            and origin
+            and FQCN.is_parent(self.cell.get_fqcn(), origin)
+            and req.get_header(RequestHeader.JOB_ID) == FQCN.split(origin)[-1]
+            and endpoint
+            and endpoint.name == origin
+        )
+        if not from_server and not from_job:
+            # Rejected origins cannot contribute actor, job, command or reference.
+            record(
+                "client.origin.rejected",
+                context=AdminContext(),
+                writer=self.auditor,
+                reason="untrusted_origin",
+            )
+            return new_cell_message({}, error_reply("request must originate from server"))
 
+        if from_job and not from_server:
+            # Child status is an internal notification, not an administrator request.
+            # In particular, do not use any administrator headers it may carry.
+            with audit_context(AdminContext()):
+                return self._handle_request(req, administrative=False)
+
+        sensitive = is_sensitive(topic)
+        context = prepare(
+            lambda: AdminContext(
+                user=req.get_header(RequestHeader.USER_NAME, "") or "unknown",
+                request_id=req.get_header(ConnProps.EVENT_ID, "") or "",
+                command=topic if topic in self.processors else "",
+                job_id=req.get_header(RequestHeader.JOB_ID, "") or "",
+                identity_source="trusted_server",
+            ),
+            default=AdminContext(),
+        )
+        with audit_context(context):
+            receipt_id = record(
+                "client.command.received" if sensitive or topic not in self.processors else topic,
+                writer=self.auditor,
+            )
+            # Keep the server's event header intact for existing consumers. Only
+            # this request's local outcomes refer to the local receipt.
+            with audit_context(request_id=receipt_id):
+                return self._handle_request(req, administrative=True, sensitive=sensitive)
+
+    def _handle_request(self, req: Message, administrative: bool, sensitive: bool = False) -> CellMessage:
+        topic = req.topic
+        stage = "pre_handler"
         processor: RequestProcessor = self.processors.get(topic)
         if processor:
-            with self.app_ctx.new_context() as fl_ctx:
-                peer_props = req.get_header(ReservedHeaderKey.PEER_PROPS)
-                if peer_props:
-                    peer_ctx = FLContext()
-                    peer_ctx.set_public_props(peer_props)
-                    fl_ctx.set_peer_context(peer_ctx)
+            try:
+                with self.app_ctx.new_context() as fl_ctx:
+                    peer_props = req.get_header(ReservedHeaderKey.PEER_PROPS)
+                    if peer_props:
+                        peer_ctx = FLContext()
+                        peer_ctx.set_public_props(peer_props)
+                        fl_ctx.set_peer_context(peer_ctx)
 
-                try:
-                    reply = None
+                    try:
+                        reply = None
 
-                    cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
-                    if cmd:
-                        site_security = SiteSecurity()
-                        self._set_security_data(req, fl_ctx)
-                        authorized, messages = site_security.authorization_check(self.app_ctx, cmd, fl_ctx)
-                        if not authorized:
-                            reply = error_reply(messages)
+                        cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
+                        if cmd:
+                            site_security = SiteSecurity()
+                            self._set_security_data(req, fl_ctx)
+                            try:
+                                authorized, messages = site_security.authorization_check(self.app_ctx, cmd, fl_ctx)
+                            except Exception:
+                                if administrative:
+                                    record("client.permission.error", writer=self.auditor, reason="site_policy_error")
+                                raise
+                            if authorized and administrative:
+                                policy_errors = prepare(lambda: fl_ctx.get_prop(FLContextKey.EXCEPTIONS), default=None)
+                                if isinstance(policy_errors, dict) and policy_errors:
+                                    record("client.permission.error", writer=self.auditor, reason="site_policy_error")
+                            if not authorized:
+                                if administrative:
+                                    record("client.permission.denied", writer=self.auditor, reason="site_policy_denied")
+                                reply = error_reply(messages)
 
-                    if not reply:
-                        # see whether pre-authorization is needed
-                        authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
-                        require_authz = authz_flag == "true"
-                        if require_authz:
-                            # authorize this command!
-                            if cmd:
-                                user = Person(
-                                    name=req.get_header(RequestHeader.USER_NAME, ""),
-                                    org=req.get_header(RequestHeader.USER_ORG, ""),
-                                    role=req.get_header(RequestHeader.USER_ROLE, ""),
-                                )
-                                submitter = Person(
-                                    name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
-                                    org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
-                                    role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
-                                )
+                        if not reply:
+                            # see whether pre-authorization is needed
+                            authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
+                            require_authz = authz_flag == "true"
+                            if require_authz:
+                                # authorize this command!
+                                if cmd:
+                                    user = Person(
+                                        name=req.get_header(RequestHeader.USER_NAME, ""),
+                                        org=req.get_header(RequestHeader.USER_ORG, ""),
+                                        role=req.get_header(RequestHeader.USER_ROLE, ""),
+                                    )
+                                    submitter = Person(
+                                        name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
+                                        org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
+                                        role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
+                                    )
 
-                                authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
-                                authorized, err = AuthorizationService.authorize(authz_ctx)
-                                if err:
-                                    reply = error_reply(err)
-                                elif not authorized:
-                                    reply = error_reply(ReplyKeyword.NOT_AUTHORIZED)
+                                    authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
+                                    try:
+                                        authorized, err = AuthorizationService.authorize(authz_ctx)
+                                    except Exception:
+                                        if administrative:
+                                            record(
+                                                "client.permission.error", writer=self.auditor, reason="policy_error"
+                                            )
+                                        raise
+                                    if err:
+                                        if administrative:
+                                            record(
+                                                "client.permission.error", writer=self.auditor, reason="policy_error"
+                                            )
+                                        reply = error_reply(err)
+                                    elif not authorized:
+                                        if administrative:
+                                            record(
+                                                "client.permission.denied", writer=self.auditor, reason="policy_denied"
+                                            )
+                                        reply = error_reply(ReplyKeyword.NOT_AUTHORIZED)
+                                else:
+                                    if administrative:
+                                        record(
+                                            "client.permission.rejected", writer=self.auditor, reason="missing_command"
+                                        )
+                                    reply = error_reply("requires authz but missing admin command")
+
+                        if not reply:
+                            stage = "handler"
+                            reply = processor.process(req, self.app_ctx)
+                            if sensitive:
+                                record("client.command.handler_returned", writer=self.auditor)
+                            stage = "post_handler"
+                            if reply is None:
+                                # simply ack
+                                reply = ok_reply()
                             else:
-                                reply = error_reply("requires authz but missing admin command")
-
-                    if not reply:
-                        reply = processor.process(req, self.app_ctx)
-                        if reply is None:
-                            # simply ack
-                            reply = ok_reply()
-                        else:
-                            if not isinstance(reply, Message):
-                                raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
-                except Exception as e:
-                    secure_log_traceback()
-                    reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
+                                if not isinstance(reply, Message):
+                                    raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
+                    except Exception as e:
+                        if sensitive:
+                            record("client.command.error", writer=self.auditor, reason="processing_error", stage=stage)
+                        secure_log_traceback()
+                        reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
+            except Exception:
+                # Context construction/exit historically propagates. Record the
+                # handling fact without changing that behavior.
+                if sensitive:
+                    record("client.command.error", writer=self.auditor, reason="processing_error", stage=stage)
+                raise
         else:
+            if administrative:
+                record("client.command.rejected", writer=self.auditor, reason="unknown_topic")
             reply = error_reply("invalid_request")
         return new_cell_message({}, reply)
 

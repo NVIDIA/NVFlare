@@ -71,7 +71,8 @@ class SklearnFedAvgRecipe(UnifiedFedAvgRecipe):
             Only used if `launch_external_process` is True. Defaults to 0.0.
 
         execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
-            Task lifetime requires CPU in-process execution and application-owned native state restoration.
+            Task lifetime requires a configured Kubernetes or Slurm site and in-process script execution.
+            Scripts retaining local state must restore it from a native checkpoint.
 
     Example:
         Basic usage with same config for all clients:

@@ -31,7 +31,7 @@ from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
 from nvflare.private.fed.client.task_worker_executor import TaskWorkerExecutor
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from nvflare.private.fed.task_worker.protocol import read_bootstrap
-from tests.unit_test.app_opt.task_launcher.k8s_launcher_test import PodApi
+from tests.k8s_task_test_utils import PodApi, wire_client
 
 
 @pytest.fixture
@@ -93,7 +93,6 @@ def test_canonical_selection_through_cj_execution_routes_cpu_gpu_and_resends_wit
     assert type(policy.launcher) is K8sTaskLauncher
     assert policy.worker_environment() == {}
     context = FLContext()
-    from tests.unit_test.app_opt.task_launcher.k8s_task_service_test import wire_client
 
     cell, service = wire_client(monkeypatch)
     cell.decode_pass_through_topics = set()
@@ -217,13 +216,13 @@ def test_mixed_or_inconsistent_site_profiles_fail_before_backend_access(profile,
     api.assert_not_called()
 
 
-def test_process_task_policy_rejects_kubernetes_job_launcher(profile, tmp_path):
+def test_kubernetes_site_cannot_default_to_a_local_task_launcher(profile, tmp_path):
     _, config = profile
     config["task_execution"] = {}
     (tmp_path / "local").mkdir()
     (tmp_path / "startup").mkdir()
     (tmp_path / "local" / "resources.json").write_text(json.dumps(config))
-    with pytest.raises(ValueError, match="task and job launch modes must match"):
+    with pytest.raises(ValueError, match="explicit site Kubernetes or Slurm"):
         TaskExecutionPolicy.from_workspace(Workspace(str(tmp_path), site_name="site-1"))
 
 

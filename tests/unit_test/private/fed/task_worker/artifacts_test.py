@@ -559,6 +559,34 @@ def test_checkpoint_commit_is_atomic_idempotent_and_survives_payload_release(tmp
         assert stream.read() == b"round-one state"
 
 
+@pytest.mark.parametrize("field", ["job_id", "site_name", "task_id", "task_name", "attempt_id"])
+def test_committed_checkpoint_recovery_matches_the_complete_server_assignment(tmp_path, field):
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    path = str(tmp_path / "state" / "train.checkpoint")
+    assignment = _identity("server-attempt")
+    completion = _checkpoint_completion(store, _identity("worker-attempt"), b"state")
+    assert store.committed_checkpoint_completion(assignment, path) is None
+    store.commit_checkpoint(completion, path, assignment=assignment)
+    store.commit_checkpoint(completion, path, assignment=assignment)
+    assert store.committed_checkpoint_completion(assignment, path) == completion
+    assert store.committed_checkpoint_completion(replace(assignment, **{field: "different"}), path) is None
+    with pytest.raises(ValueError, match="checkpoint assignment was changed"):
+        store.commit_checkpoint(completion, path, assignment=replace(assignment, attempt_id="different"))
+
+
+def test_committed_checkpoint_recovery_rejects_a_different_saved_result(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    path = tmp_path / "state" / "train.checkpoint"
+    assignment = _identity("server-attempt")
+    completion = _checkpoint_completion(store, _identity("worker-attempt"), b"state")
+    store.commit_checkpoint(completion, str(path), assignment=assignment)
+    record = json.loads(path.read_text())
+    record["result"]["sha256"] = "0" * 64
+    path.write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="does not match its saved completion"):
+        store.committed_checkpoint_completion(assignment, str(path))
+
+
 @pytest.mark.parametrize("previous", [False, True])
 @pytest.mark.parametrize("fault", ["sync", "cleanup", "close", "warning"])
 def test_published_checkpoint_keeps_matching_result_on_late_io_error(tmp_path, monkeypatch, caplog, previous, fault):
@@ -758,6 +786,21 @@ def test_checkpoint_sealing_and_commit_share_storage_but_worker_input_is_isolate
     store.commit_checkpoint(next_completion, committed)
     assert not payload.exists()
     assert len(list((tmp_path / "state").glob("*.bin"))) == 1
+
+
+def test_resource_diagnostics_do_not_displace_a_near_limit_failure_message(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    identity = _identity()
+    store.create_attempt(identity)
+    facts = {"worker_pid": 1, "worker_ppid": 0, "started_at": 0, "failed_at": 1, "error_type": "ValueError"}
+    store.record_failure(identity, message="", **facts)
+    path = Path(store.attempt_dir(identity), "failure.json")
+    message = "x" * (artifacts._MAX_RECORD_BYTES - path.stat().st_size - 1)
+    path.unlink()
+    store.record_failure(identity, message=message, diagnostics={"resource_stats": {"issues": []}}, **facts)
+    record = store.read_failure(identity)
+    assert record["message"] == message
+    assert "diagnostics" not in record
 
 
 def test_identical_checkpoint_bytes_share_the_committed_payload_across_attempts(tmp_path):

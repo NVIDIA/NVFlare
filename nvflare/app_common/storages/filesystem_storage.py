@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import shutil
+import stat
 import uuid
 from pathlib import Path
 from typing import List, Tuple
@@ -411,6 +412,15 @@ class FilesystemStorage(StorageSpec):
             raise StorageException("object {} does not exist".format(uri))
 
         return self.get_meta(uri), self.get_data(uri)
+
+    def object_exists(self, uri: str) -> bool:
+        full_uri = self._object_path(uri)
+        try:
+            return all(stat.S_ISREG(os.stat(os.path.join(full_uri, name)).st_mode) for name in (DATA, META))
+        except (FileNotFoundError, NotADirectoryError):
+            return False
+        # Permission, I/O, and other failures must propagate, rather than being
+        # mistaken for absence by os.path.isfile or os.path.isdir.
 
     def delete_object(self, uri: str):
         """Deletes the specified object.

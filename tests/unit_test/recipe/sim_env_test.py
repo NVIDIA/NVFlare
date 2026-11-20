@@ -22,6 +22,7 @@ import pytest
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import RunStatus
+from nvflare.apis.simulation_plan import SIMULATION_PLAN_FILE
 from nvflare.app_common.default_component_policy import DEFAULT_CLASS_ALLOW_LIST
 from nvflare.app_common.widgets.component_path_authorizer import CLASS_ALLOW_LIST, ComponentPathAuthorizer
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
@@ -83,6 +84,83 @@ def test_sim_env_validation():
     assert env.num_threads == 3
 
 
+def test_sim_env_rejects_invalid_api_logging_selector_before_creating_workspace(tmp_path):
+    env = SimEnv(num_clients=1, log_config="progres", workspace_root=str(tmp_path / "simulation"))
+    job = _make_job()
+    with patch.object(job, "simulator_run") as run:
+        with pytest.raises(ValueError, match="unknown logging configuration 'progres'"):
+            env.deploy(job)
+    run.assert_not_called()
+    assert not (tmp_path / "simulation").exists()
+
+
+def test_sim_env_validates_at_deployment_after_api_configuration_changes(tmp_path):
+    env = SimEnv(num_clients=1, log_config="full", workspace_root=str(tmp_path / "simulation"))
+    env.log_config = "progres"
+    with pytest.raises(ValueError, match="unknown logging configuration 'progres'"):
+        env.deploy(_make_job())
+    assert not (tmp_path / "simulation").exists()
+
+
+@pytest.mark.parametrize("source", ["api", "environment", "argument"])
+def test_failed_logging_retry_does_not_return_previous_success(monkeypatch, tmp_path, source):
+    from nvflare.recipe import _args
+
+    monkeypatch.setenv("FL_LOG_LEVEL", "full")
+    if source == "argument":
+        monkeypatch.setattr(_args, "_RECIPE_LOG_CONFIG", "full")
+    env = SimEnv(
+        num_clients=1,
+        log_config="full" if source == "api" else None,
+        workspace_root=str(tmp_path / "simulation"),
+    )
+    job = _make_job()
+    _deploy_with_mocked_simulator(env, job)
+    workspace = tmp_path / "simulation" / job.name
+    artifact = workspace / "previous-result.txt"
+    artifact.write_text("previous successful run")
+    assert env.get_job_status(job.name) == RunStatus.FINISHED_COMPLETED.value
+    assert env.get_job_result(job.name) == str(workspace)
+    assert not env.last_run_failed
+
+    if source == "environment":
+        monkeypatch.setenv("FL_LOG_LEVEL", "progres")
+    else:
+        env.log_config = "progres"
+    error_type = ValueError if source == "api" else SystemExit
+    with patch.object(job, "simulator_run") as run, patch.object(env, "_ensure_default_component_policy") as policy:
+        with pytest.raises(error_type) as error:
+            env.deploy(job)
+    if source != "api":
+        assert error.value.code == 2
+    run.assert_not_called()
+    policy.assert_not_called()
+    assert env.get_job_status(job.name) == RunStatus.FAILED_TO_RUN.value
+    assert env.last_run_failed
+    assert env.get_job_result(job.name) is None
+    assert artifact.read_text() == "previous successful run"
+
+
+def test_sim_env_uses_environment_repaired_after_construction(monkeypatch, tmp_path):
+    monkeypatch.setenv("FL_LOG_LEVEL", "missing.json")
+    env = SimEnv(num_clients=1, workspace_root=str(tmp_path / "simulation"))
+    monkeypatch.setenv("FL_LOG_LEVEL", "full")
+    run = _deploy_with_mocked_simulator(env, _make_job())
+    run.assert_called_once()
+
+
+def test_sim_env_explicit_logging_ignores_invalid_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("FL_LOG_LEVEL", "missing.json")
+    env = SimEnv(num_clients=1, log_config="full", workspace_root=str(tmp_path / "simulation"))
+    run = _deploy_with_mocked_simulator(env, _make_job())
+    assert run.call_args.kwargs["log_config"] == "full"
+
+
+def test_sim_env_ignores_an_empty_log_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("FL_LOG_LEVEL", "")
+    assert SimEnv(num_clients=1, workspace_root=str(tmp_path / "simulation")).log_config is None
+
+
 @pytest.mark.parametrize(
     "kwargs,expected_count",
     [
@@ -95,7 +173,8 @@ def test_sim_env_validation():
 def test_preparation_reports_resolved_client_count(tmp_path, capsys, kwargs, expected_count):
     env = SimEnv(workspace_root=str(tmp_path), **kwargs)
     _deploy_with_mocked_simulator(env, _make_job())
-    assert f"Simulation · {expected_count} clients" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert f"Simulation · {expected_count} clients\nStarting server and clients..." in output
 
 
 def test_sim_env_status_tracks_synchronous_deployment(tmp_path):
@@ -133,6 +212,18 @@ def test_sim_env_deploy_with_explicit_clients_does_not_pass_n_clients(tmp_path):
     assert kwargs.get("n_clients") is None
     assert kwargs.get("clients") == ["site-1", "site-2"]
     assert not env.last_run_failed
+
+
+def test_sim_env_passes_validated_plan_outside_the_job(tmp_path):
+    plan = {"format_version": 1, "async_execution": {"logical_sequence": ["a"], "arrival_sequence": [0]}}
+    env = SimEnv(num_clients=2, workspace_root=str(tmp_path), reprod=True, plan=plan)
+    job = _make_job()
+    mock_run = _deploy_with_mocked_simulator(env, job)
+    path = tmp_path / job.name / SIMULATION_PLAN_FILE
+    assert json.loads(path.read_text()) == plan
+    assert mock_run.call_args.kwargs["simulation_plan"] == str(path)
+    with pytest.raises(ValueError, match="requires plan"):
+        SimEnv(num_clients=2, reprod=True)
 
 
 @pytest.mark.parametrize(

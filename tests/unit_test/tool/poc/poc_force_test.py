@@ -13,22 +13,26 @@
 # limitations under the License.
 
 import errno
+import json
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
-from pyhocon import ConfigFactory as CF
 
 from nvflare.cli_exception import CLIException
-from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig
 from nvflare.tool.poc.service_constants import FlareServiceConstants as SC
 from tests.timing_utils import isolate_time
 
 
 def _load_config_dict(path):
-    return PyhoconConfig(CF.parse_file(str(path))).to_dict()
+    return json.loads(path.read_text())
+
+
+def _write_config_dict(path, config):
+    path.parent.mkdir()
+    path.write_text(json.dumps(config))
 
 
 def _make_admin_startup_kit(prod_dir, identity):
@@ -440,18 +444,8 @@ participants:
             (site_startup / "fed_client.json").write_text("{}")
             return project_config
 
-        dst = tmp_path / ".nvflare" / "config.conf"
-        with (
-            patch("nvflare.tool.poc.poc_commands.prepare_poc_provision", side_effect=fake_prepare_poc_provision),
-            patch(
-                "nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir",
-                return_value=str(tmp_path),
-            ),
-            patch(
-                "nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path",
-                return_value=str(dst),
-            ),
-        ):
+        dst = tmp_path / ".nvflare" / "config.json"
+        with patch("nvflare.tool.poc.poc_commands.prepare_poc_provision", side_effect=fake_prepare_poc_provision):
             assert _prepare_poc([], 2, str(workspace), force=True) is True
 
         config = _load_config_dict(dst)
@@ -579,21 +573,17 @@ participants:
     org: nvidia
 """
         )
-        config_path = tmp_path / ".nvflare" / "config.conf"
-        config_path.parent.mkdir()
-        config_path.write_text(
-            f"""
-version = 2
-startup_kits {{
-  active = "admin@nvidia.com"
-  entries {{
-    "admin@nvidia.com" = "{prod_00 / 'admin@nvidia.com'}"
-  }}
-}}
-poc {{
-  workspace = "{workspace}"
-}}
-"""
+        config_path = tmp_path / ".nvflare" / "config.json"
+        _write_config_dict(
+            config_path,
+            {
+                "version": 2,
+                "startup_kits": {
+                    "active": "admin@nvidia.com",
+                    "entries": {"admin@nvidia.com": str(prod_00 / "admin@nvidia.com")},
+                },
+                "poc": {"workspace": str(workspace)},
+            },
         )
 
         def fake_provision_participant_only(workspace_arg, project_config_arg, participant, target_prod_dir, force):
@@ -697,7 +687,7 @@ participants:
         ):
             result = _add_poc_user(str(workspace), "lead", "bob@nvidia.com", "nvidia")
 
-        config_path = tmp_path / ".nvflare" / "config.conf"
+        config_path = tmp_path / ".nvflare" / "config.json"
         config = _load_config_dict(config_path)
         entries = config["startup_kits"]["entries"]
         assert config["startup_kits"]["active"] == "bob@nvidia.com"
@@ -733,21 +723,17 @@ participants:
     org: nvidia
 """
         )
-        config_path = tmp_path / ".nvflare" / "config.conf"
-        config_path.parent.mkdir()
-        config_path.write_text(
-            f"""
-version = 2
-startup_kits {{
-  active = "admin@nvidia.com"
-  entries {{
-    "admin@nvidia.com" = "{prod_00 / 'admin@nvidia.com'}"
-  }}
-}}
-poc {{
-  workspace = "{workspace}"
-}}
-"""
+        config_path = tmp_path / ".nvflare" / "config.json"
+        _write_config_dict(
+            config_path,
+            {
+                "version": 2,
+                "startup_kits": {
+                    "active": "admin@nvidia.com",
+                    "entries": {"admin@nvidia.com": str(prod_00 / "admin@nvidia.com")},
+                },
+                "poc": {"workspace": str(workspace)},
+            },
         )
 
         def fake_provision_participant_only(workspace_arg, project_config_arg, participant, target_prod_dir, force):
@@ -861,16 +847,8 @@ participants:
 """
             )
 
-        dst = tmp_path / ".nvflare" / "config.conf"
-        with patch(
-            "nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir",
-            return_value=str(tmp_path),
-        ):
-            with patch(
-                "nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path",
-                return_value=str(dst),
-            ):
-                save_startup_kit_dir_config(str(workspace), project_name)
+        dst = tmp_path / ".nvflare" / "config.json"
+        save_startup_kit_dir_config(str(workspace), project_name)
 
         config = _load_config_dict(dst)
         assert config["startup_kits"]["active"] == "admin@nvidia.com"
@@ -881,16 +859,8 @@ participants:
         assert "startup_kit" not in config["poc"]
         assert "prod" not in config or "startup_kit" not in config["prod"]
 
-        with patch(
-            "nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir",
-            return_value=str(tmp_path),
-        ):
-            with patch(
-                "nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path",
-                return_value=str(dst),
-            ):
-                with patch.dict(os.environ, {}, clear=True):
-                    assert get_poc_workspace() == str(workspace)
+        with patch.dict(os.environ, {"HOME": str(tmp_path)}, clear=True):
+            assert get_poc_workspace() == str(workspace)
 
     def test_register_poc_startup_kits_replaces_previous_poc_workspace_entries(self, tmp_path):
         from nvflare.tool.kit.kit_config import get_startup_kit_entries
@@ -903,21 +873,14 @@ participants:
         new_admin = _make_admin_startup_kit(new_prod_dir, "admin@nvidia.com")
         manual_admin = tmp_path / "prod" / "cancer" / "lead@nvidia.com"
 
-        config = CF.parse_string(
-            f"""
-version = 2
-startup_kits {{
-  active = "admin@nvidia.com"
-  entries {{
-    "admin@nvidia.com" = "{old_admin}"
-    cancer_lead = "{manual_admin}"
-  }}
-}}
-poc {{
-  workspace = "{old_workspace}"
-}}
-"""
-        )
+        config = {
+            "version": 2,
+            "startup_kits": {
+                "active": "admin@nvidia.com",
+                "entries": {"admin@nvidia.com": str(old_admin), "cancer_lead": str(manual_admin)},
+            },
+            "poc": {"workspace": str(old_workspace)},
+        }
 
         updated, removed_ids = _register_poc_startup_kits(
             config,
@@ -937,16 +900,7 @@ poc {{
         new_admin = _make_admin_startup_kit(workspace / "example_project" / "prod_00", "admin@nvidia.com")
         manual_admin = _make_admin_startup_kit(tmp_path / "prod", "admin@nvidia.com")
 
-        config = CF.parse_string(
-            f"""
-version = 2
-startup_kits {{
-  entries {{
-    "admin@nvidia.com" = "{manual_admin}"
-  }}
-}}
-"""
-        )
+        config = {"version": 2, "startup_kits": {"entries": {"admin@nvidia.com": str(manual_admin)}}}
 
         with pytest.raises(CLIException, match="already exists outside POC workspace"):
             _register_poc_startup_kits(config, str(workspace), {"admin@nvidia.com": str(new_admin)})
@@ -959,17 +913,10 @@ startup_kits {{
         new_admin = _make_admin_startup_kit(workspace / "example_project" / "prod_00", "admin@nvidia.com")
         stale_admin = tmp_path / "deleted-poc" / "example_project" / "prod_00" / "admin@nvidia.com"
 
-        config = CF.parse_string(
-            f"""
-version = 2
-startup_kits {{
-  active = "admin@nvidia.com"
-  entries {{
-    "admin@nvidia.com" = "{stale_admin}"
-  }}
-}}
-"""
-        )
+        config = {
+            "version": 2,
+            "startup_kits": {"active": "admin@nvidia.com", "entries": {"admin@nvidia.com": str(stale_admin)}},
+        }
 
         updated, removed_ids = _register_poc_startup_kits(config, str(workspace), {"admin@nvidia.com": str(new_admin)})
 
@@ -987,41 +934,26 @@ startup_kits {{
         poc_lead = workspace / "example_project" / "prod_00" / ".." / "prod_00" / "lead@nvidia.com"
         poc_backup_admin = tmp_path / "poc-backup" / "example_project" / "prod_00" / "admin@nvidia.com"
         prod_admin = tmp_path / "prod" / "cancer" / "lead@nvidia.com"
-        dst = tmp_path / ".nvflare" / "config.conf"
-        dst.parent.mkdir()
-        dst.write_text(
-            f"""
-version = 2
-startup_kits {{
-  active = "admin@nvidia.com"
-  entries {{
-    "admin@nvidia.com" = "{poc_admin}"
-    "lead@nvidia.com" = "{poc_lead}"
-    "poc-backup-admin" = "{poc_backup_admin}"
-    cancer_lead = "{prod_admin}"
-  }}
-}}
-poc {{
-  workspace = "{workspace}"
-  startup_kit = "{poc_admin}"
-  mode = "keep"
-}}
-prod {{
-  startup_kit = "{prod_admin}"
-  mode = "keep"
-}}
-"""
+        dst = tmp_path / ".nvflare" / "config.json"
+        _write_config_dict(
+            dst,
+            {
+                "version": 2,
+                "startup_kits": {
+                    "active": "admin@nvidia.com",
+                    "entries": {
+                        "admin@nvidia.com": str(poc_admin),
+                        "lead@nvidia.com": str(poc_lead),
+                        "poc-backup-admin": str(poc_backup_admin),
+                        "cancer_lead": str(prod_admin),
+                    },
+                },
+                "poc": {"workspace": str(workspace), "mode": "keep"},
+                "prod": {"mode": "keep"},
+            },
         )
 
         with (
-            patch(
-                "nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir",
-                return_value=str(tmp_path),
-            ),
-            patch(
-                "nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path",
-                return_value=str(dst),
-            ),
             patch(
                 "nvflare.tool.poc.poc_commands.setup_service_config",
                 return_value=({"name": "example_project"}, {SC.FLARE_SERVER: "server"}),
@@ -1050,32 +982,17 @@ prod {{
         workspace = tmp_path / "poc"
         workspace.mkdir()
         poc_admin = workspace / "example_project" / "prod_00" / "admin@nvidia.com"
-        dst = tmp_path / ".nvflare" / "config.conf"
-        dst.parent.mkdir()
-        dst.write_text(
-            f"""
-version = 2
-startup_kits {{
-  active = "admin@nvidia.com"
-  entries {{
-    "admin@nvidia.com" = "{poc_admin}"
-  }}
-}}
-poc {{
-  workspace = "{workspace}"
-}}
-"""
+        dst = tmp_path / ".nvflare" / "config.json"
+        _write_config_dict(
+            dst,
+            {
+                "version": 2,
+                "startup_kits": {"active": "admin@nvidia.com", "entries": {"admin@nvidia.com": str(poc_admin)}},
+                "poc": {"workspace": str(workspace)},
+            },
         )
 
         with (
-            patch(
-                "nvflare.tool.poc.poc_commands.get_or_create_hidden_nvflare_dir",
-                return_value=str(tmp_path),
-            ),
-            patch(
-                "nvflare.tool.poc.poc_commands.get_hidden_nvflare_config_path",
-                return_value=str(dst),
-            ),
             patch(
                 "nvflare.tool.poc.poc_commands.setup_service_config",
                 return_value=({"name": "example_project"}, {SC.FLARE_SERVER: "server"}),

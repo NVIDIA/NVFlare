@@ -24,7 +24,7 @@ Per-Client Data Splits:
 import argparse
 
 from nvflare.app_opt.sklearn import SklearnFedAvgRecipe
-from nvflare.recipe import SimEnv, set_per_site_config
+from nvflare.recipe import SimEnv, is_export_requested, set_per_site_config
 
 
 def define_parser():
@@ -35,7 +35,7 @@ def define_parser():
         "--execution_lifetime",
         choices=("job", "task"),
         default="job",
-        help="Keep client compute for the job (default) or use a fresh CPU worker per task (NVFlare 2.10+)",
+        help="Keep client compute for the job, or export task workers for a configured Kubernetes/Slurm site.",
     )
     parser.add_argument(
         "--data_path",
@@ -44,7 +44,7 @@ def define_parser():
         help="Path to HIGGS dataset CSV file",
     )
 
-    return parser.parse_args()
+    return parser
 
 
 def calculate_data_splits(n_clients: int, total_size: int = 11000000, valid_size: int = 1100000):
@@ -80,7 +80,12 @@ def calculate_data_splits(n_clients: int, total_size: int = 11000000, valid_size
 
 
 def main():
-    args = define_parser()
+    parser = define_parser()
+    args = parser.parse_args()
+    if args.execution_lifetime == "task" and not is_export_requested():
+        parser.error(
+            "task lifetime requires --export for a configured Kubernetes/Slurm site; local simulation requires job lifetime"
+        )
 
     n_clients = args.n_clients
     num_rounds = args.num_rounds
@@ -119,7 +124,6 @@ def main():
     )
     set_per_site_config(recipe, per_site_config)
 
-    print("Executing recipe in simulation environment...")
     env = SimEnv(clients=clients, num_threads=n_clients)
     run = recipe.execute(env)
 

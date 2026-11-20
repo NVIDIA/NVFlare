@@ -55,6 +55,10 @@ class TaskSettlementError(TaskLauncherError):
         self.status = status
 
 
+class TaskExecutionInterrupted(TaskLauncherError):
+    """A settled worker was lost without a result; exit CJ so CP can recover it."""
+
+
 @dataclass(frozen=True)
 class TaskResourceRequest:
     """Resources that must be admitted and reserved for one task attempt.
@@ -156,6 +160,9 @@ class TaskExecutionStatus:
     cancel_requested: bool = False
     settled: bool = False
     failure_reason: Optional[str] = None
+    # Backend-confirmed execution loss, excluding submission rejection. The
+    # supervisor still requires settlement and checks for a result/application error.
+    retryable: bool = False
 
     @property
     def succeeded(self) -> bool:
@@ -208,11 +215,22 @@ class TaskHandleSpec(ABC):
         """
         raise NotImplementedError()
 
+    def result_received(self):
+        """Notify a parent cleanup owner after the caller verifies completion.
+
+        This acknowledges the application result, not resource release. A
+        backend that accepts results before settlement must implement it.
+        """
+        raise NotImplementedError()
+
 
 class TaskLauncherSpec(FLComponent, ABC):
     """Launch backend for disposable task execution units."""
 
     launch_mode = None
+    # Parent-owned backends may preserve a verified application result while
+    # separately retaining and reporting unconfirmed native cleanup.
+    completion_requires_settlement = True
 
     def get_worker_listener_host(self) -> str:
         """Host at which this launcher's workers can reach their Client Job.

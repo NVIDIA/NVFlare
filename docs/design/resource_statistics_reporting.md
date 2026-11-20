@@ -1,0 +1,439 @@
+# Resource statistics: reports, delivery and queries
+
+This page defines the resource-statistics records, delivery, and query behavior
+introduced in the [overview](resource_statistics_design.md). The
+[measurement design](resource_statistics_measurement.md) explains how the values
+are obtained.
+
+## Records and ownership
+
+The design defines three public record kinds. Each `kind` string in the table is
+prefixed by `nvflare.resource_stats.`, and every record has a `schema_version`
+field. The public schema version is `"1.0"`.
+
+| Kind | Required top-level fields, in addition to version and kind | Owner |
+| --- | --- | --- |
+| `participant_summary` | `job_id`, `participant_name`, `reported_at`, `resource_capacity`, `resource_time`, `resource_utilization`, `issues`; optional `duration_seconds` | The participant's parent constructs identity and timestamp around the job process's observations. |
+| `resource_summary` | `job_id`, `participants` | The root server builds the expected participant roster and copies accepted measurements into it. |
+| `study_summary` | `selection`, `generated_at`, `coverage`, `jobs`, `totals` | The authorized query derives a view of accessible jobs; it is not a stored report. |
+
+The `participant_name` is the existing logical site name, or `server` for the
+server slot. The root server assigns `role: "server"|"client"` from its roster;
+the child process cannot claim a role. A job-process handoff contains
+measurements but does not supply trusted job or site identity. The `reported_at`,
+server-owned `received_at`, and `generated_at` fields are UTC RFC 3339
+timestamps. They support diagnostics and are not used to calculate durations
+across hosts. Elapsed time comes from a local monotonic clock.
+
+Job IDs match `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`. Participant names use the same
+alphabet, are at most 128 characters long, and may also start with `_` or `-`.
+Study names are at most 63 characters long and use lowercase alphanumeric
+characters, with `_` or `-` allowed internally. They begin and end with an
+alphanumeric character.
+Timestamps require the `Z` UTC suffix and allow at most nine fractional-second
+digits.
+
+The following example shows a complete participant record:
+
+```json
+{
+  "schema_version": "1.0",
+  "kind": "nvflare.resource_stats.participant_summary",
+  "job_id": "job-42",
+  "participant_name": "site-1",
+  "reported_at": "2026-10-29T12:00:10Z",
+  "duration_seconds": 10,
+  "resource_capacity": {
+    "cpu": {"units": 2},
+    "memory": {"bytes": 2147483648},
+    "gpu": {"count": 1}
+  },
+  "resource_time": {
+    "cpu": {"unit_seconds": 20},
+    "memory": {"byte_seconds": 21474836480},
+    "gpu": {"instance_seconds": 10}
+  },
+  "resource_utilization": {
+    "cpu_consumed": {"cpu_seconds": 2},
+    "message_traffic": {
+      "sent_bytes": 2048,
+      "received_bytes": 4096
+    }
+  },
+  "issues": []
+}
+```
+
+### Value and quality rules
+
+Quantities use native JSON numbers. Bytes and GPU counts are integers;
+CPU units, durations, CPU work and capacity-time may be fractional. Numbers must
+be finite and nonnegative; boolean values and numeric strings are not measurements.
+Integer products and sums remain Python integers. Mixed arithmetic uses floating
+point and rejects nonfinite results rather than clamping them. The wire format
+adds no fixed decimal precision or artificial integer-width limit.
+
+Capacity and capacity-time are scalar objects:
+`cpu.units`, `memory.bytes`, `gpu.count`, and respectively `cpu.unit_seconds`,
+`memory.byte_seconds`, `gpu.instance_seconds`. There are no CPU-model or GPU-type
+groups, device-memory fields, or hardware descriptions. An observed zero is
+`"gpu": {"count": 0}`; zero capacity-time is `"gpu": {"instance_seconds": 0}`.
+GPU counts follow NVFlare's shared inventory and integer-mask selection rules.
+`gpu.instance_seconds` records GPU-seconds, not GPU utilization or exclusive allocation.
+
+Successful metrics omit `status`; exceptional metrics retain their own
+`status: "partial"` or `"unavailable"`. Explanations appear once in the owning
+scope's `issues` list as `{metric, code}` entries, sorted and deduplicated by
+metric then code. A complete scope has `issues: []`.
+
+| Measurement state | Representation |
+| --- | --- |
+| Complete | Value fields are present and `status` is omitted. Zero is a valid observation. |
+| Partial | `status: "partial"` accompanies usable values; the owning scope names the metric's issues. |
+| Unavailable | `status: "unavailable"` replaces usable values; the owning scope names the metric's issues. |
+
+Each participant report and accepted participant row owns one source issue list.
+Worker records and terminal handoffs follow the same scope rule. Derived job
+and per-study-job totals own aggregate issue lists, and study totals own their
+list. Aggregate explanations describe aggregate coverage; they do not copy all
+participant source details. The persisted job summary and study response add no
+duplicate root list around their existing rows or totals.
+
+The following abbreviated scope fragment shows incomplete CPU attribution
+with a usable subtotal. Other measurements and record identity are omitted:
+
+```json
+{
+  "resource_utilization": {
+    "cpu_consumed": {
+      "status": "partial",
+      "cpu_seconds": 12.5
+    }
+  },
+  "issues": [
+    {
+      "metric": "cpu_consumed",
+      "code": "attribution_incomplete"
+    }
+  ]
+}
+```
+
+The issue codes are `observation_incomplete`, `attribution_incomplete`,
+`unsupported`, and `malformed_source`. Partial values use the first two codes;
+partial traffic measurements use `observation_incomplete`. Issues must not contain raw exception
+text or environment details.
+
+Quality is tracked independently for `resource_capacity`, `resource_time`, and
+each of `cpu_consumed` and `message_traffic`. Quality is not
+attached to the `resource_utilization` container itself. Complete capacity and time
+objects contain CPU, memory, and GPU dimensions; partial objects retain the known
+dimensions. For example, an unavailable GPU probe does not discard known CPU or
+RAM values. When no valid containing
+participant window exists, `duration_seconds` is omitted, although CPU and
+capacity-time values may still be useful without an average.
+
+## Terminal transport and validation
+
+The `REPORT_JOB_OUTCOME` request carries an optional `resource_report` field
+with the value `{"participant_summary": <UTF-8 JSON bytes>}`. The outcome reply
+carries a separate `resource_report_status`. Rejecting statistics must not reject
+or change the training outcome. The
+[client outcome path](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/client/client_executor.py)
+and [server handler](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/server/fed_server.py)
+remain the transport and authentication boundaries.
+
+The parent reads one bounded terminal handoff, checks its launch generation,
+adds the job and site identity, and serializes the participant record once.
+Local producers and reducers do not repeat the server's measurement checks.
+Measurements remain self-reported; validating a local file cannot establish their
+authenticity. Each launch owns a private
+`terminal_handoff.<generation>.json` file directly in the run directory. Its bounded
+generation token is required for every handoff operation and never enters public
+records. Cleanup removes only that generation's file, so an
+older writer or failed launch cannot replace or remove a newer handoff. File
+operations use one run-directory handle; reads reject symlinks and nonregular or
+oversized files. Readers ignore unrelated private files.
+Handoffs and summaries use atomic file publication without separate statistics
+`fsync` calls; durability follows normal workspace archival.
+
+The parent binds each handoff to the launch generation it owns, establishing the
+association before launch. It rejects stale or unverifiable handoffs, even when a
+prior file remains in the workspace. If the terminal generation produces no valid
+handoff, its observations are gaps; an earlier generation's report is never used
+as a substitute.
+
+The server derives the client name from the authenticated, registered client,
+not from the payload or an arbitrary message-origin header. It creates per-job
+state with the server and deployed client roster. Reports cannot create jobs,
+participants, filesystem paths, or role assignments. Statistics acceptance runs
+before the ordinary duplicate-outcome gate, allowing an outcome retry to obtain
+a statistics result without applying the job outcome twice.
+
+Acceptance checks the input at the authenticated reporting boundary:
+
+1. Under the per-job lock, bind the request to the active job and expected,
+   non-disabled sender slot. Check whether acceptance is still open.
+2. Check the wrapper and raw byte limit, then decode UTF-8 JSON. Reject duplicate
+   keys, wrong kind/version, and unexpected fields. Check
+   the fixed measurement structure, identifiers, statuses, and finite nonnegative
+   numbers; require the body job/site identity to match the bound slot.
+3. Sort and deduplicate issue tags, serialize the accepted record, and check its
+   canonical byte limit. Equivalent retries are duplicates; changed records are
+   conflicts. Retain immutable bytes and server-owned receipt time.
+
+The reader checks the decoded record in place, including rejecting nonfinite
+measurement values during numeric checks. Its fixed field structure rules
+out arbitrary nesting; there is no separate recursive validation pass. Local
+handoff assembly projects measurement fields without repeating these checks.
+
+Hardware descriptions are not collected. Reports must not emit hostnames,
+addresses, serials, UUIDs, PCI identifiers, CUDA visibility masks, raw CPU
+topology, or raw cgroup paths. The reader accepts only these report fields, but cannot attest to the accuracy
+of a site's self-report.
+
+### Limits and retries
+
+The following implementation bounds are not additional configuration
+options. A producer must stop before exceeding them, and a receiver must enforce
+them independently.
+
+| Bound | Limit |
+| --- | --- |
+| Participant JSON, before and after canonicalization | 1 MiB |
+| Accepted canonical participant bytes retained per job | 64 MiB |
+| Job or study summary JSON | 64 MiB |
+| Expected participants per job; selected jobs per study query | 10,000 each |
+| ZIP metadata reads while constructing the member index | 4 MiB |
+
+One immutable accepted record occupies a `(job_id, participant_name)` slot:
+
+| Condition | `resource_report_status` | Effect |
+| --- | --- | --- |
+| First valid record while open | `accepted` | The server retains the record once. |
+| Semantically equivalent retry, including after closure | `duplicate` | The retry adds no values or receipt entry. |
+| Different valid record for an accepted open slot | `conflict` | The server keeps the original. |
+| New or changed record after closure | `too_late` | The archive snapshot is unchanged. |
+| Invalid content while open | `invalid` | The server keeps any accepted record; otherwise, it records a gap that a valid arrival may repair before closure. |
+| No statistics on an otherwise valid outcome | `not_provided` | Ordinary outcome processing continues. |
+| Unknown/disabled slot or no current job ledger | `not_expected` | The server does not allocate state for the request. |
+| Capacity or internal acceptance failure | `server_error` | The job outcome and accepted subtotal are unchanged. |
+
+The normal terminal-outcome mechanism may retransmit the same bytes, including
+the original `reported_at`. Rebuilding a record with a new timestamp is not an
+equivalent retry. There is no separate statistics sender, retry journal, or
+acknowledgement protocol. Older peers may omit the report or its reply status;
+this indicates absent statistics rather than an outcome failure. An older archive
+without the bundle is unavailable, not a zero measurement.
+
+Attempt markers and terminal handoffs use ordinary synchronous file I/O, like
+return-code files and workspace archival. There is no statistics deadline or
+shared I/O slot. Slow filesystem calls can delay launch, reporting or process
+exit; the client parent releases compute resources before reading the handoff.
+Missing or malformed handoffs remain measurement gaps.
+
+Attempt markers are not fsynced. A failed marker operation marks prior coverage
+uncertain. An accepted or duplicate acknowledgement permits marker cleanup;
+failed cleanup retains in-memory history. This detects ordinary restarts when
+the marker is available, but does not guarantee history across a host crash.
+The separate launch-generation check still rejects stale terminal handoffs.
+
+Worker measurements use the existing completion or failure diagnostics, with no
+separate statistics-file write, read or removal. The enclosing record supplies
+identity and version; the nested worker data contains only measurements and issues.
+Invalid optional measurements
+are omitted without changing the application outcome. Traffic is sampled before
+transport shutdown, so a live transport's usable subtotal is marked partial for
+the unobserved final interval. A missing or unreadable completion/failure record
+can leave a worker contribution unavailable. Cancellation paths that do not read
+those records also leave gaps rather than adding a statistics-only read.
+
+## Server ledger and archive publication
+
+The coordinator maintains state and a lock for each job, plus a registry lock
+held briefly for lookup. Bounded parsing and acceptance share the per-job lock,
+so roster and closure checks occur once. Finalization and acceptance for one job
+do not hold the registry lock during I/O or block unrelated jobs. The ledger retains only bounded
+canonical report bytes, rather than an additional decoded copy for every
+participant.
+
+Acceptance also reserves the final summary's encoded size, including indentation,
+server-owned metadata, and space for every roster entry to remain missing,
+disabled or invalid. If either byte budget is exhausted, only the new contribution
+is rejected; already accepted reports remain publishable.
+
+```text
+OPEN: accept one record per trusted slot
+  -> CLOSED: freeze roster and accepted bytes; later changes are too_late
+  -> FINALIZED: summary atomically published
+  -> ARCHIVED: existing job archives saved
+```
+
+After the server job exits on failure or abort, the server allows up to 20 seconds
+for outstanding client resource reports before archiving. Cancellation starts
+immediately. A shorter `client_outcome_wait_timeout` or an earlier outcome
+deadline caps the wait. On each completion check, the server proceeds once it
+has accepted reports from all expected clients except those marked disabled.
+At expiry it archives the available reports and records any gaps. Terminal status
+and scheduler-slot release follow archival. Successful jobs use the normal
+client-outcome wait.
+
+At closure, each roster entry contains either an accepted value or a gap. An
+accepted entry contains `participant_name`, the original `reported_at`,
+server-owned `role` and `received_at`, optional `duration_seconds`,
+`resource_capacity`, `resource_time`, `resource_utilization`, and its scope-level
+`issues` list. It omits a success status. A gap contains the name, role, and
+`status: "missing"|"invalid"|"disabled"`, with no issue list; an invalid gap also
+has `received_at`. Here, `disabled` means the parent knows the participant was
+not launched; it is not a new collection opt-out feature. Missing measurements
+must not be filled with zeros or inferred from requested resources.
+
+Publish under the server-owned run directory:
+
+```text
+resource_stats/
+  resource_summary.json
+```
+
+Publication requires descriptor-relative, no-follow directory operations and
+rejects symlinked or replaced reserved directories rather than following a
+job-provided path. If these operations are unavailable, reporting is unavailable;
+job execution continues.
+
+Publication atomically writes one `resource_summary.json` containing all accepted
+participant measurements and timestamps before the existing
+[job finalization path](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/server/job_runner.py)
+saves the job archives, with produced files in `OUTPUTS` when stored separately.
+There are no separate participant files or stored totals. Repeated
+finalization reconstructs the summary from the frozen accepted records without
+rereading or republishing files. It does not verify that the published files still
+exist. Roster changes and newer measurements are rejected after closure.
+
+If publication fails, the incomplete statistics bundle is excluded or discarded
+and the normal job and archive failure policy continues. An optional statistics
+failure must not change the training result. A server crash before publication
+loses the in-memory accepted-report ledger; it is not recovered or replayed.
+An explicit job restore starts a fresh ledger. Continuing clients can still
+report their original execution window; restarted processes mark lost earlier
+observations partial. Participants without a new report remain missing.
+Status-only recovery without archive publication may leave no summary. This
+protocol does not implement automatic job recovery or durable report delivery.
+Unpublished child files cannot replace a committed server summary.
+
+## Authorized reads and derived totals
+
+The Session API exposes `Session.get_job_resources(job_id, site=None)` and
+`Session.get_study_resources()`. A job response contains `resource_summary`, a
+query-only `job_name`, and, when a site is selected, `participant_summary`. The
+study method returns the `study_summary` record directly for the session's
+active study. These methods extend the existing
+[Session](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/fuel/flare_api/flare_api.py)
+and [admin job
+commands](https://github.com/NVIDIA/NVFlare/blob/main/nvflare/private/fed/server/job_cmds.py)
+rather than introducing an HTTP service. The server authenticates the caller and
+applies existing job-ID and study checks before fetching an archive. Job resource
+reads use the `download_job` authorization category, including its submitter and
+organization restrictions; explicit command policies can override that category.
+Study-query admission uses `view`, then checks the job resource-read permission
+for each job, excluding denied jobs without exposing their IDs or counts.
+
+Each server admits one archive-backed resource query at a time, shared by job and
+study queries. A concurrent request receives `resource query busy; retry later`
+immediately instead of entering a queue. The admission slot is released when the
+server-side query finishes, including failure paths.
+
+Only finalized jobs have archive-backed data. Queries use
+`JobDefManagerSpec.get_storage_for_download` and prefer `WORKSPACE`. If the
+summary is absent and `job_outputs_stored` is true, they stage `OUTPUTS` and look
+there. Malformed, oversized, duplicate, or identity-invalid summaries are errors,
+not reasons to try another archive.
+
+All queries read only `resource_stats/resource_summary.json`. A site query builds
+`participant_summary` from the selected accepted entry, preserving `reported_at`
+and measurements, omitting `role` and `received_at`, and adding the summary's
+job identity, schema version, and participant record kind. The CLI/API response
+shape is unchanged. Separate participant files are neither written nor read.
+
+The summary must have one matching ZIP entry, be unencrypted and within its
+decoded-data limit. Unrelated archive members are ignored. Staging is scoped to
+one job and cleaned up on success or failure; OUTPUTS is never fetched when
+WORKSPACE contains the summary.
+
+Study queries process jobs sequentially. Filesystem storage stages a link to the
+stored archive, so the ZIP reader already seeks directly to the summary after
+reading its bounded member index. Stores that fetch whole archives may benefit
+from a smaller WORKSPACE, but this is not a guaranteed study-query speedup:
+statistics may reside in OUTPUTS, which can also contain large models. No
+performance improvement is assumed. Both archives use the same existing size
+limits and staging API.
+
+Admission bounds concurrent queries; it does not bound the transfer size, disk
+space, or execution time of one query. Transfer-size, disk-space, and hard
+execution-time limits remain deferred until statistics can be fetched independently
+of the job archives. Existing download cleanup and timeout policy still
+apply. A client timeout does not cancel server storage I/O or release the admission
+slot while that query continues on the server.
+
+Job totals are derived from accepted entries independently for each measurement.
+They sum stored `resource_time` and utilization without multiplying startup
+capacity by participant duration again. All resource quantities are scalar totals.
+Startup capacity and participant durations
+are not summed. Any expected gap makes a usable job subtotal partial; if there are
+no usable contributors, the result is unavailable rather than zero. Average CPU
+use is a participant's CPU seconds divided by its positive containing duration,
+not a percentage of host capacity.
+
+A study row contains `job_id`, `job_name`, `job_status`, and
+`resource_data: "included"|"unavailable"|"nonterminal"`. Only included rows have
+derived `totals`. Coverage records `selected_jobs`, `included_jobs`,
+`unavailable_jobs`, and `nonterminal_jobs` as integers. The study
+`selection` contains `study_name`, and `generated_at` is the query time. Study
+totals sum only included-job totals and preserve their per-field quality.
+Unavailable and nonterminal jobs remain explicit coverage gaps, so the
+**included-jobs subtotal** is not a claim about all selected jobs.
+
+Nonfinite arithmetic results are rejected rather than clamped or represented as
+infinity. Resident and worker contributions use the same incremental merge: an
+overflow retains any earlier usable subtotal and marks the metric incomplete.
+Job and study queries instead mark an overflowing utilization total unavailable. An
+overflowing capacity-time dimension is omitted, leaving the other dimensions
+partial, or the measurement unavailable if none remain. The aggregate issue list
+identifies the affected metric with `observation_incomplete`. Source reports and
+independent measurements remain available.
+
+The CLI uses the existing success/error envelope. Job JSON data contains
+`selection: {job_id, site}`, `summary`, and an optional `participant`; study JSON
+data contains `selection: {study}` and `summary`. The CLI rejects `--site` without
+`--job`; a job query may also specify its study. The `--schema` option describes
+the command interface, not the report-format schema. Authorization,
+nonterminal-job, and unavailable-data errors remain distinguishable. Text output
+rounds only for display and lists affected metrics as incomplete or unavailable.
+JSON retains native numbers, per-metric status, and detailed scope-level issue codes.
+
+## Compatibility and failure boundary
+
+Summary publication uses accepted reports from the parent ledger. Residual private
+handoff files cannot prevent publication or discard accepted reports.
+
+Public records use a strict schema: readers reject unknown fields and
+unsupported versions. Adding a field, including an optional field, or changing
+permitted enum values, units, or field meanings requires a new schema version.
+Populating an optional field already defined by the schema does not change the
+version.
+
+Mixed-version peers exchange statistics only when the reader supports the
+producer's version. There is no implicit conversion or version negotiation. An
+unsupported participant report remains a statistics gap without changing the job
+outcome; an unsupported archived report is unavailable to the query.
+
+The report does not provide a fallback that reinterprets startup capacity as a
+task rollup, and unsupported formats are not silently upgraded. Unsupported or
+absent archives are reported as unavailable; deployment may still complete
+normally when a peer does not send statistics.
+
+The server trusts authenticated identity and validates report structure, but it
+cannot verify the physical truth of reported numbers. Atomic files prevent partial
+publication; they do not provide hardware attestation or recovery after loss of
+the in-memory ledger. Published reports describe completed work.
+Scheduling, live monitoring, billing, restart adoption, and result or checkpoint
+acceptance remain outside this protocol.

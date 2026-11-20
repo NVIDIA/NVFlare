@@ -191,9 +191,8 @@ def _atomic_publish(path: str, encoded: bytes):
 class TaskAttemptIdentity:
     """Assignment plus authority-issued physical attempt; artifacts must match both.
 
-    The client adapter receives attempt_id from the scheduling server, never
-    invents it. Local unit-level supervisors can be driven by another trusted
-    scheduling authority. A new physical attempt requires a new authority ID.
+    The client adapter scopes the server's attempt ID to the CP-issued CJ launch
+    when available. Local supervisors may use another trusted scheduling authority.
     """
 
     job_id: str
@@ -273,6 +272,7 @@ class WorkerBootstrap:
     schema_version: int = SCHEMA_VERSION
     max_payload_bytes: int | None = None
     cell_session: Mapping[str, Any] | None = None
+    resource_reporting: bool = False
 
     def __post_init__(self):
         if not isinstance(self.identity, TaskAttemptIdentity):
@@ -282,6 +282,8 @@ class WorkerBootstrap:
         _require_absolute_directory_name("artifact_root", self.artifact_root)
         _require_absolute_directory_name("workspace_root", self.workspace_root)
         _require_payload_limit(self.max_payload_bytes)
+        if type(self.resource_reporting) is not bool:
+            raise TypeError("resource_reporting must be bool")
         if self.cell_session is not None:
             _require_cell_session(self.cell_session)
         if not isinstance(self.executor, Mapping):
@@ -320,6 +322,7 @@ class WorkerBootstrap:
             "context_properties": {name: prop.to_dict() for name, prop in self.context_properties.items()},
             "max_payload_bytes": self.max_payload_bytes,
             "cell_session": _thaw_json(self.cell_session),
+            "resource_reporting": self.resource_reporting,
         }
 
     @classmethod
@@ -327,7 +330,7 @@ class WorkerBootstrap:
         if not isinstance(value, Mapping):
             raise TypeError("worker bootstrap must be a mapping")
         required = {"schema_version", "identity", "artifact_root", "workspace_root", "executor"}
-        optional = {"components", "context_properties", "max_payload_bytes", "cell_session"}
+        optional = {"components", "context_properties", "max_payload_bytes", "cell_session", "resource_reporting"}
         if not required.issubset(value) or set(value) - required - optional:
             raise ValueError("worker bootstrap has missing or unknown fields")
         context = value.get("context_properties", {})
@@ -343,6 +346,7 @@ class WorkerBootstrap:
             context_properties={name: ContextProperty.from_dict(prop) for name, prop in context.items()},
             max_payload_bytes=value.get("max_payload_bytes"),
             cell_session=value.get("cell_session"),
+            resource_reporting=value.get("resource_reporting", False),
         )
 
 

@@ -12,15 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import ANY, MagicMock, patch
 
-from nvflare.apis.fl_constant import SystemComponents
+import pytest
+
+from nvflare.apis.fl_constant import FLContextKey, RunProcessKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
+from nvflare.apis.workspace import Workspace
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.client.scheduler_cmds import CheckResourceProcessor
+from nvflare.private.fed.client.client_executor import _RUN_STATE_KEY, JobCleanupPending, JobExecutor, _RunState
+from nvflare.private.fed.client.client_status import ClientStatus
+from nvflare.private.fed.client.scheduler_cmds import CheckResourceProcessor, StartJobProcessor
+from nvflare.private.fed.utils.job_cert_utils import find_job_cert, write_job_cert
 from nvflare.private.scheduler_constants import ShareableHeader
 
 
@@ -46,3 +54,149 @@ def test_check_resource_processor_keeps_resource_manager_error_local():
     )
     engine.get_component.assert_called_once_with(SystemComponents.RESOURCE_MANAGER)
     logger.error.assert_called_once_with("Job job-1: resource check failed: sensitive detail")
+
+
+@pytest.mark.parametrize(
+    "runtime_file, job_meta, reason",
+    [
+        pytest.param("studies:\n  study-a:\n", {"study": "study-a"}, None, id="listed-study"),
+        pytest.param(
+            "studies:\n  study-a:\n", {"study": "study-b"}, "study 'study-b' is not configured", id="unlisted"
+        ),
+        pytest.param("studies:\n  study-a:\n", {}, "study 'default' is not configured", id="unlisted-default"),
+        pytest.param("studies: {}\n", {"study": "study-b"}, None, id="empty-studies"),
+        pytest.param(None, {"study": "study-b"}, None, id="no-file"),
+    ],
+)
+def test_client_runs_only_studies_listed_in_study_runtime(tmp_path, runtime_file, job_meta, reason):
+    (tmp_path / "startup").mkdir()
+    (tmp_path / "local").mkdir()
+    if runtime_file is not None:
+        (tmp_path / "local" / "study_runtime.yaml").write_text(f"format_version: 2\n{runtime_file}")
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, Workspace(str(tmp_path)), private=True)
+    resource_manager = MagicMock(spec=ResourceManagerSpec)
+    resource_manager.check_resources.return_value = (True, "token-1")
+    resource_manager.allocate_resources.return_value = None
+    engine = MagicMock(spec=ClientEngineInternalSpec)
+    engine.get_component.return_value = resource_manager
+    engine.new_context.return_value.__enter__.return_value = fl_ctx
+    engine.start_app.return_value = ""
+
+    replies = []
+    for topic, processor in [
+        (TrainingTopic.CHECK_RESOURCE, CheckResourceProcessor),
+        (TrainingTopic.START_JOB, StartJobProcessor),
+    ]:
+        request = Message(topic=topic, body={})
+        request.set_header(RequestHeader.JOB_ID, "job-1")
+        request.set_header(RequestHeader.JOB_META, job_meta)
+        request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, "token-1")
+        replies.append(processor().process(request, engine).body)
+    check_reply, start_reply = replies
+
+    assert check_reply.get_header(ShareableHeader.IS_RESOURCE_ENOUGH) is (reason is None)
+    assert engine.start_app.called is (reason is None)
+    if reason:
+        assert reason in check_reply.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
+        assert reason in start_reply
+
+
+@pytest.mark.parametrize("retained", [False, True])
+def test_start_failure_frees_only_resources_not_owned_by_executor(retained):
+    resource_manager = MagicMock(spec=ResourceManagerSpec)
+    resource_manager.allocate_resources.return_value = {"gpu": 1}
+    engine = MagicMock(spec=ClientEngineInternalSpec)
+    engine.new_context.return_value.__enter__.return_value = FLContext()
+    error = JobCleanupPending("cleanup remains owned by CP") if retained else RuntimeError("no runtime created")
+    engine.start_app.side_effect = error
+    request = Message(topic=TrainingTopic.START_JOB, body={"gpu": 1})
+    request.set_header(RequestHeader.JOB_ID, "job-1")
+    request.set_header(RequestHeader.JOB_META, {})
+    request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, "token-1")
+    with (
+        patch("nvflare.private.fed.client.scheduler_cmds._get_resource_manager", return_value=resource_manager),
+        patch("nvflare.private.fed.client.scheduler_cmds._get_resource_consumer"),
+    ):
+        reply = StartJobProcessor().process(request, engine)
+    assert str(error) in reply.body
+    if retained:
+        resource_manager.free_resources.assert_not_called()
+    else:
+        resource_manager.free_resources.assert_called_once_with(resources={"gpu": 1}, token="token-1", fl_ctx=ANY)
+
+
+@pytest.mark.parametrize(
+    "status, observation_only",
+    [
+        (ClientStatus.STARTING, False),
+        (ClientStatus.READY, False),
+        (ClientStatus.STOPPED, False),
+        (ClientStatus.READY, True),
+    ],
+    ids=["starting", "ready", "stopped", "observation-pending"],
+)
+def test_repeat_start_rejects_retained_job_and_frees_only_retry_allocation(tmp_path, status, observation_only):
+    for name in ("startup", "local"):
+        (tmp_path / name).mkdir()
+    resource_manager = MagicMock(spec=ResourceManagerSpec)
+    old_resources = {"gpu": [0]}
+    retry_resources = {"gpu": [1]}
+    resource_manager.allocate_resources.return_value = retry_resources
+    executor = JobExecutor(MagicMock(), "startup")
+    retained_handle = MagicMock()
+    owner = {
+        RunProcessKey.JOB_HANDLE: retained_handle,
+        RunProcessKey.STATUS: ClientStatus.STARTING,
+        _RUN_STATE_KEY: _RunState(
+            monitor_args=(executor.client, "job-1", old_resources, "old-token", resource_manager)
+        ),
+    }
+    executor.run_processes["job-1"] = owner
+    executor.notify_job_status("job-1", status)
+    executor._retain_cleanup_owner("job-1", observation_only=observation_only)
+    if status == ClientStatus.READY:
+        assert executor.get_status("job-1") == ClientStatus.STARTED
+    run_dir = tmp_path / "job-1"
+    run_dir.mkdir()
+    write_job_cert(str(run_dir), b"cert", b"key")
+    engine = MagicMock(spec=ClientEngine)
+    engine.client_executor = executor
+    engine.args = SimpleNamespace(workspace=str(tmp_path))
+    engine.client = executor.client
+    engine.client.client_name = "site-1"
+    engine.rank = 0
+    engine.logger = MagicMock()
+    (run_dir / "app_site-1").mkdir()
+    engine.new_context.return_value.__enter__.return_value = FLContext()
+    engine.start_app.side_effect = lambda *args, **kwargs: ClientEngine.start_app(engine, *args, **kwargs)
+    request = Message(topic=TrainingTopic.START_JOB, body={"gpu": 1})
+    request.set_header(RequestHeader.JOB_ID, "job-1")
+    request.set_header(RequestHeader.JOB_META, {})
+    request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, "retry-token")
+    with (
+        patch("nvflare.private.fed.client.scheduler_cmds._get_resource_manager", return_value=resource_manager),
+        patch("nvflare.private.fed.client.scheduler_cmds._get_resource_consumer"),
+        patch.object(executor, "start_app") as launch,
+    ):
+        reply = StartJobProcessor().process(request, engine)
+    assert "cleanup remains unconfirmed" in reply.body
+    resource_manager.allocate_resources.assert_called_once()
+    resource_manager.free_resources.assert_called_once_with(resources=retry_resources, token="retry-token", fl_ctx=ANY)
+    launch.assert_not_called()
+    retained_handle.terminate.assert_not_called()
+    retained_handle.wait.assert_not_called()
+    assert executor.run_processes["job-1"] is owner
+    assert owner[_RUN_STATE_KEY].monitor_args[2:5] == (old_resources, "old-token", resource_manager)
+    assert find_job_cert(str(run_dir)) is not None
+
+
+def test_started_job_without_retained_cleanup_keeps_existing_start_response():
+    executor = JobExecutor(MagicMock(), "startup")
+    executor.run_processes["job-1"] = {RunProcessKey.STATUS: ClientStatus.STARTED}
+    engine = MagicMock(spec=ClientEngine)
+    engine.client_executor = executor
+
+    with patch.object(executor, "start_app") as launch:
+        assert ClientEngine.start_app(engine, "job-1", {}) == "Client app already started."
+    launch.assert_not_called()
