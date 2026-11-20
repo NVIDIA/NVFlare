@@ -7,20 +7,19 @@ Downloading a finished job today returns the whole job: the submitted job
 (`workspace.zip`). Most users only want the job's result: the global model,
 the statistics, the metrics or the evaluation report.
 
-This design adds an outputs-only download. A job's outputs are the files it
-produced on the server: everything in its server workspace except what was
-deployed with it (its server app's config and custom code, and its job files)
-and the server's own logs and system files. Nothing has to be declared: built-in
-and custom components, recipes, plain `FedJob`s and hand-written jobs all work
-the same way.
+This design adds an outputs-only download. A job's outputs are the regular
+files it produced in its server workspace. The server keeps unchanged deployed
+files, logs and system files with the rest of the workspace. Built-in and
+custom components, recipes, plain `FedJob`s and hand-written jobs can produce
+outputs without declaring them.
 
 When a job ends, the server stores its outputs apart from the rest of the
 workspace, so each file is stored once. An outputs-only download sends the
 outputs archive, and a full download sends both archives, unzipped into the
 same `workspace/` folder. Either way the server replies at once. Output files
 keep the same relative paths as in a full download, so code that reads them
-works with either download. A caller that does not ask for an outputs-only
-download receives the same files as today.
+works with either download. Filesystem-backed archives omit symlinks,
+including aliases to files inside the workspace, and special files.
 
 ## Current State
 
@@ -143,8 +142,8 @@ nvflare job download <job_id> --outputs-only
 
 ### Which files are outputs
 
-At job end, the server walks the job's workspace folders. A file is an output
-unless it is:
+At job end, the server walks the job's workspace folders, skipping symlinks
+and special files. A regular file is an output unless it is:
 
 - **deployed with the job and unchanged**: a file of the server app deployed
   from the submitted job (`app_server/<path in the app>`, read from the stored
@@ -161,8 +160,7 @@ unless it is:
   client of the job, where `JobLogReceiver` writes the logs a client streams
   to the server. The stored-log commands read them from the workspace archive;
 - **a system file**: the job signature file, or anything in a `__pycache__` or
-  `job_cert` folder; or
-- **a symlink**, which stays with the rest, as before.
+  `job_cert` folder.
 
 A file the job creates inside `app_server/custom/` is an output, and so is a
 deployed file the job rewrote, such as a seed checkpoint replaced by the
@@ -215,19 +213,17 @@ and then deletes the folder. It now stores the job's outputs as their own
    same folder contract `save_workspace` uses, so any job store that archives
    a workspace archives the outputs the same way.
 3. **Link the rest.** From a fresh walk, build a second folder of hard links
-   naming everything but the files linked as outputs, so a server log written
-   while the outputs were stored is archived as it is now. If a stored output
-   was replaced, written to or removed meanwhile, or a new output appeared
-   meanwhile, the outputs archive would be out of date, so the workspace is
-   stored whole instead.
+   for the remaining regular files. This captures server logs written while
+   the outputs were stored. If a stored output was replaced, written to or
+   removed meanwhile, or a new output appeared, the outputs archive would be
+   out of date, so the workspace is stored whole instead.
    The workspace folders share archive paths, and the later folder's copy
    wins. The client unzips the outputs archive first, so a path that is an
-   output in one folder and not in another (for example a symlink) could change
-   which copy a full download keeps; the workspace is then stored whole too.
-   Logs are never outputs, so they stay in the workspace archive, where the
-   server's log commands read them. Symlinks are
-   recreated pointing at what they resolve to in the untouched workspace, so a
-   link to an output still reads it, and a linked folder stays a link.
+   output in one folder and a regular file kept with the rest in another
+   could change which copy a full download keeps. In that case, the workspace
+   is stored whole. Logs stay in the workspace archive, where the server's
+   log commands read them. Both staging passes skip symlinks, including links
+   to outputs and links to directories.
 4. **Record the split.** Set `job_outputs_stored: true` in the job's meta.
    Downloads rely on this record, not on listing the store's components.
 5. **Store the rest.** `save_workspace` archives the rest link folders.
@@ -375,7 +371,7 @@ of its own.
 | The code that adds each component (a recipe, a model wrapper, a job class) records the component's files | Rejected. The same knowledge is applied at every place a class is used, each new recipe must remember it, and custom components and plain `FedJob`s declare nothing. |
 | A resolver registered beside each component class, applied when `meta.json` is generated | Rejected. Exact for built-in components, but a custom persistor's job downloads whole until its author learns to register it, and a custom writer that is not a persistor is left out silently. Every new component needs a resolver. |
 | A dedicated outputs folder that components save into | Rejected. It moves where every built-in component saves today, breaking existing paths; keeping the old paths means saving the model twice; and a custom component that saves elsewhere is left out silently. |
-| **Every file the job produced: the workspace minus what was deployed with the job and left unchanged, and the server's logs and system files** | **Chosen.** Nothing to declare or register for any component, built-in or custom, recipe or hand-written job. Nothing the job produced is left out silently: the worst case is a few more files than needed, never a missing model. Files stay where they are written, so paths are the same in both downloads. |
+| **Regular files the job produced, excluding unchanged deployed files and server logs and system files** | **Chosen.** Built-in and custom components, recipes and hand-written jobs can produce outputs without registering them. Regular output files keep the same paths in both downloads. |
 
 ### Telling the caller what it received
 
