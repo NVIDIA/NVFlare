@@ -91,7 +91,7 @@ class FegApi:
         )
 
     def _do_post(self, clazz, url, params, body):
-        response = requests.post(url, params=params, json=body, headers=self.common_headers)
+        response = requests.post(url, params=params, json=body, headers=self.common_headers, timeout=(10.0, 60.0))
         code = response.status_code
         if code == 200:
             return clazz(**response.json())
