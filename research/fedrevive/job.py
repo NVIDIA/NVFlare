@@ -35,7 +35,8 @@ from client import FedReviveClient
 from data import DELAY_SCHEDULES, load_manifest, prepare_cifar10
 from fedrevive import FIGURE_2_METHOD_CONFIGS, ClassProportionSource, Method, SynthesisLabelDistribution
 from model import set_seed
-from schedule import make_paper_plan
+from schedule_shifted import make_paper_plan as make_shifted_plan
+from schedule_standard import make_paper_plan as make_standard_plan
 from server import FedReviveModelLoader, FedReviveModelOps, FedReviveObserver
 from update import FedAvgUpdate, FedReviveUpdate
 
@@ -334,7 +335,8 @@ def make_sim_env(args, manifest):
     profiles = manifest["runtime_profiles"]
     if args.arrival_mode == "simulated":
         concurrency, buffer_size, open_slots = _scheduling_options(args, FIGURE_2_METHOD_CONFIGS[Method(args.method)])
-        plan = make_paper_plan(
+        make_plan = {"default": make_standard_plan, "shifted": make_shifted_plan}[args.delay_schedule]
+        plan = make_plan(
             profiles,
             args.run_seed,
             args.max_time,

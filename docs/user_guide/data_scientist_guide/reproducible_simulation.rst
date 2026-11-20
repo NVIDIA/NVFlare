@@ -123,8 +123,9 @@ logical client to start again after its training phase. Its pending upload
 still occupies a concurrency slot. ``timing.speculative`` allows reservations
 within the concurrency limit even when fewer contributions are needed for
 the remaining publications. Both options default to false. The
-:github_nvflare_link:`FedRevive paper planner <research/fedrevive/schedule.py>`
-uses these options to produce a plan before starting SimEnv. It also shows
+:github_nvflare_link:`FedRevive standard planner <research/fedrevive/schedule_standard.py>`
+and :github_nvflare_link:`shifted planner <research/fedrevive/schedule_shifted.py>`
+use these options to produce a plan before starting SimEnv. Both show
 how to plug in a custom sampler with assignment- and phase-specific RNGs and
 export a log-normal delay example as a standard SimEnv plan.
 

@@ -35,7 +35,8 @@ def research(monkeypatch):
         "fedrevive",
         "job",
         "model",
-        "schedule",
+        "schedule_standard",
+        "schedule_shifted",
         "server",
         "update",
     )
@@ -131,12 +132,13 @@ def test_revival_uses_current_global_delta_and_refreshes_arriving_teacher(
     assert len(seen) == int(version >= 50) and len(policy.teachers) == 2
 
 
-def test_paper_plan_preserves_logical_release_ties_and_horizon(research):
+@pytest.mark.parametrize("module_name", ["schedule_standard", "schedule_shifted"])
+def test_paper_plan_preserves_logical_release_ties_and_horizon(research, module_name):
     profiles = {
         f"client-{i}": {"download_mean": 0, "train_mean": 0, "upload_mean": delay, "upload_half_width": 0}
         for i, delay in enumerate((5, 1))
     }
-    plan = research("schedule").make_paper_plan(
+    plan = research(module_name).make_paper_plan(
         profiles, run_seed=10, max_time=2, num_rounds=3, concurrency=2, min_open_slots=1, buffer_size=1
     )["async_execution"]
     assert plan["logical_sequence"] == ["client-0", "client-1", "client-0"]
@@ -152,8 +154,9 @@ def test_paper_plan_preserves_logical_release_ties_and_horizon(research):
     assert events.index(uploads[0]) < events.index(refill) < events.index(uploads[1])
 
 
-def test_custom_paper_delays_use_independent_assignment_and_phase_rngs(research):
-    planner = research("schedule")
+@pytest.mark.parametrize("module_name", ["schedule_standard", "schedule_shifted"])
+def test_custom_paper_delays_use_independent_assignment_and_phase_rngs(research, module_name):
+    planner = research(module_name)
     profiles = {"client-0": {"download_mean": 0.1, "train_mean": 1, "upload_mean": 0.2}}
     options = dict(run_seed=10, max_time=200, num_rounds=2, concurrency=1, min_open_slots=1, buffer_size=1)
     lognormal = planner.lognormal_training_sampler(0.4)
