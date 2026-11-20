@@ -24,7 +24,6 @@ from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
-from nvflare.job_config.removed_multi_process_executor import get_removed_executor_error
 from nvflare.job_config.task_execution import CLIENT_API_EXECUTOR_PATH, prepare_task_execution, task_constructor_args
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
@@ -117,11 +116,6 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         self._default_task_fetch_interval = 0.5
 
     def start_config(self, config_ctx: ConfigContext):
-        error = get_removed_executor_error(self.config_data)
-        if error:
-            # Report the fixed migration message even with secure exception redaction.
-            self.logger.error(error)
-            raise ConfigError(error)
         self.task_execution = prepare_task_execution(self.config_data)
         if self.task_execution is None:
             return

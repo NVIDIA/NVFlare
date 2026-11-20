@@ -72,9 +72,6 @@ NVFlare 2.10 removes ``MultiProcessExecutor``, ``PTMultiProcessExecutor`` and th
 sub-worker runtime. Update jobs that import, subclass or configure either
 executor before upgrading to 2.10.
 
-The server rejects client executor configurations that directly name either
-removed built-in executor.
-
 For PyTorch DDP training, use the job-based Client API with
 ``launch_external_process=True`` and ``torchrun``. The
 :github_nvflare_link:`multi-GPU example <examples/advanced/multi-gpu/pt>` shows how

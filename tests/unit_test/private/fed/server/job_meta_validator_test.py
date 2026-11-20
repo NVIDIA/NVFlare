@@ -427,37 +427,6 @@ def test_submission_rejects_hocon_and_yaml_client_configs(extension):
     assert "client config is missing" in error
 
 
-@pytest.mark.parametrize(
-    ("executor", "extension"),
-    [
-        ({"name": "MultiProcessExecutor"}, "json"),
-        ({"path": "nvflare.app_opt.pt.multi_process_executor.PTMultiProcessExecutor"}, "json"),
-        ({"class_path": "nvflare.app_common.pt.pt_multi_process_executor.PTMultiProcessExecutor"}, "json.default"),
-    ],
-)
-def test_submission_rejects_removed_multi_process_executors(executor, extension):
-    meta = {"deploy_map": {"app": ["@ALL"]}}
-    config = {"format_version": 2, "executors": [{"tasks": ["train"], "executor": executor}]}
-    data = _zip_minimal_job("legacy_job", meta, {"format_version": 2}, config, client_extension=extension)
-
-    valid, error, _ = JobMetaValidator().validate("legacy_job", data)
-
-    assert not valid
-    assert f"Executor {next(iter(executor.values()))} was removed in NVFlare 2.10." in error
-    assert "Use the Client API with external torchrun." in error
-
-
-def test_submission_allows_custom_executor_with_same_class_name():
-    meta = {"deploy_map": {"app": ["@ALL"]}}
-    executor = {"path": "custom.PTMultiProcessExecutor", "name": "PTMultiProcessExecutor"}
-    config = {"format_version": 2, "executors": [{"tasks": ["train"], "executor": executor}]}
-    data = _zip_minimal_job("custom_job", meta, {"format_version": 2}, config)
-
-    valid, error, _ = JobMetaValidator().validate("custom_job", data)
-
-    assert valid, error
-
-
 def test_submission_accepts_json_default_client_config_and_uses_it_for_admission():
     meta = {"name": "split", "deploy_map": {"app": ["@ALL"]}, "min_clients": 1, "resource_spec": {}}
     data = _zip_minimal_job(
