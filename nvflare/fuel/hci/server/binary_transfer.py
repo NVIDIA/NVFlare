@@ -14,13 +14,41 @@
 
 import os
 import shutil
+from functools import partial
 
 from nvflare.fuel.f3.streaming.file_downloader import ObjectDownloader, add_file
+from nvflare.fuel.f3.streaming.transfer_outcome import TransferOutcomeReason
 from nvflare.fuel.f3.streaming.transfer_progress import TransferProgressState
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.admin_audit import prepare, record, reject, snapshot
 from nvflare.fuel.utils.log_utils import get_obj_logger
+
+_OUTCOME_ACTIONS = {
+    TransferProgressState.COMPLETED: "download.transfer.completed",
+    TransferProgressState.FAILED: "download.transfer.failed",
+    TransferProgressState.ABORTED: "download.transfer.aborted",
+}
+_OUTCOME_REASONS = frozenset(
+    value for key, value in vars(TransferOutcomeReason).items() if key.isupper() and isinstance(value, str)
+)
+
+
+def _audit_download_outcome(context, outcome):
+    """Record only the transfer service's report, never receiver receipt or extraction.
+
+    The callback retains an immutable attribution snapshot, with no connection or
+    session. Receiver confirmation is configurable, so even a completed outcome
+    is deliberately described only as the service's terminal status.
+    """
+
+    def write():
+        action = _OUTCOME_ACTIONS.get(outcome.status, "download.transfer.error")
+        reason = outcome.reason if outcome.reason in _OUTCOME_REASONS else "unknown_outcome"
+        return record(action, context=context, reason=reason)
+
+    prepare(write)
 
 
 class BinaryTransfer:
@@ -36,6 +64,13 @@ class BinaryTransfer:
             return os.path.join(download_dir, tx_id, folder_name)
 
     def download_folder(self, conn: Connection, tx_id: str, folder_name: str, reply_meta: dict = None):
+        try:
+            self._download_folder(conn, tx_id, folder_name, reply_meta)
+        except Exception:
+            reject("download.setup.rejected", reason="setup_error")
+            raise
+
+    def _download_folder(self, conn: Connection, tx_id: str, folder_name: str, reply_meta: dict = None):
         self.logger.debug(f"download_folder called for {folder_name}")
         tx_path = self.tx_path(conn, tx_id, folder_name)
 
@@ -60,6 +95,7 @@ class BinaryTransfer:
             cell=cell,
             timeout=download_timeout,
             transaction_done_cb=self._cleanup_tx,
+            outcome_cb=prepare(lambda: partial(_audit_download_outcome, snapshot())),
             progress_cb=_download_progress,
             progress_interval=min(30.0, max(0.0, session_mgr.idle_timeout / 3.0)),
             tx_path=tx_path,
@@ -67,6 +103,7 @@ class BinaryTransfer:
             session_id=session_id,
         )
         if not session_mgr.bind_download(session_id, downloader.tx_id, downloader.delete_transaction):
+            reject("download.setup.rejected", reason="session_inactive")
             downloader.delete_transaction()
             conn.append_error(ReplyKeyword.SESSION_INACTIVE)
             return
@@ -97,6 +134,7 @@ class BinaryTransfer:
                     ),
                 )
             else:
+                reject("download.setup.rejected", reason="no_data")
                 conn.append_error(
                     "No data to download",
                     meta=make_meta(
