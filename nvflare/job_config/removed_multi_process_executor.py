@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-from typing import NoReturn, Optional
+from typing import Optional
 
 _REMOVED_EXECUTORS = (
     "MultiProcessExecutor",
@@ -43,14 +42,3 @@ def get_removed_executor_error(config: dict) -> Optional[str]:
                 if component in _REMOVED_EXECUTORS:
                     return _migration_message(component)
     return None
-
-
-def get_removed_executor_attribute(module_name: str, name: str) -> NoReturn:
-    """Report access to a removed executor while allowing normal module discovery."""
-    component = f"{module_name}.{name}"
-    if component in _REMOVED_EXECUTORS:
-        message = _migration_message(component)
-        # A component loader can redact the exception in secure logging mode.
-        logging.getLogger(module_name).error(message)
-        raise ImportError(message)
-    raise AttributeError(f"module {module_name!r} has no attribute {name!r}")

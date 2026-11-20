@@ -73,8 +73,7 @@ sub-worker runtime. Update jobs that import, subclass or configure either
 executor before upgrading to 2.10.
 
 The server rejects client executor configurations that directly name either
-removed built-in executor. Importing either class, including from a custom
-subclass, raises an error with the migration instructions.
+removed built-in executor.
 
 For PyTorch DDP training, use the job-based Client API with
 ``launch_external_process=True`` and ``torchrun``. The
