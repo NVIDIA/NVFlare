@@ -236,3 +236,15 @@ tensorboard --logdir /tmp/nvflare/simulation/sklearn_kmeans
 ## Legacy Approach
 
 > **Note**: This example has been updated to use the simplified Job Recipe API. If you need the previous Job API or JSON-based configuration approach, please refer to the [NVFlare 2.6 documentation](https://github.com/NVIDIA/NVFlare/tree/2.6/examples/advanced/sklearn-kmeans) or earlier versions.
+
+## Client execution lifetime
+
+See [Client Execution Lifetime](https://nvflare.readthedocs.io/en/main/user_guide/data_scientist_guide/available_recipes.html#recipe-execution-lifetime)
+for deployment prerequisites. Local simulation uses job lifetime. Export a
+task-lifetime job for submission to a configured Kubernetes or Slurm deployment:
+
+```bash
+python job.py --execution_lifetime task --export
+```
+
+The client derives the cluster count from the received global centers on every training round.
