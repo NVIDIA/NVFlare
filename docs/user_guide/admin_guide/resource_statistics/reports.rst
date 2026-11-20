@@ -117,11 +117,10 @@ rejected after a report is accepted. Missing, invalid and disabled participant
 reports remain explicit gaps. A server crash before publication can lose the
 in-memory reports; this is not a durable delivery or billing system.
 
-Schema and examples
-===================
+Example reports
+===============
 
-The :download:`JSON Schema <../../../schemas/resource_stats.schema.json>`
-describes participant, job and study reports. These examples use synthetic data:
+These examples show a participant report and its job summary using synthetic data.
 
 .. literalinclude:: examples/participant_summary.json
    :language: json
