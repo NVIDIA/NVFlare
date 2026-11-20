@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import dataclasses
 import logging
 from typing import Dict, Optional
 
@@ -533,7 +534,9 @@ class _StepSyncFLCallback(_FLCallbackBase):
             received, self._received_model = self._received_model, None
             if received is None:
                 self._held_lr_scheduler_configs = trainer.strategy.lr_scheduler_configs
-                trainer.strategy.lr_scheduler_configs = []
+                trainer.strategy.lr_scheduler_configs = [
+                    dataclasses.replace(config, interval="never") for config in self._held_lr_scheduler_configs
+                ]
                 _skip_rest_of_epoch(pl_module)
                 return
             input_model = self._load_received_model(trainer, pl_module, received)
@@ -562,7 +565,8 @@ class _StepSyncFLCallback(_FLCallbackBase):
             self._finish_round_and_send(trainer, pl_module)
 
     def on_train_epoch_end(self, trainer, pl_module):
-        self._restore_lr_scheduler_configs(trainer)
+        if not trainer.should_stop:
+            self._restore_lr_scheduler_configs(trainer)
         if not self._training_round_started and self._received_model is None and not trainer.should_stop:
             self._receive_next_round(trainer)
 
