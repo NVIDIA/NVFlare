@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import copy
+import dataclasses
 import logging
 from typing import Dict, Optional
 
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import Callback
+import torch
+from pytorch_lightning.callbacks import Callback, Checkpoint, EarlyStopping
 from pytorch_lightning.trainer.states import TrainerFn
 from torch import Tensor
 
@@ -69,15 +71,28 @@ def patch(
             model updates where the client only keeps part of the server keyspace.
         update_fit_loop: whether to increase `trainer.fit_loop.max_epochs` and `trainer.fit_loop.epoch_loop.max_steps` each FL round.
             Defaults to `True` which is suitable for most PyTorch Lightning applications.
-        sync_every_n_steps: when set, one ``trainer.fit()`` exchanges the model with the server every
-            ``sync_every_n_steps`` optimizer steps instead of once per ``fit()``. The received model is loaded
-            in place, so the optimizer, LR scheduler and data position carry over. The server's ``num_rounds``
-            decides how long training runs: the trainer's ``max_epochs``, ``max_steps``, ``min_epochs`` and
-            ``min_steps`` are lifted, and ``fit()``
+        sync_every_n_steps: when set, one ``trainer.fit()`` spans all FL rounds instead of one ``fit()`` per round,
+            and exchanges the model with the server every ``sync_every_n_steps`` optimizer steps. The
+            receive, ``trainer.validate()``, ``trainer.fit()`` loop of fit-per-round mode becomes a single ``fit()``.
+            In-fit validation then scores the site's local weights, not the new global model, and no per-round
+            global-model evaluation runs unless ``train_with_evaluation`` is set (see below); evaluate tasks such
+            as cross-site evaluation are answered by
+            ``trainer.validate()`` after ``fit()``. The model is sent at the end of the sync batch and the next
+            one is received at the start of the next batch (or at epoch end), so validation and other callbacks
+            in between run while the server aggregates. A shutdown or a pending evaluate task is therefore found
+            only after that validation, and a validation that stops training or raises does so before the next
+            receive. A site that stops on its own leaves without answering later rounds; a FedAvg job aborts once
+            the server sends it a task again. The received model is loaded in place, so the optimizer, LR
+            scheduler and data position carry over. The server's ``num_rounds`` decides how long training runs:
+            the trainer's ``max_epochs``, ``max_steps``, ``min_epochs`` and ``min_steps`` are lifted, and ``fit()``
             ends when the server stops sending training tasks. An LR scheduler sized from the trainer's limits
             (``OneCycleLR``, cosine with ``T_max`` from ``estimated_stepping_batches``) must be sized for
             ``num_rounds * sync_every_n_steps`` instead; step-counting schedulers work unchanged. ``restore_state``
-            and ``update_fit_loop`` have no effect in this mode, and ``train_with_evaluation`` is not supported.
+            and ``update_fit_loop`` have no effect in this mode. With ``train_with_evaluation``, every rank runs the
+            fit validation loop once on the received global model at the start of each round, and its metrics are
+            sent with that round's result for model selection. This costs one validation pass per sync and needs
+            validation batches. That run is kept out of loggers, ``ModelCheckpoint`` and ``EarlyStopping``; other
+            callbacks' validation hooks see it.
             Defaults to `None` (one FL round per ``fit()``).
 
     Hooks:
@@ -478,15 +493,11 @@ class _StepSyncFLCallback(_FLCallbackBase):
 
     def __init__(self, sync_every_n_steps: int, rank: int = 0, load_state_dict_strict: bool = True):
         super().__init__(rank=rank, load_state_dict_strict=load_state_dict_strict)
-        if self.train_with_evaluation:
-            raise ValueError(
-                "sync_every_n_steps does not support train_with_evaluation: no global-model validation runs "
-                "between syncs. Disable train_with_evaluation or sync once per fit()."
-            )
         self.sync_every_n_steps = sync_every_n_steps
         self._trainer_step_budget = None
         self._trainer_limits = None
         self._received_model = None
+        self._held_lr_scheduler_configs = None
 
     def on_train_start(self, trainer, pl_module):
         budget = trainer.estimated_stepping_batches
@@ -523,9 +534,15 @@ class _StepSyncFLCallback(_FLCallbackBase):
                 self._receive_next_round(trainer)
             received, self._received_model = self._received_model, None
             if received is None:
+                self._held_lr_scheduler_configs = trainer.strategy.lr_scheduler_configs
+                trainer.strategy.lr_scheduler_configs = [
+                    dataclasses.replace(config, interval="never") for config in self._held_lr_scheduler_configs
+                ]
                 _skip_rest_of_epoch(pl_module)
                 return
             input_model = self._load_received_model(trainer, pl_module, received)
+        if self.train_with_evaluation and self.metrics is None:
+            self.metrics = _extract_metrics(_validate_in_fit(trainer))
         self._start_round(trainer, pl_module, input_model)
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
@@ -549,8 +566,12 @@ class _StepSyncFLCallback(_FLCallbackBase):
             )
         if round_steps == self.sync_every_n_steps:
             self._finish_round_and_send(trainer, pl_module)
-            if not trainer.should_stop:
-                self._receive_next_round(trainer)
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        if not trainer.should_stop:
+            self._restore_lr_scheduler_configs(trainer)
+        if not self._training_round_started and self._received_model is None and not trainer.should_stop:
+            self._receive_next_round(trainer)
 
     def on_train_end(self, trainer, pl_module):
         self._restore_trainer_limits(trainer)
@@ -570,7 +591,13 @@ class _StepSyncFLCallback(_FLCallbackBase):
     def on_exception(self, trainer, pl_module, exception):
         self._restore_trainer_limits(trainer)
 
+    def _restore_lr_scheduler_configs(self, trainer):
+        if self._held_lr_scheduler_configs is not None:
+            trainer.strategy.lr_scheduler_configs = self._held_lr_scheduler_configs
+            self._held_lr_scheduler_configs = None
+
     def _restore_trainer_limits(self, trainer):
+        self._restore_lr_scheduler_configs(trainer)
         if self._trainer_limits is None:
             return
         fit_loop = trainer.fit_loop
@@ -586,6 +613,48 @@ class _StepSyncFLCallback(_FLCallbackBase):
             key: value.detach().to("cpu", copy=True) if isinstance(value, Tensor) else copy.deepcopy(value)
             for key, value in pl_module.state_dict().items()
         }
+
+
+def _validate_in_fit(trainer) -> Dict[str, Tensor]:
+    """Run the fit validation loop on the current weights and return its metrics, leaving the fit state unchanged."""
+    loop = trainer.fit_loop.epoch_loop.val_loop
+    connector = trainer._logger_connector
+    callbacks, loggers = trainer.callbacks, trainer.loggers
+    callback_metrics = connector._callback_metrics
+    logged_metrics, progress_bar_metrics = dict(connector._logged_metrics), dict(connector._progress_bar_metrics)
+    first_loop_iter, current_fx = connector._first_loop_iter, connector._current_fx
+    last_val_time = vars(trainer).get("_last_val_time")
+    batch_progress = loop.batch_progress.state_dict()
+    grad_enabled = torch.is_grad_enabled()
+    rng_devices = [torch.cuda.current_device()] if torch.cuda.is_available() and torch.cuda.is_initialized() else []
+    trainer.callbacks = [cb for cb in callbacks if not isinstance(cb, (Checkpoint, EarlyStopping))]
+    trainer.loggers = []
+    connector._callback_metrics = {}
+    trainer.validating = True
+    try:
+        has_val_loader = loop._data_source.is_defined()
+        if has_val_loader:
+            with torch.random.fork_rng(devices=rng_devices):
+                loop.run()
+        if not has_val_loader or loop.skip:
+            raise RuntimeError(
+                "train_with_evaluation with sync_every_n_steps validates the received global model at each sync, "
+                "but the trainer has no validation batches. Pass val_dataloaders to fit() and keep "
+                "limit_val_batches above 0, or disable train_with_evaluation."
+            )
+        return dict(connector.callback_metrics)
+    finally:
+        trainer.callbacks, trainer.loggers = callbacks, loggers
+        trainer.training = True
+        connector._callback_metrics = callback_metrics
+        connector._logged_metrics, connector._progress_bar_metrics = logged_metrics, progress_bar_metrics
+        connector._first_loop_iter, connector._current_fx = first_loop_iter, current_fx
+        if last_val_time is None:
+            vars(trainer).pop("_last_val_time", None)
+        else:
+            trainer._last_val_time = last_val_time
+        loop.batch_progress.load_state_dict(batch_progress)
+        torch.set_grad_enabled(grad_enabled)
 
 
 def _skip_rest_of_epoch(pl_module):

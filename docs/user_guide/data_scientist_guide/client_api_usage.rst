@@ -168,11 +168,55 @@ the model with the server every N optimizer steps within a single ``fit()``:
     flare.patch(trainer, sync_every_n_steps=10)
     trainer.fit(model, datamodule=dm)
 
+This switches the execution model from one ``fit()`` per FL round to one ``fit()`` spanning all rounds,
+so the fit-per-round loop, which validates each received global model before training on it, becomes:
+
+.. code-block:: python
+
+    # One fit() per round (default)
+    flare.patch(trainer)
+    while flare.is_running():
+        input_model = flare.receive()
+        trainer.validate(model, datamodule=dm)  # scores the received global model
+        trainer.fit(model, datamodule=dm)
+
+    # One fit() for all rounds (step mode)
+    flare.patch(trainer, sync_every_n_steps=10)
+    trainer.fit(model, datamodule=dm)  # in-fit validation scores the site's local weights
+
+The two kinds of validation differ:
+
+* **Per-round global-model evaluation**: in fit-per-round mode, ``trainer.validate()`` before ``fit()``
+  scores the global model received for the round. In step mode, set ``train_with_evaluation`` in the job
+  config instead (see below).
+* **Local validation**: validation that Lightning runs inside ``fit()`` (``val_check_interval``, epoch
+  end) scores the site's own weights, not the new global model, in both modes. In step mode it is the only
+  validation during training. Its metrics, and ``ModelCheckpoint`` or ``EarlyStopping`` callbacks that
+  monitor them, describe the local model.
+
+With ``train_with_evaluation``, step mode validates each received global model right after loading it,
+on every rank, before training on it. It runs the same validation loop and dataloader as in-fit
+validation, and sends the metrics with that round's result, so the server can select the best global
+model by metric (for example with ``IntimeModelSelector``). This costs one validation pass per sync. The
+trainer needs validation batches (``val_dataloaders`` and ``limit_val_batches`` above 0), or ``fit()``
+raises at the first sync. That run is kept out of loggers, the progress-bar metrics, ``ModelCheckpoint``
+and ``EarlyStopping``, but other callbacks' validation hooks (``on_validation_end``, for example) see it.
+Under DDP, log validation metrics with ``sync_dist=True`` so the metrics sent by rank 0 cover the whole
+validation set.
+
+The global model can also be evaluated after training: evaluate tasks such as cross-site evaluation are
+answered by ``trainer.validate()`` after ``fit()``, as shown below.
+
 Each received global model is loaded in place, so the optimizer, LR scheduler, AMP scaler and
-data position carry over between rounds. Rank 0 sends and receives the next task at the end of the
-sync batch, and every rank loads the next global model at the start of the next batch. ``fit()`` ends
-when the server stops sending training tasks. In-fit validation right after a sync waits for the next
-global model, and Lightning runs one validation pass when training stops, as it does for ``EarlyStopping``.
+data position carry over between rounds. Rank 0 sends at the end of the sync batch and receives the
+next task at the start of the next batch (or at the end of the epoch, for a sync on an epoch's last
+batch), and every rank loads the next global model there. Validation and other callbacks in between
+run while the server aggregates. ``fit()`` ends when the server stops sending training tasks. When the
+last sync falls between validation intervals, the job ends without a final validation.
+
+This order changes when events are noticed: a shutdown or a pending evaluate task is found only after
+the validation that follows a sync, and a validation that stops training (``EarlyStopping``) or raises
+does so before the next receive.
 
 A train-only job needs no code after ``fit()``. If the job also sends evaluate tasks (cross-site
 evaluation), answer them after ``fit()``. The loop stops on any other task, and rank 0 decides for all
@@ -189,8 +233,11 @@ ranks, since only rank 0 can call ``is_evaluate()``:
 
 The server's ``num_rounds`` decides how long training runs: step mode lifts the trainer's ``max_epochs``
 and ``max_steps``, so epochs keep cycling the data until the server stops sending training tasks. A site
-that stops on its own (``EarlyStopping``, ``max_time``) sends its open round and leaves. Each site reports
-N steps per round, so FedAvg weights sites equally.
+that stops on its own (``EarlyStopping``, ``max_time``) sends its open round and leaves without answering
+later rounds. When the FedAvg server sends it a task again, that task fails and the job aborts, because the
+round can no longer reach ``min_clients`` responses. ``min_clients`` is also the number of sites sampled
+per round, so lowering it only avoids the abort while the stopped site is not sampled again. Each site reports N steps per round, so FedAvg weights
+sites equally.
 
 LR schedulers that count optimizer steps (warmup and decay, ``StepLR``, ``ExponentialLR``) work unchanged.
 A scheduler sized from the trainer's run length, such as ``OneCycleLR`` or ``CosineAnnealingLR`` with
@@ -199,8 +246,7 @@ A scheduler sized from the trainer's run length, such as ``OneCycleLR`` or ``Cos
 example as a script argument. ``OneCycleLR`` raises once it is stepped past ``total_steps``, and the
 callback logs a warning when training passes the trainer's own limit.
 
-In this mode, ``restore_state`` and ``update_fit_loop`` have no effect, and ``train_with_evaluation``
-is not supported. Optimizer state carries over between rounds only with job lifetime. With task lifetime
+In this mode, ``restore_state`` and ``update_fit_loop`` have no effect. Optimizer state carries over between rounds only with job lifetime. With task lifetime
 (``launch_once=False``) each round starts a fresh optimizer, so step mode gives no benefit over
 ``max_steps=N`` there.
 
