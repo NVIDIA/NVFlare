@@ -24,7 +24,8 @@ import math
 import pickle
 import random
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from itertools import zip_longest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -282,17 +283,28 @@ def load_simulation_plan(path: str | Path) -> dict:
         return validate_simulation_plan(json.load(stream))
 
 
+def _plan_digest(plan):
+    return hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _trace_line(record):
+    return json.dumps(record, sort_keys=True) + "\n"
+
+
 class SimulationPlanRuntime:
     """Server-local plan and append-only evidence for cooperating workflows."""
 
-    def __init__(self, plan: dict, trace_dir: str | Path):
+    def __init__(self, plan: dict, trace_dir: str | Path, *, plan_path: str | Path | None = None):
         self.plan = validate_simulation_plan(plan)
+        self._initial_plan_sha256 = _plan_digest(self.plan)
+        self._plan_path = Path(plan_path) if plan_path is not None else None
         self.trace_dir = Path(trace_dir)
         self._artifact_dir = self.trace_dir
         self._consumed = set()
         self._started_at = time.monotonic()
         self.virtual_time = None
         self._finalized = False
+        self._logical_trace_verified = False
 
     def has_section(self, section: str) -> bool:
         return section in self.plan
@@ -351,6 +363,28 @@ class SimulationPlanRuntime:
     def trace(self, filename: str, record: dict) -> None:
         self._trace(filename, record)
 
+    def verify_preflight(self, records: list[tuple[str, dict]]) -> None:
+        """Check completed logical logs against preflight and the saved input plan."""
+        self._logical_trace_verified = False
+        try:
+            if self._plan_path is not None and (
+                _plan_digest(load_simulation_plan(self._plan_path)) != self._initial_plan_sha256
+            ):
+                raise RuntimeError("saved simulation plan differs from the plan used at launch")
+            if _plan_digest(self.plan) != self._initial_plan_sha256:
+                raise RuntimeError("simulation plan changed during execution")
+            for filename in ("assignments.jsonl", "accepted.jsonl", "phases.jsonl"):
+                path = self.trace_dir / filename
+                expected = (record for trace, record in records if trace == filename)
+                # A horizon can legitimately produce no records for a stream.
+                with path.open(encoding="utf-8") if path.exists() else nullcontext(()) as stream:
+                    for index, (record, line) in enumerate(zip_longest(expected, stream), 1):
+                        if record is None or line != _trace_line(record):
+                            raise RuntimeError(f"final simulation trace differs from preflight at {filename}:{index}")
+        except (OSError, ValueError) as error:
+            raise RuntimeError(f"cannot verify final simulation trace: {error}") from error
+        self._logical_trace_verified = True
+
     def assert_consumed(self) -> None:
         unused = set(self.plan) - {"format_version"} - self._consumed
         if unused:
@@ -359,11 +393,17 @@ class SimulationPlanRuntime:
     def finalize(self) -> None:
         if not self._finalized:
             self._trace(
-                "run.jsonl", {"wall_seconds": time.monotonic() - self._started_at, "virtual_time": self.virtual_time}
+                "run.jsonl",
+                {
+                    "wall_seconds": time.monotonic() - self._started_at,
+                    "virtual_time": self.virtual_time,
+                    "plan_sha256": self._initial_plan_sha256,
+                    "logical_trace_verified": self._logical_trace_verified,
+                },
             )
             self._finalized = True
 
     def _trace(self, filename: str, record: dict) -> None:
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         with (self.trace_dir / filename).open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(record, sort_keys=True) + "\n")
+            stream.write(_trace_line(record))

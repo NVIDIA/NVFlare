@@ -122,6 +122,7 @@ class PlannedAsyncExecution:
         if ordered and self.port.make_planning_state is None:
             raise ValueError("ordered timing requires an async planning state")
         events = list(PlannedAsyncEvents(sequence, timing)) if timing is not None else None
+        preflight = None
         if self.port.make_planning_state is not None:
             preflight = _AsyncPreflight(self.port)
             execution = PlannedAsyncExecution(preflight.port, preflight)
@@ -137,8 +138,10 @@ class PlannedAsyncExecution:
         self.retain_artifacts = plan.get("retain_artifacts", True)
         with self.runtime.artifacts(self.retain_artifacts):
             self._run_plan(plan, events)
-        if self.expected is not None and (missing := next(self.expected, None)) is not None:
-            raise RuntimeError(f"async execution ended before preflight event: {missing}")
+        if preflight is not None:
+            if (missing := next(self.expected, None)) is not None:
+                raise RuntimeError(f"async execution ended before preflight event: {missing}")
+            self.runtime.verify_preflight(preflight.records)
 
     def _trace(self, filename, record):
         self.runtime.trace(filename, record)

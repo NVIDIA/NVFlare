@@ -199,6 +199,8 @@ def test_planned_replay_binds_bases_before_physical_dispatch(tmp_path, physical_
         buffer_size=1,
     )
     runtime.assert_consumed()
+    runtime.finalize()
+    assert json.loads((runtime.trace_dir / "run.jsonl").read_text())["logical_trace_verified"] is True
     assignments = [json.loads(line) for line in (runtime.trace_dir / "assignments.jsonl").read_text().splitlines()]
     accepted = [json.loads(line) for line in (runtime.trace_dir / "accepted.jsonl").read_text().splitlines()]
     assert [item["base_version"] for item in assignments] == [0, 0, 1, 2]

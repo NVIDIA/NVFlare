@@ -141,8 +141,12 @@ The reusable input is saved at ``<workspace>/<job>/server/local/simulation_plan.
 The run directory ``<workspace>/<job>/server/simulate_job/simulation/`` contains
 the expected events in ``preflight.jsonl`` and actual events in
 ``assignments.jsonl``, ``accepted.jsonl``, ``dispatch.jsonl``, and, for timed
-plans, ``phases.jsonl``. ``run.jsonl`` reports wall seconds and virtual time
-separately. By default, ``models/`` and ``results/`` retain intermediate payloads.
+plans, ``phases.jsonl``. After execution, FedBuff reads the saved logical logs
+to check completeness and order against the preflight derived from the input
+plan. It also checks that the server's saved copy of the input plan still matches
+what was loaded at launch. A mismatch fails the run. ``run.jsonl`` records
+``logical_trace_verified``, the normalized input's ``plan_sha256``, wall seconds,
+and virtual time. By default, ``models/`` and ``results/`` retain intermediate payloads.
 Set ``async_execution.retain_artifacts`` to false to keep the traces and reclaim
 temporary payloads after use. Unknown plan controls and unused sections fail the run.
 

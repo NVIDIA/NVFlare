@@ -143,6 +143,7 @@ The observer retains experiment evidence:
 | `final_model/global_model.pt` | Final model |
 | `simulation/preflight.jsonl` | Expected logical assignments, phases, and acceptance/publication versions |
 | `simulation/phases.jsonl`, `simulation/accepted.jsonl` | Observed timed phases and acceptance events checked against preflight |
+| `simulation/run.jsonl` | Input plan SHA-256, final logical trace verification, and timing |
 
 The generated plan is saved under `server/local/simulation_plan.json` in
 the job workspace. Pass this file to `--simulation-plan` with a fresh
