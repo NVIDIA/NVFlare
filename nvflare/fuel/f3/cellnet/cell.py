@@ -104,7 +104,7 @@ class Adapter:
         request.set_prop(MessagePropKey.ENDPOINT, future.receiving_endpoint)
         grant = getattr(future, "receiving_admin_grant", None)
         request.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, grant)
-        target_peer = grant.peer if grant is not None else None
+        target_peer = getattr(future, "reply_target_peer", None)
 
         # PASS_THROUGH can be requested per-message, per-channel, or for one
         # exact (channel, topic) route. Any source activates LazyDownloadRef

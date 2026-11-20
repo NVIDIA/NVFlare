@@ -128,6 +128,7 @@ class RxTask:
         self.out_seq_chunks: Dict[int, Tuple[bool, BytesAlike]] = {}
         self.stream_future = None
         self.admin_transport_grant = None
+        self.reply_target_peer = None
         self.sender_flow_control_received = False
         self.next_seq = 0
         self.offset = 0
@@ -176,6 +177,7 @@ class RxTask:
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
         task_to_stop = None
         grant = message.get_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT)
+        reply_target_peer = grant.peer if grant is not None else message.get_prop(MessagePropKey.TARGET_AUTH_PEER)
 
         with cls.map_lock:
             if cls._shutting_down:
@@ -188,6 +190,7 @@ class RxTask:
 
                 task = RxTask(sid, origin, cell, reliable)
                 task.admin_transport_grant = grant
+                task.reply_target_peer = reply_target_peer
                 # Routing and correlation headers are repeated on every frame.
                 # Preserve them immediately so errors raised before sequence 0
                 # can still be correlated by the sender.
@@ -195,7 +198,7 @@ class RxTask:
                 task.topic = message.get_header(StreamHeaderKey.TOPIC)
                 task.headers = message.headers
                 cls.rx_task_map[(origin, sid)] = task
-            elif task.admin_transport_grant is not grant:
+            elif task.admin_transport_grant is not grant or task.reply_target_peer != reply_target_peer:
                 return None
             elif error:
                 task_to_stop = task
@@ -322,6 +325,7 @@ class RxTask:
         self.stream_future = StreamFuture(self.sid, self.headers)
         self.stream_future.receiving_endpoint = message.get_prop(MessagePropKey.ENDPOINT)
         self.stream_future.receiving_admin_grant = self.admin_transport_grant
+        self.stream_future.reply_target_peer = self.reply_target_peer
         self.stream_future.set_size(self.size)
 
     def _update_sender_flow_control(self, message: Message):

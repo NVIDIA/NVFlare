@@ -35,11 +35,14 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey, MessageType
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.streaming.blob_streamer import BlobStream
+from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, TxTask
+from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, StreamDataType, StreamHeaderKey
 from nvflare.fuel.hci.proto import ReplyKeyword
 from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.hci.server.sess import SessionManager
@@ -758,6 +761,99 @@ class TestFederatedServer:
             request.set_header(CellMessageHeaderKeys.TOKEN, token.encode("utf-8"))
             binary_headers = server._validate_auth_headers(request)
             assert binary_headers.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+        finally:
+            manager.shutdown()
+
+    @pytest.mark.parametrize("peer_binding", ["certificate", "connection"])
+    def test_revoked_admin_can_ack_only_its_pinned_reply(self, auth_server, monkeypatch, peer_binding):
+        server, private_key = auth_server
+        monkeypatch.setattr("nvflare.fuel.hci.server.sess.threading.Thread.start", lambda _: None)
+        monkeypatch.setattr("nvflare.fuel.f3.streaming.byte_streamer.reliable_retry_scheduler", MagicMock())
+        manager = SessionManager(MagicMock())
+        server.admin_server = SimpleNamespace(sess_mgr=manager)
+        core = MagicMock()
+        core.fire_and_forget.return_value = {}
+        streamer = server.cell.byte_streamer = ByteStreamer(core)
+        connection = object() if peer_binding == "connection" else None
+        try:
+            ack, grant = register_admin_transport(manager, user="lead@test.org", connection=connection)
+            session, _ = manager.create_session(grant, "org", "lead")
+            token = ack.get_header(CellMessageHeaderKeys.TOKEN)
+            ack.add_headers(
+                {
+                    MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+                    MessageHeaderKey.TOPIC: STREAM_ACK_TOPIC,
+                    MessageHeaderKey.MSG_TYPE: MessageType.REQ,
+                    MessageHeaderKey.DESTINATION: "server",
+                    StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
+                    StreamHeaderKey.SEQUENCE: 0,
+                    StreamHeaderKey.OFFSET: 2,
+                    CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content(grant.user_name + token, private_key),
+                }
+            )
+            manager.end_session_by_id(session.sess_id)
+            assert manager.get_transport(ack) is None
+
+            task = TxTask(
+                cell=core,
+                chunk_size=1024,
+                channel=CellChannel.RETURN_ONLY,
+                topic="hci_channel:command",
+                target=grant.origin,
+                headers={},
+                stream=BlobStream(b"OK", {}),
+                reliable=True,
+                secure=False,
+                optional=True,
+                target_peer=grant.peer,
+            )
+            monkeypatch.setattr(ByteStreamer, "tx_task_map", {task.sid: task})
+            try:
+                task.send_loop()
+                assert task.stopping and not task.stream_future.done()
+                ack.set_header(StreamHeaderKey.STREAM_ID, task.sid)
+
+                peer_key = MessagePropKey.CONNECTION if connection else MessagePropKey.PEER_CERT_FINGERPRINT
+                original_endpoint = ack.get_prop(MessagePropKey.ENDPOINT)
+                for key, value in (
+                    (peer_key, object()),
+                    (MessagePropKey.ENDPOINT, Endpoint("site-a")),
+                ):
+                    ack.set_prop(key, value)
+                    reply = server._validate_auth_headers(ack)
+                    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+                    streamer._ack_handler(ack)
+                    assert not task.stream_future.done()
+                    ack.set_prop(key, grant.peer if key == peer_key else original_endpoint)
+
+                ack.set_header(StreamHeaderKey.STREAM_ID, task.sid + 1)
+                ack.set_header(StreamHeaderKey.CHANNEL, CellChannel.HCI)
+                assert server._validate_auth_headers(ack).get_header(MessageHeaderKey.RETURN_CODE) == (
+                    F3ReturnCode.UNAUTHENTICATED
+                )
+
+                ack.set_header(StreamHeaderKey.STREAM_ID, task.sid)
+                ack.set_header(MessageHeaderKey.DESTINATION, "another-cell")
+                assert server._validate_auth_headers(ack).get_header(MessageHeaderKey.RETURN_CODE) == (
+                    F3ReturnCode.UNAUTHENTICATED
+                )
+
+                ack.set_header(MessageHeaderKey.DESTINATION, "server")
+                ack.set_header(MessageHeaderKey.MSG_TYPE, MessageType.REPLY)
+                assert server._validate_auth_headers(ack).get_header(MessageHeaderKey.RETURN_CODE) == (
+                    F3ReturnCode.UNAUTHENTICATED
+                )
+
+                ack.set_header(MessageHeaderKey.MSG_TYPE, MessageType.REQ)
+                assert server._validate_auth_headers(ack) is None
+                streamer._ack_handler(ack)
+                assert task.stream_future.done()
+                assert task.stream_future.result(timeout=0) == 2
+                assert manager.get_transport(ack) is None
+                assert ack.get_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT) is None
+            finally:
+                if not task.stream_future.done():
+                    task.cancel()
         finally:
             manager.shutdown()
 

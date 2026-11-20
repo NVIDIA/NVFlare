@@ -1149,7 +1149,7 @@ def test_error_after_consumer_future_completion_is_reported():
 
 
 def test_receiver_keeps_one_authenticated_admin_grant_per_stream():
-    grant = object()
+    grant = SimpleNamespace(peer=b"admin-cert")
     frame = _make_message("admin", 100)
     frame.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, grant)
     cell = Mock()
@@ -1157,7 +1157,7 @@ def test_receiver_keeps_one_authenticated_admin_grant_per_stream():
     task = RxTask.find_or_create_task(frame, cell)
     assert task
 
-    frame.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, object())
+    frame.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, SimpleNamespace(peer=b"admin-cert"))
     assert RxTask.find_or_create_task(frame, cell) is None
     frame.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, grant)
     assert RxTask.find_or_create_task(frame, cell) is task

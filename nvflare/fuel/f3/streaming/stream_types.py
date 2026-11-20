@@ -131,6 +131,7 @@ class StreamFuture:
         # Receiver-owned transport provenance; never populated from wire headers.
         self.receiving_endpoint = None
         self.receiving_admin_grant = None
+        self.reply_target_peer = None
         self.waiter = threading.Event()
         self.lock = threading.Lock()
         self.error: Optional[StreamError] = None

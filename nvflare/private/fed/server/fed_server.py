@@ -59,7 +59,13 @@ from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, STREAM_ERROR_TOPIC, StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_const import (
+    STREAM_ACK_TOPIC,
+    STREAM_CHANNEL,
+    STREAM_DATA_TOPIC,
+    STREAM_ERROR_TOPIC,
+    StreamHeaderKey,
+)
 from nvflare.fuel.sec.admin_cert import admin_cert_expiry
 from nvflare.fuel.sec.authn import add_authentication_headers
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
@@ -559,7 +565,8 @@ class FederatedServer(BaseServer):
         peer = message.get_prop(MessagePropKey.ENDPOINT)
         destination = message.get_header(MessageHeaderKey.DESTINATION)
         is_local = local_fqcn is not None and destination == local_fqcn
-        application_channel = message.get_header(StreamHeaderKey.CHANNEL) if channel == STREAM_CHANNEL else channel
+        is_stream_data = channel == STREAM_CHANNEL and topic == STREAM_DATA_TOPIC
+        application_channel = message.get_header(StreamHeaderKey.CHANNEL) if is_stream_data else channel
         is_stream_control = channel == STREAM_CHANNEL and topic in (STREAM_ACK_TOPIC, STREAM_ERROR_TOPIC)
         is_registration = channel == CellChannel.SERVER_MAIN and topic in (
             CellChannelTopic.Register,
@@ -597,8 +604,19 @@ class FederatedServer(BaseServer):
             )
             # Direct HCI callers with an inactive grant may receive the protocol's
             # login-required reply. The HCI handler rejects them before dispatch.
-            if not grant and not direct_hci:
-                return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, error="inactive admin registration")
+            if not grant:
+                if direct_hci:
+                    reply_peer = message.get_prop(MessagePropKey.PEER_CERT_FINGERPRINT) or message.get_prop(
+                        MessagePropKey.CONNECTION
+                    )
+                    message.set_prop(MessagePropKey.TARGET_AUTH_PEER, reply_peer)
+                elif not (
+                    is_local
+                    and channel == STREAM_CHANNEL
+                    and topic == STREAM_ACK_TOPIC
+                    and self.cell.byte_streamer.accepts_reply_ack(message)
+                ):
+                    return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, error="inactive admin registration")
             message.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, grant)
         self._strip_peer_transit_headers(message)
         return None

@@ -2240,8 +2240,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                 return
 
             grant = message.get_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT)
-            if grant is not None:
-                reply.set_prop(MessagePropKey.TARGET_AUTH_PEER, grant.peer)
+            target_peer = grant.peer if grant is not None else message.get_prop(MessagePropKey.TARGET_AUTH_PEER)
+            if target_peer is not None:
+                reply.set_prop(MessagePropKey.TARGET_AUTH_PEER, target_peer)
 
             is_optional = message.get_header(MessageHeaderKey.OPTIONAL, False)
             reply.set_header(MessageHeaderKey.OPTIONAL, is_optional)

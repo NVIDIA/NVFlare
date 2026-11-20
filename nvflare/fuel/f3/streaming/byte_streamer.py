@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessagePropKey, MessageType, ReturnCode
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
@@ -570,7 +570,15 @@ class TxTask(StreamTaskSpec):
                 self.pending_message_bytes = 0
             return True
 
+    def _matches_authenticated_peer(self, message: Message) -> bool:
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        endpoint = message.get_prop(MessagePropKey.ENDPOINT)
+        peer = message.get_prop(MessagePropKey.PEER_CERT_FINGERPRINT) or message.get_prop(MessagePropKey.CONNECTION)
+        return origin == self.target == getattr(endpoint, "name", None) and self.target_peer == peer
+
     def handle_ack(self, message: Message):
+        if self.target_peer is not None and not self._matches_authenticated_peer(message):
+            return
 
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         ack_seq = message.get_header(StreamHeaderKey.SEQUENCE, None)
@@ -893,12 +901,39 @@ class ByteStreamer:
                 log.error(msg)
             task.stop(StreamError(msg), True)
 
-    @staticmethod
-    def _ack_handler(message: Message):
-
-        sid = message.get_header(StreamHeaderKey.STREAM_ID)
+    def _get_tx_task(self, sid: int):
+        if type(sid) is not int:
+            return None
         with ByteStreamer.map_lock:
-            tx_task = ByteStreamer.tx_task_map.get(sid, None)
+            task = ByteStreamer.tx_task_map.get(sid)
+        return task if task and task.cell is self.cell else None
+
+    def accepts_reply_ack(self, message: Message) -> bool:
+        """Check whether a local ACK belongs to an active reply pinned to this peer."""
+        if (
+            message.get_header(MessageHeaderKey.MSG_TYPE) != MessageType.REQ
+            or message.get_header(MessageHeaderKey.REPLY_EXPECTED)
+            or message.payload
+            or message.get_header(StreamHeaderKey.DATA_TYPE) != StreamDataType.ACK
+            or message.get_header(StreamHeaderKey.ERROR_MSG)
+            or type(message.get_header(StreamHeaderKey.SEQUENCE)) is not int
+            or type(message.get_header(StreamHeaderKey.OFFSET)) is not int
+        ):
+            return False
+
+        task = self._get_tx_task(message.get_header(StreamHeaderKey.STREAM_ID))
+        return (
+            task is not None
+            and task.channel == CellChannel.RETURN_ONLY
+            and task.reliable
+            and not task.stopped
+            and task.target_peer is not None
+            and task._matches_authenticated_peer(message)
+        )
+
+    def _ack_handler(self, message: Message):
+        sid = message.get_header(StreamHeaderKey.STREAM_ID)
+        tx_task = self._get_tx_task(sid)
 
         if not tx_task:
             origin = message.get_header(MessageHeaderKey.ORIGIN)
