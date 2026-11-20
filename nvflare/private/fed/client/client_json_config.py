@@ -146,9 +146,9 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
 
             fobs_registration()
-        from .task_execution_policy import TaskExecutionPolicy
+        from .task_execution_config import TaskExecutionConfig
 
-        self.task_policy = TaskExecutionPolicy.from_workspace(self.workspace_obj)
+        self.task_policy = TaskExecutionConfig.from_workspace(self.workspace_obj)
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         path = node.path()

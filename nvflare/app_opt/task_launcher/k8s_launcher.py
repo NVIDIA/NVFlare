@@ -54,7 +54,7 @@ from nvflare.app_opt.job_launcher.k8s_pod import (
     pod_shutdown_confirmed,
 )
 from nvflare.job_config.task_execution import reject_job_gpu_reservation
-from nvflare.private.fed.client.task_execution_policy import FORBIDDEN_ENVIRONMENT_NAMES, GPU_ENVIRONMENT_NAMES
+from nvflare.private.fed.client.task_execution_config import FORBIDDEN_ENVIRONMENT_NAMES, GPU_ENVIRONMENT_NAMES
 from nvflare.private.fed.task_worker.protocol import _open_directory, read_bootstrap
 from nvflare.utils.job_launcher_utils import (
     get_job_launcher_spec,
@@ -277,7 +277,7 @@ class _K8sTaskProfile(TaskLauncherSpec):
     def validate_site_config(self, site_config):
         """Check the canonical CP/CJ/task profile without creating any resources."""
         expected = "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher"
-        from nvflare.private.fed.client.task_execution_policy import site_job_launchers
+        from nvflare.private.fed.client.task_execution_config import site_job_launchers
 
         launchers = site_job_launchers(site_config)
         if any(path == "ClientK8sJobLauncher" for path, _ in launchers):

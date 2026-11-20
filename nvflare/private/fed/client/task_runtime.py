@@ -24,8 +24,6 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.job_launcher_spec import JobHandleSpec, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.job_config.defs import ExecutionLifetime
-from nvflare.job_config.task_execution import get_client_execution_lifetime
 
 JOB_LAUNCH_OPTIONS = "_job_launch_options"
 
@@ -239,33 +237,20 @@ def validate_task_site(workspace):
     path = workspace.get_resources_file_path()
     site_config = ConfigService.load_config_dict(path) if path and os.path.isfile(path) else {}
     if "task_execution" in site_config:
-        from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+        from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig
 
-        return TaskExecutionPolicy.from_workspace(workspace)
+        return TaskExecutionConfig.from_workspace(workspace)
     return None
 
 
-def launch_job(launcher, job_meta, fl_ctx):
-    """Compose the site's job and task launchers at the CP launch boundary."""
-    workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-    if isinstance(workspace, Workspace):
-        config = (
-            ConfigService.load_config_dict(
-                workspace.get_client_app_config_file_path(job_meta[JobConstants.JOB_ID]), raise_exception=False
-            )
-            or {}
-        )
-        if get_client_execution_lifetime(config) == ExecutionLifetime.TASK:
-            from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy, _prepare_cp_host_cj
+def launch_task_job(launcher, job_meta, fl_ctx, workspace):
+    """Validate the launcher pairing and set up CP ownership for task execution."""
+    from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig, _prepare_cp_host_cj
 
-            policy = TaskExecutionPolicy.from_workspace(workspace)
-            runtime = _prepare_cp_host_cj(
-                policy.launcher, launcher, job_meta, fl_ctx, launcher_config=policy.launcher_config
-            )
-            if runtime is not None:
-                return _launch_job_with_task_workers(
-                    runtime, launcher, fl_ctx, cleanup_timeout=policy.finalization_timeout
-                )
+    policy = TaskExecutionConfig.from_workspace(workspace)
+    binding = _prepare_cp_host_cj(policy.launcher, launcher, job_meta, fl_ctx, launcher_config=policy.launcher_config)
+    if binding is not None:
+        return _launch_job_with_task_workers(binding, launcher, fl_ctx, cleanup_timeout=policy.finalization_timeout)
     return launcher.launch_job(job_meta, fl_ctx)
 
 

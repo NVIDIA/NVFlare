@@ -1019,7 +1019,7 @@ class ClientDockerJobLauncher(DockerJobLauncher):
             )
 
     def _task_coordinator_options(self, job_meta, fl_ctx):
-        from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
+        from nvflare.private.fed.client.task_execution_config import GPU_ENVIRONMENT_NAMES
 
         workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         site = fl_ctx.get_identity_name()

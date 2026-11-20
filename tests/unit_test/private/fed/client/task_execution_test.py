@@ -31,8 +31,8 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.task_launcher_spec import TaskLauncherSpec
 from nvflare.job_config.task_execution import STATISTICS_EXECUTOR_PATH, prepare_task_execution, validate_task_resources
-from nvflare.private.fed.client import task_execution_policy as policy_module
-from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+from nvflare.private.fed.client import task_execution_config as policy_module
+from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig
 from nvflare.private.fed.client.task_worker_executor import TASK_ATTEMPT_IDENTITY, TaskWorkerExecutor
 from nvflare.private.fed.task_worker.artifacts import FileTaskArtifactStore
 from tests.local_task_launcher import local_policy
@@ -158,13 +158,13 @@ def test_gpu_count_validation_only_considers_receiving_site():
 )
 def test_site_policy_rejects_retired_environment_forwarding(name):
     with pytest.raises(ValueError, match="environment_variables is not supported"):
-        TaskExecutionPolicy.from_config({"environment_variables": [name]})
+        TaskExecutionConfig.from_config({"environment_variables": [name]})
 
 
 @pytest.mark.parametrize("value", [[], ["APP_DATA"], None, "APP_DATA"])
 def test_site_policy_rejects_environment_forwarding_key_even_when_empty(value):
     with pytest.raises(ValueError, match="environment_variables is not supported"):
-        TaskExecutionPolicy.from_config({"environment_variables": value})
+        TaskExecutionConfig.from_config({"environment_variables": value})
 
 
 @pytest.mark.parametrize("name", sorted(policy_module.FORBIDDEN_ENVIRONMENT_NAMES))
@@ -180,7 +180,7 @@ def test_missing_site_launcher_fails_closed(tmp_path, config):
     path.write_text(json.dumps(config))
     for workspace_path in (str(path), None):
         with pytest.raises(ValueError, match="explicit site Kubernetes or Slurm"):
-            TaskExecutionPolicy.from_workspace(SimpleNamespace(get_resources_file_path=lambda: workspace_path))
+            TaskExecutionConfig.from_workspace(SimpleNamespace(get_resources_file_path=lambda: workspace_path))
 
 
 @pytest.mark.parametrize("field", ["path", "class_path", "name"])
@@ -190,7 +190,7 @@ def test_local_backend_paths_and_aliases_rejected_before_import(monkeypatch, fie
     build = Mock(side_effect=AssertionError("must reject before component construction"))
     monkeypatch.setattr(policy_module._SiteBuilder, "build_component", build)
     with pytest.raises(ValueError, match="deferred"):
-        TaskExecutionPolicy.from_config({"launcher": {field: prefix + launcher}})
+        TaskExecutionConfig.from_config({"launcher": {field: prefix + launcher}})
     build.assert_not_called()
 
 
@@ -204,7 +204,7 @@ def test_local_backend_cannot_impersonate_an_admitted_launcher(monkeypatch, mode
 
     monkeypatch.setattr(policy_module._SiteBuilder, "build_component", lambda *_: LocalLauncher())
     with pytest.raises(ValueError, match="supported Kubernetes or Slurm"):
-        TaskExecutionPolicy.from_config({"launcher": {"path": "custom.LocalLauncher"}})
+        TaskExecutionConfig.from_config({"launcher": {"path": "custom.LocalLauncher"}})
 
 
 def test_client_config_does_not_import_or_construct_task_executor(tmp_path, monkeypatch):
@@ -300,7 +300,7 @@ def test_cj_replacement_scopes_native_receipts_to_launch_id(tmp_path, monkeypatc
     from nvflare.private.defs import RequestHeader
 
     launcher = K8sTaskLauncher("test", "worker:latest", "/workspace", "jobs", "worker")
-    adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy(launcher=launcher))
+    adapter = TaskWorkerExecutor({}, (), TaskExecutionConfig(launcher=launcher))
     context = FLContext()
     for key, value in (
         (ReservedKey.RUN_NUM, "job"),
@@ -407,7 +407,7 @@ def test_replacement_cj_resends_result_after_checkpoint_commit_without_retrainin
     def replacement(generation):
         monkeypatch.setattr(ConfigService, "_var_values", {})
         monkeypatch.setattr(ConfigService, "_var_dict", {RequestHeader.CJ_LAUNCH_ID: f"cj-{generation}"})
-        adapter = TaskWorkerExecutor({}, (), TaskExecutionPolicy(launcher=launcher))
+        adapter = TaskWorkerExecutor({}, (), TaskExecutionConfig(launcher=launcher))
         adapter._started = True
         return adapter
 
@@ -800,7 +800,7 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
     data = {"task_execution": config, "components": [{"path": "site.CPJobLauncher"}]}
     path = tmp_path / "resources.json"
     path.write_text(json.dumps(data))
-    policy = TaskExecutionPolicy.from_workspace(SimpleNamespace(get_resources_file_path=lambda: str(path)))
+    policy = TaskExecutionConfig.from_workspace(SimpleNamespace(get_resources_file_path=lambda: str(path)))
     validate.assert_called_once_with(data)
     assert set(imported) == {module_name}
     assert policy.worker_environment() == {}
@@ -808,14 +808,14 @@ def test_shared_native_selection_is_exact_lazy_and_delegates_site_validation(
     with pytest.raises(ValueError, match="portable GPUs reserve"):
         policy.task_resources({"resource_spec": {"site": {"num_of_gpus": 1}}}, "site")
     with pytest.raises(ValueError, match="environment_variables is not supported"):
-        TaskExecutionPolicy.from_config({**config, "environment_variables": ["APP_DATA"]})
+        TaskExecutionConfig.from_config({**config, "environment_variables": ["APP_DATA"]})
 
     class Impersonator(NativeLauncher):
         pass
 
     monkeypatch.setattr(policy_module._SiteBuilder, "build_component", lambda *_: Impersonator())
     with pytest.raises(ValueError, match="supported"):
-        TaskExecutionPolicy.from_config(config)
+        TaskExecutionConfig.from_config(config)
 
 
 @pytest.mark.parametrize("mode", ["k8s", "slurm"])
@@ -843,7 +843,7 @@ def test_native_selection_reports_missing_backend_without_hiding_missing_depende
     config = {"launcher": {"path": module_name + "." + class_name}}
     expected = ModuleNotFoundError if missing == "dependency" else ValueError
     with pytest.raises(expected) as error:
-        TaskExecutionPolicy.from_config(config)
+        TaskExecutionConfig.from_config(config)
     if missing == "dependency":
         assert error.value.name == missing_name
     else:

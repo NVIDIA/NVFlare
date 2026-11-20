@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Site-owned selection and resource policy for disposable task execution."""
+"""Site configuration for disposable task execution."""
 
 import copy
 import importlib
@@ -130,7 +130,7 @@ class _SiteBuilder(ComponentBuilder):
 
 
 @dataclass(frozen=True)
-class TaskExecutionPolicy:
+class TaskExecutionConfig:
     launcher: TaskLauncherSpec
     artifact_cleanup: str = "receipt"
     worker_timeout: float | None = None

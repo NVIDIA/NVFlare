@@ -29,6 +29,7 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     ConnPropKey,
     FLContextKey,
+    JobConstants,
     ReservedKey,
     RunProcessKey,
     SystemConfigs,
@@ -45,9 +46,10 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.job_config.defs import ExecutionLifetime
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, RequestHeader, new_cell_message
-from nvflare.private.fed.client.task_runtime import launch_job
+from nvflare.private.fed.client.task_runtime import launch_task_job
 from nvflare.private.fed.resource_stats.collector import assemble_participant_summary
 from nvflare.private.fed.resource_stats.handoff import (
     canonical_json_bytes,
@@ -407,6 +409,21 @@ class ClientExecutor(ABC):
         Args:
             job_id: the job_id
         """
+
+
+def launch_job(launcher, job_meta, fl_ctx):
+    """Select the launch path from the deployed app's execution lifetime."""
+    workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+    if isinstance(workspace, Workspace):
+        config = (
+            ConfigService.load_config_dict(
+                workspace.get_client_app_config_file_path(job_meta[JobConstants.JOB_ID]), raise_exception=False
+            )
+            or {}
+        )
+        if get_client_execution_lifetime(config) == ExecutionLifetime.TASK:
+            return launch_task_job(launcher, job_meta, fl_ctx, workspace)
+    return launcher.launch_job(job_meta, fl_ctx)
 
 
 class JobExecutor(ClientExecutor):

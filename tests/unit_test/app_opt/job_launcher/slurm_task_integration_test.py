@@ -30,8 +30,13 @@ from nvflare.apis.task_launcher_spec import TaskLauncherError
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.batch import _submission_argv
 from nvflare.app_opt.job_launcher.slurm.launcher import ClientSlurmJobLauncher
-from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, _SlurmTaskBackend
-from nvflare.app_opt.job_launcher.slurm.task_policy import CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH, task_resources
+from nvflare.app_opt.job_launcher.slurm.task_launcher import (
+    CJ_LAUNCHER_PATH,
+    TASK_LAUNCHER_PATH,
+    SlurmTaskLauncher,
+    _SlurmTaskBackend,
+    task_resources,
+)
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
 from nvflare.tool.deploy.deploy_common import SLURM_CLIENT_LAUNCHER
 from nvflare.utils.job_launcher_utils import get_resource_manager_spec, normalize_cj_resource_spec
@@ -323,9 +328,9 @@ def test_portable_compute_uses_per_task_allocation_and_independent_cj_reservatio
     assert get_resource_manager_spec(meta, "site-1") == ({"num_of_gpus": 1} if cj_gpu_count else {})
     assert (compute.cpus_per_node, compute.mem_per_node, compute.gpus_per_node) == (6, 3072, 2)
     # Shared policy must also accept normalized portable GPU compute admission.
-    from nvflare.private.fed.client.task_execution_policy import TaskExecutionPolicy
+    from nvflare.private.fed.client.task_execution_config import TaskExecutionConfig
 
-    policy = TaskExecutionPolicy.from_config({"launcher": _site(root)["task_execution"]["launcher"]})
+    policy = TaskExecutionConfig.from_config({"launcher": _site(root)["task_execution"]["launcher"]})
     assert policy.task_resources(meta, "site-1").is_empty()
 
 

@@ -28,15 +28,19 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.job_launcher.client_process_launcher import ClientProcessJobLauncher
 from nvflare.app_common.job_launcher.server_process_launcher import ServerProcessJobLauncher
-from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher
-from nvflare.app_opt.job_launcher.slurm.task_policy import PROCESS_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
+from nvflare.app_opt.job_launcher.slurm.task_launcher import (
+    PROCESS_CJ_LAUNCHER_PATH,
+    TASK_LAUNCHER_PATH,
+    SlurmTaskLauncher,
+)
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
-from nvflare.private.fed.client.task_execution_policy import (
+from nvflare.private.fed.client.client_executor import launch_job
+from nvflare.private.fed.client.task_execution_config import (
     GPU_ENVIRONMENT_NAMES,
-    TaskExecutionPolicy,
+    TaskExecutionConfig,
     _get_cj_preparer,
 )
-from nvflare.private.fed.client.task_runtime import _TaskExecutionState, launch_job, shutdown_task_execution
+from nvflare.private.fed.client.task_runtime import _TaskExecutionState, shutdown_task_execution
 
 
 @pytest.fixture
@@ -186,7 +190,7 @@ def test_process_cj_requires_explicit_canonical_profile(profile, mutation):
 
 
 def test_cj_runtime_is_derived_from_the_configured_job_launcher(profile):
-    policy = TaskExecutionPolicy.from_workspace(profile.workspace)
+    policy = TaskExecutionConfig.from_workspace(profile.workspace)
     assert policy.launcher.cj_runtime == "process"
     assert callable(_get_cj_preparer(policy.launcher, profile.launcher))
     profile.spawn.assert_not_called()
@@ -194,7 +198,7 @@ def test_cj_runtime_is_derived_from_the_configured_job_launcher(profile):
 
 def test_process_policy_and_system_shutdown(profile):
     p = profile
-    policy = TaskExecutionPolicy.from_workspace(p.workspace)
+    policy = TaskExecutionConfig.from_workspace(p.workspace)
     assert type(policy.launcher) is SlurmTaskLauncher
     with pytest.raises(ValueError, match="unsupported client-job/task launcher pairing"):
         launch_job(ServerProcessJobLauncher(), p.meta, p.context)

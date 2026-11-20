@@ -22,7 +22,7 @@ from nvflare.utils.job_launcher_utils import generate_client_command
 class ClientProcessJobLauncher(ProcessJobLauncher):
     def _task_coordinator_options(self, job_meta, fl_ctx):
         """Keep CP-host coordinators CPU-only and reject unenforceable budgets."""
-        from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
+        from nvflare.private.fed.client.task_execution_config import GPU_ENVIRONMENT_NAMES
         from nvflare.utils.job_launcher_utils import get_cj_resource_spec
 
         if any(get_cj_resource_spec(job_meta, fl_ctx.get_identity_name()).values()):

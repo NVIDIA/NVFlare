@@ -31,11 +31,16 @@ from nvflare.apis.job_launcher_spec import JobProcessArgs, JobReturnCode
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher import docker_launcher as docker_module
 from nvflare.app_opt.job_launcher.docker_launcher import ClientDockerJobLauncher, DockerJobHandle
-from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, SlurmTaskManager
-from nvflare.app_opt.job_launcher.slurm.task_policy import DOCKER_CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH
+from nvflare.app_opt.job_launcher.slurm.task_launcher import (
+    DOCKER_CJ_LAUNCHER_PATH,
+    TASK_LAUNCHER_PATH,
+    SlurmTaskLauncher,
+    SlurmTaskManager,
+)
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
-from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
-from nvflare.private.fed.client.task_runtime import _TaskExecutionState, launch_job
+from nvflare.private.fed.client.client_executor import launch_job
+from nvflare.private.fed.client.task_execution_config import GPU_ENVIRONMENT_NAMES, TaskExecutionConfig
+from nvflare.private.fed.client.task_runtime import _TaskExecutionState
 from nvflare.private.fed.utils.job_cert_utils import JobCertError
 
 
@@ -357,7 +362,7 @@ def test_docker_proxy_start_needs_cp_capability_but_no_scheduler_environment(pro
     p = profile
     for name in ("NVFLARE_SLURM_CHILD_PROCESS", "SLURM_JOB_ID"):
         monkeypatch.delenv(name, raising=False)
-    proxy = TaskExecutionPolicy.from_workspace(p.workspace).launcher
+    proxy = TaskExecutionConfig.from_workspace(p.workspace).launcher
     with pytest.raises(RuntimeError, match="CP-provisioned"):
         proxy.handle_event(EventType.START_RUN, p.context)
     monkeypatch.setenv(ENV_TASK_OWNER, "site-1")
@@ -413,7 +418,7 @@ def test_coordinator_resources_are_independent_of_resident_container_defaults(pr
     p.launcher.default_job_container_kwargs = dict(resident_defaults)
     p.site["components"][0]["args"]["default_job_container_kwargs"] = dict(resident_defaults)
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
-    TaskExecutionPolicy.from_workspace(p.workspace)
+    TaskExecutionConfig.from_workspace(p.workspace)
     p.meta["cj_resource_spec"] = {"site-1": {"num_of_cpus": 64, "memory": "512Gi"}}
     handle = launch_job(p.launcher, p.meta, p.context)
     run = p.dc.containers.run.call_args.kwargs
@@ -460,7 +465,7 @@ def test_cj_validates_ordinary_docker_site_without_parent_environment(profile, m
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
     monkeypatch.delenv("NVFL_DOCKER_WORKSPACE")
     monkeypatch.delenv("NVFL_DOCKER_NETWORK")
-    policy = TaskExecutionPolicy.from_workspace(p.workspace)
+    policy = TaskExecutionConfig.from_workspace(p.workspace)
     assert policy.launcher.cj_runtime == "docker"
     p.dc.containers.run.assert_not_called()
 
@@ -552,7 +557,7 @@ def test_canonical_site_profile_rejects_incompatible_launchers(profile, mutation
     else:
         site["components"].append({"path": "nvflare.app_common.job_launcher.process_launcher.ProcessJobLauncher"})
     with pytest.raises(ValueError):
-        TaskExecutionPolicy.from_config(site["task_execution"]).launcher.validate_site_config(site)
+        TaskExecutionConfig.from_config(site["task_execution"]).launcher.validate_site_config(site)
 
 
 def test_task_policy_selects_the_ordinary_client_docker_launcher(profile):
@@ -625,7 +630,7 @@ def test_coordinator_security_does_not_inherit_resident_defaults(profile, reside
     p = profile
     p.launcher.default_job_container_kwargs.update(cap_drop=["NET_RAW"], security_opt=resident_security)
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
-    TaskExecutionPolicy.from_workspace(p.workspace)
+    TaskExecutionConfig.from_workspace(p.workspace)
     handle = launch_job(p.launcher, p.meta, p.context)
     run = p.dc.containers.run.call_args.kwargs
     assert run["cap_drop"] == ["ALL"]
@@ -647,7 +652,7 @@ def test_docker_memory_string_is_valid_at_policy_load_and_launch(profile):
     p = profile
     p.site["components"][0]["args"]["default_job_container_kwargs"]["mem_limit"] = "1g"
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
-    TaskExecutionPolicy.from_workspace(p.workspace)
+    TaskExecutionConfig.from_workspace(p.workspace)
     p.launcher.default_job_container_kwargs["mem_limit"] = "1g"
     p.meta["cj_resource_spec"]["site-1"] = {}
     launch_job(p.launcher, p.meta, p.context)

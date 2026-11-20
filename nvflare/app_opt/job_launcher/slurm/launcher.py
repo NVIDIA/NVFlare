@@ -645,8 +645,12 @@ class ClientSlurmJobLauncher(SlurmJobLauncher):
         validate_cj_execution_lifetime(job_meta, fl_ctx.get_identity_name(), lifetime)
         if lifetime == ExecutionLifetime.JOB:
             return super()._build_launch_plan(job_meta, fl_ctx), None
-        from nvflare.app_opt.job_launcher.slurm.task_launcher import _SlurmTaskBackend
-        from nvflare.app_opt.job_launcher.slurm.task_policy import TASK_LAUNCHER_PATH, component_args, component_path
+        from nvflare.app_opt.job_launcher.slurm.task_launcher import (
+            TASK_LAUNCHER_PATH,
+            _SlurmTaskBackend,
+            component_args,
+            component_path,
+        )
 
         data = ConfigService.load_config_dict(workspace.get_resources_file_path())
         launcher_config = data.get("task_execution", {}).get("launcher", {})
