@@ -159,7 +159,7 @@ def test_custom_paper_delays_use_independent_assignment_and_phase_rngs(research,
     planner = research(module_name)
     profiles = {"client-0": {"download_mean": 0.1, "train_mean": 1, "upload_mean": 0.2}}
     options = dict(run_seed=10, max_time=200, num_rounds=2, concurrency=1, min_open_slots=1, buffer_size=1)
-    lognormal = planner.lognormal_training_sampler(0.4)
+    lognormal = research("schedule_standard").lognormal_training_sampler(0.4)
 
     def draw_extra_download_samples(assignment_id, logical_name, phase, profile, rng):
         if phase == "download":
@@ -177,6 +177,22 @@ def test_custom_paper_delays_use_independent_assignment_and_phase_rngs(research,
         ValueError, match=r"download delay for assignment 0 \(client-0\) must be finite and nonnegative"
     ):
         events(lambda *args: float("nan"))
+
+
+def test_shifted_planner_narrows_the_default_upload_distribution(research):
+    profile = {"download_mean": 0, "train_mean": 0, "upload_mean": 0.2}
+    options = dict(run_seed=10, max_time=2, num_rounds=1, concurrency=1, min_open_slots=1, buffer_size=1)
+
+    def upload_time(module):
+        plan = research(module).make_paper_plan({"client-0": profile}, **options)
+        return plan["async_execution"]["timing"]["events"][-1]["virtual_time"]
+
+    standard_time = upload_time("schedule_standard")
+    shifted_time = upload_time("schedule_shifted")
+    assert shifted_time != standard_time
+    assert shifted_time - 0.2 == pytest.approx((standard_time - 0.2) / 2)
+    profile["upload_half_width"] = 0.05
+    assert upload_time("schedule_standard") == upload_time("schedule_shifted")
 
 
 def test_fedavg_rejects_mixed_assignment_bases_within_a_publication(research):

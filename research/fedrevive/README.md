@@ -118,7 +118,7 @@ behavior.
 | `nvflare.collab.fedbuff_recipe` | Shared assignment acceptance, buffered publication, Collab calls, one bounded receipt queue and lifecycle |
 | `update.py` | Optional `FedReviveUpdate`: proxies, shared teacher history, revival gates and delta blending |
 | `dfkd.py` | Conditional generator, optimized latent/embedding tensors, Reptile update, weighted per-teacher objectives and sampling |
-| `schedule_standard.py`, `schedule_shifted.py` | Standalone generators for the standard and shifted paper plans |
+| `schedule_standard.py`, `schedule_shifted.py` | Standard paper planner and shifted delay distribution |
 | `plot_plan.py` | Plot a saved plan and estimate peak temporary payload storage |
 | `SimEnv` with a replay plan | Explicit assignment and acceptance order or timing, with evidence in the run's `simulation/` directory |
 | `server.py` | Separate initial model loader, FedRevive model operations, and CIFAR evaluation/artifact observer |
@@ -449,10 +449,11 @@ python schedule_shifted.py /tmp/fedrevive/cifar10_shifted/manifest.json shifted.
 | Training | Exponential with a per-client mean of 1.0, 1.3, or 1.6 | Exponential with mean 0.10 |
 | Upload | Uniform around a per-client mean of 0.15 or 0.25, with half-width 0.02 | Uniform around a per-client mean of 0.05 or 0.10, with half-width 0.01 |
 
-Each file contains the full planner for its preset and reads the delay profiles
-from the matching manifest. Use either JSON file with the replay command above
-and the matching logical scheduling settings. Use `plot_plan.py` to compare
-the timelines before launching either run.
+Both entry points read per-client delays from the matching manifest. The
+shifted entry point uses the standard planner with a narrower default upload
+distribution. The two paper presets use the reference scheduling RNG. Use
+either JSON file with the replay command above and the matching logical
+scheduling settings. Use `plot_plan.py` to compare the timelines before launch.
 
 ### Generate a custom paper schedule offline
 
@@ -469,12 +470,15 @@ Use `plan.json` in the replay command above. Keep `--buffer-size` and
 `--min-open-slots` consistent between generation and replay if you override
 them. Omit `--train-lognormal-sigma` to generate the paper's original delays.
 
-Copy either planner to `schedule_custom.py` and replace its final entry-point
-block with the snippet below. This example uses gamma-distributed training times
-with the mean from the input manifest. Run the copied file with the same manifest,
-output path, and scheduling options.
+Use the standard planner with a custom callback to try another distribution.
+The example below uses gamma-distributed training times with the mean from the
+input manifest. Save it as `schedule_custom.py` in `research/fedrevive` and run
+it with the standard manifest, output path, and scheduling options.
 
 ```python
+from schedule_standard import main, sample_paper_delay
+
+
 def custom_delay(assignment_id, logical_name, phase, profile, rng):
     if phase == "train":
         return float(rng.gamma(shape=2, scale=profile["train_mean"] / 2))
@@ -628,8 +632,8 @@ fedrevive/
 ├── model.py
 ├── client.py
 ├── server.py             # Model loader, operations, evaluation observer
-├── schedule_standard.py  # Standalone standard paper planner
-├── schedule_shifted.py   # Standalone shifted paper planner
+├── schedule_standard.py  # Standard paper planner and delay sampler
+├── schedule_shifted.py   # Shifted distribution and CLI
 ├── plot_plan.py          # Inspect a plan and its storage bound offline
 ├── update.py             # Optional FedRevive update transform
 ├── fedrevive.py

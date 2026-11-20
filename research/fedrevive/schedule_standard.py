@@ -39,13 +39,36 @@ class Phase:
         return self.finish_time < other.finish_time
 
 
+def sample_paper_delay(phase, profile, rng, *, default_upload_half_width=0.02):
+    """Sample one of the reference paper's three phase delays."""
+    if phase == "download":
+        return profile["download_mean"]
+    if phase == "train":
+        return float(rng.exponential(profile["train_mean"]))
+    if phase == "upload":
+        mean = profile["upload_mean"]
+        width = profile.get("upload_half_width", default_upload_half_width)
+        return float(rng.uniform(max(0.0, mean - width), mean + width))
+    raise ValueError(f"unknown paper phase: {phase}")
+
+
 def make_paper_plan(
-    profiles, run_seed, max_time, *, num_rounds, concurrency, min_open_slots, buffer_size, delay_sampler=None
+    profiles,
+    run_seed,
+    max_time,
+    *,
+    num_rounds,
+    concurrency,
+    min_open_slots,
+    buffer_size,
+    paper_delay=sample_paper_delay,
+    delay_sampler=None,
 ):
     """Compile paper-mode scheduling into an ordered SimEnv plan.
 
-    Keep the reference RandomState draws and heap order. Logical clients become
-    eligible after training, while their uploads continue to occupy slots.
+    ``paper_delay(phase, profile, rng)`` receives the reference RandomState.
+    Logical clients become eligible after training, while their uploads
+    continue to occupy slots.
 
     A custom ``delay_sampler(assignment_id, logical_name, phase, profile, rng)``
     returns a finite nonnegative duration. Its NumPy Generator is derived from
@@ -56,6 +79,8 @@ def make_paper_plan(
         raise ValueError("num_rounds and buffer_size must be positive and min_open_slots must be within concurrency")
     if not max_time > 0:
         raise ValueError("max_time must be positive")
+    if not callable(paper_delay):
+        raise TypeError("paper_delay must be callable")
     if delay_sampler is not None and not callable(delay_sampler):
         raise TypeError("delay_sampler must be callable")
     if not isinstance(profiles, dict) or not profiles:
@@ -66,7 +91,8 @@ def make_paper_plan(
     for name, profile in profiles.items():
         try:
             durations = {key: float(profile[key]) for key in ("download_mean", "train_mean", "upload_mean")}
-            durations["upload_half_width"] = float(profile.get("upload_half_width", 0.02))
+            if "upload_half_width" in profile:
+                durations["upload_half_width"] = float(profile["upload_half_width"])
         except (KeyError, TypeError, ValueError, OverflowError) as error:
             raise ValueError(f"invalid paper delay profile for {name}: {error}") from error
         if not all(math.isfinite(value) and value >= 0 for value in durations.values()):
@@ -74,11 +100,13 @@ def make_paper_plan(
         delays[name] = durations
 
     def sample(identity, name, phase):
-        if delay_sampler is None:
-            return sample_paper_delay(phase, delays[name], rng)
-        phase_rng = np.random.default_rng([run_seed, identity, PHASES.index(phase)])
         try:
-            duration = float(delay_sampler(identity, name, phase, delays[name].copy(), phase_rng))
+            if delay_sampler is None:
+                duration = float(paper_delay(phase, delays[name].copy(), rng))
+            else:
+                phase_rng = np.random.default_rng([run_seed, identity, PHASES.index(phase)])
+                profile = {"upload_half_width": 0.02, **delays[name]}
+                duration = float(delay_sampler(identity, name, phase, profile, phase_rng))
         except (KeyError, TypeError, ValueError, OverflowError) as error:
             raise ValueError(f"cannot sample {phase} delay for assignment {identity} ({name}): {error}") from error
         if not math.isfinite(duration) or duration < 0:
@@ -155,18 +183,6 @@ def make_paper_plan(
     }
 
 
-def sample_paper_delay(phase, profile, rng):
-    """Sample one of the reference paper's three phase delays."""
-    if phase == "download":
-        return profile["download_mean"]
-    if phase == "train":
-        return float(rng.exponential(profile["train_mean"]))
-    if phase == "upload":
-        mean, width = profile["upload_mean"], profile["upload_half_width"]
-        return float(rng.uniform(max(0.0, mean - width), mean + width))
-    raise ValueError(f"unknown paper phase: {phase}")
-
-
 def lognormal_training_sampler(sigma):
     """Replace exponential training delays with log-normal delays of the same mean."""
     variance = sigma * sigma
@@ -194,10 +210,14 @@ def _client_index(name):
     raise ValueError(f"expected a logical client name of the form client-N, got {name!r}")
 
 
-def main(*, delay_sampler=None):
+def main(*, expected_delay_schedule=DELAY_SCHEDULE, planner=make_paper_plan, delay_sampler=None):
     """Generate plan JSON from a matching manifest with an optional custom sampler."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("manifest", type=Path, help=f"Prepared manifest.json with the {DELAY_SCHEDULE} delay schedule")
+    parser = argparse.ArgumentParser(
+        description=f"Generate a FedRevive paper plan for the {expected_delay_schedule} schedule."
+    )
+    parser.add_argument(
+        "manifest", type=Path, help=f"Prepared manifest.json with the {expected_delay_schedule} delay schedule"
+    )
     parser.add_argument("output", type=Path, help="Destination for the SimEnv plan JSON")
     parser.add_argument("--run-seed", type=int, default=10)
     parser.add_argument("--max-time", type=float, default=200.0)
@@ -211,10 +231,10 @@ def main(*, delay_sampler=None):
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
         profiles = manifest["runtime_profiles"]
         delay_schedule = manifest.get("delay_schedule", "default")
-        if delay_schedule != DELAY_SCHEDULE:
-            raise ValueError(f"expected the {DELAY_SCHEDULE!r} delay schedule, got {delay_schedule!r}")
+        if delay_schedule != expected_delay_schedule:
+            raise ValueError(f"expected the {expected_delay_schedule!r} delay schedule, got {delay_schedule!r}")
         sigma = args.train_lognormal_sigma
-        plan = make_paper_plan(
+        plan = planner(
             profiles,
             args.run_seed,
             args.max_time,

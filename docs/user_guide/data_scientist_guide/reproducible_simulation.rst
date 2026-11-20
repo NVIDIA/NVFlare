@@ -125,9 +125,10 @@ within the concurrency limit even when fewer contributions are needed for
 the remaining publications. Both options default to false. The
 :github_nvflare_link:`FedRevive standard planner <research/fedrevive/schedule_standard.py>`
 and :github_nvflare_link:`shifted planner <research/fedrevive/schedule_shifted.py>`
-use these options to produce a plan before starting SimEnv. Both show
-how to plug in a custom sampler with assignment- and phase-specific RNGs and
-export a log-normal delay example as a standard SimEnv plan.
+use these options to produce a plan before starting SimEnv. The shifted entry
+point reuses the standard planner with a narrower default upload distribution.
+The standard planner also accepts custom samplers with assignment- and
+phase-specific RNGs and can export a log-normal delay plan.
 
 Evidence and Limits
 -------------------
