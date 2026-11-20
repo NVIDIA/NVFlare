@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from contextlib import nullcontext
 from threading import Lock
 from types import SimpleNamespace
@@ -116,18 +117,18 @@ def test_registration_event_receives_client_name_from_request(client_name):
 
 
 @pytest.mark.parametrize("failure", [RuntimeError, TimeoutError])
-def test_registration_rejects_unexpected_cc_verifier_exceptions(failure):
+def test_registration_rejects_unexpected_cc_verifier_exceptions(failure, caplog):
     site = "cc-client"
     context = FLContext()
     context.set_prop(FLContextKey.SECURE_MODE, True)
     manager = CCManager([], [], cc_enabled_sites=[site])
     verifier = MagicMock()
-    verifier.verify_for_site.side_effect = failure("verifier failed")
+    verifier.verify_for_site.side_effect = failure("sensitive-provider-detail")
     manager.cc_verifiers = {"test": verifier}
     manager._generate_and_attach_tokens = MagicMock()
 
     server = object.__new__(FederatedServer)
-    server.logger = MagicMock()
+    server.logger = logging.getLogger(__name__)
     server.engine = MagicMock()
     server.engine.new_context.return_value = nullcontext(context)
     server.engine.fire_event.side_effect = lambda event, fl_ctx: fire_event_to_components(event, [manager], fl_ctx)
@@ -163,6 +164,11 @@ def test_registration_rejects_unexpected_cc_verifier_exceptions(failure):
     server.sign_auth_token.assert_not_called()
     manager._generate_and_attach_tokens.assert_not_called()
     assert not server.tokens
+    assert f"CC verifier test raised {failure.__name__} for site {site}" in caplog.messages
+    for sensitive in ("sensitive-provider-detail", "test-evidence"):
+        assert sensitive not in caplog.text
+        assert sensitive not in str(reply.headers)
+        assert sensitive not in str(reply.payload)
 
 
 @pytest.fixture

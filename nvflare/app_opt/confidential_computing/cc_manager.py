@@ -332,8 +332,8 @@ class CCManager(FLComponent):
     def _verify_participants_tokens(self, participants_tokens: dict[str, list[dict[str, str]]]) -> VerificationResult:
         """Return a verdict, without deciding whether to reject or shut down.
 
-        Authorizers may consume replay IDs; this method has no logging,
-        lifecycle or federation-failure side effects.
+        Authorizers may consume replay IDs. Provider exceptions are logged by
+        type only and returned as failed verification.
         """
         result, errors = {}, []
         for site, cc_info in participants_tokens.items():
@@ -348,8 +348,9 @@ class CCManager(FLComponent):
                 verifier = self.cc_verifiers.get(namespace)
                 try:
                     valid = verifier is not None and verifier.verify_for_site(info.get(CC_TOKEN, ""), site)
-                except Exception:
-                    # Provider exceptions must become a failed verdict so registration can reject the client.
+                except Exception as exc:
+                    # Provider exception messages can contain tokens or evidence.
+                    self.logger.warning("CC verifier %s raised %s for site %s", namespace, type(exc).__name__, site)
                     valid = False
                 if valid:
                     result[site + "." + namespace] = True
