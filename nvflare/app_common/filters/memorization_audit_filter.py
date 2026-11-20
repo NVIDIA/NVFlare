@@ -25,9 +25,8 @@ from nvflare.app_common.filters.model_filter import ModelFilter
 from nvflare.app_common.widgets.memorization_audit_reporter import MemorizationAuditReporter
 from nvflare.fuel.utils.experimental import experimental
 
-# Private/non-sticky props still travel to MultiProcessExecutor workers. Keep the
-# snapshot outside props: context relays and the FOBS ContextDecomposer omit it.
-# Both filters must run on the original task context in the same process.
+# Keep the snapshot in a process-local attribute. FOBS serializes the context's
+# model and properties. Both filters must use the original task context.
 _BASELINE_ATTR = "_nvflare_memorization_audit_baseline"
 
 
@@ -44,8 +43,8 @@ class AuditSnapshotFilter(ModelFilter):
     """Copy the incoming full model into an attribute on the original task context.
 
     Place after input transformations. The paired output filter consumes this
-    process-local baseline from the same FLContext object. It is not a context
-    property: worker relays, context clones and the FOBS context decomposer omit it.
+    process-local baseline from the same FLContext object. The snapshot lives
+    outside the properties used by context clones and the FOBS context decomposer.
     Neither filter retains it between tasks.
     Match start_round/frequency to the output filter to avoid copies on skipped rounds.
     """

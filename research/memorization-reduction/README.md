@@ -76,8 +76,7 @@ All four paired reports completed with the expected site/round identities and
 32 members/32 nonmembers. Baseline fingerprints agreed between clients within
 each round and changed between rounds; a global checkpoint was written and all
 three server/client error logs were empty. This exercises the real ClientRunner
-input/output filter lifecycle. It does not launch `MultiProcessExecutor` workers
-or repeat the H100 validation above.
+input/output filter lifecycle on CPU.
 
 ## Project layout and shared components
 
@@ -92,9 +91,8 @@ guide and design document linked below.
 `MemorizationAuditFilter(auditor=SyntheticAuditor(...))` for `train` tasks. The
 baseline is held in a private Python attribute on the original task `FLContext`,
 outside its relayed properties; the output filter consumes it in the same process.
-It is not copied to `MultiProcessExecutor` workers or cloned/later contexts. The
-auditor is exported as a nested constructor
-argument, with no supporting component registration or event handling.
+The snapshot's lifetime is tied to that context. The auditor is exported as a
+nested constructor argument.
 The auditor reconstructs complete differences when used in a compatible FedOpt job;
 this example itself uses full weights. Reference scoring and audit model copies add
 memory and runtime costs. Audits are cooperative and report-only: failures do not

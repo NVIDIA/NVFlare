@@ -21,10 +21,9 @@ Use the GB300 report for the newer implementation's evidence and resource scope.
 The historical [525-fit efficacy benchmark](../TRAP_DP_RESULTS.md) used the research
 implementation preceding the SDK refactor. The newer fixed subset is a validation
 of selected settings, not another search. None of these studies establishes general
-production readiness. The `MultiProcessExecutor` regression exercises its actual
-task/event message builders and FOBS serialization with a fake Cell boundary; it
-does not launch workers. Real ClientRunner baseline pairing is exercised by the
-simulator and GPU/Hugging Face workflows.
+production readiness. The context serialization regression verifies that the
+snapshot stays on the original task context. The simulator and GPU/Hugging Face
+workflows exercise ClientRunner baseline pairing.
 
 ## Current API simulator smoke
 
@@ -39,8 +38,6 @@ using macOS arm64, Python 3.12.9 and PyTorch 2.11.0. `PYTHONPATH` selected the
 checkout; the simulator workspace and CPU thread limits were set externally.
 A five-minute watchdog did not fire.
 This verifies the real ClientRunner filter lifecycle after the baseline change.
-It does not exercise `MultiProcessExecutor` workers or update the H100 numerical,
-runtime or memory measurements below.
 
 ## Workload and runtime (H100)
 
