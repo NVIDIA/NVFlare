@@ -80,14 +80,6 @@ does not wait for transfers to finish solely for statistics. Traffic after
 that snapshot is outside the report, so sent and received values need not
 match across participants.
 
-Completed-job cleanup
----------------------
-
-After final report handling, each parent removes the completed job's peer
-counters from memory. Other jobs and shared connections keep their counters;
-saved job reports are unchanged. A temporary disconnect does not trigger cleanup.
-This uses the existing job lifecycle and requires no additional configuration.
-
 Managed external trainers
 -------------------------
 

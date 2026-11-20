@@ -45,37 +45,13 @@ returns an ``INVALID_ARGS`` error envelope. Use the standard startup-kit
 selection described in :ref:`job_cli`; no feature-specific setup is required.
 A job name comes from existing job metadata and does not replace its ID.
 
-Human and automation modes
-==========================
-
-Use the same command for people and agents: default text for reading,
-``--format json`` for the standard JSON envelope, and ``--schema`` for argument
-and behavior discovery. No separate ``nvflare agent resources`` command is
-needed. JSON retains the report's native numbers and precision; display
-rounding applies only to text. This command does not stream JSON Lines.
-
 Read the result
 ================
 
-The capacity-time table shows how long CPU, memory and GPU capacity was available.
-A job's utilization table shows average CPU use per participant and message
-payload in each direction. The study table shows total CPU work per job in
-core-hours.
-GPU counts are integers. CPU capacity and average CPU use may
-be fractional; GPU-hours may also be fractional. Text uses
-at most two decimal places without trailing zeros; positive values below
-0.01 display as ``<0.01`` rather than zero.
-``AVG CPU USED`` divides ``resource_utilization.cpu_consumed.cpu_seconds`` by the shared participant
-``duration_seconds``. Totals are calculated at query time. ``*`` marks incomplete values;
-``—`` means no usable value. Structured explanations appear once in the owning
-participant or totals object's ``issues`` list, tagged by metric and code.
-See the output examples in
-:ref:`resource_statistics` and the detailed explanations:
-
-- :ref:`resource_statistics_capacity`
-- :ref:`resource_statistics_cpu_work`
-- :ref:`resource_statistics_message_traffic`
-- :ref:`resource_statistics_reports`
+A job query shows capacity-time, average CPU use and message traffic by
+participant. A study query shows each job's totals. An asterisk marks an
+incomplete value and a dash means no usable value. See :ref:`resource_statistics`
+for sample output, units and rounding.
 
 Study queries check each job's normal resource-read permission before archive
 access, rows, totals, or coverage counts. Nonterminal jobs and jobs without a

@@ -87,21 +87,3 @@ align exactly with the elapsed window.
 Collection does not isolate the job into a new process group or discover
 every custom subprocess. Known live workers, incomplete descendant accounting,
 or lost earlier-attempt measurements leave the surviving subtotal partial.
-
-For an optional view of the OS counters in a new diagnostic process:
-
-.. code-block:: shell
-
-   python3 - <<'PY'
-   import resource
-   for name, who in (('self', resource.RUSAGE_SELF),
-                     ('waited_children', resource.RUSAGE_CHILDREN)):
-       usage = resource.getrusage(who)
-       print(name, usage.ru_utime + usage.ru_stime)
-   PY
-
-These are cumulative counters for the diagnostic process, not measurements
-of another running job. NVFlare records the difference between its own reads.
-
-:github_nvflare_link:`CpuConsumedAccountant <nvflare/private/fed/resource_stats/cpu_consumed.py>`
-implements the counter and duration calculation.

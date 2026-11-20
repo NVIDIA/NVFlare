@@ -11,9 +11,6 @@ at a participant, or compare retained jobs in a study.
 A participant is the server or a client site in the job. Reports are collected
 automatically; no extra monitoring setup is needed.
 
-The CLI and Python examples require the resource query interfaces introduced
-in `NVFlare PR #5640 <https://github.com/NVIDIA/NVFlare/pull/5640>`_.
-
 Start with a command
 ====================
 
@@ -95,9 +92,6 @@ job's success or failure.
 
 Measurement details
 ===================
-
-Each page starts with what the value means. Collection methods and technical
-details follow for readers who need them.
 
 .. toctree::
    :maxdepth: 1
