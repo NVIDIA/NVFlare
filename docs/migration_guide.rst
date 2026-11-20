@@ -72,12 +72,24 @@ NVFlare 2.10 removes ``MultiProcessExecutor``, ``PTMultiProcessExecutor`` and th
 sub-worker runtime. Update jobs that import, subclass or configure either
 executor before upgrading to 2.10.
 
+The server rejects client executor configurations that directly name either
+removed built-in executor. Importing either class, including from a custom
+subclass, raises an error with the migration instructions.
+
 For PyTorch DDP training, use the job-based Client API with
 ``launch_external_process=True`` and ``torchrun``. The
 :github_nvflare_link:`multi-GPU example <examples/advanced/multi-gpu/pt>` shows how
 global rank zero exchanges models with FLARE and how the training script
 synchronizes models and shutdown across ranks. Port any custom component setup
 or FL event handling that relied on relaying between the parent and workers.
+
+Update any code that uses the removed rank context keys or message protocol.
+
+- ``FLContextKey`` and ``ReservedKey`` lose ``RANK_NUMBER``, ``NUM_OF_PROCESSES``,
+  ``FROM_RANK_NUMBER`` and ``EVENT_ORIGIN_SITE``.
+- ``CellChannel`` loses ``CLIENT_SUB_WORKER_COMMAND`` and
+  ``MULTI_PROCESS_EXECUTOR``.
+- ``CellChannelTopic`` loses ``EXECUTE_RESULT`` and ``FIRE_EVENT``.
 
 Upgrading from 2.7.2 to 2.8.0
 =============================

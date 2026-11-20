@@ -27,6 +27,7 @@ from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
 from nvflare.apis.utils.format_check import check_job_app_name, check_job_id
 from nvflare.app_opt.flower.defs import Constant as FlowerConstant
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.job_config.removed_multi_process_executor import get_removed_executor_error
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.fed.utils.fed_utils import extract_participants
 from nvflare.security.logging import secure_format_exception
@@ -190,6 +191,9 @@ class JobMetaValidator(JobMetaValidatorSpec):
                 client_config = self._load_config(zip_file, config_folder, JobConstants.CLIENT_JOB_CONFIG) or {}
                 if not isinstance(client_config, dict):
                     raise ValueError("client app config must be a dictionary")
+                error = get_removed_executor_error(client_config)
+                if error:
+                    raise ValueError(error)
                 lifetime = get_client_execution_lifetime(client_config)
                 if lifetime == "task":
                     task_sites.update(

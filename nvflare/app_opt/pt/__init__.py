@@ -23,3 +23,8 @@ from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersisten
 from nvflare.app_opt.pt.model_reader_writer import PTModelReaderWriter
 from nvflare.app_opt.pt.scaffold import PTScaffoldHelper, get_lr_values
 from nvflare.app_opt.pt.utils import feed_vars
+from nvflare.job_config.removed_multi_process_executor import get_removed_executor_attribute as _get_removed_attribute
+
+
+def __getattr__(name):
+    _get_removed_attribute(__name__, name)

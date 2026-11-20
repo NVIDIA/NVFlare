@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 import json
 from types import SimpleNamespace
 
@@ -97,6 +98,50 @@ def test_removed_multi_process_executor_reports_migration_during_configure(tmp_p
         ConfigError, match=r"Executor .* was removed in NVFlare 2\.10.*Client API with external torchrun"
     ):
         configurator.configure()
+    assert "Use the Client API with external torchrun." in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("module_name", "class_name"),
+    [
+        ("nvflare.app_common.executors.multi_process_executor", "MultiProcessExecutor"),
+        ("nvflare.app_common.pt.pt_multi_process_executor", "PTMultiProcessExecutor"),
+        ("nvflare.app_opt.pt.multi_process_executor", "PTMultiProcessExecutor"),
+        ("nvflare.app_opt.pt", "PTMultiProcessExecutor"),
+    ],
+)
+def test_removed_executor_import_reports_migration(module_name, class_name):
+    if module_name.startswith("nvflare.app_opt.pt"):
+        pytest.importorskip("torch")
+    module = importlib.import_module(module_name)
+    with pytest.raises(ImportError, match=r"was removed in NVFlare 2\.10.*Client API with external torchrun"):
+        getattr(module, class_name)
+
+
+def test_custom_legacy_subclass_reports_migration_under_secure_logging(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("NVFLARE_SECURE_LOGGING", "true")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    (tmp_path / "legacy_subclass_test_executor.py").write_text(
+        "from nvflare.app_common.executors.multi_process_executor import MultiProcessExecutor\n"
+        "class CustomExecutor(MultiProcessExecutor):\n"
+        "    pass\n"
+    )
+    config_file = tmp_path / "config_fed_client.json"
+    config_file.write_text(
+        json.dumps(
+            {
+                "format_version": 2,
+                "executors": [
+                    {"tasks": ["train"], "executor": {"path": "legacy_subclass_test_executor.CustomExecutor"}}
+                ],
+            }
+        )
+    )
+
+    with pytest.raises(ConfigError):
+        _configurator_from_file(config_file).configure()
+
+    assert "MultiProcessExecutor was removed in NVFlare 2.10." in caplog.text
     assert "Use the Client API with external torchrun." in caplog.text
 
 

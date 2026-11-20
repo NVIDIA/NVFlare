@@ -24,6 +24,7 @@ from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
+from nvflare.job_config.removed_multi_process_executor import get_removed_executor_error
 from nvflare.job_config.task_execution import CLIENT_API_EXECUTOR_PATH, prepare_task_execution, task_constructor_args
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
@@ -39,15 +40,6 @@ class _ExecutorDef(object):
 
 FL_PACKAGES = ["nvflare"]
 FL_MODULES = ["apis", "app_common", "widgets"]
-
-_REMOVED_MULTI_PROCESS_EXECUTORS = (
-    "MultiProcessExecutor",
-    "PTMultiProcessExecutor",
-    "nvflare.app_common.executors.multi_process_executor.MultiProcessExecutor",
-    "nvflare.app_common.pt.pt_multi_process_executor.PTMultiProcessExecutor",
-    "nvflare.app_opt.pt.multi_process_executor.PTMultiProcessExecutor",
-    "nvflare.app_opt.pt.PTMultiProcessExecutor",
-)
 
 
 class ClientJsonConfigurator(FedJsonConfigurator):
@@ -125,7 +117,11 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         self._default_task_fetch_interval = 0.5
 
     def start_config(self, config_ctx: ConfigContext):
-        self._check_removed_executors()
+        error = get_removed_executor_error(self.config_data)
+        if error:
+            # Report the fixed migration message even with secure exception redaction.
+            self.logger.error(error)
+            raise ConfigError(error)
         self.task_execution = prepare_task_execution(self.config_data)
         if self.task_execution is None:
             return
@@ -159,24 +155,6 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         from .task_execution_policy import TaskExecutionPolicy
 
         self.task_policy = TaskExecutionPolicy.from_workspace(self.workspace_obj)
-
-    def _check_removed_executors(self):
-        executors = self.config_data.get("executors")
-        if not isinstance(executors, list):
-            return
-        for definition in executors:
-            executor = definition.get("executor") if isinstance(definition, dict) else None
-            if not isinstance(executor, dict):
-                continue
-            component = executor.get("path", executor.get("class_path", executor.get("name")))
-            if component in _REMOVED_MULTI_PROCESS_EXECUTORS:
-                message = (
-                    f"Executor {component} was removed in NVFlare 2.10. "
-                    "Use the Client API with external torchrun. See the 2.10 Migration Guide."
-                )
-                # The message contains only a known built-in identifier and fixed text.
-                self.logger.error(message)
-                raise ConfigError(message)
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         path = node.path()
