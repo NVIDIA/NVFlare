@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Generate the standard FedRevive paper plan before launching SimEnv."""
+"""Generate a FedRevive paper plan from prepared profiles before launching SimEnv."""
 
 import argparse
 import heapq
@@ -24,8 +24,6 @@ from pathlib import Path
 import numpy as np
 
 from nvflare.apis.simulation_plan import ASYNC_EXECUTION, FORMAT_VERSION, PHASES, validate_simulation_plan
-
-DELAY_SCHEDULE = "default"
 
 
 @dataclass
@@ -39,7 +37,7 @@ class Phase:
         return self.finish_time < other.finish_time
 
 
-def sample_paper_delay(phase, profile, rng, *, default_upload_half_width=0.02):
+def sample_paper_delay(phase, profile, rng):
     """Sample one of the reference paper's three phase delays."""
     if phase == "download":
         return profile["download_mean"]
@@ -47,7 +45,7 @@ def sample_paper_delay(phase, profile, rng, *, default_upload_half_width=0.02):
         return float(rng.exponential(profile["train_mean"]))
     if phase == "upload":
         mean = profile["upload_mean"]
-        width = profile.get("upload_half_width", default_upload_half_width)
+        width = profile.get("upload_half_width", 0.02)
         return float(rng.uniform(max(0.0, mean - width), mean + width))
     raise ValueError(f"unknown paper phase: {phase}")
 
@@ -61,12 +59,10 @@ def make_paper_plan(
     concurrency,
     min_open_slots,
     buffer_size,
-    paper_delay=sample_paper_delay,
     delay_sampler=None,
 ):
     """Compile paper-mode scheduling into an ordered SimEnv plan.
 
-    ``paper_delay(phase, profile, rng)`` receives the reference RandomState.
     Logical clients become eligible after training, while their uploads
     continue to occupy slots.
 
@@ -79,8 +75,6 @@ def make_paper_plan(
         raise ValueError("num_rounds and buffer_size must be positive and min_open_slots must be within concurrency")
     if not max_time > 0:
         raise ValueError("max_time must be positive")
-    if not callable(paper_delay):
-        raise TypeError("paper_delay must be callable")
     if delay_sampler is not None and not callable(delay_sampler):
         raise TypeError("delay_sampler must be callable")
     if not isinstance(profiles, dict) or not profiles:
@@ -91,8 +85,7 @@ def make_paper_plan(
     for name, profile in profiles.items():
         try:
             durations = {key: float(profile[key]) for key in ("download_mean", "train_mean", "upload_mean")}
-            if "upload_half_width" in profile:
-                durations["upload_half_width"] = float(profile["upload_half_width"])
+            durations["upload_half_width"] = float(profile.get("upload_half_width", 0.02))
         except (KeyError, TypeError, ValueError, OverflowError) as error:
             raise ValueError(f"invalid paper delay profile for {name}: {error}") from error
         if not all(math.isfinite(value) and value >= 0 for value in durations.values()):
@@ -102,11 +95,10 @@ def make_paper_plan(
     def sample(identity, name, phase):
         try:
             if delay_sampler is None:
-                duration = float(paper_delay(phase, delays[name].copy(), rng))
+                duration = sample_paper_delay(phase, delays[name], rng)
             else:
                 phase_rng = np.random.default_rng([run_seed, identity, PHASES.index(phase)])
-                profile = {"upload_half_width": 0.02, **delays[name]}
-                duration = float(delay_sampler(identity, name, phase, profile, phase_rng))
+                duration = float(delay_sampler(identity, name, phase, delays[name].copy(), phase_rng))
         except (KeyError, TypeError, ValueError, OverflowError) as error:
             raise ValueError(f"cannot sample {phase} delay for assignment {identity} ({name}): {error}") from error
         if not math.isfinite(duration) or duration < 0:
@@ -183,21 +175,6 @@ def make_paper_plan(
     }
 
 
-def lognormal_training_sampler(sigma):
-    """Replace exponential training delays with log-normal delays of the same mean."""
-    variance = sigma * sigma
-    if not math.isfinite(variance) or sigma < 0:
-        raise ValueError("log-normal sigma must be nonnegative and have a finite square")
-
-    def sample(assignment_id, logical_name, phase, profile, rng):
-        if phase != "train":
-            return sample_paper_delay(phase, profile, rng)
-        mean = profile["train_mean"]
-        return float(rng.lognormal(math.log(mean) - variance / 2, sigma)) if mean else 0.0
-
-    return sample
-
-
 def _record(instant, identity, phase):
     return {"virtual_time": instant, "assignment_id": identity, "phase": phase}
 
@@ -210,14 +187,10 @@ def _client_index(name):
     raise ValueError(f"expected a logical client name of the form client-N, got {name!r}")
 
 
-def main(*, expected_delay_schedule=DELAY_SCHEDULE, planner=make_paper_plan, delay_sampler=None):
-    """Generate plan JSON from a matching manifest with an optional custom sampler."""
-    parser = argparse.ArgumentParser(
-        description=f"Generate a FedRevive paper plan for the {expected_delay_schedule} schedule."
-    )
-    parser.add_argument(
-        "manifest", type=Path, help=f"Prepared manifest.json with the {expected_delay_schedule} delay schedule"
-    )
+def plan_parser(description):
+    """Build the command-line inputs shared by the offline planners."""
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument("manifest", type=Path, help="Prepared FedRevive manifest.json")
     parser.add_argument("output", type=Path, help="Destination for the SimEnv plan JSON")
     parser.add_argument("--run-seed", type=int, default=10)
     parser.add_argument("--max-time", type=float, default=200.0)
@@ -225,26 +198,33 @@ def main(*, expected_delay_schedule=DELAY_SCHEDULE, planner=make_paper_plan, del
     parser.add_argument("--concurrency", type=int, required=True)
     parser.add_argument("--buffer-size", type=int, default=1)
     parser.add_argument("--min-open-slots", type=int, default=1)
-    parser.add_argument("--train-lognormal-sigma", type=float, help="Use log-normal training delays with this sigma")
+    return parser
+
+
+def write_plan(args, *, delay_sampler=None):
+    """Generate and validate a plan from parsed CLI arguments before writing it."""
+    if args.output.resolve() == args.manifest.resolve():
+        raise ValueError("plan output must differ from the input manifest")
+    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    plan = make_paper_plan(
+        manifest["runtime_profiles"],
+        args.run_seed,
+        args.max_time,
+        num_rounds=args.num_rounds,
+        concurrency=args.concurrency,
+        min_open_slots=args.min_open_slots,
+        buffer_size=args.buffer_size,
+        delay_sampler=delay_sampler,
+    )
+    args.output.write_text(json.dumps(validate_simulation_plan(plan), indent=2) + "\n", encoding="utf-8")
+
+
+def main(*, delay_sampler=None):
+    """Generate plan JSON from a manifest with an optional custom sampler."""
+    parser = plan_parser(__doc__)
     args = parser.parse_args()
     try:
-        manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-        profiles = manifest["runtime_profiles"]
-        delay_schedule = manifest.get("delay_schedule", "default")
-        if delay_schedule != expected_delay_schedule:
-            raise ValueError(f"expected the {expected_delay_schedule!r} delay schedule, got {delay_schedule!r}")
-        sigma = args.train_lognormal_sigma
-        plan = planner(
-            profiles,
-            args.run_seed,
-            args.max_time,
-            num_rounds=args.num_rounds,
-            concurrency=args.concurrency,
-            min_open_slots=args.min_open_slots,
-            buffer_size=args.buffer_size,
-            delay_sampler=lognormal_training_sampler(sigma) if sigma is not None else delay_sampler,
-        )
-        args.output.write_text(json.dumps(validate_simulation_plan(plan), indent=2) + "\n", encoding="utf-8")
+        write_plan(args, delay_sampler=delay_sampler)
     except (OSError, KeyError, TypeError, ValueError) as error:
         parser.error(str(error))
 

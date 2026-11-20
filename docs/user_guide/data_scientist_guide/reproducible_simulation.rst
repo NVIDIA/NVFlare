@@ -124,11 +124,12 @@ still occupies a concurrency slot. ``timing.speculative`` allows reservations
 within the concurrency limit even when fewer contributions are needed for
 the remaining publications. Both options default to false. The
 :github_nvflare_link:`FedRevive standard planner <research/fedrevive/schedule_standard.py>`
-and :github_nvflare_link:`shifted planner <research/fedrevive/schedule_shifted.py>`
-use these options to produce a plan before starting SimEnv. The shifted entry
-point reuses the standard planner with a narrower default upload distribution.
-The standard planner also accepts custom samplers with assignment- and
-phase-specific RNGs and can export a log-normal delay plan.
+uses these options to produce a plan before starting SimEnv. The
+:github_nvflare_link:`custom delay example <research/fedrevive/schedule_shifted.py>`
+reuses that planner to generate log-normal training delays or sample measured
+durations. The :github_nvflare_link:`uniform delay example <research/fedrevive/schedule_simple.py>`
+shows a minimal custom sampler. Custom samplers receive an assignment- and
+phase-specific RNG.
 
 Evidence and Limits
 -------------------

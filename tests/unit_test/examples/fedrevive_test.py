@@ -132,13 +132,12 @@ def test_revival_uses_current_global_delta_and_refreshes_arriving_teacher(
     assert len(seen) == int(version >= 50) and len(policy.teachers) == 2
 
 
-@pytest.mark.parametrize("module_name", ["schedule_standard", "schedule_shifted"])
-def test_paper_plan_preserves_logical_release_ties_and_horizon(research, module_name):
+def test_paper_plan_preserves_logical_release_ties_and_horizon(research):
     profiles = {
         f"client-{i}": {"download_mean": 0, "train_mean": 0, "upload_mean": delay, "upload_half_width": 0}
         for i, delay in enumerate((5, 1))
     }
-    plan = research(module_name).make_paper_plan(
+    plan = research("schedule_standard").make_paper_plan(
         profiles, run_seed=10, max_time=2, num_rounds=3, concurrency=2, min_open_slots=1, buffer_size=1
     )["async_execution"]
     assert plan["logical_sequence"] == ["client-0", "client-1", "client-0"]
@@ -154,12 +153,11 @@ def test_paper_plan_preserves_logical_release_ties_and_horizon(research, module_
     assert events.index(uploads[0]) < events.index(refill) < events.index(uploads[1])
 
 
-@pytest.mark.parametrize("module_name", ["schedule_standard", "schedule_shifted"])
-def test_custom_paper_delays_use_independent_assignment_and_phase_rngs(research, module_name):
-    planner = research(module_name)
+def test_custom_paper_delays_use_independent_assignment_and_phase_rngs(research):
+    planner = research("schedule_standard")
     profiles = {"client-0": {"download_mean": 0.1, "train_mean": 1, "upload_mean": 0.2}}
     options = dict(run_seed=10, max_time=200, num_rounds=2, concurrency=1, min_open_slots=1, buffer_size=1)
-    lognormal = research("schedule_standard").lognormal_training_sampler(0.4)
+    lognormal = research("schedule_shifted").lognormal_training_sampler(0.4)
 
     def draw_extra_download_samples(assignment_id, logical_name, phase, profile, rng):
         if phase == "download":
@@ -179,20 +177,25 @@ def test_custom_paper_delays_use_independent_assignment_and_phase_rngs(research,
         events(lambda *args: float("nan"))
 
 
-def test_shifted_planner_narrows_the_default_upload_distribution(research):
-    profile = {"download_mean": 0, "train_mean": 0, "upload_mean": 0.2}
-    options = dict(run_seed=10, max_time=2, num_rounds=1, concurrency=1, min_open_slots=1, buffer_size=1)
-
-    def upload_time(module):
-        plan = research(module).make_paper_plan({"client-0": profile}, **options)
-        return plan["async_execution"]["timing"]["events"][-1]["virtual_time"]
-
-    standard_time = upload_time("schedule_standard")
-    shifted_time = upload_time("schedule_shifted")
-    assert shifted_time != standard_time
-    assert shifted_time - 0.2 == pytest.approx((standard_time - 0.2) / 2)
-    profile["upload_half_width"] = 0.05
-    assert upload_time("schedule_standard") == upload_time("schedule_shifted")
+def test_shifted_planner_samples_each_phase_from_its_trace(research):
+    planner = research("schedule_standard")
+    samples = {"download": [1, 2], "train": [4, 8], "upload": [16, 32]}
+    sampler = research("schedule_shifted").trace_delay_sampler(samples)
+    profiles = {"client-0": {"download_mean": 0, "train_mean": 0, "upload_mean": 0}}
+    options = dict(run_seed=10, max_time=200, num_rounds=3, concurrency=1, min_open_slots=1, buffer_size=1)
+    plan = planner.make_paper_plan(profiles, **options, delay_sampler=sampler)
+    assert plan == planner.make_paper_plan(profiles, **options, delay_sampler=sampler)
+    events = iter(plan["async_execution"]["timing"]["events"])
+    for identity in range(3):
+        start = next(events)
+        assert start["phase"] == "start" and start["assignment_id"] == identity
+        previous = start["virtual_time"]
+        for phase, durations in samples.items():
+            event = next(events)
+            assert event["phase"] == phase and event["assignment_id"] == identity
+            assert event["virtual_time"] - previous in durations
+            previous = event["virtual_time"]
+    assert next(events, None) is None
 
 
 def test_fedavg_rejects_mixed_assignment_bases_within_a_publication(research):
