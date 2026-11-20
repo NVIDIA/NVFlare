@@ -25,6 +25,7 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.admin_audit import record, reject, snapshot
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.time_utils import time_to_string
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
@@ -57,6 +58,7 @@ class Session(object):
         self.origin_fqcn = origin_fqcn
         self.start_time = time.time()
         self.last_active_time = time.time()
+        self.audit_reference = ""
 
     def mark_active(self):
         self.last_active_time = time.time()
@@ -152,7 +154,11 @@ class SessionManager(CommandModule):
 
         for sess in sessions:
             if now - sess.last_active_time > self.idle_timeout or sess.is_cert_expired(now):
-                self.end_session_by_id(sess.sess_id, "Your session is closed due to inactivity or cert expiry.")
+                self.end_session_by_id(
+                    sess.sess_id,
+                    "Your session is closed due to inactivity or cert expiry.",
+                    audit_reason="certificate_expired" if sess.is_cert_expired(now) else "inactivity",
+                )
                 break
 
     def monitor_sessions(self):
@@ -201,6 +207,7 @@ class SessionManager(CommandModule):
         )
         with self.sess_update_lock:
             self.sessions[sess_id] = sess
+        sess.audit_reference = record("admin.session.created", user=user_name, study=active_study)
         return sess
 
     def recreate_session(self, token: str, origin_fqcn, id_asserter: IdentityAsserter):
@@ -212,6 +219,7 @@ class SessionManager(CommandModule):
         sess.origin_fqcn = origin_fqcn
         with self.sess_update_lock:
             self.sessions[sess.sess_id] = sess
+        sess.audit_reference = record("admin.session.restored", user=sess.user_name, study=sess.active_study)
         return sess
 
     def get_session(self, token: str, id_asserter: IdentityAsserter):
@@ -225,7 +233,11 @@ class SessionManager(CommandModule):
         with self.sess_update_lock:
             stored_session = self.sessions.get(sess.sess_id)
         if stored_session and stored_session.is_cert_expired():
-            self.end_session_by_id(stored_session.sess_id, "Your session is closed due to inactivity or cert expiry.")
+            self.end_session_by_id(
+                stored_session.sess_id,
+                "Your session is closed due to inactivity or cert expiry.",
+                audit_reason="certificate_expired",
+            )
             return None
         return stored_session
 
@@ -264,10 +276,18 @@ class SessionManager(CommandModule):
                 result.append(s)
         return result
 
-    def end_session_by_id(self, sess_id: str, reason=None):
+    def end_session_by_id(self, sess_id: str, reason=None, *, audit_reason="logout"):
         with self.sess_update_lock:
             sess = self.sessions.pop(sess_id, None)
             downloads = self.downloads.pop(sess_id, {})
+        if sess:
+            record(
+                "admin.session.ended",
+                user=sess.user_name,
+                ref=snapshot().request_id or sess.audit_reference,
+                reason=audit_reason,
+                study=sess.active_study,
+            )
         if sess and reason:
             try:
                 self.cell.fire_and_forget(
@@ -334,6 +354,7 @@ class SessionManager(CommandModule):
     def handle_check_session(self, conn: Connection, args: List[str]):
         token = conn.get_token()
         if not token:
+            reject("admin.session.rejected", user="unknown", reason="missing_token")
             conn.append_error("invalid_session")
             return
 
@@ -343,6 +364,7 @@ class SessionManager(CommandModule):
         if sess:
             conn.append_string("OK")
         else:
+            reject("admin.session.rejected", user="unknown", reason="invalid_or_expired_token")
             conn.append_error(ReplyKeyword.SESSION_INACTIVE)
             conn.append_string(
                 "admin client session timed out after {} seconds of inactivity - logging out".format(self.idle_timeout)
