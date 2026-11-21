@@ -155,6 +155,7 @@ class ScatterAndGather(Controller):
         # Track failed clients for dynamic ignore_result_error mode
         self._current_failed_clients = set()
         self._current_num_targets = 0
+        self._current_num_rejected = 0
 
     def _maybe_cleanup_memory(self):
         """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
@@ -281,6 +282,7 @@ class ScatterAndGather(Controller):
                 # Reset tracking for dynamic ignore_result_error mode
                 self._current_failed_clients = set()
                 self._current_num_targets = len(self._engine.get_clients())
+                self._current_num_rejected = 0
 
                 self.broadcast_and_wait(
                     task=train_task,
@@ -294,6 +296,9 @@ class ScatterAndGather(Controller):
                     return
 
                 self.log_info(fl_ctx, "Start aggregation.")
+                fl_ctx.set_prop(
+                    AppConstants.NUM_REJECTED_RESULTS, self._current_num_rejected, private=True, sticky=False
+                )
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
                 aggr_result = self.aggregator.aggregate(fl_ctx)
                 self.fire_event_with_data(
@@ -434,6 +439,8 @@ class ScatterAndGather(Controller):
                 num_targets=num_targets,
                 min_responses=min_responses,
             )
+            if not is_unknown_task:
+                self._current_num_rejected += 1
             if should_ignore:
                 self.log_warning(fl_ctx, msg)
             else:
