@@ -56,6 +56,7 @@ class ACIAuthorizer(CCAuthorizer):
                     "http://localhost:8284/attest/maa",
                     data=json.dumps({"maa_endpoint": self.maa_endpoint, "runtime_data": "ewp9"}),
                     headers={"Content-Type": "application/json"},
+                    timeout=(10.0, 60.0),
                 )
                 if r.status_code == requests.codes.ok:
                     token = r.json().get("token")
