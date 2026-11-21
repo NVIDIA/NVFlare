@@ -47,11 +47,12 @@ class LocalContext:
 
 
 class RecordingPersistor(ModelPersistor):
-    def __init__(self, model, filter_id=None, load=None, save=None):
+    def __init__(self, model, filter_id=None, load=None, save=None, retrieve=None):
         super().__init__(filter_id)
         self.model = model
         self.load_hook = load
         self.save_hook = save
+        self.retrieve_hook = retrieve
         self.saved = []
 
     def load_model(self, fl_ctx):
@@ -63,6 +64,11 @@ class RecordingPersistor(ModelPersistor):
         self.saved.append(model)
         if self.save_hook is not None:
             self.save_hook(fl_ctx)
+
+    def get_model(self, model_file, fl_ctx):
+        if self.retrieve_hook is not None:
+            self.retrieve_hook(model_file, fl_ctx)
+        return self.model
 
 
 class Transform(PersistorFilter):
@@ -233,6 +239,92 @@ def test_load_keeps_original_return_or_raised_error(writer, mode):
     assert [action for action, _ in _facts(path)].count("model.load.started") == 1
 
 
+@pytest.mark.parametrize("value", [None, {}])
+def test_named_retrieval_status_and_context(writer, value):
+    auditor, path = writer
+    parent_id = auditor.add_event(
+        "unknown", "workflow.execution.initialized", job_id="job-a", scope_name="approved scope"
+    )
+    parent = task_audit.build_context(job_id="job-a", scope_name="approved scope", reference=parent_id)
+    source = LocalContext()
+    calls = []
+
+    def retrieve(name, ctx):
+        calls.append(name)
+        ctx.job = "job-b"
+        ctx.scope = "other scope"
+
+    persistor = RecordingPersistor(value, retrieve=retrieve)
+    with task_audit.use_context(parent):
+        assert persistor.get("private-model-alias", source) is value
+        assert task_audit.current_context() == parent
+        assert persistor.get("private-model-alias", source) is value
+    assert calls == ["private-model-alias", "private-model-alias"]
+    records = _records(path)[1:]
+    status = "no_value" if value is None else "value_returned"
+    assert [(r["action"], r.get("message", "")) for r in records] == [
+        ("model.retrieve.started", ""),
+        ("model.retrieve.stage_returned", "stage=implementation"),
+        ("model.retrieve.returned", f"status={status}"),
+    ] * 2
+    for r in records[:3]:
+        assert (r["job"], r["scope"], r["reference"]) == ("job-a", "approved scope", parent_id)
+    for r in records[3:]:
+        assert (r["job"], r["scope"]) == ("job-b", "other scope")
+        assert "reference" not in r
+    assert all(set(r) <= _ALLOWED_FIELDS and r["user"] == "unknown" for r in records)
+    assert all(isinstance(v, str) for r in records for v in r.values())
+    assert "private-model-alias" not in path.read_text()
+
+
+@pytest.mark.parametrize("fail_at", [None, "implementation", "post_get_filter"])
+def test_named_retrieval_preserves_return_and_filter_behavior(writer, fail_at):
+    _, path = writer
+    error = RuntimeError("private retrieval error")
+    original, transformed = {"private-model-content": 1}, object()
+    calls = []
+
+    class GetTransform(Transform):
+        def process_post_get(self, learnable, fl_ctx):
+            return self._step("post_get_filter", learnable)
+
+    def retrieve(name, ctx):
+        calls.append(("implementation", name))
+        if fail_at == "implementation":
+            raise error
+
+    source = LocalContext(model_filter=GetTransform(calls, transformed, error, fail_at))
+    persistor = RecordingPersistor(original, "private-filter", retrieve=retrieve)
+    expected = [("model.retrieve.started", "")]
+    if fail_at is None:
+        assert persistor.get("private-model", source) is transformed
+        expected.extend(
+            [
+                ("model.retrieve.stage_returned", "stage=implementation"),
+                ("model.retrieve.stage_returned", "stage=post_get_filter"),
+                ("model.retrieve.returned", "status=value_returned"),
+            ]
+        )
+    else:
+        with pytest.raises(RuntimeError) as raised:
+            persistor.get("private-model", source)
+        assert raised.value is error
+        if fail_at == "post_get_filter":
+            expected.append(("model.retrieve.stage_returned", "stage=implementation"))
+        expected.extend(
+            [
+                ("model.retrieve.stage_error", f"stage={fail_at}"),
+                ("model.retrieve.error", f"stage={fail_at}"),
+            ]
+        )
+    assert calls == [("implementation", "private-model")] + (
+        [] if fail_at == "implementation" else [("post_get_filter", original)]
+    )
+    assert _facts(path) == expected
+    assert "private-" not in path.read_text()
+    assert "private retrieval error" not in path.read_text()
+
+
 @pytest.mark.parametrize("state", ["missing", "closed", "empty", "failing", "simulator", "invalid_context"])
 def test_recording_failure_preserves_model_outcome_and_does_not_retry(writer, monkeypatch, state, capfd):
     auditor, path = writer
@@ -260,9 +352,10 @@ def test_recording_failure_preserves_model_outcome_and_does_not_retry(writer, mo
         monkeypatch.setattr(AuditService, "the_auditor", replacement)
     persistor = RecordingPersistor(model)
     assert persistor.load(ctx) is model
+    assert persistor.get("private-model", ctx) is model
     assert persistor.save(model, ctx) is None
     assert persistor.saved == [model]
-    expected = {"simulator": 0, "invalid_context": 2}.get(state, 6)
+    expected = {"simulator": 0, "invalid_context": 3}.get(state, 9)
     assert admin_audit._failed_attempts == expected
     diagnostic = "Audit recording failed; failed attempts since startup: 1\n"
     assert capfd.readouterr().err == (diagnostic if expected else "")

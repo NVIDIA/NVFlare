@@ -151,5 +151,21 @@ existing unrelated and legacy audit caller failure behavior remains unchanged.
 
 See the `task and workflow coverage contract
 <../../../design/audit_task_workflow_coverage.md>`_ for capture owners, evidence
-limits, failure behavior, dependencies and validation coverage. Model saving and
-loading remain a later increment.
+limits, failure behavior, dependencies and validation coverage.
+
+
+Model Storage and Evaluation Lookups
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Model storage records cover selected training initialization and save calls.
+Evaluation lookup records describe named-model lookup, observed file reads,
+and the lookup result. A lookup returning a value does not establish that
+evaluation ran or succeeded. Model names, paths, contents and exception text
+are excluded. See the :doc:`training model coverage contract
+</design/audit_model_training_coverage>` and the :doc:`evaluation lookup event
+catalog </design/audit_model_evaluation_coverage>`.
+
+.. toctree::
+    :hidden:
+
+    /design/audit_model_training_coverage
+    /design/audit_model_evaluation_coverage

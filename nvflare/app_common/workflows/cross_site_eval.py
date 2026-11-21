@@ -21,6 +21,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, ModelName
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.sec import model_audit
 from nvflare.fuel.utils import fobs
 
 from .model_controller import ModelController
@@ -116,10 +117,18 @@ class CrossSiteEval(ModelController):
         for server_model_name in self._server_models:
             try:
                 if self.persistor:
-                    server_model_learnable = self.persistor.get_model(server_model_name, self.fl_ctx)
+                    persistor = self.persistor
+                    fl_ctx = self.fl_ctx
+                    with model_audit.operation("retrieve", fl_ctx, owner=persistor) as audit:
+                        server_model_learnable = audit.call(
+                            "implementation", persistor.get_model, server_model_name, fl_ctx
+                        )
+                        audit.returned(server_model_learnable)
                     server_model = FLModelUtils.from_model_learnable(server_model_learnable)
                 else:
-                    server_model = fobs.loadf(server_model_name)
+                    with model_audit.operation("retrieve", self.fl_ctx) as audit:
+                        server_model = audit.call("file_read", fobs.loadf, server_model_name)
+                        audit.returned(server_model)
             except Exception as e:
                 self.exception(f"Unable to load server model {server_model_name}: {e}")
             self._send_validation_task(server_model_name, server_model)

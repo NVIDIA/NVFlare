@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Record training model observations without retaining model data."""
+"""Record model training and retrieval observations without retaining model data."""
 
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
@@ -66,9 +66,13 @@ class _Operation:
         with self.stage(stage):
             return function(*args, **kwargs)
 
+    def storage_call(self, stage, function, /, *args, **kwargs):
+        """Observe a storage call handled by the caller's own error path."""
+        return _storage_step(self, stage, function, *args, **kwargs)
+
     def returned(self, value=None):
         status = ""
-        if self.name == "load":
+        if self.name in ("load", "retrieve"):
             status = "no_value" if value is None else "value_returned"
         self.record("returned", status=status)
         return value
@@ -118,6 +122,10 @@ def saving(owner):
 
 def load_step(owner, stage, function, /, *args, **kwargs):
     return _storage_step(_owned_implementation(owner, ("load",)), stage, function, *args, **kwargs)
+
+
+def retrieve_step(owner, stage, function, /, *args, **kwargs):
+    return _storage_step(_owned_implementation(owner, ("retrieve",)), stage, function, *args, **kwargs)
 
 
 def save_step(owner, stage, function, /, *args, **kwargs):

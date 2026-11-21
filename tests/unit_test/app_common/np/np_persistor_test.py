@@ -42,6 +42,9 @@ class _Engine:
     def get_workspace(self):
         return self._workspace
 
+    def fire_event(self, event_type, fl_ctx):
+        pass
+
 
 def _make_fl_ctx(tmp_path):
     (tmp_path / "startup").mkdir()
@@ -307,3 +310,38 @@ def test_np_best_save_write_error_keeps_original_exception(tmp_path, monkeypatch
     assert [action for action, details in outcomes if "stage=write" in details] == ["model.best_save.stage_error"]
     assert records[-1]["action"] == "model.best_save.error"
     assert all("private write error" not in json.dumps(record) for record in records)
+
+
+@pytest.mark.parametrize("scenario", ["read", "missing", "corrupt"])
+def test_numpy_named_retrieval_observes_only_the_selected_file(tmp_path, model_audit_records, scenario):
+    fl_ctx = _make_fl_ctx(tmp_path)
+    persistor = NPFileModelPersistor(last_global_model_file_name="private-selected.npy")
+    run_dir = fl_ctx.get_workspace().get_run_dir(fl_ctx.get_job_id())
+    saved = Path(run_dir) / persistor.model_dir / persistor.last_global_model_file_name
+    saved.parent.mkdir(parents=True)
+    if scenario == "corrupt":
+        saved.write_bytes(b"private-corrupt-checkpoint")
+    else:
+        np.save(saved, [[621.0]])
+    name = "private-missing" if scenario == "missing" else saved.stem
+
+    result = persistor.get(name, fl_ctx)
+
+    if scenario == "read":
+        np.testing.assert_array_equal(result[ModelLearnableKey.WEIGHTS][NPConstants.NUMPY_KEY], [[621.0]])
+    else:
+        assert result is None
+    expected_reads = {
+        "read": ["model.retrieve.stage_returned"],
+        "missing": [],
+        "corrupt": ["model.retrieve.stage_error"],
+    }
+    records = model_audit_records()
+    file_reads = [action for action, details in _outcomes(records) if "stage=file_read" in details]
+    assert file_reads == expected_reads[scenario]
+    assert records[-1]["action"] == "model.retrieve.returned"
+    assert ("status=value_returned" if scenario == "read" else "status=no_value") in records[-1]["message"].split()
+    serialized_records = json.dumps(records)
+    assert "private-" not in serialized_records
+    assert str(tmp_path) not in serialized_records
+    assert all("621" not in record.get("message", "") for record in records)

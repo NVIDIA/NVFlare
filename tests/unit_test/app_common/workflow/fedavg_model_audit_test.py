@@ -277,6 +277,9 @@ def test_named_evaluation_read_inside_save_is_not_a_training_stage(audit_path, t
     assert persistor.saved == [persistor.loaded]
     assert _observations(audit_path) == [
         ("model.save.started", {}),
+        ("model.retrieve.started", {}),
+        ("model.retrieve.stage_returned", {"stage": "implementation"}),
+        ("model.retrieve.returned", {"status": "value_returned"}),
         ("model.save.stage_returned", {"stage": "implementation"}),
         ("model.save.returned", {}),
     ]
