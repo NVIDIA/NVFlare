@@ -139,7 +139,7 @@ class IdentityVerifier:
                     cert_to_be_verified=asserter_cert,
                     root_ca_public_key=self.root_public_key,
                 )
-            _validate_identity_cert_usage(asserter_cert, expected_eku, intermediate_certs)
+            validate_identity_cert_usage(asserter_cert, expected_eku, intermediate_certs)
         except Exception as ex:
             raise InvalidAsserterCert(str(ex)) from ex
 
@@ -158,7 +158,7 @@ class IdentityVerifier:
         return True
 
 
-def _validate_identity_cert_usage(cert, expected_eku, intermediate_certs=None):
+def validate_identity_cert_usage(cert, expected_eku, intermediate_certs=None):
     """Enforce certificate usage restrictions for the common-name challenge.
 
     Per-job certificates are scoped to one job's cells and must never assert site, admin,

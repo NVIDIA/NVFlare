@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import sys
+from contextlib import contextmanager
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
@@ -676,6 +677,36 @@ class TestK8sJobHandle:
 
         assert handle._query_phase() == PodPhase.UNKNOWN.value
         assert handle.terminal_state == JobState.TERMINATED
+
+    def test_query_phase_tolerates_launched_pod_without_status(self):
+        api = _make_api_instance()
+        api.read_namespaced_pod.return_value = SimpleNamespace(
+            metadata=SimpleNamespace(uid="cj-uid"), spec=SimpleNamespace(node_name="node-1"), status=None
+        )
+        handle = _make_handle(api=api)
+        handle.pod_uid = "cj-uid"
+
+        assert handle._query_phase() is None
+
+    def test_pod_removed_outside_flare_is_an_infrastructure_failure(self):
+        api = _make_api_instance()
+        api.read_namespaced_pod.side_effect = _FakeApiException(status=404, reason="Not Found")
+        handle = _make_handle(api=api)
+
+        assert handle.poll() == ProcessExitCode.INFRASTRUCTURE_ERROR
+
+    def test_pod_missing_during_requested_termination_stays_aborted(self):
+        # The monitor can read 404 while terminate() is still deleting the Pod.
+        api = _make_api_instance()
+        api.read_namespaced_pod.side_effect = _FakeApiException(status=404, reason="Not Found")
+        handle = _make_handle(api=api)
+        polled_during_delete = []
+        api.delete_namespaced_pod.side_effect = lambda **_kwargs: polled_during_delete.append(handle.poll())
+
+        handle.terminate()
+
+        assert polled_during_delete == [JobReturnCode.ABORTED]
+        assert handle.poll() == JobReturnCode.ABORTED
 
     def test_query_phase_uses_pod_name_when_supplied(self):
         api = _make_api_instance()
@@ -3964,8 +3995,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
     assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
 
 
-@pytest.fixture
-def recoverable_cj(tmp_path):
+def _initialized_cj(tmp_path):
     from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
 
     handle = _make_handle(workspace_job_id="job-1")
@@ -3973,46 +4003,50 @@ def recoverable_cj(tmp_path):
     info = tmp_path.stat()
     handle.workspace_reservation = (str(tmp_path), info.st_dev, info.st_ino)
     (tmp_path / WORKSPACE_READY_FILE).touch()
-    handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle)
+    return handle
+
+
+def _monitored_cj(tmp_path, sandbox_down=True):
+    """A CJ whose monitor has observed its terminal Pod, with or without sandbox teardown."""
+    handle = _initialized_cj(tmp_path)
+    handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle, sandbox_down=sandbox_down)
     handle.wait()
     return handle
 
 
-@pytest.mark.parametrize("task_mode", [False, True], ids=["resident", "task"])
-@pytest.mark.parametrize(
-    "exit_code, cancelled, restart_expected",
-    [
-        (0, False, False),
-        (1, False, True),
-        (9, False, False),
-        (101, False, True),
-        (102, False, False),
-        (103, False, False),
-        (104, False, True),
-        (137, False, True),
-        (143, False, True),
-        (137, True, False),
-    ],
-)
-def test_cp_monitor_recovers_confirmed_cj_failures(tmp_path, task_mode, exit_code, cancelled, restart_expected):
+def _removed_after(*pods):
+    """Pod reads that return each observation once and 404 from then on."""
+    remaining = list(pods)
+
+    def read(**_kwargs):
+        if remaining:
+            return remaining.pop(0)
+        raise _FakeApiException(status=404, reason="Not Found")
+
+    return read
+
+
+@contextmanager
+def _launcher_clock(on_sleep=None):
+    """Replace the launcher's clock: time moves only when the launcher sleeps or a test sets clock.now."""
+    with patch("nvflare.app_opt.job_launcher.k8s_launcher.time") as clock:
+        clock.now = 0
+
+        def sleep(seconds):
+            clock.now += seconds
+            if on_sleep:
+                on_sleep(clock)
+
+        clock.monotonic.side_effect = lambda: clock.now
+        clock.sleep.side_effect = sleep
+        yield clock
+
+
+def _monitor_cj(handle, tmp_path):
+    """Run CP's CJ monitor to completion; return the replacement launches and the reported outcome."""
     from nvflare.apis.job_launcher_spec import JobHandleSpec
-    from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
-    from nvflare.private.defs import JobOutcomeMsgKey
     from nvflare.private.fed.client.client_executor import _RESTART_KEY, JobExecutor, _JobRestart
     from nvflare.private.fed.client.client_status import ClientStatus
-
-    handle = _make_handle(workspace_job_id="job-1")
-    handle.pod_uid = "cj-uid"
-    info = tmp_path.stat()
-    handle.workspace_reservation = (str(tmp_path), info.st_dev, info.st_ino)
-    (tmp_path / WORKSPACE_READY_FILE).touch()
-    handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle, exit_code=exit_code)
-    if task_mode:
-        handle.task_owner = Mock()
-        handle.task_owner.backend.cleanup_timeout = 1
-        handle.task_owner.thread.is_alive.return_value = False
-    if cancelled:
-        handle.terminate()
 
     client, ctx = MagicMock(), _make_launch_fl_ctx()
     executor = JobExecutor(client, "startup")
@@ -4032,16 +4066,128 @@ def test_cp_monitor_recovers_confirmed_cj_failures(tmp_path, task_mode, exit_cod
     executor._launch_job = Mock(side_effect=launch)
     # An abrupt CJ exit leaves no process.rc in CP's separate private workspace.
     executor._wait_child_process_finish(client, "job-1", None, None, None, str(tmp_path / "cp"), ctx)
-    assert executor._launch_job.call_count == int(restart_expected)
     assert not executor.run_processes
     assert ctx.get_prop(FLContextKey.JOB_RESTART_HANDLE) is None
-    outcome = client.send_request_before_shutdown.call_args.kwargs["request"].payload
+    return executor._launch_job.call_count, client.send_request_before_shutdown.call_args.kwargs["request"].payload
+
+
+@pytest.fixture
+def recoverable_cj(tmp_path):
+    return _monitored_cj(tmp_path)
+
+
+@pytest.mark.parametrize("task_mode", [False, True], ids=["resident", "task"])
+@pytest.mark.parametrize(
+    "exit_code, cancelled, restart_expected",
+    [
+        (0, False, False),
+        (1, False, True),
+        (9, False, False),
+        (101, False, True),
+        (102, False, False),
+        (103, False, False),
+        (104, False, True),
+        (137, False, True),
+        (143, False, True),
+        (137, True, False),
+    ],
+)
+def test_cp_monitor_recovers_confirmed_cj_failures(tmp_path, task_mode, exit_code, cancelled, restart_expected):
+    from nvflare.private.defs import JobOutcomeMsgKey
+
+    handle = _initialized_cj(tmp_path)
+    handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle, exit_code=exit_code)
+    if task_mode:
+        handle.task_owner = Mock()
+        handle.task_owner.backend.cleanup_timeout = 1
+        handle.task_owner.thread.is_alive.return_value = False
+    if cancelled:
+        handle.terminate()
+
+    launches, outcome = _monitor_cj(handle, tmp_path)
+    assert launches == int(restart_expected)
     assert outcome[JobOutcomeMsgKey.CODE] == (9 if cancelled else 0 if restart_expected else exit_code)
 
 
+@pytest.mark.parametrize("task_mode", [False, True], ids=["resident", "task"])
+@pytest.mark.parametrize("shutdown_observed", [True, False], ids=["shutdown-observed", "shutdown-unobserved"])
+def test_cp_monitor_replaces_a_removed_cj_only_after_observing_its_shutdown(tmp_path, task_mode, shutdown_observed):
+    # A Pod removed outside FLARE is never an abort. It is replaced only when CP
+    # observed the kubelet's shutdown evidence before the Pod object disappeared.
+    from nvflare.private.defs import JobOutcomeMsgKey
+    from nvflare.private.fed.client.client_executor import REPORTABLE_JOB_FAILURES
+
+    handle = _initialized_cj(tmp_path)
+    observed = [_exited_cj(handle)] if shutdown_observed else []
+    handle.api_instance.read_namespaced_pod.side_effect = _removed_after(*observed)
+    if task_mode:
+        handle.task_owner = Mock()
+        handle.task_owner.backend.cleanup_timeout = 1
+        handle.task_owner.thread.is_alive.return_value = False
+
+    launches, outcome = _monitor_cj(handle, tmp_path)
+    assert launches == int(shutdown_observed)
+    if shutdown_observed:
+        assert outcome[JobOutcomeMsgKey.CODE] == JobReturnCode.SUCCESS
+    else:
+        assert outcome[JobOutcomeMsgKey.CODE] == ProcessExitCode.INFRASTRUCTURE_ERROR
+        assert outcome[JobOutcomeMsgKey.REASON] == REPORTABLE_JOB_FAILURES[ProcessExitCode.INFRASTRUCTURE_ERROR]
+    handle.api_instance.delete_namespaced_pod.assert_not_called()
+
+
+def _evicted_cj(handle, sandbox_down=True, exit_code=137):
+    pod = _exited_cj(handle, sandbox_down=sandbox_down, exit_code=exit_code or 137)
+    pod.status.reason = "Evicted"
+    if exit_code is None:
+        running = SimpleNamespace(name=handle._job_container_name, state=SimpleNamespace(terminated=None))
+        pod.status.container_statuses = [running]
+    return pod
+
+
+@pytest.mark.parametrize("recoverable", [True, False], ids=["recoverable", "uninitialized-workspace"])
+@pytest.mark.parametrize("first_exit", [None, 137, 143], ids=["container-running", "sigkill", "sigterm"])
+def test_cp_monitor_treats_an_evicted_cj_as_lost_infrastructure(tmp_path, recoverable, first_exit):
+    # The kubelet reports Failed/Evicted before it stops the container, so CP's first
+    # read may or may not carry the signal exit. The outcome must not depend on which.
+    from itertools import chain, repeat
+
+    from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
+    from nvflare.private.defs import JobOutcomeMsgKey
+
+    handle = _initialized_cj(tmp_path)
+    first = _evicted_cj(handle, sandbox_down=False, exit_code=first_exit)
+    settled = _evicted_cj(handle, exit_code=first_exit or 137)
+    handle.api_instance.read_namespaced_pod.side_effect = chain([first], repeat(settled))
+    if not recoverable:
+        (tmp_path / WORKSPACE_READY_FILE).unlink()
+
+    launches, outcome = _monitor_cj(handle, tmp_path)
+    assert launches == int(recoverable)
+    assert outcome[JobOutcomeMsgKey.CODE] == (
+        JobReturnCode.SUCCESS if recoverable else ProcessExitCode.INFRASTRUCTURE_ERROR
+    )
+    handle.api_instance.delete_namespaced_pod.assert_not_called()
+
+
 @pytest.mark.parametrize(
-    "fault", ["ephemeral", "uninitialized", "node-lost", "missing", "api-error", "different-uid", "cancelled"]
+    "exit_code, cancelled, expected",
+    [(ProcessExitCode.CONFIG_ERROR, False, ProcessExitCode.CONFIG_ERROR), (137, True, JobReturnCode.ABORTED)],
+    ids=["flare-exit-code", "flare-stop"],
 )
+def test_cp_monitor_keeps_what_flare_knows_about_an_evicted_cj(tmp_path, exit_code, cancelled, expected):
+    from nvflare.private.defs import JobOutcomeMsgKey
+
+    handle = _initialized_cj(tmp_path)
+    handle.api_instance.read_namespaced_pod.return_value = _evicted_cj(handle, exit_code=exit_code)
+    if cancelled:
+        handle.terminate()
+
+    launches, outcome = _monitor_cj(handle, tmp_path)
+    assert launches == 0
+    assert outcome[JobOutcomeMsgKey.CODE] == expected
+
+
+@pytest.mark.parametrize("fault", ["ephemeral", "uninitialized", "node-lost", "different-uid", "cancelled"])
 def test_recovery_requires_durable_initialized_workspace_and_confirmed_cj(recoverable_cj, tmp_path, fault):
     from nvflare.app_opt.job_launcher.workspace_cell_transfer import WORKSPACE_READY_FILE
 
@@ -4055,34 +4201,79 @@ def test_recovery_requires_durable_initialized_workspace_and_confirmed_cj(recove
         pod.status.reason = "NodeLost"
     elif fault == "different-uid":
         pod.metadata.uid = "replacement"
-    elif fault == "cancelled":
-        handle.terminate()
     else:
-        handle.api_instance.read_namespaced_pod.side_effect = _FakeApiException(
-            status=404 if fault == "missing" else 503
-        )
+        handle.terminate()
     assert handle.can_restart() is False
+
+
+@pytest.mark.parametrize("shutdown_observed", [True, False])
+def test_recovery_after_pod_removal_requires_previously_observed_shutdown(tmp_path, shutdown_observed):
+    # The monitor saw the terminal Pod with or without sandbox teardown; the
+    # recovery reread then finds the Pod gone. A 404 alone must not authorize restart.
+    handle = _monitored_cj(tmp_path, sandbox_down=shutdown_observed)
+    handle.api_instance.read_namespaced_pod.side_effect = _FakeApiException(status=404, reason="Not Found")
+    assert handle.can_restart() is shutdown_observed
+
+
+@pytest.mark.parametrize("api_recovers", [True, False])
+def test_recovery_keeps_observing_through_api_errors_within_cleanup_bound(recoverable_cj, api_recovers):
+    # An API outage is neither proof of shutdown nor a reason to give up early.
+    # Evidence seen before the outage still needs a definitive read to be used.
+    handle = recoverable_cj
+    pod = handle.api_instance.read_namespaced_pod.return_value
+    outage = _FakeApiException(status=503, reason="Service Unavailable")
+    handle.api_instance.read_namespaced_pod.side_effect = [outage, pod] if api_recovers else outage
+    with _launcher_clock() as clock:
+        assert handle.can_restart() is api_recovers
+    # A resident CJ gets the default 60-second bound.
+    assert clock.now == (1 if api_recovers else 60)
+
+
+@pytest.mark.parametrize("second_read", ["late-success", "error"])
+def test_recovery_is_bounded_by_the_cleanup_timeout(recoverable_cj, second_read):
+    # Neither a Pod read nor a poll sleep may outlast the bound, and a read that
+    # only succeeds after it does not authorize replacement.
+    handle = recoverable_cj
+    owner = handle.task_owner = Mock()
+    owner.backend.cleanup_timeout = 1.5
+    owner.thread.is_alive.return_value = False
+    pod = handle.api_instance.read_namespaced_pod.return_value
+    request_timeouts = []
+    with _launcher_clock() as clock:
+
+        def read(_request_timeout, **_kwargs):
+            request_timeouts.append(_request_timeout)
+            if len(request_timeouts) == 1 or second_read == "error":
+                raise _FakeApiException(status=503, reason="Service Unavailable")
+            clock.now = 5
+            return pod
+
+        handle.api_instance.read_namespaced_pod.side_effect = read
+        assert handle.can_restart() is False
+    assert request_timeouts == [1.5, 0.5]
+    sleeps = [call.args[0] for call in clock.sleep.call_args_list]
+    assert sleeps == ([1] if second_read == "late-success" else [1, 0.5])
 
 
 @pytest.mark.parametrize("outcome", ["settled", "timeout", "cancelled"])
 @pytest.mark.parametrize("order", ["worker-first", "cj-first", "together"])
-def test_recovery_waits_for_cj_sandbox_and_cp_owned_tasks(recoverable_cj, monkeypatch, outcome, order):
-    handle = recoverable_cj
+def test_recovery_waits_for_cj_sandbox_and_cp_owned_tasks(tmp_path, outcome, order):
+    handle = _monitored_cj(tmp_path, sandbox_down=order == "cj-first")
     owner = handle.task_owner = Mock()
-    owner.backend.cleanup_timeout = 1
+    owner.backend.cleanup_timeout = 5
     owner.thread.is_alive.return_value = order != "worker-first"
-    pod = handle.api_instance.read_namespaced_pod.return_value = _exited_cj(handle, sandbox_down=order == "cj-first")
+    pod = handle.api_instance.read_namespaced_pod.return_value
 
-    def advance(_):
+    def advance(clock):
         if outcome == "settled":
             pod.status.conditions[0].status = "False"
             owner.thread.is_alive.return_value = False
         elif outcome == "cancelled":
             handle.terminate()
+        else:
+            clock.now = 60
 
-    with patch("nvflare.app_opt.job_launcher.k8s_launcher.time") as clock:
-        clock.monotonic.side_effect = [0, 0, 2]
-        clock.sleep.side_effect = advance
+    with _launcher_clock(on_sleep=advance) as clock:
         assert handle.can_restart() == (outcome == "settled")
         clock.sleep.assert_called_once()
 

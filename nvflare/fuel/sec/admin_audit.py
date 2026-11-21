@@ -19,7 +19,6 @@ identity, resource ownership and the observed result before recording them. This
 module never interprets a command response as evidence of business completion.
 """
 
-import logging
 import os
 import re
 import threading
@@ -46,7 +45,6 @@ _rejected = ContextVar("administrative_audit_rejected", default=None)
 _diagnostic_lock = threading.Lock()
 _failed_attempts = 0
 _last_warning = float("-inf")
-_logger = logging.getLogger(__name__)
 _IDENTIFIER = re.compile(r"[A-Za-z0-9_@.%:+\-]{1,256}\Z")
 _DETAILS = frozenset(
     {"command", "site", "study", "component", "identity_source", "stage", "status", "operation", "target"}
@@ -87,7 +85,7 @@ _SENSITIVE = frozenset(
 
 
 def _failure():
-    """Count failed attempts, throttling both normal and fallback diagnostics."""
+    """Count failed attempts and report them independently of site logging."""
     global _failed_attempts, _last_warning
     try:
         with _diagnostic_lock:
@@ -97,13 +95,9 @@ def _failure():
                 return
             _last_warning = now
             attempts = _failed_attempts
-        try:
-            _logger.warning("Audit recording failed; failed attempts since startup: %d", attempts)
-        except Exception:
-            try:
-                os.write(2, b"Audit recording failed; operation continued.\n")
-            except Exception:
-                pass
+        # Site levels and reloaded handlers can silently drop ordinary warnings.
+        message = f"Audit recording failed; failed attempts since startup: {attempts}\n"
+        os.write(2, message.encode("ascii"))
     except Exception:
         # Diagnostics must never change administrative behavior or recurse into audit.
         pass

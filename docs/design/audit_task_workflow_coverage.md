@@ -1,9 +1,9 @@
 # Audit log improvements, part 3: task execution and workflow results
 
-This increment depends on [part 1, pull request #5806](https://github.com/NVIDIA/NVFlare/pull/5806)
-and [part 2, pull request #5823](https://github.com/NVIDIA/NVFlare/pull/5823).
-Keep its pull request in draft until both dependencies and required reviews are
-complete. It covers task execution and workflow results. Model saving/loading,
+This increment builds on the merged changes from
+[part 1, pull request #5806](https://github.com/NVIDIA/NVFlare/pull/5806) and
+[part 2, pull request #5823](https://github.com/NVIDIA/NVFlare/pull/5823).
+It covers task execution and workflow results. Model saving/loading,
 algorithm-specific aggregation decisions and external application protocols are
 later increments.
 
@@ -41,19 +41,21 @@ reference from the rejected request.
 
 ## Correlation and evidence
 
-The existing audit identifier header links the legacy server assignment,
-client result and server receipt records. Keep that header intact. New task
-observations refer to those existing identifiers only after the responsible
-owner validates their source. New buffered events never invent an identifier or
-replace a transport header. A later publication record can reference the
-locally written legacy result record. Workflow lifecycle records can reference
-the locally written initialization record; an unavailable identifier is omitted.
+The existing audit identifier header and combined legacy records retain their
+behavior. New observations only reference identifiers issued by the local
+writer. The client links validated ordinary assignments and their execution to
+its locally written legacy receipt. The server links matched results and their
+handling to its locally written legacy receipt. These receipts continue to
+carry the existing legacy links between processes. Direct auxiliary execution
+and unmatched result handling omit any unchecked reference. Buffered events
+never invent an identifier or replace a transport header.
 
-Task identity used after filters comes from the original approved assignment,
-not from a replacement payload. Later functions receive immutable approved
-strings, without retaining connections, mutable task/result contents or request
-contexts. A private, nonpersistent client context value can carry that frozen
-snapshot from execution to publication without adding transport fields.
+Task identity used after filters comes from the original approved assignment.
+Result preparation and publication can reference the locally written legacy
+result record using the identifier captured before before-send callbacks.
+Workflow lifecycle records can reference the locally written initialization
+record. Later functions receive immutable approved strings. Unavailable
+identifiers are omitted. No transport fields are added.
 
 The following are separate observations:
 
@@ -99,7 +101,7 @@ The implemented action catalog is:
 | `task.filter.{error,aborted}` | Client data resolution/input/output filtering failed or observed abort. The stage identifies which boundary. |
 | `task.processing.error` | An existing outer client-processing error path. |
 | `task.result.prepared` | The outgoing result, including an error result, is ready for publication. |
-| `task.publication.{received,acknowledged,closed,aborted,error}` | One final publication observation across retries. `received` requires explicit receipt; `acknowledged` is the weaker legacy transport observation. Abort/error do not establish that the parent lacks a copy. |
+| `task.publication.{received,acknowledged,closed,aborted,error}` | One final publication observation across retries. `received` requires explicit receipt; `acknowledged` is the weaker legacy transport observation. The send decision distinguishes task closure from stopping locally. Abort/error do not establish that the parent lacks a copy. |
 | `task.result.{rejected,retry_required,duplicate,received,abort_requested}` | Actual result-admission decision, complete receipt, or fatal-code panic request. Duplicate receipt does not repeat application work; abort requested does not prove the job stopped. |
 | `task.result.{filter_error,handling_returned,handling_error}` | Server filter or immediate communicator-handling boundary. The communicator returning does not prove a swallowed callback succeeded. |
 | `task.result_manager.{returned,error}` | The matched assignment's result manager returned or raised. |
@@ -111,12 +113,14 @@ The implemented action catalog is:
 | `workflow.execution.{initialized,error}` | Workflow became active after initialization, or initialization/control handling raised at the recorded stage. |
 | `workflow.control.{returned,abort_observed}` | Control function returned and, independently, the abort signal was observed. Neither is a training-success claim. |
 | `workflow.finalization.{returned,error}` | Stop-controller/finalize handling returned or failed, separate from control handling. |
-| `task.auxiliary.{prepared,dispatched,reply_received,no_reply,rejected,filter_error,callback_returned,callback_error,handling_error}` | Direct auxiliary sender, observed target reply, filter and callback handling. Callback stages distinguish result and task-done callbacks. |
+| `task.auxiliary.{prepared,dispatched,outcome_reported,no_reply,rejected,filter_error,callback_returned,callback_error,handling_error}` | Direct auxiliary send invocation, reported per-target outcome or absent result entry, and filter and callback handling. Callback stages distinguish result and task-done callbacks. |
 
 Direct auxiliary requests have a local task name and known targets but do not
 issue the ordinary per-recipient task/attempt identifiers. Their records omit
-those identifiers and unavailable references. They report immediate request,
-reply and callback handling, not assignment receipt authority or business success.
+those identifiers and unavailable references. A returned entry can represent a
+response or a status generated by the local transport, such as a timeout.
+The reported outcome makes no claim that the target sent a reply. A no-reply
+record means the sender returned no entry for that target.
 
 The client-to-client receipt-owner implementation in
 `private/fed/client/communicator.py` is not expanded in this increment. Client
@@ -140,7 +144,7 @@ validation. Scoped context is reset on every exit.
 A collector temporarily stores immutable facts while an operation owns shared
 locks. Nested collectors join the outer operation. The outermost collector
 restores its caller's context and detaches its pending facts before invoking any
-writer or diagnostic logger. This keeps new audit writes and diagnostics outside
+writer or diagnostic output. This keeps new audit writes and diagnostics outside
 the server workflow lock, communicator controller/task locks and task callback
 locks. Each collector is bounded to 1,024 facts; overflow counts as failed
 recording attempts without interrupting the operation. A collector must never
@@ -164,8 +168,9 @@ The simulator's explicit no-operation marker remains intentionally silent.
 Task/workflow failures share part 2's protected process-wide diagnostics and
 one-warning-per-minute limit. Counts describe failed recording attempts, not
 exact numbers of lost records: a flush failure may follow a completed write.
-Diagnostic failure uses protected fixed standard-error text. No audit failure
-is recursively audited.
+The fixed message and failure count go directly to standard error, independently
+of the site's logging settings. Errors writing the diagnostic are contained.
+No audit failure is recursively audited.
 
 Existing legacy task records, helper calls, audit-header values, return codes,
 receipts, retries and operation cleanup keep their behavior. In particular,
@@ -198,5 +203,4 @@ preserving other workloads. Run affected tests, project style/license and
 documentation-link checks; obtain independent quality and plan-compliance
 review. Publish signed commits with sign-offs on
 `codex/audit-task-workflow-coverage`. The third pull request targets NVIDIA's
-current `main`, explicitly depends on #5806 and #5823, and stays draft pending
-those dependencies and review.
+current `main` and stays draft pending review.

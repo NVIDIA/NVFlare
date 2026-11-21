@@ -27,6 +27,7 @@ from dataclasses import dataclass, fields
 from functools import wraps
 
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.fuel.sec.admin_audit import recording_failed
 from nvflare.fuel.sec.audit import AuditService
 
@@ -147,6 +148,16 @@ def code_status(code):
     except Exception:
         _failure()
         return "custom_return_code"
+
+
+def reply_status(reply):
+    """Report the explicit return code without invoking operational defaults or overrides."""
+
+    def read():
+        headers = dict.get(reply, ReservedHeaderKey.HEADERS)
+        return code_status(dict.get(headers, ReservedHeaderKey.RC) if headers is not None else None)
+
+    return prepare(read, default="unavailable")
 
 
 def _token(value):

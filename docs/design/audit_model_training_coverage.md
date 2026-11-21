@@ -82,9 +82,10 @@ are writing times, and records from different processes can interleave.
 
 Audit preparation and ordinary failures in writing do not alter model return
 values, exceptions, or side effects. A missing writer, closed writer, or enabled
-writer returning no identifier counts as a failed recording attempt. Diagnostics
-use the shared one-warning-per-minute limit and protected standard-error
-fallback. The simulator's explicit no-operation writer remains silent.
+writer returning no identifier counts as a failed recording attempt. The shared
+reporter writes a fixed diagnostic directly to standard error at most once per
+minute, independently of site logging settings. The simulator's explicit
+no-operation writer remains silent.
 
 Component tests cover storage and transformation failures, partial application,
 privacy, and lock release. The existing automated direct and relayed training

@@ -22,7 +22,10 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from contextvars import ContextVar
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 
@@ -70,6 +73,7 @@ from nvflare.private.defs import (
     TrainingTopic,
     new_cell_message,
 )
+from nvflare.private.fed.resource_stats.handoff import LAUNCH_GENERATION_OPTION
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.utils.fed_utils import (
     get_job_launcher,
@@ -91,6 +95,18 @@ from .run_manager import RunManager
 from .server_commands import ServerCommands
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
+
+_removal_audit_targets = ContextVar("removal_audit_targets", default=None)
+
+
+@contextmanager
+def client_removal_audit_targets(targets):
+    """Keep the validated target snapshot for the synchronous removal command."""
+    token = _removal_audit_targets.set(targets)
+    try:
+        yield
+    finally:
+        _removal_audit_targets.reset(token)
 
 
 def _record_admin_control(action, *, reason):
@@ -130,6 +146,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
         self.executor = ThreadPoolExecutor(max_workers=workers)
         self.lock = Lock()
+        self.resource_query_lock = Lock()
         self.logger = get_obj_logger(self)
 
         self.asked_to_stop = False
@@ -186,7 +203,9 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
     def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self.client_manager.get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None) -> str:
+    def start_app_on_server(
+        self, fl_ctx: FLContext, job: Job = None, job_clients=None, snapshot=None, restored_attempt: bool = False
+    ) -> str:
         if not isinstance(job, Job):
             return "Must provide a job object to start the server app."
 
@@ -200,7 +219,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
             self.engine_info.status = MachineStatus.STARTING
 
-            self._start_runner_process(job, job_clients, snapshot, fl_ctx)
+            self._start_runner_process(job, job_clients, snapshot, fl_ctx, restored_attempt=restored_attempt)
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
@@ -248,7 +267,7 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
-    def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext):
+    def _start_runner_process(self, job, job_clients, snapshot, fl_ctx: FLContext, restored_attempt: bool = False):
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         job_id = job.job_id
         meta_file = workspace_obj.get_job_meta_path(job_id)
@@ -283,7 +302,11 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         # Each arg is a tuple of (arg_option, arg_value).
         # Note that the arg_option is fixed for each arg, and is not launcher specific!
         # use a copy of args; otherwise the args will keep adding command options!
-        args = copy.deepcopy(fl_ctx.get_prop(FLContextKey.ARGS))
+        parent_args = fl_ctx.get_prop(FLContextKey.ARGS)
+        args = copy.deepcopy(parent_args)
+        args.set = [option for option in args.set if not option.startswith(f"{LAUNCH_GENERATION_OPTION}=")]
+        generation = uuid.uuid4().hex
+        args.set.append(f"{LAUNCH_GENERATION_OPTION}={generation}")
         server = fl_ctx.get_prop(FLContextKey.SITE_OBJ)
         app_root = workspace_obj.get_app_dir(job_id)
         cell = server.cell
@@ -294,6 +317,11 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         command_options += f" restore_snapshot={restore_snapshot} print_conf=True"
         args.set.append("print_conf=True")
         args.set.append(f"restore_snapshot={restore_snapshot}")
+        if restored_attempt:
+            # Restoring a job does not always include a component snapshot. The
+            # resource reporter still needs to know that an earlier process ran.
+            command_options += " resource_prior_attempt_incomplete=True"
+            args.set.append("resource_prior_attempt_incomplete=True")
 
         # create token and signature for SJ
         token = job_id  # use the run_number as the auth token
@@ -327,7 +355,19 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                 job_args[JobProcessArgs.PARENT_CONN_SEC] = ("--parent_conn_sec", parent_conn_sec)
 
         fl_ctx.set_prop(key=FLContextKey.JOB_PROCESS_ARGS, value=job_args, private=True, sticky=False)
-        job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+        self.job_runner.bind_server_resource_generation(job_id, generation)
+        # Override only this context, leaving the parent's sticky arguments intact.
+        fl_ctx.remove_prop(FLContextKey.ARGS, force_removal=True)
+        fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=False)
+        try:
+            job_handle = job_launcher.launch_job(job_meta, fl_ctx)
+            if job_handle is None:
+                raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
+        except BaseException:
+            self.job_runner.discard_server_resource_generation(job_id, generation)
+            raise
+        finally:
+            fl_ctx.set_prop(FLContextKey.ARGS, parent_args, private=True, sticky=False)
         self.logger.info(f"Launch job_id: {job.job_id}  with job launcher: {type(job_launcher)} ")
 
         if not job_clients:
@@ -705,14 +745,18 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         # Token removal is the operation; notification and data cleanup are later
         # steps whose failure must not erase the already applied fact.
         is_admin_removal = snapshot().command.rsplit(".", 1)[-1] == "remove_client"
+        site = ""
+        if is_admin_removal:
+            site = prepare(lambda: (_removal_audit_targets.get() or {}).get(token, ""), default="")
         try:
             removed = self.server.client_manager.remove_client(token)
         except Exception:
             if is_admin_removal:
-                record("client.remove.error", reason="manager_failed")
+                record("client.remove.error", site=site, reason="manager_failed")
             raise
-        site = prepare(lambda: removed.name if removed else "", default="") if is_admin_removal else ""
         if is_admin_removal:
+            if removed:
+                site = prepare(lambda: removed.name, default=site)
             outcome = "applied" if removed else "unchanged"
             record(f"client.remove.{outcome}", site=site, reason="active_entry")
         try:

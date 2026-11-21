@@ -14,6 +14,7 @@
 
 import threading
 import time
+from dataclasses import replace
 
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -159,7 +160,10 @@ class ServerRunner(TBI):
                         # we only set self.current_wf to open for business after successful initialize_run!
                         self.current_wf = wf
                     initialized_id = task_audit.record("workflow.execution.initialized", context=audit_context)
-                    audit_context = self._audit_context(fl_ctx, workflow_id=wf.id, reference=initialized_id)
+                    if audit_context is not None and initialized_id:
+                        audit_context = task_audit.prepare(
+                            lambda: replace(audit_context, reference=initialized_id), default=audit_context
+                        )
 
                 stage = "control"
                 with self.engine.new_context() as fl_ctx:
@@ -558,7 +562,7 @@ class ServerRunner(TBI):
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)
 
         client_audit_event_id = result.get_header(ReservedHeaderKey.AUDIT_EVENT_ID, "")
-        add_job_audit_event(
+        local_receipt_id = add_job_audit_event(
             fl_ctx=fl_ctx, ref=client_audit_event_id, msg=f"received result from client '{client.name}'"
         )
 
@@ -595,25 +599,24 @@ class ServerRunner(TBI):
         communicator = workflow.controller.communicator
         if not communicator.check_submission(client, task_name, task_id, result, fl_ctx):
             return
-        # The communicator refines context only for matched active/retired
-        # assignments, not the established unfenced unknown-task hook.
-        approved = task_audit.current_context()
-        if task_audit.prepare(lambda: approved.task_id == task_id and approved.task_name == task_name, default=False):
-            task_audit.set_context(
-                task_audit.prepare(
-                    lambda: task_audit.build_context(
-                        job_id=approved.job_id,
-                        scope_name=approved.scope_name,
-                        task_name=approved.task_name,
-                        task_id=approved.task_id,
-                        workflow_id=approved.workflow_id,
-                        attempt_id=approved.attempt_id,
-                        site=approved.site,
-                        reference=result.get_header(ReservedHeaderKey.AUDIT_EVENT_ID, "") or "",
-                    ),
-                    default=approved,
-                )
-            )
+
+        # A matched assignment can link to the receipt written here. The peer
+        # header is kept in the legacy record, but is not trusted by new records.
+        def link_local_receipt():
+            approved = task_audit.current_context()
+            if (
+                approved
+                and approved.task_id
+                and approved.task_name
+                and approved.task_id == task_id
+                and approved.task_name == task_name
+                and approved.site == client.name
+                and isinstance(local_receipt_id, str)
+                and local_receipt_id
+            ):
+                task_audit.set_context(replace(approved, reference=local_receipt_id))
+
+        task_audit.prepare(link_local_receipt)
         # FOBS normally resolves streamed references before dispatch. Never
         # acknowledge a forwarding envelope while the client still owns its bytes.
         if contains_lazy_download_ref(result):

@@ -23,11 +23,15 @@ import pytest
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ReturnCode
 from nvflare.apis.impl import task_controller as subject
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
+from nvflare.fuel.f3.cellnet.defs import CellChannel
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.utils import make_reply as make_cell_reply
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.task_audit import collect
+from nvflare.private.aux_runner import AuxRunner
 from tests.unit_test.fl_context_helper import make_fl_context
 
 FIELDS = {"event_id", "reference", "timestamp", "user", "action", "job", "scope", "message"}
@@ -93,7 +97,7 @@ def test_actual_replies_and_callbacks_are_distinct_from_completion(setup):
     assert [r["action"] for r in records] == [
         "task.auxiliary.prepared",
         "task.auxiliary.dispatched",
-        "task.auxiliary.reply_received",
+        "task.auxiliary.outcome_reported",
         "task.auxiliary.callback_returned",
         "task.auxiliary.callback_returned",
     ]
@@ -120,12 +124,48 @@ def test_mixed_remote_results_missing_reply_and_unrequested_reply(setup):
     assert actual["site-3"].get_return_code() == ReturnCode.ERROR
     assert actual["site-4"] is None
     assert len(_actions(path, "prepared")) == len(_actions(path, "dispatched")) == 4
-    reported = _actions(path, "reply_received")
+    reported = _actions(path, "outcome_reported")
     assert len(reported) == 3
     assert any("status=custom_return_code" in r["message"] for r in reported)
     assert any("status=EXECUTION_EXCEPTION" in r["message"] for r in reported)
     missing = _actions(path, "no_reply")
     assert len(missing) == 1 and 'site="site-4"' in missing[0]["message"]
+
+
+def test_local_transport_timeout_and_target_timeout_are_reported_as_outcomes(setup):
+    controller, ctx, engine, task, _, path = setup
+    task.result_received_cb = Mock()
+    aux_runner = AuxRunner(engine)
+
+    def send_aux_request(**kwargs):
+        # The first message is the local Cell timeout fallback. The second message
+        # contains a target payload that happens to carry the same task status.
+        return aux_runner._process_cell_replies(
+            {
+                "site-1.job-1": make_cell_reply(CellReturnCode.TIMEOUT),
+                "site-2.job-1": make_cell_reply(CellReturnCode.OK, body=make_reply(ReturnCode.TIMEOUT)),
+            },
+            kwargs["topic"],
+            CellChannel.AUX_COMMUNICATION,
+            {"site-1.job-1": "site-1", "site-2.job-1": "site-2"},
+        )
+
+    engine.send_aux_request.side_effect = send_aux_request
+    results = controller.broadcast_and_wait(task, ctx, targets=["site-1", "site-2"])
+
+    engine.send_aux_request.assert_called_once()
+    assert engine.send_aux_request.call_args.kwargs["topic"] == ReservedTopic.DO_TASK
+    task.result_received_cb.assert_not_called()
+    assert {site: reply.get_return_code() for site, reply in results.items()} == {
+        "site-1": ReturnCode.ERROR,
+        "site-2": ReturnCode.ERROR,
+    }
+    assert [r["message"] for r in _actions(path, "outcome_reported")] == [
+        'status=TIMEOUT task="train" site="site-1"',
+        'status=TIMEOUT task="train" site="site-2"',
+    ]
+    assert not _actions(path, "reply_received")
+    assert not _actions(path, "no_reply")
 
 
 @pytest.mark.parametrize("stage", ["task_data", "task_result"])
@@ -190,7 +230,7 @@ def test_transport_exception_is_rethrown_without_claiming_a_reply_or_replaying(s
     engine.send_aux_request.assert_called_once()
     assert len(_actions(path, "dispatched")) == 1
     assert len(_actions(path, "handling_error")) == 1
-    assert not _actions(path, "reply_received")
+    assert not _actions(path, "outcome_reported")
 
 
 @pytest.mark.parametrize("invalid", ["targets", "timeout"])
@@ -291,7 +331,8 @@ def test_direct_send_target_rejections_before_broadcast_are_recorded_once(setup,
     assert "site=" not in errors[0]["message"]
 
 
-def test_auditing_does_not_read_custom_reply_code_twice_or_change_callback_decision(setup):
+@pytest.mark.parametrize("supplied_code, audit_status", [(None, "unspecified"), (ReturnCode.ERROR, "ERROR")])
+def test_audit_reads_only_supplied_code_and_preserves_existing_callback_decision(setup, supplied_code, audit_status):
     controller, ctx, engine, task, _, path = setup
 
     class ChangingReply(Shareable):
@@ -302,6 +343,8 @@ def test_auditing_does_not_read_custom_reply_code_twice_or_change_callback_decis
             return ReturnCode.OK if self.reads == 1 else ReturnCode.ERROR
 
     reply = ChangingReply()
+    if supplied_code is not None:
+        reply.set_return_code(supplied_code)
     engine.send_aux_request.return_value = {"site-1": reply}
     callback = Mock()
     task.result_received_cb = callback
@@ -309,4 +352,4 @@ def test_auditing_does_not_read_custom_reply_code_twice_or_change_callback_decis
     assert result["site-1"] is reply
     assert reply.reads == 1
     callback.assert_called_once()
-    assert "status=OK" in _actions(path, "reply_received")[0]["message"]
+    assert f"status={audit_status}" in _actions(path, "outcome_reported")[0]["message"]

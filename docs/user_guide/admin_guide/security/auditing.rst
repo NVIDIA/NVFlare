@@ -139,7 +139,10 @@ or aggregation; an executor or callback returning does not prove training succes
 Task records use the established local job/scope and ``unknown`` for an
 unavailable administrator actor. Approved task identifiers appear in ``message``;
 new records exclude task/result contents, credentials, paths and exception text.
-Existing task audit headers and combined task actions keep their behavior.
+New references come from records written by the same process. Existing task
+audit headers and combined task actions keep their behavior. A direct task
+outcome can come from a target or from the local transport. An omitted return
+code is recorded as an unspecified outcome.
 
 New records are buffered while shared locks are held and written afterwards.
 Their timestamps are writing times, so they do not establish exact observation

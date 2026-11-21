@@ -403,35 +403,69 @@ class StudyCommandModule(CommandModule, CommandUtil):
         return payload
 
     @staticmethod
-    def _audit_mutation(operation, study, initial, working, result, reason, sites=(), target=""):
+    def _audit_mutation(
+        operation,
+        study,
+        initial,
+        working,
+        result,
+        reason,
+        sites=(),
+        target="",
+        *,
+        site_checks=None,
+        mutation_prepared=False,
+    ):
         """Emit facts after releasing the registry lock, without registry contents."""
         try:
             before = (initial or {}).get("studies", {}).get(study) or {}
             after = (working or {}).get("studies", {}).get(study) or {}
+            completed = result in {"applied", "persisted", "unchanged"}
+            if operation in {"user_add", "user_remove"}:
+                # An accepted removal already checked the prior membership
+                # even when the registry could not be written.
+                prior_checked = completed or (mutation_prepared and operation == "user_remove")
+                known_before = prior_checked and target in (before.get("admins") or ())
+                known_after = completed and target in (after.get("admins") or ())
+                if not (known_before or known_after):
+                    target = ""
             if operation not in {"site_add", "site_remove"} or not sites:
                 record(f"study.{operation}.{result}", reason=reason, study=study, target=target)
             if operation in {"register", "site_add", "site_remove"}:
                 membership_operation = "site_remove" if operation == "site_remove" else "site_add"
+                old_sites = before.get("site_orgs") or {}
+                new_sites = after.get("site_orgs") or {}
+                checks = site_checks or {}
                 for org, site in sites:
                     member_result = result
-                    if result in {"applied", "persisted", "unchanged"}:
-                        old_member = site in before.get("site_orgs", {}).get(org, ())
-                        new_member = site in after.get("site_orgs", {}).get(org, ())
+                    if completed:
+                        old_members = old_sites.get(org)
+                        old_member = isinstance(old_members, list) and site in old_members
+                        new_member = site in new_sites.get(org, ())
                         member_result = result if old_member != new_member else "unchanged"
+                    if operation == "site_remove" and (completed or mutation_prepared):
+                        # Offline removals do not look up a client. The prior
+                        # membership establishes site identity even on write failure.
+                        if not any(isinstance(members, list) and site in members for members in old_sites.values()):
+                            site = ""
+                    elif not completed and (org not in checks or site in checks[org]):
+                        # Preserve the attempted membership without copying an
+                        # identifier the command could not establish.
+                        site = ""
                     member_reason = "no_change" if member_result == "unchanged" else reason
                     record(
                         f"study.{membership_operation}.{member_result}", reason=member_reason, study=study, site=site
                     )
-            if operation == "register" and target and result in {"applied", "persisted", "unchanged"}:
-                old_member = target in before.get("admins", ())
-                new_member = target in after.get("admins", ())
+            if operation == "register" and target and completed:
+                old_member = target in (before.get("admins") or ())
+                new_member = target in (after.get("admins") or ())
                 member_result = result if old_member != new_member else "unchanged"
                 member_reason = "no_change" if member_result == "unchanged" else reason
                 record(f"study.user_add.{member_result}", reason=member_reason, study=study, target=target)
         except Exception:
             recording_failed()
 
-    def _with_mutation(self, conn: Connection, mutation_cb, *, operation, study, sites=(), target=""):
+    def _with_mutation(self, conn: Connection, mutation_cb, *, operation, study, sites=(), target="", site_checks=None):
         if not StudyRegistryService.acquire_lock(_LOCK_TIMEOUT_SECS):
             record(f"study.{operation}.rejected", reason="lock_timeout", study=study)
             self._error(
@@ -444,7 +478,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             return
 
         initial = working = None
-        persisted = reloaded = False
+        persisted = reloaded = mutation_prepared = False
         result, reason = "error", "processing_error"
         try:
             engine = conn.app_ctx
@@ -473,6 +507,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
                 }.get(code, "mutation_rejected")
                 self._reply(conn, payload)
                 return
+            mutation_prepared = True
             new_registry = StudyRegistry(working)
             self._write_registry_config(workspace.get_study_registry_write_path(), working)
             persisted = True
@@ -490,12 +525,21 @@ class StudyCommandModule(CommandModule, CommandUtil):
                 # A reply/cleanup error must not erase a completed persistence
                 # or live configuration update. No audit I/O holds the lock.
                 if persisted and not reloaded:
-                    self._audit_mutation(
-                        operation, study, initial, working, "persisted", "configuration_written", sites, target
-                    )
+                    result, reason = "persisted", "configuration_written"
+                self._audit_mutation(
+                    operation,
+                    study,
+                    initial,
+                    working,
+                    result,
+                    reason,
+                    sites,
+                    target,
+                    site_checks=site_checks,
+                    mutation_prepared=mutation_prepared,
+                )
+                if persisted and not reloaded:
                     record(f"study.{operation}.reload_error", reason="reload_failed", study=study)
-                else:
-                    self._audit_mutation(operation, study, initial, working, result, reason, sites, target)
 
     def _study_not_found(self, conn: Connection, study: str):
         self._error(
@@ -524,6 +568,8 @@ class StudyCommandModule(CommandModule, CommandUtil):
             self._error(conn, "INVALID_STUDY_NAME", str(e), exit_code=4)
             return
 
+        site_checks = {}
+
         def _mutate(_engine, working):
             studies = working.setdefault("studies", {})
             study_def = studies.get(parsed.study)
@@ -541,6 +587,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
 
             for org, sites in requested.items():
                 bad_sites = self._validate_sites_for_org(_engine, sites, org)
+                site_checks[org] = bad_sites
                 if bad_sites:
                     return {
                         "error_code": "INVALID_SITE",
@@ -568,6 +615,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             operation="register",
             study=parsed.study,
             sites=prepare(lambda: tuple((org, site) for org, names in requested.items() for site in names), default=()),
+            site_checks=site_checks,
             target=prepare(lambda: self._caller_name(conn), default=""),
         )
 
@@ -590,6 +638,8 @@ class StudyCommandModule(CommandModule, CommandUtil):
             self._error(conn, "INVALID_STUDY_NAME", str(e), exit_code=4)
             return
 
+        site_checks = {}
+
         def _mutate(_engine, working):
             study_def = working.get("studies", {}).get(parsed.study)
             if not study_def or not self._is_visible_to_caller(conn, parsed.study, study_def):
@@ -601,6 +651,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
                 }
             for org, sites in requested.items():
                 bad_sites = self._validate_sites_for_org(_engine, sites, org)
+                site_checks[org] = bad_sites
                 if bad_sites:
                     return {
                         "error_code": "INVALID_SITE",
@@ -629,6 +680,7 @@ class StudyCommandModule(CommandModule, CommandUtil):
             operation="site_add",
             study=parsed.study,
             sites=prepare(lambda: tuple((org, site) for org, names in requested.items() for site in names), default=()),
+            site_checks=site_checks,
         )
 
     def cmd_remove_study_site(self, conn: Connection, args: List[str]):

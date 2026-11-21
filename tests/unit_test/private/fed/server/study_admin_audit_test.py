@@ -141,6 +141,24 @@ def test_register_records_creation_and_membership_without_raw_arguments(study_au
     assert "--sites" not in case.audit_path.read_text()
 
 
+def test_register_existing_null_membership_records_both_changes(study_audit):
+    case = study_audit
+    original = {"format_version": "1.0", "studies": {"study1": {"site_orgs": None, "admins": None}}}
+    case.registry_path.write_text(json.dumps(original))
+    case.connection.props[ConnProps.USER_ROLE] = "project_admin"
+
+    case.module.cmd_register_study(case.connection, ["register_study", "study1", "--site-org", "org_a:site-a"])
+
+    stored = json.loads(case.registry_path.read_text())["studies"]["study1"]
+    assert stored["site_orgs"] == {"org_a": ["site-a"]}
+    assert stored["admins"] == ["verified@example.com"]
+    assert case.connection.replies[-1]["sites"] == ["site-a"]
+    events = case.records()
+    assert _actions(events) == ["study.register.applied", "study.site_add.applied", "study.user_add.applied"]
+    assert "site=site-a" in events[1]["message"]
+    assert "target=verified@example.com" in events[2]["message"]
+
+
 def test_register_existing_identical_configuration_records_unchanged(study_audit):
     case = study_audit
     case.module.cmd_register_study(case.connection, ["register_study", "study1", "--sites", "site-a"])
@@ -160,6 +178,10 @@ def test_register_existing_identical_configuration_records_unchanged(study_audit
 )
 def test_site_membership_records_each_target_and_unchanged_state(study_audit, command, expected, remaining):
     case = study_audit
+    if command == "remove_study_site":
+        original = deepcopy(_INITIAL)
+        original["studies"]["study1"]["site_orgs"]["org_b"] = ["site-b"]
+        case.registry_path.write_text(json.dumps(original))
     getattr(case.module, "cmd_" + command)(case.connection, [command, "study1", "--sites", "site-a,site-b"])
     stored = json.loads(case.registry_path.read_text())["studies"]["study1"]
     assert stored["site_orgs"]["org_a"] == remaining
@@ -172,6 +194,24 @@ def test_site_membership_records_each_target_and_unchanged_state(study_audit, co
         assert matching[0]["action"] == f"study.{operation}.{result}"
 
 
+def test_remove_absent_site_does_not_audit_unverified_name(study_audit):
+    case = study_audit
+    target = "private-token-in-site-position"
+
+    case.module.cmd_remove_study_site(case.connection, ["remove_study_site", "study1", "--sites", "site-a," + target])
+
+    assert case.connection.replies[-1]["removed"] == ["site-a"]
+    assert case.connection.replies[-1]["not_enrolled"] == [target]
+    case.engine.client_manager.get_client_from_name.assert_not_called()
+    removed, absent = case.records()
+    assert removed["action"] == "study.site_remove.applied"
+    assert "site=site-a" in removed["message"]
+    assert absent["action"] == "study.site_remove.unchanged"
+    assert "reason=no_change" in absent["message"]
+    assert "site=" not in absent["message"]
+    assert target not in case.audit_path.read_text()
+
+
 @pytest.mark.parametrize("command", ["add_study_user", "remove_study_user"])
 def test_user_membership_applied_then_unchanged_preserves_reply(study_audit, command):
     case = study_audit
@@ -182,7 +222,37 @@ def test_user_membership_applied_then_unchanged_preserves_reply(study_audit, com
     operation = "user_add" if command == "add_study_user" else "user_remove"
     assert _actions(case.records()) == [f"study.{operation}.applied", f"study.{operation}.unchanged"]
     assert case.connection.replies[-1]["error_code"] in {"USER_ALREADY_IN_STUDY", "USER_NOT_IN_STUDY"}
-    assert all("target=" + target in event["message"] for event in case.records())
+    applied, unchanged = case.records()
+    assert "target=" + target in applied["message"]
+    if command == "add_study_user":
+        assert "target=" + target in unchanged["message"]
+    else:
+        assert "reason=not_member" in unchanged["message"]
+        assert "target=" not in unchanged["message"]
+
+
+@pytest.mark.parametrize("command", ["add_study_user", "remove_study_user"])
+@pytest.mark.parametrize("same_study", [False, True])
+def test_study_lookup_rejection_omits_unverified_user(study_audit, command, same_study):
+    case = study_audit
+    target = "private-token-in-user-position"
+    # A study that exists but is outside the caller's organization has the
+    # same established response as one that does not exist.
+    case.connection.props[ConnProps.USER_ORG] = "org_b"
+    study = "study1" if same_study else "missing"
+    initial = case.registry_path.read_text()
+
+    getattr(case.module, "cmd_" + command)(case.connection, [command, study, target])
+
+    assert case.connection.replies[-1]["error_code"] == "STUDY_NOT_FOUND"
+    assert case.registry_path.read_text() == initial
+    assert not case.reloads
+    (event,) = case.records()
+    operation = "user_add" if command == "add_study_user" else "user_remove"
+    assert event["action"] == f"study.{operation}.rejected"
+    assert "reason=study_not_found" in event["message"]
+    assert "target=" not in event["message"]
+    assert target not in case.audit_path.read_text()
 
 
 def test_persisted_policy_survives_live_reload_failure(study_audit, monkeypatch):
@@ -211,8 +281,62 @@ def test_write_failure_does_not_claim_persistence_or_live_reload(study_audit, mo
     case.module.cmd_add_study_user(case.connection, ["add_study_user", "study1", "new@example.com"])
     assert case.registry_path.read_text() == initial
     assert not case.reloads
-    assert _actions(case.records()) == ["study.user_add.error"]
+    [event] = case.records()
+    assert event["action"] == "study.user_add.error"
+    assert "target=" not in event["message"]
     assert "session-secret" not in case.audit_path.read_text()
+
+
+@pytest.mark.parametrize("command", ["remove_study_site", "remove_study_user"])
+def test_failed_removal_keeps_only_established_membership_targets(study_audit, monkeypatch, command):
+    case = study_audit
+    marker = "unverified-site-marker"
+    initial = case.registry_path.read_text()
+
+    def fail_write(*_args):
+        raise OSError("private-write-error")
+
+    monkeypatch.setattr(case.module, "_write_registry_config", fail_write)
+    if command == "remove_study_site":
+        case.module.cmd_remove_study_site(case.connection, [command, "study1", "--sites", "site-a," + marker])
+    else:
+        case.module.cmd_remove_study_user(case.connection, [command, "study1", "verified@example.com"])
+
+    assert case.connection.replies[-1]["error_code"] == "INTERNAL_ERROR"
+    assert case.registry_path.read_text() == initial
+    assert not case.reloads
+    case.engine.client_manager.get_client_from_name.assert_not_called()
+    events = case.records()
+    assert all("reason=processing_error" in event["message"] for event in events)
+    if command == "remove_study_site":
+        assert _actions(events) == ["study.site_remove.error", "study.site_remove.error"]
+        assert "site=site-a" in events[0]["message"]
+        assert "site=" not in events[1]["message"]
+    else:
+        assert _actions(events) == ["study.user_remove.error"]
+        assert "target=verified@example.com" in events[0]["message"]
+    assert marker not in case.audit_path.read_text()
+    assert "private-write-error" not in case.audit_path.read_text()
+
+
+def test_invalid_registry_membership_does_not_establish_site_target(study_audit):
+    case = study_audit
+    marker = "unverified-site-marker"
+    registry = json.loads(case.registry_path.read_text())
+    registry["studies"]["study1"]["site_orgs"]["org_b"] = "prefix-" + marker + "-suffix"
+    initial = json.dumps(registry)
+    case.registry_path.write_text(initial)
+
+    case.module.cmd_remove_study_site(case.connection, ["remove_study_site", "study1", "--sites", "site-a," + marker])
+
+    assert case.connection.replies[-1]["error_code"] == "INTERNAL_ERROR"
+    assert case.registry_path.read_text() == initial
+    assert not case.reloads
+    events = case.records()
+    assert _actions(events) == ["study.site_remove.error", "study.site_remove.error"]
+    assert "site=site-a" in events[0]["message"]
+    assert "site=" not in events[1]["message"]
+    assert marker not in case.audit_path.read_text()
 
 
 def test_applied_change_survives_reply_failure(study_audit, monkeypatch):
@@ -278,16 +402,32 @@ def test_lock_rejection_is_recorded_without_mutating_configuration(study_audit, 
     assert "reason=lock_timeout" in case.records()[0]["message"]
 
 
-def test_membership_batch_rejection_records_each_target_without_claiming_partial_apply(study_audit):
+@pytest.mark.parametrize("command", ["register_study", "add_study_site"])
+@pytest.mark.parametrize("has_known_site", [False, True])
+def test_membership_batch_rejection_omits_unverified_sites(study_audit, command, has_known_site):
     case = study_audit
-    case.engine.client_manager.get_client_from_name.return_value = None
+    target = "private-token-in-site-position"
+    manager = case.engine.client_manager
+    known_site = manager.get_client_from_name.return_value
+    manager.get_client_from_name.side_effect = lambda name: known_site if has_known_site and name == "site-a" else None
     before = case.registry_path.read_text()
-    case.module.cmd_add_study_site(case.connection, ["add_study_site", "study1", "--sites", "site-a,site-b"])
+
+    getattr(case.module, "cmd_" + command)(case.connection, [command, "study1", "--sites", "site-a," + target])
+
+    assert case.connection.replies[-1]["error_code"] == "INVALID_SITE"
     assert case.registry_path.read_text() == before
     events = case.records()
+    if command == "register_study":
+        assert events[0]["action"] == "study.register.rejected"
+        events = events[1:]
     assert _actions(events) == ["study.site_add.rejected", "study.site_add.rejected"]
-    assert {event["message"].split("site=")[1].split()[0] for event in events} == {"site-a", "site-b"}
     assert all("reason=invalid_site" in event["message"] for event in events)
+    if has_known_site:
+        assert "site=site-a" in events[0]["message"]
+    else:
+        assert "site=" not in events[0]["message"]
+    assert "site=" not in events[1]["message"]
+    assert target not in case.audit_path.read_text()
 
 
 def test_failed_audit_writer_does_not_prevent_study_update(study_audit, monkeypatch):

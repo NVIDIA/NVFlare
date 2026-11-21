@@ -234,7 +234,7 @@ def test_load_keeps_original_return_or_raised_error(writer, mode):
 
 
 @pytest.mark.parametrize("state", ["missing", "closed", "empty", "failing", "simulator", "invalid_context"])
-def test_recording_failure_preserves_model_outcome_and_does_not_retry(writer, monkeypatch, state, caplog):
+def test_recording_failure_preserves_model_outcome_and_does_not_retry(writer, monkeypatch, state, capfd):
     auditor, path = writer
     ctx = LocalContext()
     model = object()
@@ -264,8 +264,8 @@ def test_recording_failure_preserves_model_outcome_and_does_not_retry(writer, mo
     assert persistor.saved == [model]
     expected = {"simulator": 0, "invalid_context": 2}.get(state, 6)
     assert admin_audit._failed_attempts == expected
-    assert caplog.text.count("Audit recording failed") == bool(expected)
-    assert "private" not in caplog.text
+    diagnostic = "Audit recording failed; failed attempts since startup: 1\n"
+    assert capfd.readouterr().err == (diagnostic if expected else "")
     assert _records(path) == []
 
 
