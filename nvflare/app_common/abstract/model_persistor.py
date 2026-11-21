@@ -65,15 +65,16 @@ class ModelPersistor(LearnablePersistor, ABC):
             audit.returned()
 
     def get(self, model_file: str, fl_ctx: FLContext) -> object:
-        with model_audit.suspend_implementation():
-            learnable = self.get_model(model_file, fl_ctx)
+        with model_audit.operation("retrieve", fl_ctx, owner=self) as audit:
+            learnable = audit.call("implementation", self.get_model, model_file, fl_ctx)
 
             if self.filter_id:
-                _filter = fl_ctx.get_engine().get_component(self.filter_id)
-                if not isinstance(_filter, PersistorFilter):
-                    raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
-                learnable = _filter.process_post_get(learnable=learnable, fl_ctx=fl_ctx)
-            return learnable
+                with audit.stage("post_get_filter"):
+                    _filter = fl_ctx.get_engine().get_component(self.filter_id)
+                    if not isinstance(_filter, PersistorFilter):
+                        raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
+                    learnable = _filter.process_post_get(learnable=learnable, fl_ctx=fl_ctx)
+            return audit.returned(learnable)
 
     @abstractmethod
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:

@@ -18,7 +18,8 @@ from pathlib import Path
 
 import numpy as np
 
-from nvflare.apis.dxo import from_shareable
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.app_common.np.constants import NPConstants
 from tests.peer_admin_test_utils import PeerAdminJobTrainer, _write_json
@@ -65,3 +66,13 @@ class TaskAuditResultFilter(Filter):
         site = fl_ctx.get_peer_context().get_identity_name()
         _write_json(self.directory / f"result-{site}.json", {"private_result_seen": True})
         return shareable
+
+
+class TaskAuditModelValidator(Executor):
+    def execute(self, task_name, shareable, fl_ctx, abort_signal):
+        model = from_shareable(shareable)
+        if model.data_kind != DataKind.WEIGHTS or not np.array_equal(
+            model.data.get(NPConstants.NUMPY_KEY), [[MODEL_SOURCE_VALUE + 1]]
+        ):
+            raise RuntimeError("audit regression saved model did not reach the evaluation client")
+        return DXO(data_kind=DataKind.METRICS, data={"accuracy": 1.0}).to_shareable()

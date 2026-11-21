@@ -418,7 +418,9 @@ class PTFileModelPersistor(ModelPersistor):
         try:
             # Use the "cpu" to load the global model weights, avoid GPU out of memory
             device = "cpu"
-            data = torch.load(location, map_location=device, weights_only=self.load_weights_only)
+            data = model_audit.retrieve_step(
+                self, "file_read", torch.load, location, map_location=device, weights_only=self.load_weights_only
+            )
             persistence_manager = PTModelPersistenceFormatManager(
                 data, default_train_conf=self.default_train_conf, allow_numpy_conversion=self._allow_numpy_conversion
             )

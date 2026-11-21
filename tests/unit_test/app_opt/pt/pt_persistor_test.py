@@ -562,3 +562,51 @@ def test_pt_named_retrieval_inside_custom_save_does_not_audit_inventory_load(tmp
         "model.save.stage_returned",
         "model.save.returned",
     ]
+
+
+@pytest.mark.parametrize("scenario", ["read", "missing", "corrupt", "decode_error"])
+def test_pt_named_retrieval_observes_only_the_selected_file(tmp_path, model_audit_records, scenario):
+    torch = pytest.importorskip("torch")
+    from nvflare.app_common.abstract.model import ModelLearnableKey
+    from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+    source = tmp_path / "private-source.pt"
+    torch.save({"source_weight": torch.tensor([17.0])}, source)
+    saved = tmp_path / "private-selected.pt"
+    if scenario == "corrupt":
+        saved.write_bytes(b"private-corrupt-checkpoint")
+    elif scenario == "decode_error":
+        torch.save(torch.tensor([21.0]), saved)
+    else:
+        torch.save(
+            {"model": {"private-weight": torch.tensor([621.0])}, "meta_props": {"tag": "private-metadata"}}, saved
+        )
+    persistor = PTFileModelPersistor(
+        source_ckpt_file_full_name=str(source), global_model_file_name=saved.name, load_device="cpu"
+    )
+    persistor.log_dir = str(tmp_path)
+    name = "private-missing.pt" if scenario == "missing" else saved.name
+
+    result = persistor.get(name, FLContext())
+
+    assert persistor.persistence_manager is not None
+    if scenario == "read":
+        assert result[ModelLearnableKey.WEIGHTS]["private-weight"].tolist() == [621.0]
+        assert result[ModelLearnableKey.META] == {"tag": "private-metadata"}
+    else:
+        assert result is None
+    expected_reads = {
+        "read": ["model.retrieve.stage_returned"],
+        "missing": [],
+        "corrupt": ["model.retrieve.stage_error"],
+        "decode_error": ["model.retrieve.stage_returned"],
+    }
+    records = model_audit_records()
+    assert _stage_outcomes(records, "file_read") == expected_reads[scenario]
+    assert all(record["action"].startswith("model.retrieve.") for record in records)
+    assert records[-1]["action"] == "model.retrieve.returned"
+    assert ("status=value_returned" if scenario == "read" else "status=no_value") in records[-1]["message"].split()
+    serialized_records = json.dumps(records)
+    assert "private-" not in serialized_records
+    assert str(tmp_path) not in serialized_records
+    assert all("621" not in record.get("message", "") for record in records)
