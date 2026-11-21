@@ -96,7 +96,7 @@ def _failure():
             _last_warning = now
             attempts = _failed_attempts
         # Site levels and reloaded handlers can silently drop ordinary warnings.
-        message = f"Administrative audit recording failed; failed attempts since startup: {attempts}\n"
+        message = f"Audit recording failed; failed attempts since startup: {attempts}\n"
         os.write(2, message.encode("ascii"))
     except Exception:
         # Diagnostics must never change administrative behavior or recurse into audit.
