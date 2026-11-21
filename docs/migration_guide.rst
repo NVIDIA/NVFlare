@@ -27,6 +27,21 @@ Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
 endpoint attachment and cannot replace a 2.10 connection. This procedure
 includes a server outage and does not resume running jobs across the upgrade.
 
+MLflow Tracking Backend Approval
+--------------------------------
+
+``MLflowReceiver`` now requires site approval for remote tracking URIs and local
+stores outside the current job's result directory. Add each exact URI to
+``mlflow_tracking_uris`` in the receiving site's ``local/resources.json`` (or its
+``.default`` fallback). This policy must be configured by the site operator;
+job configuration cannot grant approval. Jobs using ``tracking_uri=None`` keep
+their job-local SQLite backend without additional settings. Custom
+``artifact_location`` paths must stay within the job run directory.
+
+See :doc:`programming_guide/experiment_tracking/experiment_tracking_apis` for the
+configuration example. If a URI is not permitted, the receiver logs an
+initialization error and does not create an MLflow client.
+
 Study Data File Removed
 -----------------------
 
