@@ -1,0 +1,14 @@
+{
+  "id": "pytorch-convert-basic-v2",
+  "files": [
+    "files/eval-pt/train.py",
+    "files/eval-pt/model.py"
+  ],
+  "prompt": "Convert this PyTorch project to FLARE and run FedAvg for three rounds with three simulated sites. Use the source's synthetic data for this simulation. For reproducibility, draw the four source tensors in source order with a dedicated CPU generator seeded to 42, independently of model initialization. Use those same eight training rows throughout. Assign each row to exactly one site with a deterministic balanced split (3, 3, 2 in any site order). At every site in every round, evaluate the received global model on all four separate validation rows with the source accuracy function before local training. Show how you checked the split and report the completed rounds and validation results.",
+  "expected_output": "A runnable PyTorch Client API conversion with client.py, job.py and the source model. Inspect the source, use the FedAvg recipe with explicit class_path and args, and validate the three-site, three-round simulation. Retained evidence must establish the identity and assignment of the eight training rows, use of only the four separate validation rows for accuracy, and actual completion. Counts or accuracy alone cannot establish data fidelity. Report the generated files and exact runtime artifact paths.",
+  "assertions": [
+    "The generated loaders use the fixture's four tensor draws in source order with the agreed dataset seed. Source positions and their feature/label pairs establish that each round uses the same eight training rows exactly once across the three site partitions, of sizes 3, 3 and 2. Padding, duplicating, dropping, independently resampling by site or round, or substituting a larger corpus fails this requirement even if the simulation completes.",
+    "In each round, every site evaluates the received global model on all four shared validation rows, with denominator four per site. These rows never enter training. A metric computed on a training shard, a newly generated validation set, or a claimed metric with no supporting evidence cannot satisfy this requirement. No minimum accuracy is required.",
+    "A completed conversion has retained evidence of three participating sites and three completed FedAvg rounds, with the source-derived accuracy and its denominator. A clarification alone leaves this revised, feasible conversion incomplete."
+  ]
+}
