@@ -160,7 +160,10 @@ class ServerRunner(TBI):
                         # we only set self.current_wf to open for business after successful initialize_run!
                         self.current_wf = wf
                     initialized_id = task_audit.record("workflow.execution.initialized", context=audit_context)
-                    audit_context = self._audit_context(fl_ctx, workflow_id=wf.id, reference=initialized_id)
+                    if audit_context is not None and initialized_id:
+                        audit_context = task_audit.prepare(
+                            lambda: replace(audit_context, reference=initialized_id), default=audit_context
+                        )
 
                 stage = "control"
                 with self.engine.new_context() as fl_ctx:

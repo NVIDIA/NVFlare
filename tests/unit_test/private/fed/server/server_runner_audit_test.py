@@ -343,6 +343,38 @@ def test_workflow_lifecycle_separates_return_abort_and_finalization(audit_file, 
         assert all("reference" not in e for e in events)
 
 
+@pytest.mark.parametrize("mutation_point", ["initialize", "start_workflow"])
+def test_workflow_audit_scope_survives_initialization_callbacks(audit_file, mutation_point):
+    _, path = audit_file
+    runner, _ = _runner()
+    workflow = runner.current_wf
+    runner.config.workflows = [workflow]
+    runner.current_wf = None
+
+    def change_scope(fl_ctx):
+        fl_ctx.set_prop(FLContextKey.EFFECTIVE_JOB_SCOPE_NAME, "private-callback-scope", private=True, sticky=False)
+
+    def change_scope_on_start(event, fl_ctx):
+        if event == EventType.START_WORKFLOW:
+            change_scope(fl_ctx)
+
+    if mutation_point == "initialize":
+        workflow.controller.initialize.side_effect = change_scope
+    else:
+        runner.fire_event.side_effect = change_scope_on_start
+
+    runner._execute_run()
+
+    initialized, controlled, finalized = _new_records(path)
+    assert [event["action"] for event in (initialized, controlled, finalized)] == [
+        "workflow.execution.initialized",
+        "workflow.control.returned",
+        "workflow.finalization.returned",
+    ]
+    assert all(event["scope"] == "research cohort" for event in (initialized, controlled, finalized))
+    assert controlled["reference"] == finalized["reference"] == initialized["event_id"]
+
+
 def test_new_recording_failure_does_not_replay_assignment(audit_file, monkeypatch):
     writer, path = audit_file
     runner, assigned, context = _assignment()
