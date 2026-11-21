@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
 import sys
 import threading
@@ -51,13 +52,22 @@ def monitor_parent_process(runner: Runner, parent_pid, stop_event: threading.Eve
 
 
 def check_parent_alive(parent_pid, stop_event: threading.Event):
-    while True:
-        if stop_event.is_set() or not psutil.pid_exists(parent_pid):
-            pid = os.getpid()
-            kill_child_processes(pid)
-            os.killpg(os.getpgid(pid), 9)
+    """Watch the process that directly launched this simulator worker in a new session."""
+    while not stop_event.is_set():
+        # Linux reparents the worker when its launcher exits, even if the launcher's PID is later reused.
+        parent_alive = os.getppid() == parent_pid if sys.platform == "linux" else psutil.pid_exists(parent_pid)
+        if not parent_alive:
             break
         time.sleep(1)
+
+    pid = os.getpid()
+    try:
+        kill_child_processes(pid)
+    except (PermissionError, psutil.AccessDenied) as exc:
+        if sys.platform != "linux" or os.getpgid(pid) != pid:
+            raise
+        logging.getLogger(__name__).warning("Cannot inspect all simulator worker descendants during shutdown: %s", exc)
+    os.killpg(os.getpgid(pid), 9)
 
 
 def kill_child_processes(parent_pid):
@@ -67,7 +77,10 @@ def kill_child_processes(parent_pid):
         return
     children = parent.children(recursive=True)
     for process in children:
-        process.kill()
+        try:
+            process.kill()
+        except psutil.NoSuchProcess:
+            continue  # It exited between enumeration and the signal.
 
 
 def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, enable_hci: bool = True):
