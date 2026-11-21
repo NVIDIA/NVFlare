@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import time
+from copy import deepcopy
 from multiprocessing import Process, Queue
 from typing import List, NamedTuple, Optional
+from urllib.parse import urlsplit
 
 import wandb
 
@@ -46,6 +49,24 @@ def _check_wandb_args(wandb_args):
         raise ValueError("must provide 'job_type' value")
 
 
+def _normalize_base_url(url):
+    if not isinstance(url, str) or not url or any(c.isspace() for c in url):
+        raise ValueError("W&B base URL must be a nonempty HTTP(S) URL")
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme not in ("http", "https")
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("W&B base URL must be HTTP(S), without credentials, query or fragment")
+    # Compare the destination the installed SDK will actually use, including
+    # its supported cloud URL aliases and trailing-slash normalization.
+    return wandb.Settings(base_url=url).base_url
+
+
 def _get_job_id_tag(fl_ctx: FLContext) -> str:
     """Gets a unique job id tag."""
     job_id = fl_ctx.get_job_id()
@@ -71,6 +92,54 @@ class WandBReceiver(AnalyticsReceiver):
 
         # os.environ["WANDB_API_KEY"] = YOUR_KEY_HERE
         os.environ["WANDB_MODE"] = self.mode
+
+    def _get_wandb_args(self, fl_ctx):
+        """Pin credential-bearing traffic to a site-approved backend before SDK login."""
+        args = deepcopy(self.wandb_args)
+        settings = args.get("settings")
+        if settings is None:
+            settings = {}
+        if not isinstance(settings, (dict, wandb.Settings)):
+            raise ValueError("wandb_args.settings must be a dict or wandb.Settings")
+
+        def get_setting(key):
+            if isinstance(settings, dict):
+                return settings.get(key)
+            if key == "base_url" and key not in getattr(settings, "model_fields_set", {key}):
+                return None
+            return getattr(settings, key, None)
+
+        # Proxy and TLS overrides can bypass the destination restriction.
+        if any(
+            get_setting(key) for key in ("http_proxy", "https_proxy", "x_proxies", "_proxies", "insecure_disable_ssl")
+        ):
+            raise ValueError("job W&B settings cannot override proxies or disable TLS verification")
+
+        default_url = _normalize_base_url(os.environ.get("WANDB_BASE_URL") or wandb.Settings().base_url)
+        # Only the receiving site's canonical resources file can authorize an
+        # additional backend. ConfigService also searches job-controlled paths.
+        resources_file = fl_ctx.get_workspace().get_resources_file_path()
+        resources = {}
+        if resources_file and os.path.isfile(resources_file):
+            with open(resources_file) as f:
+                resources = json.load(f)
+        if not isinstance(resources, dict):
+            raise ValueError("site resources must be a JSON object")
+        allowed_urls = resources.get("wandb_base_urls", [])
+        if not isinstance(allowed_urls, list):
+            raise ValueError("site wandb_base_urls must be a list of HTTP(S) URLs")
+        approved = {default_url, *(_normalize_base_url(url) for url in allowed_urls)}
+        base_url = _normalize_base_url(get_setting("base_url") or default_url)
+        if base_url not in approved:
+            raise ValueError("W&B base_url requires approval in site wandb_base_urls")
+        if isinstance(settings, dict):
+            settings["base_url"] = base_url
+            settings["insecure_disable_ssl"] = False
+        else:
+            settings.base_url = base_url
+            settings.insecure_disable_ssl = False
+        args["settings"] = settings
+        return args
 
     def _process_queue_tasks(self, queue):
         cnt = 0
@@ -120,6 +189,7 @@ class WandBReceiver(AnalyticsReceiver):
                 run.finish()
 
     def initialize(self, fl_ctx: FLContext):
+        wandb_args = self._get_wandb_args(fl_ctx)
         # Determine participating sites
         if fl_ctx.get_process_type() == ProcessType.SERVER_JOB:
             clients = fl_ctx.get_engine().get_clients()
@@ -137,30 +207,35 @@ class WandBReceiver(AnalyticsReceiver):
 
         self.fl_ctx = fl_ctx
 
-        run_name = self.wandb_args["name"]
+        run_name = wandb_args["name"]
         job_id_tag = _get_job_id_tag(fl_ctx)
-        wand_config = self.wandb_args.get("config", {})
 
         if self.mode == "online":
             try:
-                wandb.login(timeout=1, verify=True)
+                settings = wandb_args["settings"]
+                base_url = settings["base_url"] if isinstance(settings, dict) else settings.base_url
+                wandb.login(host=base_url, timeout=1, verify=True)
             except Exception as e:
                 self.log_warning(fl_ctx, f"Unsuccessful login: {e}. Using wandb offline mode.")
                 self.mode = "offline"
 
         for site_name in site_names:
             self.log_info(fl_ctx, f"initialize WandB run for site {site_name}")
-            self.wandb_args["name"] = f"{site_name}-{job_id_tag}-{run_name}"
-            self.wandb_args["group"] = f"{run_name}-{job_id_tag}"
-            self.wandb_args["mode"] = self.mode
+            # Queue serialization runs asynchronously: each worker gets its own
+            # validated snapshot rather than mutable job constructor arguments.
+            task_args = deepcopy(wandb_args)
+            wand_config = task_args.get("config", {})
+            task_args["name"] = f"{site_name}-{job_id_tag}-{run_name}"
+            task_args["group"] = f"{run_name}-{job_id_tag}"
+            task_args["mode"] = self.mode
             wand_config["job_id"] = job_id_tag
             wand_config["client"] = site_name
             wand_config["run_name"] = run_name
 
-            _check_wandb_args(self.wandb_args)
+            _check_wandb_args(task_args)
 
             q = Queue()
-            wandb_task = WandBTask(task_owner=site_name, task_type="init", task_data=self.wandb_args, step=0)
+            wandb_task = WandBTask(task_owner=site_name, task_type="init", task_data=task_args, step=0)
             q.put(wandb_task)
 
             self.queues[site_name] = q
