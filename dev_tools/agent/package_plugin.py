@@ -45,6 +45,8 @@ MANIFESTS = ("plugin.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.
 IDENTITY_FIELDS = ("name", "version", "description", "author", "homepage", "repository", "license", "keywords")
 BUNDLE_PATH = Path("plugins/nvidia-nvflare")
 LIGHTNING_EVAL_CHECKPOINT = "evals/files/lightning-eval-only/litnet-eval.pt"
+DICOM_EVAL_DIR = "evals/files/fedstats-image-dicom-dependency"
+DICOM_EVAL_FILES = tuple(f"{DICOM_EVAL_DIR}/site-{site}/synthetic.dcm" for site in range(1, 4))
 # CLI exports and verification-service outputs are retained, never generated here.
 VERIFICATION_FILES = {
     "eval-result.json",
@@ -118,7 +120,8 @@ def collect_files(root: Path) -> tuple[dict[str, tuple[bytes, int]], dict]:
     files["README.md"] = read_file(root, "PLUGIN.md")
     files["evals.json"] = read_file(root, "evals.json")
     files["evals/config.json"] = read_file(root, "evals/config.json")
-    files[LIGHTNING_EVAL_CHECKPOINT] = read_file(root, LIGHTNING_EVAL_CHECKPOINT)
+    for path in (LIGHTNING_EVAL_CHECKPOINT, *DICOM_EVAL_FILES):
+        files[path] = read_file(root, path)
     files["LICENSE"] = read_file(root, "LICENSE")
     files["LICENSE-CC-BY-4.0"] = read_file(root, "LICENSE-CC-BY-4.0")
     files["SKILLS-LICENSE.md"] = read_file(root, "SKILLS-LICENSE.md")
@@ -137,6 +140,7 @@ def collect_files(root: Path) -> tuple[dict[str, tuple[bytes, int]], dict]:
         "evals.json",
         "evals/config.json",
         LIGHTNING_EVAL_CHECKPOINT,
+        *DICOM_EVAL_FILES,
         "LICENSE",
         "LICENSE-CC-BY-4.0",
         "SKILLS-LICENSE.md",

@@ -1,5 +1,5 @@
 {
-  "description": "Plugin-level native projection of 107 signed member cases. The basic PyTorch conversion and the Lightning evaluation-only workflow use the versioned plugin tasks pytorch-convert-basic-v2 and lightning-eval-only-v2. The remaining 105 cases retain their canonical IDs and source expectations. Routing uses native fields and additional NVFlare grading references remain private.",
+  "description": "Plugin-level native projection of 107 signed member cases. Three plugin tasks use versioned inputs: pytorch-convert-basic-v2, lightning-eval-only-v2, and fedstats-image-dicom-dependency-v2. The remaining 104 cases retain their canonical IDs and source expectations. Routing uses native fields and additional NVFlare grading references remain private.",
   "evals": [
     {
       "id": "autofl-optimize-existing-job",
@@ -1865,10 +1865,14 @@
       }
     },
     {
-      "id": "fedstats-image-dicom-dependency",
-      "prompt": "I have chest X-ray DICOM folders at each of my 3 hospitals under /data/xray/site-{1,2,3}. Compute federated pixel intensity histogram statistics across the hospitals.",
+      "id": "fedstats-image-dicom-dependency-v2",
+      "prompt": "I have chest X-ray DICOM folders at each of my 3 hospitals under `evals/files/fedstats-image-dicom-dependency/site-{1,2,3}` in the evaluation workspace. Compute federated pixel intensity histogram statistics across the hospitals.",
       "expected_output": "The skill triggers on the image path: it identifies DICOM as the format, preflights the DICOM loader dependency (pydicom or MONAI's ITK reader) before generating the job, and on a missing loader fails closed with the product error and the required dependency named — it never silently skips files, guesses a different format, or improvises statistics without the loader. With the loader available, it generates the image-intensity Statistics client from the image template with count, failure_count, and histogram, taking the intensity range from the pixel bit depth, applying the DICOM rescale (RescaleSlope/RescaleIntercept) in the loader with a declared Hounsfield range for CT, and stating that count means slices for DICOM series.",
-      "files": [],
+      "files": [
+        "evals/files/fedstats-image-dicom-dependency/site-1/synthetic.dcm",
+        "evals/files/fedstats-image-dicom-dependency/site-2/synthetic.dcm",
+        "evals/files/fedstats-image-dicom-dependency/site-3/synthetic.dcm"
+      ],
       "assertions": [
         "The agent routes to the image path and identifies DICOM as the format requiring pydicom or an ITK-based reader.",
         "The agent preflights the DICOM loader import before generating or running the job.",

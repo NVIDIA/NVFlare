@@ -46,7 +46,7 @@ def require(condition, message):
 
 
 def validate_evaluation_cases(files):
-    """Verify the plugin projection, including the versioned PyTorch and Lightning cases."""
+    """Verify the plugin projection, including the versioned plugin evaluation cases."""
     expected = []
     for skill in package_plugin.SKILLS:
         suite_path = f"skills/{skill}/evals/evals.json"
@@ -71,8 +71,6 @@ def validate_evaluation_cases(files):
                     references, sort_keys=True
                 )
             row["files"] = [f"skills/{skill}/evals/{name}" for name in row["files"]]
-            for name in row["files"]:
-                require(name in files, f"Missing plugin evaluation fixture: {name}")
             if row["files"]:
                 directory = posixpath.commonpath([posixpath.dirname(name) for name in row["files"]])
                 if skill == "nvflare-convert-lightning" and row["id"] == "lightning-eval-only":
@@ -98,6 +96,15 @@ def validate_evaluation_cases(files):
                     )
                 if skill.startswith("nvflare-convert-") or skill == "nvflare-fed-stats":
                     row["setup"] = {"workspace_writable": True}
+            elif skill == "nvflare-fed-stats" and row["id"] == "fedstats-image-dicom-dependency":
+                row["id"] = "fedstats-image-dicom-dependency-v2"
+                row["files"] = list(package_plugin.DICOM_EVAL_FILES)
+                row["prompt"] = row["prompt"].replace(
+                    "/data/xray/site-{1,2,3}",
+                    f"`{package_plugin.DICOM_EVAL_DIR}/site-{{1,2,3}}` in the evaluation workspace",
+                )
+            for name in row["files"]:
+                require(name in files, f"Missing plugin evaluation fixture: {name}")
             expected.append(row)
     actual = json.loads(files["evals.json"][0])["evals"]
     require(len({row["id"] for row in expected}) == len(expected), "Member case IDs must be globally unique")

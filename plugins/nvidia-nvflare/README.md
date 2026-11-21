@@ -169,9 +169,9 @@ schema. Member evaluation datasets remain unchanged. The licensing update requir
 refreshed member cards and signatures before release. The suite
 promotes routing expectations into `expected_skill` and `routing`, retains
 assertions and expected outcomes as private grading references, and rebases
-fixture paths. Prompts with fixtures identify the staged working directory;
-conversion and statistics tasks can write to their fresh project copies. The
-package check verifies every row against its member case and the two plugin
+fixture paths. Prompts with fixtures identify their workspace locations.
+Cases that edit a supplied project receive a writable copy. The
+package check verifies every row against its member case and the three plugin
 revisions described below.
 
 The plugin runs `pytorch-convert-basic-v2` in the original conversion slot.
@@ -196,6 +196,11 @@ and `torch.save(dict(LitNet().state_dict()), "litnet-eval.pt")`. To verify compa
 load with `torch.load(path, map_location="cpu", weights_only=True)` and pass the
 result to `LitNet().load_state_dict(..., strict=True)`. The case retains the member's
 grading criteria for safe loading, one-shot evaluation, and per-site validation metrics.
+
+In `fedstats-image-dicom-dependency-v2`, each of the three hospitals has one
+synthetic chest X-ray DICOM file under `evals/files/fedstats-image-dicom-dependency/`.
+Both arms receive the same workspace-relative inputs and the member's original
+loader and histogram grading criteria.
 
 Use the current NVCARPS CLI, configured with model credentials outside the
 repository, and its supported local container runtime. The compute image also
