@@ -132,8 +132,16 @@ def _without_zero_step_results(results: List[FLModel], on_skip=None) -> List[FLM
     return kept
 
 
+class _UnchangedModelResult(FLModel):
+    pass
+
+
+def _keeps_model(controller, aggr_result) -> bool:
+    return controller._keep_model or type(aggr_result) is _UnchangedModelResult
+
+
 def _make_unchanged_model_result(current_round) -> FLModel:
-    return FLModel(
+    return _UnchangedModelResult(
         params={},
         params_type=ParamsType.DIFF,
         current_round=current_round,
@@ -394,7 +402,7 @@ class BaseFedAvg(ModelController):
         Returns: None.
 
         """
-        if self._keep_model:
+        if _keeps_model(self, aggr_result):
             return model
 
         self.event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE)

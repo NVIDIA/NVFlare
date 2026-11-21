@@ -2921,3 +2921,21 @@ class TestServerOwnedZeroStepDecision:
 
         controller.save_model.assert_called_once()
         assert controller.save_model.call_args.args[0].params["w"] == pytest.approx([9.0])
+
+
+@pytest.mark.parametrize("fn_name", ["base", "scaffold"])
+def test_direct_aggregate_fn_then_update_model_keeps_model_on_all_zero_round(fn_name):
+    from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+    from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+    fn = BaseFedAvg.aggregate_fn if fn_name == "base" else scaffold_aggregate_fn
+    controller = _base_fedavg()
+    controller.fl_ctx = FLContext()
+    controller.event = lambda *_: None
+    model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, metrics={"acc": 0.9}, meta={"k": 1})
+    zero = FLModel(params={"w": np.array([1.0])}, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+
+    updated = controller.update_model(model, fn([zero]))
+
+    assert updated.params["w"] == pytest.approx([5.0])
+    assert updated.metrics == {"acc": 0.9}

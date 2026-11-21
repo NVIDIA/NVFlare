@@ -730,3 +730,14 @@ def test_update_model_empty_nonzero_update_still_raises():
 
     with pytest.raises(KeyError, match="newton_raphson_updates"):
         controller.update_model(model, update)
+
+
+def test_direct_aggregator_fn_then_update_model_keeps_model_on_all_zero_round():
+    controller = FedAvgLR(damping_factor=0.5, epsilon=1.0, n_features=2)
+    controller.info = lambda *_: None
+    model = FLModel(params={NPConstants.NUMPY_KEY: np.array([1.0, 2.0, 3.0])}, meta={})
+    zero = FLModel(params={}, params_type=ParamsType.DIFF, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+
+    updated = controller.update_model(model, controller.newton_raphson_aggregator_fn([zero]))
+
+    np.testing.assert_array_equal(updated.params[NPConstants.NUMPY_KEY], [1.0, 2.0, 3.0])
