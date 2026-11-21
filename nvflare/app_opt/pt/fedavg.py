@@ -21,6 +21,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.workflows.fedavg import FedAvg
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
+from nvflare.fuel.sec import model_audit
 from nvflare.fuel.utils import fobs
 
 
@@ -126,13 +127,13 @@ class PTFedAvg(FedAvg):
         metadata_path = self._metadata_path(filepath)
 
         # Save parameters with torch.save
-        torch.save(model.params, filepath)
+        model_audit.save_step(self, "parameters_write", torch.save, model.params, filepath)
 
         # Save FLModel metadata (metrics, params_type, etc.) separately
         params = model.params
         try:
             model.params = {}  # Temporarily remove params to save only metadata
-            fobs.dumpf(model, metadata_path)
+            model_audit.save_step(self, "metadata_write", fobs.dumpf, model, metadata_path)
         finally:
             model.params = params  # Restore params
 
@@ -148,7 +149,7 @@ class PTFedAvg(FedAvg):
             FLModel: loaded model with params and metadata
         """
         # Load parameters with torch.load
-        params = torch.load(filepath, weights_only=True)
+        params = model_audit.load_step(self, "parameters_read", torch.load, filepath, weights_only=True)
 
         # Load FLModel metadata if exists
         metadata_path = self._metadata_path(filepath)
@@ -157,7 +158,7 @@ class PTFedAvg(FedAvg):
             # Validate the target-side path too, and prefer alias-side metadata.
             metadata_path = self._metadata_path(os.path.realpath(filepath))
         if os.path.exists(metadata_path):
-            model: FLModel = fobs.loadf(metadata_path)
+            model: FLModel = model_audit.load_step(self, "metadata_read", fobs.loadf, metadata_path)
             model.params = params
         else:
             model = FLModel(params=params)

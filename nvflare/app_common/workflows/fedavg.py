@@ -33,6 +33,7 @@ from nvflare.app_common.utils.fedprox_utils import normalize_fedprox_mu, set_fed
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
+from nvflare.fuel.sec import model_audit
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
 
@@ -180,12 +181,15 @@ class FedAvg(BaseFedAvg):
 
             # Load initial model - prefer model if provided, else use persistor
             if self.model is not None:
-                if isinstance(self.model, FLModel):
-                    model = self.model
-                else:
-                    # Assume dict of params
-                    model = FLModel(params=self.model)
-                self.info("Using provided model")
+                with model_audit.operation("load", self.fl_ctx, owner=self) as audit:
+                    with audit.stage("initialize", reason="configured_model"):
+                        if isinstance(self.model, FLModel):
+                            model = self.model
+                        else:
+                            # Assume dict of params
+                            model = FLModel(params=self.model)
+                    self.info("Using provided model")
+                    audit.returned(model)
             else:
                 model = self.load_model()
 
@@ -519,20 +523,28 @@ class FedAvg(BaseFedAvg):
         if self.persistor:
             # Use persistor (parent class behavior)
             return super().load_model()
-        elif self.save_filename:
-            # Try to load from file
-            filepath = resolve_path_under_root(
-                self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
-            )
-            if os.path.exists(filepath):
-                self.info(f"Loading model from {filepath}")
-                return self.load_model_file(filepath)
+        with model_audit.operation("load", self.fl_ctx, owner=self) as audit:
+            with audit.stage("prepare"):
+                if self.save_filename:
+                    filepath = resolve_path_under_root(
+                        self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
+                    )
+                    if os.path.exists(filepath):
+                        self.info(f"Loading model from {filepath}")
+                        reason = ""
+                    else:
+                        self.info(f"No saved model found at {filepath}, starting fresh")
+                        reason = "file_missing"
+                else:
+                    self.warning("No persistor or save_filename configured")
+                    reason = "no_destination"
+
+            if reason:
+                with audit.stage("initialize", reason=reason):
+                    model = FLModel(params={})
             else:
-                self.info(f"No saved model found at {filepath}, starting fresh")
-                return FLModel(params={})
-        else:
-            self.warning("No persistor or save_filename configured")
-            return FLModel(params={})
+                model = audit.call("implementation", self.load_model_file, filepath)
+            return audit.returned(model)
 
     def save_model(self, model: FLModel) -> None:
         """Save model. Uses persistor if available, otherwise uses save_model_file.
@@ -545,15 +557,19 @@ class FedAvg(BaseFedAvg):
         if self.persistor:
             # Use persistor (parent class behavior)
             super().save_model(model)
-        elif self.save_filename:
-            # Use simple file-based saving
-            filepath = resolve_path_under_root(
-                self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
-            )
-            self.save_model_file(model, filepath)
-            self.info(f"Model saved to {filepath}")
-        else:
-            self.warning("No persistor or save_filename configured, model not saved")
+            return
+        with model_audit.operation("save", self.fl_ctx, owner=self) as audit:
+            if self.save_filename:
+                with audit.stage("prepare"):
+                    filepath = resolve_path_under_root(
+                        self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
+                    )
+                audit.call("implementation", self.save_model_file, model, filepath)
+                self.info(f"Model saved to {filepath}")
+                audit.returned()
+            else:
+                self.warning("No persistor or save_filename configured, model not saved")
+                audit.skipped(reason="no_destination")
 
     def save_model_file(self, model: FLModel, filepath: str) -> None:
         """Save model to file. Override this for framework-specific serialization.
@@ -566,7 +582,7 @@ class FedAvg(BaseFedAvg):
             filepath (str): path to save the model
         """
         # Default: use FOBS to save entire FLModel
-        fobs.dumpf(model, filepath)
+        model_audit.save_step(self, "write", fobs.dumpf, model, filepath)
 
     def load_model_file(self, filepath: str) -> FLModel:
         """Load model from file. Override this for framework-specific deserialization.
@@ -581,4 +597,4 @@ class FedAvg(BaseFedAvg):
             FLModel: loaded model
         """
         # Default: use FOBS to load entire FLModel
-        return fobs.loadf(filepath)
+        return model_audit.load_step(self, "previous_read", fobs.loadf, filepath)

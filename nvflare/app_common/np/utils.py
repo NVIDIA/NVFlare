@@ -20,6 +20,7 @@ from typing import Callable, Optional
 import numpy as np
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.sec import model_audit
 from nvflare.security.logging import secure_format_exception
 
 
@@ -71,7 +72,7 @@ def load_numpy_model(
                 f"Loading model from source checkpoint: {ckpt_path}",
                 fire_event=False,
             )
-            data = np.load(ckpt_path, allow_pickle=False)
+            data = model_audit.load_step(logger, "source_read", np.load, ckpt_path, allow_pickle=False)
         except Exception as e:
             # If loading fails after file exists, this is a real error - raise it
             raise ValueError(
@@ -81,7 +82,7 @@ def load_numpy_model(
     # Priority 2: Load from model file path
     if data is None:
         try:
-            data = np.load(model_file_path, allow_pickle=False)
+            data = model_audit.load_step(logger, "previous_read", np.load, model_file_path, allow_pickle=False)
             logger.log_info(fl_ctx, f"Loaded model from {model_file_path}", fire_event=False)
         except Exception as e:
             logger.log_info(
@@ -93,6 +94,6 @@ def load_numpy_model(
 
     # Priority 3: Use fallback data
     if data is None:
-        data = get_fallback_data()
+        data = model_audit.load_step(logger, "initialize", get_fallback_data)
 
     return data
