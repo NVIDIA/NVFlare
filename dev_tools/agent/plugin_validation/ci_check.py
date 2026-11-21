@@ -46,7 +46,7 @@ def require(condition, message):
 
 
 def validate_evaluation_cases(files):
-    """Verify the plugin projection, including its versioned PyTorch conversion case."""
+    """Verify the plugin projection, including the versioned PyTorch and Lightning cases."""
     expected = []
     for skill in package_plugin.SKILLS:
         suite_path = f"skills/{skill}/evals/evals.json"
@@ -75,10 +75,27 @@ def validate_evaluation_cases(files):
                 require(name in files, f"Missing plugin evaluation fixture: {name}")
             if row["files"]:
                 directory = posixpath.commonpath([posixpath.dirname(name) for name in row["files"]])
-                row["prompt"] += (
-                    f"\n\nThe supplied input files are staged under `{directory}`."
-                    " Use that directory as the working directory for commands referring to those files."
-                )
+                if skill == "nvflare-convert-lightning" and row["id"] == "lightning-eval-only":
+                    checkpoint = package_plugin.LIGHTNING_EVAL_CHECKPOINT
+                    require(checkpoint in files, f"Missing Lightning checkpoint fixture: {checkpoint}")
+                    require(
+                        hashlib.sha256(files[checkpoint][0]).hexdigest()
+                        == "77967a8a70e1ca63c6b72b6ea4a71b03ea6d0c1ef1f74be90b30fc148d6cfb0a",
+                        "Unexpected Lightning checkpoint fixture contents",
+                    )
+                    row["id"] = "lightning-eval-only-v2"
+                    row["files"].append(checkpoint)
+                    row["prompt"] += (
+                        "\n\nBoth paths are relative to the evaluation workspace root. "
+                        f"The Lightning project is in `{directory}`. Use the checkpoint at `{checkpoint}`. "
+                        "Resolve the checkpoint path before changing to the project directory. "
+                        "If the file is missing, report the missing input and stop the checkpoint lookup."
+                    )
+                else:
+                    row["prompt"] += (
+                        f"\n\nThe supplied input files are staged under `{directory}`."
+                        " Use that directory as the working directory for commands referring to those files."
+                    )
                 if skill.startswith("nvflare-convert-") or skill == "nvflare-fed-stats":
                     row["setup"] = {"workspace_writable": True}
             expected.append(row)

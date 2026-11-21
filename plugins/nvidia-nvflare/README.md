@@ -43,7 +43,7 @@ workspace and local simulation for initial testing.
 The distributable plugin is committed under `plugins/nvidia-nvflare/`. The
 existing repository `skills/` directories remain the source of truth; edit skills
 there and regenerate the bundle. The root manifests, plugin-level `evals.json`,
-`evals/config.json`, and this guide are also packaging inputs. The paths below
+`evals/config.json`, plugin evaluation fixtures, and this guide are also packaging inputs. The paths below
 are relative to the generated plugin directory.
 
 | Target | Entry point | Skill discovery |
@@ -62,7 +62,7 @@ for desktop execution.
 
 The build copies real files and preserves executable permissions. It packages
 only tracked skill files, the four manifests, this guide as `README.md`,
-the plugin-level `evals.json` and `evals/config.json`, `LICENSE`, `LICENSE-CC-BY-4.0`,
+the plugin-level `evals.json`, `evals/config.json`, evaluation fixtures, `LICENSE`, `LICENSE-CC-BY-4.0`,
 `SKILLS-LICENSE.md`, and `CONTRIBUTING.md` with the DCO text.
 The maintainer-authored root `plugin-card.md` is preparation material, excluded
 from the bundle; verification CI supplies the final card. Repository development
@@ -171,8 +171,8 @@ promotes routing expectations into `expected_skill` and `routing`, retains
 assertions and expected outcomes as private grading references, and rebases
 fixture paths. Prompts with fixtures identify the staged working directory;
 conversion and statistics tasks can write to their fresh project copies. The
-package check verifies every row against its member case and the single plugin
-revision described below.
+package check verifies every row against its member case and the two plugin
+revisions described below.
 
 The plugin runs `pytorch-convert-basic-v2` in the original conversion slot.
 The signed `pytorch-convert-basic` asks for equal partitions of eight rows across
@@ -187,6 +187,15 @@ validation rows in every round. The four rows are a smoke check of metric plumbi
 historical results under their original IDs. A new comparison needs fresh skill
 and baseline attempts on v2 with the same fixture, runtime and settings, plus
 retained partition, validation and completion evidence for each attempt.
+
+The plugin runs `lightning-eval-only-v2` in the original Lightning evaluation-only
+slot. Both arms receive the member's Lightning project and the same synthetic CPU
+state dictionary for its `LitNet` model at `evals/files/lightning-eval-only/litnet-eval.pt`.
+The fixture was generated on CPU with PyTorch 2.15.0, `torch.manual_seed(17)`,
+and `torch.save(dict(LitNet().state_dict()), "litnet-eval.pt")`. To verify compatibility,
+load with `torch.load(path, map_location="cpu", weights_only=True)` and pass the
+result to `LitNet().load_state_dict(..., strict=True)`. The case retains the member's
+grading criteria for safe loading, one-shot evaluation, and per-site validation metrics.
 
 Use the current NVCARPS CLI, configured with model credentials outside the
 repository, and its supported local container runtime. The compute image also

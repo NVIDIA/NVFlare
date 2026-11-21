@@ -1,5 +1,5 @@
 {
-  "description": "Plugin-level native projection of 107 signed member cases. The PyTorch basic conversion uses the versioned plugin task pytorch-convert-basic-v2. The remaining 106 cases retain their canonical IDs and source expectations. Routing uses native fields and additional NVFlare grading references remain private.",
+  "description": "Plugin-level native projection of 107 signed member cases. The basic PyTorch conversion and the Lightning evaluation-only workflow use the versioned plugin tasks pytorch-convert-basic-v2 and lightning-eval-only-v2. The remaining 105 cases retain their canonical IDs and source expectations. Routing uses native fields and additional NVFlare grading references remain private.",
   "evals": [
     {
       "id": "autofl-optimize-existing-job",
@@ -822,12 +822,13 @@
       }
     },
     {
-      "id": "lightning-eval-only",
-      "prompt": "I just want to evaluate this Lightning checkpoint across 3 sites and collect validation metrics, no training updates.\n\nThe supplied input files are staged under `skills/nvflare-convert-lightning/evals/files/hello-lightning`. Use that directory as the working directory for commands referring to those files.",
+      "id": "lightning-eval-only-v2",
+      "prompt": "I just want to evaluate this Lightning checkpoint across 3 sites and collect validation metrics, no training updates.\n\nBoth paths are relative to the evaluation workspace root. The Lightning project is in `skills/nvflare-convert-lightning/evals/files/hello-lightning`. Use the checkpoint at `evals/files/lightning-eval-only/litnet-eval.pt`. Resolve the checkpoint path before changing to the project directory. If the file is missing, report the missing input and stop the checkpoint lookup.",
       "expected_output": "The agent treats this as evaluation-only and selects the PyTorch FedEval recipe, passing the repo-supplied checkpoint as the required eval_ckpt and evaluate_only=True to the client loop. It patches the trainer and runs a single trainer.validate(model) on the received global model (FedEval sends one validate task per site, not a training round loop, not trainer.fit, and not trainer.test), treats the supplied checkpoint as untrusted input requiring safe handling, and reports one-shot per-site validation metrics and result paths.",
       "files": [
         "skills/nvflare-convert-lightning/evals/files/hello-lightning/train.py",
-        "skills/nvflare-convert-lightning/evals/files/hello-lightning/model.py"
+        "skills/nvflare-convert-lightning/evals/files/hello-lightning/model.py",
+        "evals/files/lightning-eval-only/litnet-eval.pt"
       ],
       "assertions": [
         "The agent selects the PyTorch FedEval recipe for evaluation-only workflows and passes the repo-supplied checkpoint as the required eval_ckpt.",
