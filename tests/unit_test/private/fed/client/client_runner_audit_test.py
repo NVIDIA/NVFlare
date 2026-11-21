@@ -145,28 +145,69 @@ def test_success_uses_locally_written_receipt_without_copying_untrusted_referenc
     assert current_context() == TaskAuditContext()
 
 
-def test_direct_assignment_does_not_link_the_supplied_reference(system):
+@pytest.mark.parametrize("supplied_identity", [False, True], ids=["missing-identity", "forged-identity"])
+@pytest.mark.parametrize("execution_error", [False, True], ids=["success", "executor-error"])
+def test_direct_assignment_omits_unverified_identity_and_reference(system, supplied_identity, execution_error):
     runner, executor, ctx, task, _, path = system
     request = task.data
     request.set_header(ReservedHeaderKey.TASK_NAME, task.name)
-    request.set_header(ReservedHeaderKey.TASK_ID, task.task_id)
     request.set_header(ReservedKey.AUDIT_EVENT_ID, "private-direct-reference")
+    ctx.get_peer_context().set_prop(ReservedKey.IDENTITY_NAME, "site-2", private=False, sticky=False)
+    identity = {
+        ReservedHeaderKey.TASK_ID: "forged-direct-task",
+        ReservedHeaderKey.TASK_ATTEMPT_ID: "forged-direct-attempt",
+        ReservedHeaderKey.WORKFLOW: "forged-direct-workflow",
+    }
+    for key, value in identity.items():
+        request[ReservedHeaderKey.HEADERS].pop(key, None)
+        request.get_cookie_jar().pop(key, None)
+        if supplied_identity:
+            request.set_header(key, value)
+            request.add_cookie(key, value)
 
+    executed_identity = []
+
+    def execute(_name, _data, fl_ctx, _abort):
+        executed_identity.append(
+            tuple(
+                fl_ctx.get_prop(key)
+                for key in (FLContextKey.TASK_ID, FLContextKey.TASK_ATTEMPT_ID, FLContextKey.WORKFLOW)
+            )
+        )
+        if execution_error:
+            raise ValueError("private-executor-error")
+        return make_reply(ReturnCode.OK)
+
+    executor.callback = execute
     result = runner._handle_do_task("do_task", request, ctx)
 
-    assert result.get_return_code() == ReturnCode.OK
+    assert result.get_return_code() == (ReturnCode.EXECUTION_EXCEPTION if execution_error else ReturnCode.OK)
     assert executor.calls == 1
-    received, started, returned, prepared = _records(path)
-    assert [event["action"] for event in (received, started, returned)] == [
+    expected_identity = tuple(identity.values()) if supplied_identity else (None, None, None)
+    assert executed_identity == [expected_identity]
+    assert result.get_header(ReservedHeaderKey.TASK_ID) == expected_identity[0]
+    assert result.get_task_attempt_id() == expected_identity[1]
+    assert result.get_cookie(ReservedHeaderKey.WORKFLOW) == expected_identity[2]
+    records = _records(path)
+    received, started, completed, prepared = records
+    assert [event["action"] for event in (received, started, completed)] == [
         "task.assignment.received",
         "task.execution.started",
-        "task.execution.returned",
+        "task.execution.error" if execution_error else "task.execution.returned",
     ]
-    assert all("reference" not in event for event in (received, started, returned))
+    assert all("reference" not in event for event in (received, started, completed))
+    for event in records:
+        assert 'task="train"' in event["message"]
+        assert 'site="site-1"' in event["message"]
+        for detail in ("task_id=", "attempt_id=", "workflow="):
+            assert detail not in event["message"]
+    assert "forged-direct-" not in json.dumps(records)
     assert prepared["action"] == "task.result.prepared"
     assert prepared["reference"] == result.get_header(ReservedKey.AUDIT_EVENT_ID)
     receipt = next(r for r in _all_records(path) if r.get("message") == "received task from server")
     assert receipt["reference"] == "private-direct-reference"
+    assert current_context() == TaskAuditContext()
+    assert subject._auxiliary_task.get() is False
 
 
 @pytest.mark.parametrize("peer", [None, "bad-type", "other-job"])

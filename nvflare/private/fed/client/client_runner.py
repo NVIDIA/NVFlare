@@ -400,9 +400,10 @@ class ClientRunner(TBI):
             lambda: build_context(
                 fl_ctx,
                 task_name=task.name,
-                task_id=task.task_id,
-                workflow_id=task.workflow_id or "",
-                attempt_id=task.attempt_id or "",
+                # Direct-task identifiers come from the requester, not a local assignment.
+                task_id="" if _auxiliary_task.get() else task.task_id,
+                workflow_id="" if _auxiliary_task.get() else task.workflow_id or "",
+                attempt_id="" if _auxiliary_task.get() else task.attempt_id or "",
                 reference=(
                     receipt_audit_event_id
                     if not _auxiliary_task.get() and isinstance(receipt_audit_event_id, str)
