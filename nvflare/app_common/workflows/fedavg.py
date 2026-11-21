@@ -40,7 +40,6 @@ from .base_fedavg import (
     BaseFedAvg,
     _get_client_name,
     _get_num_steps_weight,
-    _is_unchanged_model_result,
     _is_zero_step_result,
     _make_unchanged_model_result,
     _release_params,
@@ -165,8 +164,6 @@ class FedAvg(BaseFedAvg):
         self._received_count: int = 0
         self._expected_count: int = 0
         self._zero_step_count: int = 0
-        self._reply_count: int = 0
-        self._reply_lock = Lock()
         self._params_type = None  # Only store params_type, not full result
         self._site_metric_weights: Dict[str, Dict[str, Any]] = {}
 
@@ -281,7 +278,7 @@ class FedAvg(BaseFedAvg):
                     AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggregate_results
                 )
 
-                if _is_unchanged_model_result(aggregate_results):
+                if self._keep_model:
                     if self.stop_condition:
                         self.num_fl_rounds_without_improvement += 1
                         if self.patience and self.patience <= self.num_fl_rounds_without_improvement:
@@ -400,17 +397,13 @@ class FedAvg(BaseFedAvg):
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
         return True
 
-    def _process_result(self, client_task, fl_ctx) -> None:
-        with self._reply_lock:
-            self._reply_count += 1
-        super()._process_result(client_task, fl_ctx)
-
     def _all_results_zero_step(self) -> bool:
         return self._zero_step_count > 0 and self._zero_step_count == self._reply_count
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
-        if self._all_results_zero_step():
+        self._keep_model = self._all_results_zero_step()
+        if self._keep_model:
             self.warning(f"All results reported 0 steps at round {self.current_round}, keeping the global model.")
             self._publish_zero_contribution_stats()
             return _make_unchanged_model_result(self.current_round)

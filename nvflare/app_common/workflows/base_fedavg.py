@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import math
+from threading import Lock
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.fl_constant import FLMetaKey
@@ -84,9 +85,6 @@ def make_key_metric_info_from_stop_condition(stop_cond, stop_condition) -> Optio
     }
 
 
-UNCHANGED_MODEL_META_KEY = "fedavg_unchanged_model"
-
-
 def _get_client_name(result: FLModel) -> str:
     meta = result.meta or {}
     value = meta.get("client_name", AppConstants.CLIENT_UNKNOWN)
@@ -134,10 +132,6 @@ def _without_zero_step_results(results: List[FLModel], on_skip=None) -> List[FLM
     return kept
 
 
-def _is_unchanged_model_result(result: FLModel) -> bool:
-    return isinstance(result, FLModel) and (result.meta or {}).get(UNCHANGED_MODEL_META_KEY) is True
-
-
 def _make_unchanged_model_result(current_round) -> FLModel:
     return FLModel(
         params={},
@@ -145,7 +139,6 @@ def _make_unchanged_model_result(current_round) -> FLModel:
         current_round=current_round,
         meta={
             "nr_aggregated": 0,
-            UNCHANGED_MODEL_META_KEY: True,
             "current_round": current_round,
             AppConstants.METRICS_AGGREGATION_INFO: make_fedavg_metrics_aggregation_info(),
         },
@@ -224,6 +217,14 @@ class BaseFedAvg(ModelController):
         self.memory_gc_rounds = memory_gc_rounds
 
         self.current_round = None
+        self._reply_count = 0
+        self._reply_lock = Lock()
+        self._keep_model = False
+
+    def _process_result(self, client_task, fl_ctx) -> None:
+        with self._reply_lock:
+            self._reply_count += 1
+        super()._process_result(client_task, fl_ctx)
 
     def _maybe_cleanup_memory(self):
         """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
@@ -300,8 +301,13 @@ class BaseFedAvg(ModelController):
         if self.fl_ctx:
             self._set_ctx_prop_preserving_attrs(fl_ctx=self.fl_ctx, key=AppConstants.AGGREGATION_STATS, value=None)
         self.event(AppEventType.BEFORE_AGGREGATION)
+        self._keep_model = False
+        reply_count, self._reply_count = self._reply_count, 0
         kept_results = self._drop_zero_step_results(results)
         if results and not kept_results:
+            if reply_count > len(results):
+                raise RuntimeError("no accepted contributions to aggregate")
+            self._keep_model = True
             self.warning(f"All results reported 0 steps at round {self.current_round}, keeping the global model.")
             aggr_result = _make_unchanged_model_result(self.current_round)
             self._publish_zero_contribution_stats()
@@ -388,7 +394,7 @@ class BaseFedAvg(ModelController):
         Returns: None.
 
         """
-        if _is_unchanged_model_result(aggr_result):
+        if self._keep_model:
             return model
 
         self.event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE)

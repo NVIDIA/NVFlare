@@ -2797,6 +2797,7 @@ class TestZeroStepReviewFollowUps:
 
         controller = _base_fedavg()
         model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, metrics={"acc": 0.9}, meta={"k": 1})
+        controller._keep_model = True
 
         updated = controller.update_model(model, _make_unchanged_model_result(0))
 
@@ -2812,3 +2813,111 @@ def test_zero_step_array_params_result_is_skipped():
     kept = controller._drop_zero_step_results([skipped, _steps_result("site-2", 3.0, 2)])
 
     assert len(kept) == 1
+
+
+def _zero_step_reply():
+    return FLModelUtils.to_shareable(
+        FLModel(params={}, params_type=ParamsType.DIFF, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+    )
+
+
+def _unconvertible_reply():
+    from nvflare.apis.dxo import MetaKey, from_shareable
+
+    dxo = from_shareable(
+        FLModelUtils.to_shareable(
+            FLModel(
+                params={"w": np.array([1.0])}, params_type=ParamsType.DIFF, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 5}
+            )
+        )
+    )
+    dxo.meta[MetaKey.INITIAL_METRICS] = 0.8
+    return dxo.to_shareable()
+
+
+def _wire_controller(controller, replies, model):
+    clients = [f"site-{i + 1}" for i in range(len(replies))]
+    controller.fl_ctx = FLContext()
+    controller.abort_signal = Signal()
+    controller.engine = MagicMock(get_clients=lambda: clients)
+    controller.event = lambda *_: None
+    controller.fire_event_with_data = lambda *_: None
+    controller.info = MagicMock()
+    controller.warning = MagicMock()
+    controller.sample_clients = lambda _: clients
+    controller.load_model = lambda: model
+    controller.save_model = MagicMock()
+    controller._accept_train_result = lambda result, **_: result.get_return_code() in (None, "OK")
+
+    def broadcast_and_wait(task, fl_ctx, targets=None, **_):
+        for name, reply in zip(clients, replies):
+            client_task = ClientTask(Client(name, name), task)
+            client_task.result = reply
+            task.result_received_cb(client_task, fl_ctx)
+
+    controller.broadcast_and_wait = broadcast_and_wait
+    controller.broadcast = broadcast_and_wait
+    return controller
+
+
+class TestServerOwnedZeroStepDecision:
+    def test_scaffold_run_fails_zero_step_round_with_unconvertible_reply(self):
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        model = FLModel(params={"w": np.array([1.0])}, params_type=ParamsType.FULL, meta={})
+        controller = _wire_controller(
+            Scaffold(num_clients=2, num_rounds=1, persistor_id=""), [_zero_step_reply(), _unconvertible_reply()], model
+        )
+        controller.model = model
+        controller._global_ctrl_weights = {"w": np.array([0.0])}
+
+        with pytest.raises(RuntimeError, match="no accepted contributions"):
+            controller.run()
+        controller.save_model.assert_not_called()
+
+    def test_fedavg_lr_run_fails_zero_step_round_with_unconvertible_reply(self):
+        from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
+
+        model = FLModel(params={"w": np.array([1.0, 2.0, 3.0])}, params_type=ParamsType.FULL, meta={})
+        controller = _wire_controller(
+            FedAvgLR(num_clients=2, num_rounds=1, damping_factor=0.5, epsilon=1.0, n_features=2),
+            [_zero_step_reply(), _unconvertible_reply()],
+            model,
+        )
+
+        with pytest.raises(RuntimeError, match="no accepted contributions"):
+            controller.run()
+        controller.save_model.assert_not_called()
+
+    def test_fedavg_run_ignores_client_unchanged_flag_from_custom_aggregator(self):
+        class PickFirst(ModelAggregator):
+            def __init__(self):
+                super().__init__()
+                self.picked = None
+
+            def accept_model(self, model):
+                self.picked = self.picked or model
+
+            def aggregate_model(self):
+                picked, self.picked = self.picked, None
+                return picked
+
+            def reset_stats(self):
+                self.picked = None
+
+        model = FLModel(params={"w": np.array([0.0])}, params_type=ParamsType.FULL, meta={})
+        reply = FLModelUtils.to_shareable(
+            FLModel(
+                params={"w": np.array([9.0])},
+                params_type=ParamsType.FULL,
+                meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 5, "fedavg_unchanged_model": True},
+            )
+        )
+        controller = _wire_controller(FedAvg(num_clients=1, num_rounds=1, aggregator=PickFirst()), [reply], model)
+        controller.persistor = None
+        controller.get_num_standing_tasks = lambda: 0
+
+        controller.run()
+
+        controller.save_model.assert_called_once()
+        assert controller.save_model.call_args.args[0].params["w"] == pytest.approx([9.0])

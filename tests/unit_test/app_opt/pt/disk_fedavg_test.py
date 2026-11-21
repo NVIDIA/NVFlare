@@ -747,3 +747,43 @@ def test_scatter_and_gather_fails_zero_step_round_with_unconvertible_nonzero_rep
 
     sag.system_panic.assert_called_once()
     assert "no accepted contributions" in sag.system_panic.call_args.args[0]
+
+
+@pytest.mark.parametrize("with_zero_step", [True, False])
+def test_scatter_and_gather_fails_round_with_tolerated_execution_error(tmp_path, with_zero_step):
+    from nvflare.apis.fl_constant import ReturnCode
+    from nvflare.apis.shareable import make_reply
+
+    save_file({"w": torch.zeros(1)}, tmp_path / "initial.safetensors")
+    ctx = context(tmp_path)
+    aggr = disk.DiskFedAvgAggregator()
+    aggr.fl_ctx = ctx
+    persistor = disk.DiskFedAvgPersistor(str(tmp_path / "initial.safetensors"))
+    sag = ScatterAndGather(min_clients=1, num_rounds=1)
+    sag.aggregator = aggr
+    sag.persistor = persistor
+    sag.shareable_gen = FullModelShareableGenerator()
+    sag._engine = SimpleNamespace(
+        get_clients=lambda: ["site-1", "site-2"], get_cell=lambda: None, persist_components=lambda *_, **__: None
+    )
+    sag._global_weights = persistor.load(ctx)
+    sag.fire_event = lambda *_: None
+    sag.fire_event_with_data = lambda *_: None
+    sag.log_info = lambda *_: None
+    sag.log_warning = lambda *_: None
+    sag.system_panic = MagicMock()
+    replies = [("site-1", make_reply(ReturnCode.EXECUTION_EXCEPTION))]
+    if with_zero_step:
+        replies.append(("site-2", FLModelUtils.to_shareable(model({}, client="site-2", steps=0, kind=ParamsType.DIFF))))
+
+    def broadcast_and_wait(task, fl_ctx, targets=None, **_):
+        for name, reply in replies:
+            client_task = ClientTask(Client(name, name), task)
+            client_task.result = reply
+            task.result_received_cb(client_task, fl_ctx)
+
+    sag.broadcast_and_wait = broadcast_and_wait
+    sag.control_flow(Signal(), ctx)
+
+    sag.system_panic.assert_called_once()
+    assert "no accepted contributions" in sag.system_panic.call_args.args[0]

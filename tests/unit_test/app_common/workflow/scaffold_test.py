@@ -93,7 +93,11 @@ def test_scaffold_all_zero_step_round_keeps_model_and_control_variates():
         patch.object(controller, "event"),
         patch.object(controller, "sample_clients", return_value=["site-1"]),
         patch.object(controller, "send_model_and_wait", return_value=[]),
-        patch.object(controller, "aggregate", return_value=_make_unchanged_model_result(0)),
+        patch.object(
+            controller,
+            "aggregate",
+            side_effect=lambda *_, **__: setattr(controller, "_keep_model", True) or _make_unchanged_model_result(0),
+        ),
         patch.object(controller, "save_model"),
         patch.object(controller, "_maybe_cleanup_memory"),
     ):

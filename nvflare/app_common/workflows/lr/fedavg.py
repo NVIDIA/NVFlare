@@ -30,7 +30,6 @@ from nvflare.app_common.workflows.base_fedavg import (
     _aggregate_fl_model_metrics,
     _get_client_name,
     _get_num_steps_weight,
-    _is_unchanged_model_result,
     _make_unchanged_model_result,
     _without_zero_step_results,
     make_fedavg_metrics_aggregation_info,
@@ -213,7 +212,7 @@ class FedAvgLR(BaseFedAvg):
         aggregated gradient and hessian.
 
         """
-        if model_update is None or _is_unchanged_model_result(model_update):
+        if model_update is None or self._keep_model:
             return model
         if model_update.params is None:
             raise ValueError("model params is None")

@@ -210,7 +210,8 @@ class DiskFedAvgAggregator(ModelAggregator):
         next_path = current + ".next"
         try:
             if not self._contributions:
-                if not self._zero_step_skipped or self._rejected_nonzero:
+                rejected = self._rejected_nonzero or self.fl_ctx.get_prop(AppConstants.NUM_REJECTED_RESULTS, 0)
+                if not self._zero_step_skipped or rejected:
                     raise RuntimeError("no accepted contributions to aggregate")
                 self.warning("All results reported 0 steps, keeping the global model.")
                 self._params_type = ParamsType.DIFF

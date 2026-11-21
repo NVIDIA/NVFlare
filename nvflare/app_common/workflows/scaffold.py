@@ -28,7 +28,6 @@ from .base_fedavg import (
     _aggregate_fl_model_metrics,
     _get_client_name,
     _get_num_steps_weight,
-    _is_unchanged_model_result,
     _make_unchanged_model_result,
     _without_zero_step_results,
     make_fedavg_metrics_aggregation_info,
@@ -140,11 +139,7 @@ class Scaffold(BaseFedAvg):
             self.model = self.update_model(self.model, aggregate_results)
 
             # update SCAFFOLD global controls
-            ctr_diff = (
-                {}
-                if _is_unchanged_model_result(aggregate_results)
-                else aggregate_results.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]
-            )
+            ctr_diff = {} if self._keep_model else aggregate_results.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]
             for v_name, v_value in ctr_diff.items():
                 if v_name not in self._global_ctrl_weights:
                     if v_name not in self.model.params:

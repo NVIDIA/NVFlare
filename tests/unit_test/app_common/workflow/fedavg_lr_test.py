@@ -716,6 +716,7 @@ def test_update_model_keeps_model_when_every_site_reports_zero_steps():
 
     controller = FedAvgLR(damping_factor=0.5, epsilon=1.0, n_features=2)
     model = FLModel(params={NPConstants.NUMPY_KEY: np.array([1.0, 2.0, 3.0])}, meta={})
+    controller._keep_model = True
 
     updated = controller.update_model(model, _make_unchanged_model_result(0))
 
