@@ -562,7 +562,7 @@ pool checkpoints, and TensorBoard events in the NVFlare run directory.
 
 ## Results
 
-The following historical curves use one seed (10) and the pre-migration Collab
+Figures 1–3 show historical runs with seed 10 and the pre-migration Collab
 workflow. Both FedRevive configurations used teacher-mean synthesis targets
 and the earlier warmup and KD sampling rules. The paper reports averages over
 three seeds.
@@ -615,6 +615,45 @@ The raw accuracy curves have a Pearson correlation of 0.9986 and a pointwise
 mean absolute difference of 0.0091. Thus, the lightweight estimated setting
 closely follows the true-histogram trajectory while avoiding client label
 statistics and reducing synthesis frequency.
+
+### FedRevive delay planner comparison
+
+We ran FedRevive for 1,200 publications with each offline planner. All three
+runs used the same CIFAR-10 shards, setup and run seed 10, two physical workers,
+and a logical concurrency limit of 100. The buffer size and refill threshold
+were both one. The server estimated class proportions with 64 probes and
+generated synthetic images every ten versions using teacher-mean targets.
+SimEnv verified the accepted updates against each run's own plan.
+
+![FedRevive test accuracy by publication and simulated time for the three delay planners](figs/planner_accuracy.png)
+
+| Planner | Phase delays | Simulated time | Wall time | Final accuracy |
+|---|---|---:|---:|---:|
+| [Standard](schedule_standard.py) | Paper defaults | 19.05 s | 56m 51s | 37.31% |
+| [Shifted](schedule_shifted.py) | Log-normal training delays ($\sigma=0.6$) | 19.45 s | 58m 07s | 32.65% |
+| [Simple](schedule_simple.py) | Uniform delays in all phases | 18.42 s | 57m 44s | 34.06% |
+
+Wall times were measured sequentially on one RTX 6000 Ada. The plan previews
+show assignments 100–111. Each full plan has a bound of 200 temporary payload
+files, or about 8.33 GiB. The estimate uses 42.65 MiB per serialized base or
+upload, rounded up from the run's payloads.
+
+<details>
+<summary>Plan timelines and temporary storage bounds</summary>
+
+**Standard planner**
+
+![Standard plan timeline and peak temporary payload estimate](figs/plan_standard.png)
+
+**Shifted planner**
+
+![Shifted plan timeline and peak temporary payload estimate](figs/plan_shifted.png)
+
+**Simple planner**
+
+![Simple plan timeline and peak temporary payload estimate](figs/plan_simple.png)
+
+</details>
 
 ## License
 
