@@ -31,6 +31,7 @@ from nvflare.fuel.hci.proto import MetaKey, ProtoKey
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.sess import SessionManager
+from tests.admin_session_test_utils import register_admin_transport
 from tests.timing_utils import isolate_time
 from tests.unit_test.fuel.f3.streaming.download_test_utils import (
     make_service_no_monitor,
@@ -59,18 +60,27 @@ class _Cell:
 
 
 def _new_session(manager, name, cert_exp=None):
-    return manager.create_session(name, "org", "role", f"admin/{name}", cert_exp=cert_exp)
+    _, grant = register_admin_transport(manager, user=name, cert_exp=cert_exp or 9999999999)
+    session, _ = manager.create_session(grant, "org", "role")
+    return session
 
 
-def _new_manager(monkeypatch, cell, clock, idle_timeout=1800):
-    monkeypatch.setattr("nvflare.fuel.hci.server.sess.time.time", clock)
-    monkeypatch.setattr("nvflare.fuel.hci.server.sess.threading.Thread.start", lambda _thread: None)
-    return SessionManager(cell, idle_timeout=idle_timeout)
+@pytest.fixture
+def make_manager(monkeypatch, request):
+    def create(cell, clock, idle_timeout=1800):
+        time_module = isolate_time(monkeypatch, "nvflare.fuel.hci.server.sess")
+        monkeypatch.setattr(time_module, "time", clock)
+        monkeypatch.setattr("nvflare.fuel.hci.server.sess.threading.Thread.start", lambda _: None)
+        manager = SessionManager(cell, idle_timeout=idle_timeout)
+        request.addfinalizer(manager.shutdown)
+        return manager
+
+    return create
 
 
-def test_progress_keeps_only_the_owning_session_alive_past_idle_timeout(monkeypatch):
+def test_progress_keeps_only_the_owning_session_alive_past_idle_timeout(make_manager):
     clock = _Clock()
-    manager = _new_manager(monkeypatch, _Cell(), clock, idle_timeout=10)
+    manager = make_manager(_Cell(), clock, idle_timeout=10)
     progressing = _new_session(manager, "progressing")
     idle = _new_session(manager, "idle")
     progressing_cancel = MagicMock()
@@ -89,16 +99,16 @@ def test_progress_keeps_only_the_owning_session_alive_past_idle_timeout(monkeypa
     progressing_cancel.assert_not_called()
     idle_cancel.assert_called_once_with()
 
-    clock.advance(9)
+    clock.advance(7)
     assert manager.mark_download_active(progressing.sess_id, "tx-progressing")
     manager.check_sessions()
     assert manager.get_sessions() == [progressing]
 
 
-def test_stalled_download_and_certificate_expiry_end_the_activity_scope(monkeypatch):
+def test_stalled_download_and_certificate_expiry_end_the_activity_scope(make_manager):
     clock = _Clock()
     cell = _Cell()
-    manager = _new_manager(monkeypatch, cell, clock, idle_timeout=10)
+    manager = make_manager(cell, clock, idle_timeout=10)
     stalled = _new_session(manager, "stalled")
     expired_cert = _new_session(manager, "expired-cert", cert_exp=5)
     stalled_cancel = MagicMock()
@@ -118,9 +128,9 @@ def test_stalled_download_and_certificate_expiry_end_the_activity_scope(monkeypa
     assert len(cell.events) == 2
 
 
-def test_logout_cancels_bound_download_but_completed_download_is_detached(monkeypatch):
+def test_logout_cancels_bound_download_but_completed_download_is_detached(make_manager):
     cell = _Cell()
-    manager = _new_manager(monkeypatch, cell, _Clock())
+    manager = make_manager(cell, _Clock())
     active = _new_session(manager, "active")
     completed = _new_session(manager, "completed")
     active_cancel = MagicMock()
@@ -137,10 +147,10 @@ def test_logout_cancels_bound_download_but_completed_download_is_detached(monkey
     assert cell.events == []
 
 
-def test_session_teardown_isolates_notification_and_cancel_failures(monkeypatch):
+def test_session_teardown_isolates_notification_and_cancel_failures(make_manager):
     cell = MagicMock()
     cell.fire_and_forget.side_effect = RuntimeError("notification failed")
-    manager = _new_manager(monkeypatch, cell, _Clock())
+    manager = make_manager(cell, _Clock())
     session = _new_session(manager, "admin")
     failing_cancel = MagicMock(side_effect=RuntimeError("cancel failed"))
     successful_cancel = MagicMock()
@@ -279,9 +289,9 @@ def test_binary_transfer_cancels_bound_download_when_setup_fails(monkeypatch, tm
     created["downloader"].delete_transaction.assert_called_once_with()
 
 
-def test_result_download_reference_survives_default_retry_envelope_and_resumes(monkeypatch, tmp_path):
+def test_result_download_reference_survives_default_retry_envelope_and_resumes(make_manager, monkeypatch, tmp_path):
     clock = _Clock()
-    session_mgr = _new_manager(monkeypatch, _Cell(), clock, idle_timeout=1800)
+    session_mgr = make_manager(_Cell(), clock, idle_timeout=1800)
     session = _new_session(session_mgr, "admin")
     service = make_service_no_monitor()
     created = {}
@@ -384,9 +394,9 @@ def test_result_download_reference_survives_default_retry_envelope_and_resumes(m
     assert session_mgr.downloads == {}
 
 
-def test_progressing_download_outlives_idle_timeout_with_matching_size_and_hash(monkeypatch, tmp_path):
+def test_progressing_download_outlives_idle_timeout_with_matching_size_and_hash(make_manager, monkeypatch, tmp_path):
     clock = _Clock()
-    manager = _new_manager(monkeypatch, _Cell(), clock, idle_timeout=5)
+    manager = make_manager(_Cell(), clock, idle_timeout=5)
     session = _new_session(manager, "admin")
     source = tmp_path / "result.bin"
     expected = b"0123456789abcdef"

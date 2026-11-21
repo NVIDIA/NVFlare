@@ -35,12 +35,17 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey, MessageType
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
-from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
+from nvflare.fuel.f3.streaming.blob_streamer import BlobStream
+from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, TxTask
+from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, StreamDataType, StreamHeaderKey
+from nvflare.fuel.hci.proto import ReplyKeyword
+from nvflare.fuel.hci.server.hci import AdminServer
+from nvflare.fuel.hci.server.sess import SessionManager
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.defs import (
     CellChannel,
@@ -56,6 +61,7 @@ from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState, ServerState
+from tests.admin_session_test_utils import register_admin_transport
 
 
 def assert_client_outcome_unresolved(job_runner):
@@ -80,6 +86,7 @@ def auth_server(auth_identity):
     )
     server.client_manager = SimpleNamespace(clients={})
     server._get_id_asserter = lambda: identity
+    server.admin_server = None
     return server, private_key
 
 
@@ -679,14 +686,11 @@ class TestFederatedServer:
         [
             ("site-a", "site-a", "site-a"),
             ("site-a", "relay-1.site-a", "relay-1"),
-            ("lead@test.org", "admin", "admin"),
         ],
     )
     def test_delegated_tls_authentication_cannot_claim_the_parent(self, auth_server, name, origin, peer):
         server, private_key = auth_server
         server.client_manager = ClientManager()
-        if origin == "admin":
-            origin = peer = new_admin_client_name()
         request = new_cell_message(
             {
                 MessageHeaderKey.ORIGIN: origin,
@@ -706,6 +710,152 @@ class TestFederatedServer:
         request.set_header(MessageHeaderKey.ORIGIN, "server")
         reply = server._validate_auth_headers(request)
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+
+    def test_admin_requests_require_a_live_transport_grant(self, auth_server, monkeypatch):
+        server, private_key = auth_server
+        monkeypatch.setattr("nvflare.fuel.hci.server.sess.threading.Thread.start", lambda _: None)
+        manager = SessionManager(MagicMock())
+        server.admin_server = SimpleNamespace(sess_mgr=manager)
+        try:
+            request, grant = register_admin_transport(manager, user="lead@test.org")
+            request.add_headers(
+                {
+                    MessageHeaderKey.CHANNEL: CellChannel.HCI,
+                    MessageHeaderKey.TOPIC: "command",
+                    MessageHeaderKey.DESTINATION: "server",
+                }
+            )
+
+            def signed_request(token):
+                request.set_header(CellMessageHeaderKeys.TOKEN, token)
+                request.set_header(
+                    CellMessageHeaderKeys.TOKEN_SIGNATURE, sign_content(grant.user_name + token, private_key)
+                )
+                return server._validate_auth_headers(request)
+
+            token = request.get_header(CellMessageHeaderKeys.TOKEN)
+            assert signed_request("unissued") is None
+            assert request.get_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT) is None
+            hci = object.__new__(AdminServer)
+            assert ReplyKeyword.SESSION_INACTIVE in hci._process_admin_request(request).payload
+            assert signed_request(token) is None
+            assert request.get_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT) is grant
+            request.set_header(MessageHeaderKey.CHANNEL, CellChannel.AUX_COMMUNICATION)
+            assert signed_request(token).get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+            session, _ = manager.create_session(grant, "org", "lead")
+            assert signed_request(token) is None
+            manager.end_session_by_id(session.sess_id)
+            assert signed_request(token).get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+
+            # The admin credential family remains protected on other channels
+            # even if the sender moves the boundary in the legacy signature input.
+            request.set_header(MessageHeaderKey.ORIGIN, "site-a")
+            request.set_prop(MessagePropKey.ENDPOINT, Endpoint("site-a"))
+            for split_at in (0, 3, len(token) - 36):
+                request.set_header(CellMessageHeaderKeys.CLIENT_NAME, grant.user_name + token[:split_at])
+                request.set_header(CellMessageHeaderKeys.TOKEN, token[split_at:])
+                reply = server._validate_auth_headers(request)
+                assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+
+            request.set_header(CellMessageHeaderKeys.CLIENT_NAME, grant.user_name.encode("utf-8"))
+            request.set_header(CellMessageHeaderKeys.TOKEN, token.encode("utf-8"))
+            binary_headers = server._validate_auth_headers(request)
+            assert binary_headers.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+        finally:
+            manager.shutdown()
+
+    @pytest.mark.parametrize("peer_binding", ["certificate", "connection"])
+    def test_revoked_admin_can_ack_only_its_pinned_reply(self, auth_server, monkeypatch, peer_binding):
+        server, private_key = auth_server
+        monkeypatch.setattr("nvflare.fuel.hci.server.sess.threading.Thread.start", lambda _: None)
+        monkeypatch.setattr("nvflare.fuel.f3.streaming.byte_streamer.reliable_retry_scheduler", MagicMock())
+        manager = SessionManager(MagicMock())
+        server.admin_server = SimpleNamespace(sess_mgr=manager)
+        core = MagicMock()
+        core.fire_and_forget.return_value = {}
+        streamer = server.cell.byte_streamer = ByteStreamer(core)
+        connection = object() if peer_binding == "connection" else None
+        try:
+            ack, grant = register_admin_transport(manager, user="lead@test.org", connection=connection)
+            session, _ = manager.create_session(grant, "org", "lead")
+            token = ack.get_header(CellMessageHeaderKeys.TOKEN)
+            ack.add_headers(
+                {
+                    MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+                    MessageHeaderKey.TOPIC: STREAM_ACK_TOPIC,
+                    MessageHeaderKey.MSG_TYPE: MessageType.REQ,
+                    MessageHeaderKey.DESTINATION: "server",
+                    StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
+                    StreamHeaderKey.SEQUENCE: 0,
+                    StreamHeaderKey.OFFSET: 2,
+                    CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content(grant.user_name + token, private_key),
+                }
+            )
+            manager.end_session_by_id(session.sess_id)
+            assert manager.get_transport(ack) is None
+
+            task = TxTask(
+                cell=core,
+                chunk_size=1024,
+                channel=CellChannel.RETURN_ONLY,
+                topic="hci_channel:command",
+                target=grant.origin,
+                headers={},
+                stream=BlobStream(b"OK", {}),
+                reliable=True,
+                secure=False,
+                optional=True,
+                target_peer=grant.peer,
+            )
+            monkeypatch.setattr(ByteStreamer, "tx_task_map", {task.sid: task})
+            try:
+                task.send_loop()
+                assert task.stopping and not task.stream_future.done()
+                ack.set_header(StreamHeaderKey.STREAM_ID, task.sid)
+
+                peer_key = MessagePropKey.CONNECTION if connection else MessagePropKey.PEER_CERT_FINGERPRINT
+                original_endpoint = ack.get_prop(MessagePropKey.ENDPOINT)
+                for key, value in (
+                    (peer_key, object()),
+                    (MessagePropKey.ENDPOINT, Endpoint("site-a")),
+                ):
+                    ack.set_prop(key, value)
+                    reply = server._validate_auth_headers(ack)
+                    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+                    streamer._ack_handler(ack)
+                    assert not task.stream_future.done()
+                    ack.set_prop(key, grant.peer if key == peer_key else original_endpoint)
+
+                ack.set_header(StreamHeaderKey.STREAM_ID, task.sid + 1)
+                ack.set_header(StreamHeaderKey.CHANNEL, CellChannel.HCI)
+                assert server._validate_auth_headers(ack).get_header(MessageHeaderKey.RETURN_CODE) == (
+                    F3ReturnCode.UNAUTHENTICATED
+                )
+
+                ack.set_header(StreamHeaderKey.STREAM_ID, task.sid)
+                ack.set_header(MessageHeaderKey.DESTINATION, "another-cell")
+                assert server._validate_auth_headers(ack).get_header(MessageHeaderKey.RETURN_CODE) == (
+                    F3ReturnCode.UNAUTHENTICATED
+                )
+
+                ack.set_header(MessageHeaderKey.DESTINATION, "server")
+                ack.set_header(MessageHeaderKey.MSG_TYPE, MessageType.REPLY)
+                assert server._validate_auth_headers(ack).get_header(MessageHeaderKey.RETURN_CODE) == (
+                    F3ReturnCode.UNAUTHENTICATED
+                )
+
+                ack.set_header(MessageHeaderKey.MSG_TYPE, MessageType.REQ)
+                assert server._validate_auth_headers(ack) is None
+                streamer._ack_handler(ack)
+                assert task.stream_future.done()
+                assert task.stream_future.result(timeout=0) == 2
+                assert manager.get_transport(ack) is None
+                assert ack.get_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT) is None
+            finally:
+                if not task.stream_future.done():
+                    task.cancel()
+        finally:
+            manager.shutdown()
 
     def test_non_secure_server_registers_transit_header_sanitizer(self):
         server = object.__new__(FederatedServer)

@@ -19,11 +19,20 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.streaming import StreamContext
 from nvflare.app_common.streamers.file_streamer import FileStreamer
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.defs import CellChannel
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessagePropKey
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, StreamChannel, make_meta, validate_proto
+from nvflare.fuel.hci.proto import (
+    MetaKey,
+    MetaStatusValue,
+    ProtoKey,
+    ReplyKeyword,
+    StreamChannel,
+    make_meta,
+    validate_proto,
+)
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.private.defs import InternalFLContextKey
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.security.logging import secure_log_traceback
 
@@ -162,26 +171,40 @@ class AdminServer:
             return False, "", conn
 
     def _process_upload(self, stream_ctx: StreamContext, fl_ctx: FLContext, **kwargs):
+        grant = fl_ctx.get_prop(InternalFLContextKey.ADMIN_TRANSPORT_GRANT)
+        if not grant:
+            return self._inactive_session_reply()
         conn_data = stream_ctx.get("conn_data")
         file_location = FileStreamer.get_file_location(stream_ctx)
-        self.logger.debug(f"got upload from hci client: {conn_data=} {file_location=}")
+        self.logger.debug("received admin upload")
         ok, command, conn = self._create_conn(conn_data)
         assert isinstance(conn, Connection)
         conn.set_prop(ConnProps.FILE_LOCATION, file_location)
-        self.cmd_reg.process_command(conn, command)
+        conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
+        if ok:
+            self.cmd_reg.process_command(conn, command)
         result = conn.close()
-        self.logger.debug(f"upload result: {result}")
         return result
 
+    @staticmethod
+    def _inactive_session_reply():
+        conn = Connection()
+        conn.append_error(ReplyKeyword.SESSION_INACTIVE)
+        return conn.close()
+
     def _process_admin_request(self, request: CellMessage) -> Union[None, CellMessage]:
-        self.logger.debug(f"got admin_request: {request.payload}")
+        grant = request.get_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT)
+        if not grant:
+            return CellMessage(payload=self._inactive_session_reply())
+
         ok, command, conn = self._create_conn(request.payload, request.headers)
         conn.set_prop(ConnProps.REQUEST, request)
+        conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
         if ok:
             self.logger.debug(f"processing command {command}")
             self.cmd_reg.process_command(conn, command)
         else:
-            self.logger.error(f"received invalid command: {request.headers}")
+            self.logger.error("received invalid admin command")
         payload = conn.close()
         return CellMessage(payload=payload)
 

@@ -19,6 +19,7 @@ import random
 import threading
 import time
 import uuid
+from hashlib import sha256
 from typing import Dict, List, Tuple, Union
 from urllib.parse import urlparse
 
@@ -1371,7 +1372,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
             else:
                 direct_cell = self.ALL_CELLS.get(to_endpoint.name)
                 msg_size_mbs = self._msg_size_mbs(message)
-                if direct_cell:
+                if direct_cell and message.get_prop(MessagePropKey.TARGET_AUTH_PEER) is None:
                     # create a thread and fire the cell's process_message!
                     # self.DIRECT_MSG_EXECUTOR.submit(self._send_direct_message, direct_cell, message)
                     self._send_direct_message(direct_cell, message)
@@ -1423,6 +1424,9 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         for t, ep in reachable_targets.items():
             tm = target_msgs[t]
             req = Message(headers=copy.copy(tm.message.headers), payload=tm.message.payload)
+            target_peer = tm.message.get_prop(MessagePropKey.TARGET_AUTH_PEER)
+            if target_peer is not None:
+                req.set_prop(MessagePropKey.TARGET_AUTH_PEER, target_peer)
 
             req.add_headers(
                 {
@@ -2085,7 +2089,11 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         message.set_prop(MessagePropKey.ENDPOINT, endpoint)
 
         if connection:
+            message.set_prop(MessagePropKey.CONNECTION, connection)
             conn_props = connection.get_conn_properties()
+            der_cert = conn_props.get(DriverParams.PEER_CERT.value)
+            if der_cert:
+                message.set_prop(MessagePropKey.PEER_CERT_FINGERPRINT, sha256(der_cert).digest())
             cn = conn_props.get(DriverParams.PEER_CN.value)
             if cn:
                 message.set_prop(MessagePropKey.COMMON_NAME, cn)
@@ -2230,6 +2238,11 @@ class CoreCell(MessageReceiver, EndpointMonitor):
                     category=self._stats_category(message), counter_name=_CounterName.REPLY_NONE
                 )
                 return
+
+            grant = message.get_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT)
+            target_peer = grant.peer if grant is not None else message.get_prop(MessagePropKey.TARGET_AUTH_PEER)
+            if target_peer is not None:
+                reply.set_prop(MessagePropKey.TARGET_AUTH_PEER, target_peer)
 
             is_optional = message.get_header(MessageHeaderKey.OPTIONAL, False)
             reply.set_header(MessageHeaderKey.OPTIONAL, is_optional)

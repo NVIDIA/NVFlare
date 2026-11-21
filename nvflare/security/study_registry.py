@@ -113,10 +113,16 @@ class StudyRegistry:
 class StudyRegistryService:
     _registry: Optional[StudyRegistry] = None
     _mutation_lock = threading.Lock()
+    _listener_lock = threading.Lock()
+    _listeners = set()
 
     @staticmethod
     def initialize(registry: Optional[StudyRegistry]):
-        StudyRegistryService._registry = registry
+        with StudyRegistryService._listener_lock:
+            StudyRegistryService._registry = registry
+            listeners = tuple(StudyRegistryService._listeners)
+        for listener in listeners:
+            listener(registry)
 
     @staticmethod
     def get_registry() -> Optional[StudyRegistry]:
@@ -124,7 +130,17 @@ class StudyRegistryService:
 
     @staticmethod
     def reset():
-        StudyRegistryService._registry = None
+        StudyRegistryService.initialize(None)
+
+    @staticmethod
+    def add_listener(listener):
+        with StudyRegistryService._listener_lock:
+            StudyRegistryService._listeners.add(listener)
+
+    @staticmethod
+    def remove_listener(listener):
+        with StudyRegistryService._listener_lock:
+            StudyRegistryService._listeners.discard(listener)
 
     @staticmethod
     def acquire_lock(timeout: float) -> bool:

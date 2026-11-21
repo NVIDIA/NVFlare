@@ -102,6 +102,9 @@ class Adapter:
         self.logger.debug(f"{stream_req_id=}: {headers=}, incoming data={result}")
         request = Message(headers, result)
         request.set_prop(MessagePropKey.ENDPOINT, future.receiving_endpoint)
+        grant = getattr(future, "receiving_admin_grant", None)
+        request.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, grant)
+        target_peer = getattr(future, "reply_target_peer", None)
 
         # PASS_THROUGH can be requested per-message, per-channel, or for one
         # exact (channel, topic) route. Any source activates LazyDownloadRef
@@ -145,11 +148,13 @@ class Adapter:
         response = self.cb(request, *args, **kwargs)
         if isinstance(response, concurrent.futures.Future):
             response.add_done_callback(
-                lambda done: self._send_async_response(done, stream_req_id, req_id, channel, topic, origin, secure)
+                lambda done: self._send_async_response(
+                    done, stream_req_id, req_id, channel, topic, origin, secure, target_peer
+                )
             )
             return
 
-        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure)
+        self._send_response(response, stream_req_id, req_id, channel, topic, origin, secure, target_peer)
 
     def _send_async_response(self, response_future, *reply_args):
         try:
@@ -184,7 +189,7 @@ class Adapter:
             f"streamed response from {self.my_info.fqcn} failed asynchronously: {secure_format_exception(error)}"
         )
 
-    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure):
+    def _send_response(self, response, stream_req_id, req_id, channel, topic, origin, secure, target_peer=None):
         self.logger.debug(f"response available: {stream_req_id=}: on {channel=}, {topic=}")
         if not stream_req_id:
             # no need to reply!
@@ -203,6 +208,8 @@ class Adapter:
             }
         )
 
+        if target_peer is not None:
+            response.set_prop(MessagePropKey.TARGET_AUTH_PEER, target_peer)
         encode_payload(response, StreamHeaderKey.PAYLOAD_ENCODING, fobs_ctx=self.cell.get_fobs_context())
         self.logger.debug(f"sending: {stream_req_id=}: {response.headers=}, target={origin}")
         try:

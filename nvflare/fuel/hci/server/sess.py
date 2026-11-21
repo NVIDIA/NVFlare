@@ -11,16 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
+import secrets
 import threading
 import time
 import uuid
+from dataclasses import dataclass
+from hashlib import sha256
 from typing import Callable, List
 
 from nvflare.apis.job_def import DEFAULT_STUDY
-from nvflare.fuel.f3.cellnet.defs import CellChannel
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.message import Message as CellMessage
-from nvflare.fuel.hci.base64_utils import b64str_to_str, str_to_b64str
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -28,37 +29,63 @@ from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.admin_audit import record, reject, snapshot
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.time_utils import time_to_string
-from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier
+from nvflare.private.defs import CellMessageHeaderKeys
 from nvflare.security.logging import secure_format_exception
+from nvflare.security.study_registry import StudyRegistryService
 
 LIST_SESSIONS_CMD_NAME = InternalCommands.LIST_SESSIONS
 CHECK_SESSION_CMD_NAME = InternalCommands.CHECK_SESSION
 
 
-class Session(object):
-    def __init__(
-        self,
-        sess_id,
-        user_name,
-        org,
-        role,
-        origin_fqcn,
-        active_study=DEFAULT_STUDY,
-        cert_exp=None,
-        cert_studies=(),
-    ):
-        """Object keeping track of an admin client session with token and time data."""
-        self.sess_id = sess_id
-        self.user_name = user_name
+_EXPIRED_MESSAGE = "Your session is closed due to inactivity or cert expiry."
+
+
+def _token_digest(token):
+    if isinstance(token, str) and 0 < len(token) <= 128 and token.isascii():
+        return sha256(token.encode("ascii")).digest()
+    return None
+
+
+def _transport_peer(request):
+    origin = request.get_header(MessageHeaderKey.ORIGIN)
+    peer = request.get_prop(MessagePropKey.ENDPOINT)
+    if not origin or origin != getattr(peer, "name", None):
+        return None
+    return request.get_prop(MessagePropKey.PEER_CERT_FINGERPRINT) or request.get_prop(MessagePropKey.CONNECTION)
+
+
+@dataclass(eq=False)
+class AdminTransportGrant:
+    """Server-held registration for an admin cell that proved certificate possession."""
+
+    token_digest: bytes
+    user_name: str
+    origin: str
+    cert_fingerprint: bytes
+    cert_exp: float
+    peer: object
+    connection: object
+    created: float
+    session_id: str = ""
+
+
+class Session:
+    def __init__(self, grant, org, role, active_study, cert_studies, token_digest):
+        """Server-side identity and activity for one successful admin login."""
+        self.sess_id = str(uuid.uuid4())
+        self.user_name = grant.user_name
         self.user_org = org
         self.user_role = role
         self.active_study = active_study
-        self.cert_exp = cert_exp
+        self.cert_exp = grant.cert_exp
         self.cert_studies = tuple(cert_studies)
-        self.origin_fqcn = origin_fqcn
+        self.origin_fqcn = grant.origin
         self.start_time = time.time()
-        self.last_active_time = time.time()
+        self.last_active_time = self.start_time
         self.audit_reference = ""
+        self.grant = grant
+        self.registry_membership = False
+        self.token_digest = token_digest
 
     def mark_active(self):
         self.last_active_time = time.time()
@@ -69,58 +96,13 @@ class Session(object):
         now = time.time() if now is None else now
         return now >= self.cert_exp
 
-    def make_token(self, id_asserter: IdentityAsserter):
-        user = {
-            "n": self.user_name,
-            "r": self.user_role,
-            "o": self.user_org,
-            "s": self.sess_id,
-            "study": self.active_study,
-        }
-        if self.cert_exp:
-            user["ce"] = self.cert_exp
-        if self.cert_studies:
-            user["cs"] = self.cert_studies
-        ds = json.dumps(user)
-        bds = str_to_b64str(ds)
-        signature = id_asserter.sign(ds, return_str=True)
-
-        # both bds and signature are b64 str
-        return f"{bds}:{signature}"
-
-    @staticmethod
-    def decode_token(token: str, id_asserter: IdentityAsserter):
-        if not isinstance(token, str):
-            raise ValueError(f"token must be str but got {type(token)}")
-        if not id_asserter:
-            raise ValueError("cannot decode session token without an identity asserter")
-
-        parts = token.split(":")
-        if len(parts) != 2:
-            raise ValueError(f"invalid token {token}: expects 2 parts but got {len(parts)}")
-
-        bds = parts[0]
-        signature = parts[1]
-        ds = b64str_to_str(bds)
-        token_verifier = TokenVerifier(id_asserter.cert)
-        is_valid = token_verifier.verify("", ds, signature)
-        if not is_valid:
-            return None
-
-        user = json.loads(ds)
-        cert_studies = user.get("cs", ())
-        if not isinstance(cert_studies, (list, tuple)) or not all(isinstance(s, str) for s in cert_studies):
-            raise ValueError("invalid certificate studies in session token")
-        return Session(
-            user_name=user.get("n"),
-            role=user.get("r"),
-            org=user.get("o"),
-            sess_id=user.get("s"),
-            origin_fqcn="",
-            active_study=user.get("study", user.get("t", DEFAULT_STUDY)),
-            cert_exp=user.get("ce"),
-            cert_studies=cert_studies,
-        )
+    def study_allowed(self, registry):
+        if self.active_study == DEFAULT_STUDY:
+            return True
+        if not registry or not registry.has_study(self.active_study):
+            return False
+        mapped = registry.has_user(self.user_name, self.active_study)
+        return mapped or (not self.registry_membership and self.active_study in self.cert_studies)
 
 
 class SessionManager(CommandModule):
@@ -137,115 +119,214 @@ class SessionManager(CommandModule):
         self.cell = cell
         self.logger = get_obj_logger(self)
         self.sess_update_lock = threading.Lock()
-        self.sessions = {}  # token => Session
+        self.sessions = {}  # session ID => Session
+        self._session_tokens = {}  # token digest => Session
+        self._transport_grants = {}  # registration token digest => AdminTransportGrant
+        self._origin_grants = {}
         self.downloads = {}  # session ID => {transaction ID: cancel callback}
         self.idle_timeout = idle_timeout
         self.monitor_interval = monitor_interval
-        self.asked_to_stop = False
-        self.monitor = threading.Thread(target=self.monitor_sessions)
-        self.monitor.daemon = True
+        self._stop_event = threading.Event()
+        self._monitor_wake = threading.Event()
+        self._study_revocations = []
+        StudyRegistryService.add_listener(self._study_registry_changed)
+        self.monitor = threading.Thread(target=self.monitor_sessions, daemon=True)
         self.monitor.start()
 
+    def _expiry_reason(self, sess, now):
+        if sess.is_cert_expired(now):
+            return "certificate_expired"
+        if now - sess.last_active_time >= self.idle_timeout:
+            return "inactivity"
+        if not sess.study_allowed(StudyRegistryService.get_registry()):
+            return "study_membership_revoked"
+        return None
+
+    def _study_registry_changed(self, registry):
+        # Invalidate both credentials before the study mutation returns. The
+        # monitor cancels downloads without delaying that mutation's reply.
+        with self.sess_update_lock:
+            for sess in list(self.sessions.values()):
+                if not sess.study_allowed(registry):
+                    self._study_revocations.append(self._detach_session(sess.sess_id))
+                elif sess.active_study != DEFAULT_STUDY and registry.has_user(sess.user_name, sess.active_study):
+                    sess.registry_membership = True
+            if self._study_revocations:
+                self._monitor_wake.set()
+
+    def _finish_study_revocations(self, revoked):
+        for sess, downloads in revoked:
+            self._finish_session(
+                sess, downloads, "Your study access changed. Please log in again.", "study_membership_revoked"
+            )
+
     def check_sessions(self):
-        """End sessions whose idle or certificate budget has expired."""
+        """Revoke expired sessions and registrations that did not complete login."""
         now = time.time()
         with self.sess_update_lock:
-            sessions = list(self.sessions.values())
-
-        for sess in sessions:
-            if now - sess.last_active_time > self.idle_timeout or sess.is_cert_expired(now):
-                self.end_session_by_id(
-                    sess.sess_id,
-                    "Your session is closed due to inactivity or cert expiry.",
-                    audit_reason="certificate_expired" if sess.is_cert_expired(now) else "inactivity",
-                )
-                break
+            revoked, self._study_revocations = self._study_revocations, []
+            expired = []
+            for sess in list(self.sessions.values()):
+                reason = self._expiry_reason(sess, now)
+                if reason:
+                    expired.append((*self._detach_session(sess.sess_id), reason))
+            for grant in list(self._transport_grants.values()):
+                if not grant.session_id and self._pending_grant_expired(grant, now):
+                    self._detach_grant(grant)
+        self._finish_study_revocations(revoked)
+        for sess, downloads, reason in expired:
+            self._finish_session(sess, downloads, _EXPIRED_MESSAGE, reason)
 
     def monitor_sessions(self):
-        """Runs loop in a thread to end sessions that time out."""
-        while not self.asked_to_stop:
+        self._monitor_wake.clear()
+        while not self._stop_event.is_set():
             self.check_sessions()
-            time.sleep(self.monitor_interval)
+            self._monitor_wake.wait(self.monitor_interval)
+            self._monitor_wake.clear()
 
     def shutdown(self):
-        self.asked_to_stop = True
+        self._stop_event.set()
+        self._monitor_wake.set()
+        StudyRegistryService.remove_listener(self._study_registry_changed)
+        with self.sess_update_lock:
+            revoked, self._study_revocations = self._study_revocations, []
+            ended = [self._detach_session(sess_id) for sess_id in list(self.sessions)]
+            self._transport_grants.clear()
+            self._origin_grants.clear()
+        self._finish_study_revocations(revoked)
+        for sess, downloads in ended:
+            self._finish_session(sess, downloads, None, "server_shutdown")
+
+    def _pending_grant_expired(self, grant, now):
+        return now >= grant.cert_exp or now - grant.created >= self.idle_timeout
+
+    def register_transport(self, request, user_name, token, cert_fingerprint, cert_exp):
+        """Bind a verified registration to its origin and actual transport peer."""
+        peer = _transport_peer(request)
+        peer_fingerprint = request.get_prop(MessagePropKey.PEER_CERT_FINGERPRINT)
+        digest = _token_digest(token)
+        now = time.time()
+        if not peer or not digest or now >= cert_exp or (peer_fingerprint and peer_fingerprint != cert_fingerprint):
+            return False
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        connection = request.get_prop(MessagePropKey.CONNECTION)
+        grant = AdminTransportGrant(digest, user_name, origin, cert_fingerprint, cert_exp, peer, connection, now)
+        previous_session = None
+        with self.sess_update_lock:
+            if self._stop_event.is_set():
+                return False
+            previous = self._origin_grants.get(origin)
+            if previous:
+                if previous.user_name != user_name:
+                    return False
+                if previous.session_id:
+                    previous_session = self._detach_session(previous.session_id)
+                else:
+                    self._detach_grant(previous)
+            self._transport_grants[digest] = grant
+            self._origin_grants[origin] = grant
+        if previous_session:
+            self._finish_session(*previous_session, None, "transport_replaced")
+        return True
+
+    def close_transport(self, request):
+        """Revoke a grant on a direct CellNet goodbye from its original connection."""
+        peer = _transport_peer(request)
+        connection = request.get_prop(MessagePropKey.CONNECTION)
+        if not peer or not connection:
+            return
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        with self.sess_update_lock:
+            grant = self._origin_grants.get(origin)
+            if not grant or grant.peer != peer or grant.connection is not connection:
+                return
+            if not grant.session_id:
+                self._detach_grant(grant)
+                return
+            sess, downloads = self._detach_session(grant.session_id)
+        self._finish_session(sess, downloads, None, "transport_closed")
+
+    def get_transport(self, request, *, require_session=False):
+        peer = _transport_peer(request)
+        if not peer:
+            return None
+        digest = _token_digest(request.get_header(CellMessageHeaderKeys.TOKEN))
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        user = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+        with self.sess_update_lock:
+            grant = self._transport_grants.get(digest)
+            if not grant or grant.origin != origin or grant.user_name != user or grant.peer != peer:
+                return None
+            now = time.time()
+            if not grant.session_id:
+                if self._pending_grant_expired(grant, now):
+                    self._detach_grant(grant)
+                    return None
+                return None if require_session else grant
+            sess = self.sessions[grant.session_id]
+            reason = self._expiry_reason(sess, now)
+            if not reason:
+                grant.connection = request.get_prop(MessagePropKey.CONNECTION)
+                return grant
+            sess, downloads = self._detach_session(sess.sess_id)
+        self._finish_session(sess, downloads, _EXPIRED_MESSAGE, reason)
+        return None
 
     def create_session(
-        self,
-        user_name,
-        user_org,
-        user_role,
-        origin_fqcn,
-        active_study=DEFAULT_STUDY,
-        cert_exp=None,
-        cert_studies=(),
+        self, grant: AdminTransportGrant, user_org: str, user_role: str, active_study=DEFAULT_STUDY, cert_studies=()
     ):
-        """Creates new session with a new session token.
-
-        Args:
-            user_name: username for session
-            user_org: org of the user
-            user_role: user's role
-            origin_fqcn: request origin FQCN
-            active_study: study selected for the session
-            cert_exp: admin certificate expiration time
-            cert_studies: named studies authorized by the admin certificate
-
-        Returns: Session
-
-        """
-        sess_id = str(uuid.uuid4())
-        sess = Session(
-            sess_id=sess_id,
-            user_name=user_name,
-            org=user_org,
-            role=user_role,
-            origin_fqcn=origin_fqcn,
-            active_study=active_study,
-            cert_exp=cert_exp,
-            cert_studies=cert_studies,
-        )
+        """Record a certificate login and return its session and opaque token."""
+        token = secrets.token_urlsafe(32)
+        sess = Session(grant, user_org, user_role, active_study, cert_studies, _token_digest(token))
+        replaced = None
         with self.sess_update_lock:
-            self.sessions[sess_id] = sess
-        sess.audit_reference = record("admin.session.created", user=user_name, study=active_study)
-        return sess
+            if self._stop_event.is_set() or self._transport_grants.get(grant.token_digest) is not grant:
+                return None, None
+            now = time.time()
+            current = self.sessions.get(grant.session_id)
+            if current:
+                if self._expiry_reason(current, now):
+                    return None, None
+            elif self._pending_grant_expired(grant, now):
+                return None, None
 
-    def recreate_session(self, token: str, origin_fqcn, id_asserter: IdentityAsserter):
-        sess = Session.decode_token(token, id_asserter)
-        if not sess:
-            raise ValueError("invalid session token")
-        if sess.is_cert_expired():
-            raise ValueError("admin certificate for session token is expired")
-        sess.origin_fqcn = origin_fqcn
-        with self.sess_update_lock:
-            self.sessions[sess.sess_id] = sess
-        sess.audit_reference = record("admin.session.restored", user=sess.user_name, study=sess.active_study)
-        return sess
-
-    def get_session(self, token: str, id_asserter: IdentityAsserter):
-        try:
-            sess = Session.decode_token(token, id_asserter)
-            if sess is None:
-                return None
-        except Exception:
-            return None
-
-        with self.sess_update_lock:
-            stored_session = self.sessions.get(sess.sess_id)
-        if stored_session and stored_session.is_cert_expired():
-            self.end_session_by_id(
-                stored_session.sess_id,
-                "Your session is closed due to inactivity or cert expiry.",
-                audit_reason="certificate_expired",
+            registry = StudyRegistryService.get_registry()
+            if not sess.study_allowed(registry):
+                return None, None
+            if current:
+                # A verified certificate login can be retried after a lost reply.
+                replaced = self._detach_session(current.sess_id, revoke_transport=False)
+            sess.registry_membership = active_study != DEFAULT_STUDY and registry.has_user(
+                grant.user_name, active_study
             )
-            return None
-        return stored_session
+            grant.session_id = sess.sess_id
+            self.sessions[sess.sess_id] = sess
+            self._session_tokens[sess.token_digest] = sess
+        if replaced:
+            self._finish_session(*replaced, None, "session_replaced")
+        sess.audit_reference = record("admin.session.created", user=grant.user_name, study=active_study)
+        return sess, token
+
+    def get_session(self, token: str, grant: AdminTransportGrant, *, touch=False):
+        digest = _token_digest(token)
+        with self.sess_update_lock:
+            sess = self._session_tokens.get(digest)
+            if not grant or not sess or sess.grant is not grant:
+                return None
+            reason = self._expiry_reason(sess, time.time())
+            if not reason:
+                if touch:
+                    sess.mark_active()
+                return sess
+            sess, downloads = self._detach_session(sess.sess_id)
+        self._finish_session(sess, downloads, _EXPIRED_MESSAGE, reason)
+        return None
 
     def bind_download(self, sess_id: str, tx_id: str, cancel_cb: Callable[[], None]) -> bool:
         """Bind an authorized download transaction to its current session."""
         with self.sess_update_lock:
             sess = self.sessions.get(sess_id)
-            if not sess or sess.is_cert_expired():
+            if not sess or self._expiry_reason(sess, time.time()):
                 return False
             self.downloads.setdefault(sess_id, {})[tx_id] = cancel_cb
         return True
@@ -255,7 +336,12 @@ class SessionManager(CommandModule):
         with self.sess_update_lock:
             sess = self.sessions.get(sess_id)
             session_downloads = self.downloads.get(sess_id)
-            if not sess or sess.is_cert_expired() or not session_downloads or tx_id not in session_downloads:
+            if (
+                not sess
+                or not session_downloads
+                or tx_id not in session_downloads
+                or self._expiry_reason(sess, time.time())
+            ):
                 return False
             sess.mark_active()
         return True
@@ -276,10 +362,24 @@ class SessionManager(CommandModule):
                 result.append(s)
         return result
 
+    def _detach_grant(self, grant):
+        self._transport_grants.pop(grant.token_digest, None)
+        self._origin_grants.pop(grant.origin, None)
+
+    def _detach_session(self, sess_id, *, revoke_transport=True):
+        sess = self.sessions.pop(sess_id, None)
+        if sess:
+            self._session_tokens.pop(sess.token_digest, None)
+            if revoke_transport:
+                self._detach_grant(sess.grant)
+        return sess, self.downloads.pop(sess_id, {})
+
     def end_session_by_id(self, sess_id: str, reason=None, *, audit_reason="logout"):
         with self.sess_update_lock:
-            sess = self.sessions.pop(sess_id, None)
-            downloads = self.downloads.pop(sess_id, {})
+            sess, downloads = self._detach_session(sess_id)
+        self._finish_session(sess, downloads, reason, audit_reason)
+
+    def _finish_session(self, sess, downloads, reason, audit_reason):
         if sess:
             record(
                 "admin.session.ended",
@@ -290,21 +390,23 @@ class SessionManager(CommandModule):
             )
         if sess and reason:
             try:
+                notification = CellMessage(payload=reason)
+                notification.set_prop(MessagePropKey.TARGET_AUTH_PEER, sess.grant.peer)
                 self.cell.fire_and_forget(
                     channel=CellChannel.HCI,
                     topic="SESSION_EXPIRED",
                     targets=sess.origin_fqcn,
-                    message=CellMessage(payload=reason),
+                    message=notification,
                     optional=True,
                 )
             except Exception as ex:
-                self.logger.error(f"failed to notify expired session {sess_id}: {secure_format_exception(ex)}")
+                self.logger.error(f"failed to notify expired session {sess.sess_id}: {secure_format_exception(ex)}")
         for tx_id, cancel_cb in downloads.items():
             try:
                 cancel_cb()
             except Exception as ex:
                 self.logger.error(
-                    f"failed to cancel download {tx_id} for session {sess_id}: {secure_format_exception(ex)}"
+                    f"failed to cancel download {tx_id} for session {getattr(sess, 'sess_id', None)}: {secure_format_exception(ex)}"
                 )
 
     def get_spec(self):
@@ -358,9 +460,7 @@ class SessionManager(CommandModule):
             conn.append_error("invalid_session")
             return
 
-        hci = conn.get_prop(ConnProps.HCI_SERVER)
-        id_asserter = hci.get_id_asserter() if hci else None
-        sess = self.get_session(token, id_asserter)
+        sess = self.get_session(token, conn.get_prop(ConnProps.ADMIN_TRANSPORT_GRANT))
         if sess:
             conn.append_string("OK")
         else:

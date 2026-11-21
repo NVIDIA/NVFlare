@@ -11,14 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import datetime
 import traceback
 from typing import List
 
+from cryptography.hazmat.primitives import hashes
+
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.apis.utils.format_check import name_check
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands, ReplyKeyword
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -98,7 +97,6 @@ class LoginModule(CommandModule, CommandFilter):
         signature = headers.get("signature")
         study = headers.get("study", DEFAULT_STUDY)
 
-        self.logger.debug(f"got cert login headers: {headers=}")
         hci = conn.get_prop(ConnProps.HCI_SERVER)
         identity_verifier = hci.get_id_verifier()
         id_asserter = hci.get_id_asserter()
@@ -183,20 +181,21 @@ class LoginModule(CommandModule, CommandFilter):
         self.logger.debug(f"got cert dict: {cert_dict}")
         identity = get_identity_info(cert_dict)
 
-        request = conn.get_prop(ConnProps.REQUEST)
-        assert isinstance(request, CellMessage)
-        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        grant = conn.get_prop(ConnProps.ADMIN_TRANSPORT_GRANT)
+        if not grant or grant.user_name != user_name or grant.cert_fingerprint != cert.fingerprint(hashes.SHA256()):
+            _reject(audit_reason="admin_transport_identity_mismatch")
+            return
 
-        session = self.session_mgr.create_session(
-            user_name=user_name,
+        session, token = self.session_mgr.create_session(
+            grant,
             user_org=identity.get(IdentityKey.ORG) or "",
             user_role=identity.get(IdentityKey.ROLE) or "",
-            origin_fqcn=origin,
             active_study=study,
-            cert_exp=_cert_expiry(cert),
             cert_studies=cert_studies,
         )
-        token = session.make_token(id_asserter)
+        if not session:
+            _reject(audit_reason="inactive_admin_transport")
+            return
         self.logger.info(f"Created user session for {user_name}")
         conn.append_string("OK")
         conn.append_token(token)
@@ -221,33 +220,14 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_error("not authenticated - no token")
             return False
 
-        hci = conn.get_prop(ConnProps.HCI_SERVER)
-        id_asserter = hci.get_id_asserter()
-
-        sess = self.session_mgr.get_session(token, id_asserter)
+        sess = self.session_mgr.get_session(token, conn.get_prop(ConnProps.ADMIN_TRANSPORT_GRANT), touch=True)
         if not sess:
-            # try to recreate the session
-            request = conn.get_prop(ConnProps.REQUEST)
-            assert isinstance(request, CellMessage)
-            origin = request.get_header(MessageHeaderKey.ORIGIN)
-
-            try:
-                sess = self.session_mgr.recreate_session(token, origin, id_asserter)
-                self.logger.info(f"recreated admin session for {sess.user_name}")
-            except Exception as ex:
-                reject("admin.session.rejected", user="unknown", reason="invalid_or_expired_token")
-                self.logger.error(f"cannot recreate admin session: {secure_format_exception(ex)}")
-                conn.append_error(ReplyKeyword.SESSION_INACTIVE)
-                conn.append_string(
-                    "user not authenticated or session timed out/expired after {} seconds of inactivity - logged out".format(
-                        self.session_mgr.idle_timeout
-                    )
-                )
-                return False
+            reject("admin.session.rejected", user="unknown", reason="invalid_or_expired_token")
+            conn.append_error(ReplyKeyword.SESSION_INACTIVE)
+            return False
 
         assert isinstance(sess, Session)
         update_context(user=sess.user_name, identity_source="locally_verified")
-        sess.mark_active()
         conn.set_prop(ConnProps.SESSION, sess)
         conn.set_prop(ConnProps.USER_NAME, sess.user_name)
         conn.set_prop(ConnProps.USER_ORG, sess.user_org)
@@ -259,10 +239,3 @@ class LoginModule(CommandModule, CommandFilter):
 
     def close(self):
         self.session_mgr.shutdown()
-
-
-def _cert_expiry(cert):
-    value = getattr(cert, "not_valid_after_utc", None)
-    if value is None:
-        value = cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
-    return value.timestamp()

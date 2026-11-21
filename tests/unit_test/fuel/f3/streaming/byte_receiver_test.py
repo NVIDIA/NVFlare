@@ -15,11 +15,11 @@
 import logging
 import threading
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import (
@@ -1146,3 +1146,18 @@ def test_error_after_consumer_future_completion_is_reported():
     assert task.failed is True
     assert task.stream_future.result() == "accepted"
     assert cell.fire_and_forget.call_count == calls + 2
+
+
+def test_receiver_keeps_one_authenticated_admin_grant_per_stream():
+    grant = SimpleNamespace(peer=b"admin-cert")
+    frame = _make_message("admin", 100)
+    frame.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, grant)
+    cell = Mock()
+
+    task = RxTask.find_or_create_task(frame, cell)
+    assert task
+
+    frame.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, SimpleNamespace(peer=b"admin-cert"))
+    assert RxTask.find_or_create_task(frame, cell) is None
+    frame.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, grant)
+    assert RxTask.find_or_create_task(frame, cell) is task

@@ -68,6 +68,10 @@ class MessagePropKey:
 
     ENDPOINT = CELLNET_PREFIX + "endpoint"
     COMMON_NAME = CELLNET_PREFIX + "common_name"
+    CONNECTION = CELLNET_PREFIX + "connection"
+    PEER_CERT_FINGERPRINT = CELLNET_PREFIX + "peer_cert_fingerprint"
+    ADMIN_TRANSPORT_GRANT = CELLNET_PREFIX + "admin_transport_grant"
+    TARGET_AUTH_PEER = CELLNET_PREFIX + "target_auth_peer"
     FUTURES = CELLNET_PREFIX + "futures"
 
 

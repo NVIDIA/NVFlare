@@ -19,6 +19,7 @@ import shutil
 import threading
 import time
 import traceback
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -406,6 +407,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         renewing = self.admin_cert_files is not None
         if renewing:
+            if self.cell and self.token:
+                with suppress(Exception):
+                    self.server_execute(InternalCommands.LOGOUT)
             self._reset_cell()
             self.closed = False
             self.shutdown_asked = False
