@@ -116,16 +116,14 @@ In step mode:
 - `train_with_evaluation=True` in the job config raises `ValueError` when `patch()` runs.
 - A site that stops on its own (`EarlyStopping`, `max_time`, `trainer.should_stop`) sends its open round, which may be
   shorter than N steps, and leaves. A round with no optimizer step yet is not sent: it would carry the received model
-  unchanged, which FedAvg counts with weight 1 (it treats `NUM_STEPS_CURRENT_ROUND <= 0` as 1), and SCAFFOLD cannot
-  compute a control update from zero steps. The callback logs a warning instead. The server then handles the missing
-  site as it handles any client that stops responding.
+  unchanged, which FedAvg would skip anyway, and SCAFFOLD cannot compute a control update from zero steps. The
+  callback logs a warning instead. The server then handles the missing site as it handles any client that stops
+  responding.
 - A site that stops on its own right after a sync (`EarlyStopping` on the validation that follows it) has sent that
-  round and leaves without answering later rounds. In the simulator (FedAvg recipe, 2 sites, external process), the
-  next task sent to that site failed about 40 s later ("trainer process exited while TASK_READY was pending"), and
-  the server aborted the job: "Cannot reach min_responses: remaining good clients (1) < min_responses (2)". The
-  FedAvg recipe uses `min_clients` both as the number of sites sampled per round and as the minimum responses, so
-  with `min_clients=1` the job finished only in runs where the stopped site was not sampled again (2 of 5). This is
-  the same with the receive at batch end (#5700 as merged); it does not depend on when the receive happens.
+  round, and its script returns. In external-process mode the trainer then exits with the script's exit code. If it
+  exits with 0 after sending at least one result, the executor answers later train tasks for that site with an empty
+  0-step result, which FedAvg skips, so the other sites carry on and the job finishes. A non-zero exit, or an exit
+  before any result, still fails the task. Other tasks (evaluate, submit model) to a finished site fail.
 - Every site reports `NUM_STEPS_CURRENT_ROUND = N`, so FedAvg weights sites equally per round, whatever their dataset
   size. Use `aggregation_weight` on the server for unequal weights.
 
