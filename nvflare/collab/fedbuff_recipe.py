@@ -20,7 +20,7 @@ import threading
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
-from functools import cached_property
+from functools import cached_property, partial
 from typing import Any, Callable
 
 from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
@@ -140,7 +140,84 @@ def _validate_options(num_rounds, concurrency, buffer_size, min_open_slots, serv
         raise TypeError("update_transform must be callable")
 
 
-class FedBuffTrainingCoordinator:
+class _FedBuffScheduleState:
+    """Shared reservation and publication rules, with no models during preflight."""
+
+    def __init__(self, num_rounds, concurrency, buffer_size, min_open_slots):
+        self.model = None
+        self.num_rounds = num_rounds
+        self.concurrency = concurrency
+        self.buffer_size = buffer_size
+        self.min_open_slots = min_open_slots
+        self.version = 0
+        self.accepted_count = 0
+        self.active: dict[int, Assignment] = {}
+        self._next_id = 0
+        self._closed = False
+
+    @property
+    def finished(self):
+        return self.version >= self.num_rounds
+
+    @property
+    def available_slots(self):
+        """Capacity allowed by active-client/refill limits and the remaining contribution budget."""
+        return self._available_slots()
+
+    def _available_slots(self, speculative=False):
+        slots = self.concurrency - len(self.active)
+        if self._closed or self.finished or slots < self.min_open_slots:
+            return 0
+        if speculative:
+            return slots
+        remaining = self.num_rounds * self.buffer_size - self.accepted_count - len(self.active)
+        return min(slots, remaining)
+
+    def reserve(
+        self,
+        logical_names: list[str],
+        metadata: list[dict] | None = None,
+        assignment_factory=None,
+        *,
+        speculative=False,
+        released_assignments=(),
+    ) -> list[Assignment]:
+        """Bind logical work to the current model before a physical worker is chosen."""
+        if len(set(logical_names)) != len(logical_names):
+            raise ValueError("logical client names must be unique within a reservation")
+        if metadata is not None and len(metadata) != len(logical_names):
+            raise ValueError("metadata must match logical client names")
+        slots = self._available_slots(speculative=True) if speculative else self.available_slots
+        busy = {a.logical_name for identity, a in self.active.items() if identity not in released_assignments}
+        overlapping = busy.intersection(logical_names[:slots])
+        if overlapping:
+            raise ValueError(f"logical clients already active: {sorted(overlapping)}")
+        assignments = []
+        for index, name in enumerate(logical_names[:slots]):
+            details = deepcopy(metadata[index]) if metadata is not None else {}
+            assignment = (
+                assignment_factory(self._next_id, name, self.version, self.model, details)
+                if assignment_factory is not None
+                else Assignment(self._next_id, name, name, self.version, self.model, details)
+            )
+            self._next_id += 1
+            self.active[assignment.assignment_id] = assignment
+            assignments.append(assignment)
+        return assignments
+
+    def _record_acceptance(self, assignment):
+        del self.active[assignment.assignment_id]
+        self.accepted_count += 1
+        return self.accepted_count % self.buffer_size == 0
+
+    def accept(self, assignment, result):
+        published = self._record_acceptance(assignment)
+        if published:
+            self.version += 1
+        return published
+
+
+class FedBuffTrainingCoordinator(_FedBuffScheduleState):
     """Track active clients, buffered contributions and the refill threshold.
 
     Single-owner: invoke dispatch/accept on the workflow thread.
@@ -166,40 +243,19 @@ class FedBuffTrainingCoordinator:
         _validate_options(
             num_rounds, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
         )
+        super().__init__(num_rounds, concurrency, buffer_size, min_open_slots)
         self.model_ops = model_ops
         self.model = model_ops.snapshot(initial_model)
         model_ops.validate(self.model, self.model)
-        self.num_rounds = num_rounds
-        self.concurrency = concurrency
-        self.buffer_size = buffer_size
-        self.min_open_slots = min_open_slots
         self.server_lr = server_lr
         self.weight_metric = weight_metric
         self.update_transform = update_transform
         self.update_observer = update_observer
-        self.version = 0
-        self.accepted_count = 0
-        self.active: dict[int, Assignment] = {}
-        self._next_id = 0
         self._buffer = WeightedAggregationHelper()
-        self._closed = False
-
-    @property
-    def finished(self):
-        return self.version >= self.num_rounds
 
     @property
     def buffered_count(self):
         return self._buffer.get_len()
-
-    @property
-    def available_slots(self):
-        """Capacity allowed by active-client/refill limits and the remaining contribution budget."""
-        slots = self.concurrency - len(self.active)
-        if self._closed or self.finished or slots < self.min_open_slots:
-            return 0
-        remaining = self.num_rounds * self.buffer_size - self.accepted_count - len(self.active)
-        return min(slots, remaining)
 
     def dispatch(self, available_clients: list[str]) -> list[Assignment]:
         """Reserve physical clients in order, sharing the current immutable state."""
@@ -208,31 +264,6 @@ class FedBuffTrainingCoordinator:
         busy = {assignment.client_name for assignment in self.active.values()}
         clients = [name for name in available_clients if name not in busy]
         return self.reserve(clients)
-
-    def reserve(
-        self, logical_names: list[str], metadata: list[dict] | None = None, assignment_factory=None
-    ) -> list[Assignment]:
-        """Bind logical work to the current model before a physical worker is chosen."""
-        if len(set(logical_names)) != len(logical_names):
-            raise ValueError("logical client names must be unique within a reservation")
-        if metadata is not None and len(metadata) != len(logical_names):
-            raise ValueError("metadata must match logical client names")
-        busy = {assignment.logical_name for assignment in self.active.values()}
-        overlapping = busy.intersection(logical_names[: self.available_slots])
-        if overlapping:
-            raise ValueError(f"logical clients already active: {sorted(overlapping)}")
-        assignments = []
-        for index, name in enumerate(logical_names[: self.available_slots]):
-            details = deepcopy(metadata[index]) if metadata is not None else {}
-            assignment = (
-                assignment_factory(self._next_id, name, self.version, self.model, details)
-                if assignment_factory is not None
-                else Assignment(self._next_id, name, name, self.version, self.model, details)
-            )
-            self._next_id += 1
-            self.active[assignment.assignment_id] = assignment
-            assignments.append(assignment)
-        return assignments
 
     def accept(self, assignment: Assignment, result: FedBuffResult | None, error: Any = None) -> bool:
         """Accept exactly once; return True only when a global version is published.
@@ -280,9 +311,7 @@ class FedBuffTrainingCoordinator:
         if self.update_observer is not None:
             self.update_observer(update)
         self._buffer.add(delta, weight, str(assignment.assignment_id), assignment.base_version)
-        del self.active[assignment.assignment_id]
-        self.accepted_count += 1
-        if self.buffered_count < self.buffer_size:
+        if not self._record_acceptance(assignment):
             return False
         self.model = self.model_ops.apply(self.model, self._buffer.get_result(), self.server_lr)
         self.version += 1
@@ -491,6 +520,16 @@ class FedBuffWorkflow:
 
     def _execution_port(self, coordinator, names, submit, receive):
         """Expose algorithm decisions to the shared live/planned execution policy."""
+        planning_state = None
+        # A custom coordinator may define different reservation or publication rules.
+        if type(coordinator) is FedBuffTrainingCoordinator:
+            planning_state = partial(
+                _FedBuffScheduleState,
+                coordinator.num_rounds,
+                coordinator.concurrency,
+                coordinator.buffer_size,
+                coordinator.min_open_slots,
+            )
         return AsyncExecutionPort(
             state=coordinator,
             clients=names,
@@ -504,6 +543,7 @@ class FedBuffWorkflow:
             on_publish=lambda model, version: self._notify("on_model", model, version),
             on_time=lambda instant: self._notify("on_time", instant),
             aborted=lambda: collab.is_aborted,
+            make_planning_state=planning_state,
         )
 
     @collab.main

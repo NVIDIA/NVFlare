@@ -14,6 +14,8 @@
 
 from collections import deque
 
+import pytest
+
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.simulation_plan import SIMULATION_PLAN_PROP, SimulationPlanRuntime
 from nvflare.collab.replayable_execution import AsyncExecutionPort, run_async_execution
@@ -53,9 +55,17 @@ class _CounterState:
         return True
 
 
-def test_generic_async_port_replays_non_fedbuff_algorithm(tmp_path):
+@pytest.mark.parametrize("retain_artifacts", [True, False])
+def test_generic_async_port_replays_non_fedbuff_algorithm(tmp_path, retain_artifacts):
     runtime = SimulationPlanRuntime(
-        {"format_version": 1, "async_execution": {"logical_sequence": ["a", "b"], "arrival_sequence": [1, 0]}},
+        {
+            "format_version": 1,
+            "async_execution": {
+                "logical_sequence": ["a", "b"],
+                "arrival_sequence": [1, 0],
+                "retain_artifacts": retain_artifacts,
+            },
+        },
         tmp_path,
     )
     fl_ctx = FLContext()
@@ -67,6 +77,10 @@ def test_generic_async_port_replays_non_fedbuff_algorithm(tmp_path):
     def submit(site, assignment, **kwargs):
         results.append((site, assignment.assignment_id, 1, None))
 
+    def on_accept(assignment, version, site):
+        assert assignment.base_model == 0
+        accepted.append(assignment.assignment_id)
+
     port = AsyncExecutionPort(
         state=state,
         clients=["site-1", "site-2"],
@@ -76,12 +90,14 @@ def test_generic_async_port_replays_non_fedbuff_algorithm(tmp_path):
         live_run=lambda: None,
         normalize=lambda result, assignment: result,
         aborted=lambda: False,
-        on_accept=lambda assignment, version, site: accepted.append(assignment.assignment_id),
+        on_accept=on_accept,
     )
     run_async_execution(port, fl_ctx)
     runtime.assert_consumed()
     assert accepted == [1, 0]
     assert state.model == 2
+    assert (tmp_path / "models").exists() == retain_artifacts
+    assert not list(tmp_path.glob("work-*"))
 
 
 def test_generic_async_port_uses_live_path_without_plan():
