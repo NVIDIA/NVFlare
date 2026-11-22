@@ -674,7 +674,7 @@ class FileTaskArtifactStore:
         return reference
 
     def commit_checkpoint(self, completion, checkpoint_file, *, publication_guard=nullcontext, assignment=None):
-        """CJ promotes state only from the verified, physically settled result."""
+        """CJ promotes state from a verified immutable application completion."""
         config = completion.diagnostics.get("checkpoint")
         if config is None:
             return
@@ -786,6 +786,7 @@ class FileTaskArtifactStore:
         failed_at: float,
         error_type: str,
         message: str,
+        diagnostics: Optional[Mapping[str, Any]] = None,
     ):
         """Retain diagnostics without making a failed attempt look committed."""
 
@@ -800,6 +801,13 @@ class FileTaskArtifactStore:
             "error_type": error_type,
             "message": message,
         }
+        if diagnostics:
+            record["diagnostics"] = diagnostics
+            if (
+                len(json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8"))
+                > _MAX_RECORD_BYTES
+            ):
+                del record["diagnostics"]
         _write_json_exclusive(self.attempt_dir(identity), "failure.json", record)
 
     def release_payloads(self, identity: TaskAttemptIdentity):

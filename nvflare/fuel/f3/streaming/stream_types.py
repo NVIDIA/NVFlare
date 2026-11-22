@@ -49,6 +49,14 @@ class DownloadCancelled(StreamError):
     """An object download was cancelled locally by workflow cleanup."""
 
 
+class DownloadUnavailable(StreamError):
+    """A duplicate download lost its source to a completed download; retry the enclosing request."""
+
+
+class DownloadUnavailableReason(str):
+    """A recoverable rejection that preserves the consumer failure callback's string contract."""
+
+
 class Stream(ABC):
     """A raw, read-only, seekable binary byte stream"""
 
@@ -120,6 +128,8 @@ class StreamFuture:
     def __init__(self, stream_id: int, headers: Optional[dict] = None, task_handle: StreamTaskSpec = None):
         self.stream_id = stream_id
         self.headers = headers
+        # Receiver-owned transport provenance; never populated from wire headers.
+        self.receiving_endpoint = None
         self.waiter = threading.Event()
         self.lock = threading.Lock()
         self.error: Optional[StreamError] = None

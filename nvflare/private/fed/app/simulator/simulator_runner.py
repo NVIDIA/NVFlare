@@ -42,6 +42,12 @@ from nvflare.apis.fl_constant import (
     WorkspaceConstants,
 )
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
+from nvflare.apis.simulation_plan import (
+    ASYNC_EXECUTION,
+    SIMULATION_PLAN_FILE,
+    SIMULATION_PLAN_PROP,
+    load_simulation_plan,
+)
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
@@ -81,6 +87,22 @@ POOL_STATS_DIR = "pool_stats"
 SIMULATOR_POOL_STATS = "simulator_cell_stats.json"
 
 
+class _SimulationJobMetaValidator(JobMetaValidator):
+    """Allow an async plan to use fewer physical sites than logical concurrency."""
+
+    def _validate_min_clients(self, job_name, meta, clients):
+        original = meta.get(JobMetaKey.MIN_CLIENTS)
+        if original is None or ALL_SITES in clients:
+            return super()._validate_min_clients(job_name, meta, clients)
+        # Validate the exported value's bounds before lowering it for simulation.
+        super()._validate_min_clients(job_name, meta, {ALL_SITES})
+        try:
+            meta[JobMetaKey.MIN_CLIENTS] = min(self._convert_value_to_int(original), len(clients))
+            return super()._validate_min_clients(job_name, meta, clients)
+        finally:
+            meta[JobMetaKey.MIN_CLIENTS] = original
+
+
 class SimulatorRunner(FLComponent):
     def __init__(
         self,
@@ -93,6 +115,7 @@ class SimulatorRunner(FLComponent):
         log_config=None,
         max_clients=100,
         end_run_for_all=False,
+        simulation_plan=None,
     ):
         super().__init__()
 
@@ -105,11 +128,14 @@ class SimulatorRunner(FLComponent):
         self.log_config = None
         self.max_clients = max_clients
         self.end_run_for_all = end_run_for_all
+        self.simulation_plan = os.path.abspath(simulation_plan) if simulation_plan else None
 
         self.ask_to_stop = False
 
         self.simulator_root = None
         self.server = None
+        self.client_fatal_error = False
+        self.server_workflow_done = False
         self.deployer = SimulatorDeployer()
         self.client_names = []
         self.federated_clients = []
@@ -145,6 +171,7 @@ class SimulatorRunner(FLComponent):
         gpu=None,
         log_config=None,
         max_clients=100,
+        simulation_plan=None,
     ):
         args = Namespace(
             job_folder=job_folder,
@@ -155,6 +182,7 @@ class SimulatorRunner(FLComponent):
             gpu=gpu,
             log_config=log_config,
             max_clients=max_clients,
+            simulation_plan=simulation_plan,
         )
         args.set = []
         return args
@@ -169,7 +197,9 @@ class SimulatorRunner(FLComponent):
             self.gpu,
             self.log_config,
             self.max_clients,
+            self.simulation_plan,
         )
+        plan = load_simulation_plan(self.simulation_plan) if self.simulation_plan else None
 
         if self.args.clients:
             self.client_names = self.args.clients.strip().split(",")
@@ -204,6 +234,9 @@ class SimulatorRunner(FLComponent):
 
         self.simulator_root = self.args.workspace
         self._cleanup_workspace()
+        common_plan_path = os.path.join(self.simulator_root, "local", SIMULATION_PLAN_FILE)
+        if os.path.isfile(common_plan_path):
+            os.remove(common_plan_path)
         init_security_content_service(self.args.workspace)
 
         os.makedirs(os.path.join(self.simulator_root, SiteType.SERVER))
@@ -215,7 +248,7 @@ class SimulatorRunner(FLComponent):
         )
 
         try:
-            data_bytes, job_name, meta = self.validate_job_data()
+            data_bytes, job_name, meta = self.validate_job_data(plan)
 
             if not self.client_names:
                 self.client_names = self._extract_client_names_from_meta(meta)
@@ -292,8 +325,18 @@ class SimulatorRunner(FLComponent):
             # add participating job clients to meta
             job_clients = [FLClient(name, "") for name in self.client_names]
             meta[JobMetaKey.JOB_CLIENTS] = [c.to_dict() for c in job_clients]
+            if plan is not None and ASYNC_EXECUTION in plan:
+                # Logical concurrency belongs to the workflow; the simulator
+                # starts only the configured physical site pool.
+                meta[JobMetaKey.MIN_CLIENTS] = min(int(meta.get(JobMetaKey.MIN_CLIENTS, 1)), len(self.client_names))
 
             self._deploy_apps(job_name, data_bytes, meta, log_config_file_path)
+            if plan is not None:
+                # Keep the simulator plan server-local; common local/ is copied
+                # to every site by _setup_local_startup.
+                plan_path = os.path.join(self.simulator_root, SiteType.SERVER, "local", SIMULATION_PLAN_FILE)
+                with open(plan_path, "w", encoding="utf-8") as stream:
+                    json.dump(plan, stream, indent=2)
 
             server_workspace = os.path.join(self.args.workspace, SiteType.SERVER)
             workspace = Workspace(root_dir=server_workspace, site_name=SiteType.SERVER)
@@ -341,12 +384,14 @@ class SimulatorRunner(FLComponent):
             shutil.copytree(workspace_local, local_dir, dirs_exist_ok=True)
         shutil.copytree(os.path.join(self.simulator_root, "startup"), startup)
 
-    def validate_job_data(self):
+    def validate_job_data(self, plan=None):
         # Validate the simulate job
         job_name = split_path(self.args.job_folder)[1]
         data = zip_directory_to_bytes("", self.args.job_folder)
         data_bytes = convert_legacy_zipped_app_to_job(data)
-        job_validator = JobMetaValidator()
+        job_validator = (
+            _SimulationJobMetaValidator() if plan is not None and ASYNC_EXECUTION in plan else JobMetaValidator()
+        )
         valid, error, meta = job_validator.validate(job_name, data_bytes)
         if not valid:
             raise RuntimeError(error)
@@ -531,6 +576,9 @@ class SimulatorRunner(FLComponent):
                     executor.submit(lambda p: self.client_run(*p), [self.server_custom_folder, clients, gpus[index]])
 
                 executor.shutdown()
+                # Before aborting, check if the server workflows already finished on their own
+                server_runner = self.server.server_runner
+                self.server_workflow_done = server_runner is not None and server_runner.status == "done"
                 # Abort the server after all clients finished run
                 self.server.abort_run()
                 server_thread.join()
@@ -548,13 +596,27 @@ class SimulatorRunner(FLComponent):
     def _get_server_run_status(self):
         with self.server.engine.new_context() as fl_ctx:
             execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
-        return 2 if execution_error else 0
+            plan_runtime = fl_ctx.get_prop(SIMULATION_PLAN_PROP)
+            if plan_runtime is not None:
+                try:
+                    if not execution_error:
+                        plan_runtime.assert_consumed()
+                except RuntimeError as exc:
+                    self.logger.error(str(exc))
+                    execution_error = True
+                finally:
+                    plan_runtime.finalize()
+        # A client fatal error fails the run only if the server workflows could not finish
+        client_failed_run = self.client_fatal_error and not self.server_workflow_done
+        return 2 if execution_error or client_failed_run else 0
 
     def client_run(self, server_custom_folder, clients, gpu):
         client_runner = SimulatorClientRunner(
             server_custom_folder, self.args, clients, self.client_config, self.deploy_args, self.build_ctx
         )
         client_runner.run(gpu)
+        if client_runner.fatal_clients:
+            self.client_fatal_error = True
 
     def start_server_app(self, args):
         app_server_root = os.path.join(self.simulator_root, "server", SimulatorConstants.JOB_NAME, "app_server")
@@ -624,6 +686,7 @@ class SimulatorClientRunner(FLComponent):
         self.logging_config = os.path.join(self.args.workspace, "local", WorkspaceConstants.LOGGING_CONFIG)
 
         self.clients_finished_end_run = []
+        self.fatal_clients = []
 
     def run(self, gpu):
         try:
@@ -812,6 +875,10 @@ class SimulatorClientRunner(FLComponent):
 
                     # the child process is in nvflare/private/fed/app/simulator/simulator_worker.py
                     end_run_client = conn.recv()
+                    if conn.recv():
+                        self.logger.error(f"Client {client.client_name} stopped due to FATAL_SYSTEM_ERROR")
+                        with lock:
+                            self.fatal_clients.append(client.client_name)
 
                 with lock:
                     if num_of_threads != len(self.federated_clients):

@@ -158,6 +158,7 @@ def test_receiver_configured_forwarding_completes_source_receipt(service, config
     future = SimpleNamespace(
         headers={**message.headers, StreamHeaderKey.CHANNEL: "weights", StreamHeaderKey.TOPIC: "snapshot"},
         result=lambda: message.payload,
+        receiving_endpoint=None,
     )
     # Exercise Adapter's actual receiver-side configuration, with no sender header.
     Adapter(forward, SimpleNamespace(fqcn="relay"), relay).call(future)

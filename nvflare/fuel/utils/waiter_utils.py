@@ -50,7 +50,7 @@ def conditional_wait(
 
     """
     wait_time = _SMALL_WAIT if timeout is None else min(_SMALL_WAIT, timeout)
-    start = time.time()
+    start = time.monotonic()
     while True:
         if waiter:
             if waiter.wait(wait_time):
@@ -59,7 +59,7 @@ def conditional_wait(
         else:
             time.sleep(wait_time)
 
-        if timeout is not None and time.time() - start >= timeout:
+        if timeout is not None and time.monotonic() - start >= timeout:
             return WaiterRC.TIMEOUT
 
         # check conditions

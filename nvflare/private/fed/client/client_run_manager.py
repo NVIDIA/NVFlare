@@ -99,8 +99,8 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
             self.handlers = []
 
         # get job meta!
-        client_config = client.client_args
-        fqsn = client_config.get("fqsn", client.client_name)
+        client_config = client.client_args if client else {}
+        fqsn = client_config.get("fqsn", client.client_name if client else client_name)
         is_leaf = client_config.get("is_leaf", True)
 
         job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)

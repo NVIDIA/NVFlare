@@ -16,16 +16,14 @@ import copy
 import errno
 import json
 import weakref
-from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 import torch
-from safetensors.torch import load_file, save, save_file
+from safetensors.torch import load, load_file, save, save_file
 
 import nvflare.app_opt.pt.disk_fedavg_components as disk
-import nvflare.app_opt.pt.lazy_tensor_dict as lazy
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
@@ -298,7 +296,12 @@ def test_sharded_checkpoint_saved_reload_and_stale_slots(tmp_path):
     aggr.fl_ctx = ctx
     aggr.accept_model(model(refs(tmp_path, "client", {"a": torch.full((1,), 3.0), "b": torch.full((2,), 4.0)})))
     result = aggr.aggregate_model()
+    reader = TensorDownloadable(result.params, max_chunk_size=1)
+    assert load(reader.produce_item(0))["a"].item() == 3.0
     persistor.save_model(make_model_learnable(result.params, {}), ctx)
+    # Saving renames the same model and updates its refs; cached readers must allow this.
+    assert load(reader.produce_item(1))["b"].tolist() == [4.0, 4.0]
+    reader.release()
     assert not (tmp_path / disk.CURRENT_MODEL).exists()
     assert result.params["b"].materialize().tolist() == [4.0, 4.0]
     assert all(ref.file_path == str(tmp_path / disk.SAVED_MODEL) for ref in result.params.values())
@@ -310,8 +313,6 @@ def test_sharded_checkpoint_saved_reload_and_stale_slots(tmp_path):
 
 @pytest.mark.parametrize("replace_before_open", [True, False])
 def test_retired_task_download_cannot_mix_checkpoint_slots(tmp_path, monkeypatch, replace_before_open):
-    from safetensors.torch import load
-
     aggr = aggregator(tmp_path)
     ctx = aggr.fl_ctx
     persistor = disk.DiskFedAvgPersistor("unused")
@@ -340,15 +341,14 @@ def test_retired_task_download_cannot_mix_checkpoint_slots(tmp_path, monkeypatch
         with pytest.raises(RuntimeError, match="model was replaced"):
             reader.produce(state, "slow-client")
     else:
-        real_open = lazy.safe_open
+        real_get_reader = reader._get_reader
 
-        @contextmanager
-        def open_then_replace(*args, **kwargs):
-            with real_open(*args, **kwargs) as opened:
-                persistor.save_model(replacement, ctx)
-                yield opened
+        def acquire_then_replace(ref):
+            opened = real_get_reader(ref)
+            persistor.save_model(replacement, ctx)
+            return opened
 
-        monkeypatch.setattr(lazy, "safe_open", open_then_replace)
+        monkeypatch.setattr(reader, "_get_reader", acquire_then_replace)
         _, items, _ = reader.produce(state, "slow-client")
         assert load(items[0])["b"].item() == 1.0  # The opened file, not its replaced path, owns the read.
     reader.release()

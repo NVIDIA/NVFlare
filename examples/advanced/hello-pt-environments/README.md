@@ -25,7 +25,7 @@ cd examples/advanced/hello-pt-environments
 
 If you arrived through `nvflare examples get hello-pt-environments`, keep using
 the revision-matched NVFlare installation and `PT` extra already in that
-environment. Do not install this directory's `requirements.txt` over a nightly
+environment. Do not install this directory's `requirements.txt` over a local wheel
 or editable NVFlare installation.
 
 ## Compare the three environments

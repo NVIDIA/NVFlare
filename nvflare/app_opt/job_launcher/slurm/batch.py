@@ -338,6 +338,8 @@ def _submission_argv(plan: LaunchPlan, job_dir: str, job_name: str, marker: str,
     ]
     if plan.resources.gpus_per_node:
         argv.append(f"--gres=gpu:{plan.resources.gpus_per_node}")
+    elif plan.resources.gpus_per_node == 0 and plan.clear_gres:
+        argv.append("--gres=none")
     if plan.resources.cpus_per_node:
         argv.append(f"--cpus-per-task={plan.resources.cpus_per_node}")
     if plan.resources.mem_per_node:

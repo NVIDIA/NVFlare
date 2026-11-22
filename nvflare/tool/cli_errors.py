@@ -119,6 +119,14 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Job '{job_id}' has not finished.",
         "hint": "Use 'nvflare job wait <job_id>' or 'nvflare job monitor <job_id>' before downloading results.",
     },
+    "JOB_NOT_FINALIZED": {
+        "message": "Job '{job_id}' has not been finalized.",
+        "hint": "Wait for job completion, then retry 'nvflare resources --job <job_id>' with the same --study selection.",
+    },
+    "RESOURCE_DATA_UNAVAILABLE": {
+        "message": "Resource data is unavailable.",
+        "hint": "Check that the selected jobs retain resource reports and that their workspace archives are available.",
+    },
     "JOB_INVALID": {
         "message": "Job folder is not a valid NVFlare job.",
         "hint": "Check meta.json and config_fed_server.json.",

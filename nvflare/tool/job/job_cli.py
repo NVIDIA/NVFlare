@@ -985,6 +985,7 @@ def cmd_job_download(cmd_args):
             "nvflare job download <job_id> -o /path/to/results",
             "nvflare job download <job_id> --study cancer",
             "nvflare job download <job_id> --force",
+            "nvflare job download <job_id> --outputs-only",
         ],
         sys.argv[1:],
         output_modes=_JSON_OUTPUT_MODES,
@@ -1003,6 +1004,8 @@ def cmd_job_download(cmd_args):
         f"Use 'nvflare job wait {cmd_args.job_id} --study {study}' or "
         f"'nvflare job monitor {cmd_args.job_id} --study {study}' before downloading results."
     )
+    outputs_only = getattr(cmd_args, "outputs_only", False) is True
+    outputs_notice = None
     try:
         with _job_session_for_args(cmd_args, study=study) as sess:
             meta = sess.get_job_meta(cmd_args.job_id)
@@ -1031,7 +1034,8 @@ def cmd_job_download(cmd_args):
                     os.remove(expected_download_path)
             if not json_mode:
                 print_human(f"Downloading job {cmd_args.job_id} from study {study} ...")
-            path = sess.download_job_result(cmd_args.job_id, destination)
+            # the notice says why the whole job came back, or that the job's stored outputs are missing from it
+            path, outputs_notice = sess._download_job_result(cmd_args.job_id, destination, outputs_only=outputs_only)
     except JobNotFound:
         output_error(
             "JOB_NOT_FOUND",
@@ -1069,6 +1073,8 @@ def cmd_job_download(cmd_args):
     path = str(path or destination)
     download_path = _local_download_path(path)
     if not json_mode:
+        if outputs_notice:
+            print_human(outputs_notice)
         print_human(f"Job result downloaded to: {download_path or path}")
     payload = {
         "job_id": cmd_args.job_id,
@@ -1084,6 +1090,10 @@ def cmd_job_download(cmd_args):
         payload["artifact_discovery"] = "skipped"
         payload["artifacts"] = None
         payload["missing_artifacts"] = None
+    if outputs_only:
+        payload["outputs_only"] = outputs_notice is None  # whether only the job's outputs were downloaded
+    if outputs_only or outputs_notice:
+        payload["outputs_note"] = outputs_notice
     if json_mode:
         output_ok(payload)
 
@@ -1220,6 +1230,16 @@ def define_download_job_parser(job_subparser):
     )
     p.add_argument("--study", type=str, default="default", help="study containing the job")
     p.add_argument("--force", action="store_true", help="replace an existing local download directory")
+    p.add_argument(
+        "--outputs-only",
+        dest="outputs_only",
+        action="store_true",
+        help=(
+            "download only the files the job produced on the server (models, metrics, evaluation results), without "
+            "the submitted job, its config and code, or the logs; failed jobs download whole. Use the full download "
+            "when you need the logs"
+        ),
+    )
     add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     job_sub_cmd_parser[CMD_JOB_DOWNLOAD] = p

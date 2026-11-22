@@ -51,6 +51,65 @@ from tests.timing_utils import WAIT_TIMEOUT, ThreadGroup, wait_for
 native_task = _native_task
 
 
+def test_parent_owned_result_and_checkpoint_survive_unconfirmed_cleanup(native_task, monkeypatch, caplog):
+    from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+
+    root, custom, context, policy = native_task
+    monkeypatch.setattr(policy.launcher, "completion_requires_settlement", False, raising=False)
+    monkeypatch.setattr(policy.launcher, "cleanup_owned_by_parent", True, raising=False)
+    launch = policy.launcher.launch_task
+    owned = []
+
+    def unconfirmed(request):
+        handle = launch(request)
+        owned.append((handle, handle.poll, handle.wait_for_settlement))
+        handle.poll = Mock(return_value=TaskExecutionStatus(TaskExecutionPhase.RUNNING))
+        handle.wait_for_settlement = Mock(side_effect=TimeoutError("scheduler accounting unavailable"))
+        handle.result_received = Mock()
+        return handle
+
+    monkeypatch.setattr(policy.launcher, "launch_task", unconfirmed)
+    script = """
+from pathlib import Path
+import nvflare.client as flare
+flare.init()
+model = flare.receive()
+paths = flare.system_info()["task_checkpoint"]
+previous = int(Path(paths["input"]).read_text()) if paths["input"] else 0
+Path(paths["output"]).write_text(str(previous + 1))
+flare.send(flare.FLModel(params=model.params, metrics={"previous": previous}))
+"""
+    adapter, data = _adapter(custom, context, policy, script=script)
+    adapter.options = replace(adapter.options, settlement_timeout=0.01)
+    try:
+        for index in (1, 2):
+            context.set_prop(FLContextKey.TASK_ID, f"task-{index}")
+            context.set_prop(FLContextKey.TASK_ATTEMPT_ID, f"attempt-{index}")
+            result = adapter.execute("train", data, context, Signal())
+            assert result.get_return_code() == ReturnCode.OK
+            assert FLModelUtils.from_shareable(result).metrics == {"previous": index - 1}
+            assert not adapter.supervisor.owns_execution
+            assert not adapter.supervisor.settlement_unconfirmed
+        assert len(list(root.rglob("*.checkpoint"))) == 1
+        assert "cleanup unconfirmed" in caplog.text
+        assert all(handle.execution_id in caplog.text for handle, _, _ in owned)
+        for handle, _, _ in owned:
+            handle.result_received.assert_called_once_with()
+    finally:
+        failures = []
+        try:
+            adapter.handle_event(EventType.END_RUN, context)
+        except Exception as error:
+            failures.append(str(error))
+        for handle, poll, wait in owned:
+            handle.poll, handle.wait_for_settlement = poll, wait
+            try:
+                assert handle.cancel().settled
+            except Exception as error:
+                failures.append(str(error))
+        assert not failures, failures
+
+
 def test_script_owned_dataloader_is_recreated_for_each_assignment(native_task):
     from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 

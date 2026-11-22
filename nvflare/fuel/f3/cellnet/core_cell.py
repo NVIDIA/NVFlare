@@ -1389,7 +1389,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
     def _send_direct_message(self, target_cell, message):
         target_cell.process_message(
-            endpoint=Endpoint(self.my_info.fqcn), connection=None, app_id=self.APP_ID, message=message
+            endpoint=self.communicator.local_endpoint, connection=None, app_id=self.APP_ID, message=message
         )
 
     def _send_target_messages(
@@ -2127,11 +2127,21 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if msg_type == MessageType.REQ:
             reply = None
             reply_target = origin
-            if channel == CellChannel.SERVER_PARENT_LISTENER and (
-                FQCN.validate(origin) or (origin != endpoint.name and not FQCN.is_ancestor(endpoint.name, origin))
-            ):
+            from_upstream = endpoint.name == FQCN.ROOT_SERVER or (
+                self.my_info.gen > 1 and endpoint.name == FQCN.get_parent(self.my_info.fqcn)
+            )
+            if (
+                channel == CellChannel.SERVER_PARENT_LISTENER
+                or (channel == CellChannel.CLIENT_COMMAND and not from_upstream)
+            ) and (FQCN.validate(origin) or (origin != endpoint.name and not FQCN.is_ancestor(endpoint.name, origin))):
                 # Check each hop before forwarding: a job child must not claim a sibling job or the server.
                 reply = make_reply(ReturnCode.UNAUTHENTICATED, "origin does not belong to sending peer")
+                reply_target = endpoint.name
+            elif channel == CellChannel.CLIENT_MAIN and origin == FQCN.ROOT_SERVER and not from_upstream:
+                # Check every hop, including relays: a downstream client must not
+                # impersonate the server on the client administration channel.
+                # mTLS binds the actual endpoint to the provisioned topology identity.
+                reply = make_reply(ReturnCode.UNAUTHENTICATED, "server command did not arrive from upstream")
                 reply_target = endpoint.name
             elif self.message_interceptor is not None:
                 reply = self._try_cb(

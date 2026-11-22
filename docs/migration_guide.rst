@@ -27,6 +27,55 @@ Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
 endpoint attachment and cannot replace a 2.10 connection. This procedure
 includes a server outage and does not resume running jobs across the upgrade.
 
+Study Data File Removed
+-----------------------
+
+The v1 ``local/study_data.yaml`` and the K8s launcher argument
+``study_data_pvc_file_path`` are removed. The Docker, Kubernetes, and Slurm
+launchers refuse to launch jobs while ``local/study_data.yaml`` exists, and
+``K8sJobLauncher`` no longer accepts ``study_data_pvc_file_path``. Move each
+study's datasets into ``local/study_runtime.yaml`` (``format_version: 2``),
+delete ``study_data.yaml``, and remove ``study_data_pvc_file_path`` from the
+launcher configuration. For example,
+``default: {data: {source: nvfldata, mode: ro}}`` becomes::
+
+    format_version: 2
+    studies:
+      default:
+        datasets:
+          data: {source: nvfldata, mode: ro}
+
+Process mode never read ``study_data.yaml``.
+
+Two cases need attention before starting 2.10 on an existing kit and workspace:
+
+- **Kits prepared with 2.8 are affected even if no study data was configured.**
+  2.8 ``nvflare deploy prepare`` wrote a comment-only ``local/study_data.yaml``
+  into every Docker and K8s kit and always set ``study_data_pvc_file_path`` on
+  the K8s launcher. Delete the file even if it is comment-only, and remove the
+  argument from the launcher configuration. Re-running ``nvflare deploy prepare``
+  with 2.10 replaces the launcher argument but leaves the old file in place, so
+  the file must still be deleted.
+- **A client's** ``study_runtime.yaml`` **is also its study allow-list.** When
+  the file lists at least one study, jobs for every unlisted study are rejected
+  at the resource check, including ``default`` (jobs submitted without a
+  study). List every study the site should run, not only those that had dataset
+  mounts; an entry such as ``default: {}`` is enough for a study without
+  datasets.
+
+.. _multi_process_executor_migration:
+
+Multi-process Executor Deprecation
+---------------------------------
+
+``MultiProcessExecutor`` and ``PTMultiProcessExecutor`` are deprecated in 2.10
+while their imports and configuration remain available. For PyTorch DDP training,
+use job-based Client API with ``launch_external_process=True`` and ``torchrun``,
+as in the :github_nvflare_link:`multi-GPU example <examples/advanced/multi-gpu/pt>`.
+Only global rank zero exchanges models with FLARE; the script synchronizes
+models and shutdown across ranks. Applications relying on the legacy wrapper's
+arbitrary FL events or component graph must adapt those explicitly before migrating.
+
 Upgrading from 2.7.2 to 2.8.0
 =============================
 
@@ -148,11 +197,13 @@ Define jobs with the Job Recipe API instead. Use ``nvflare recipe list`` and
 HOCON and OmegaConf Config Support Removed
 ------------------------------------------
 
-FLARE reads configuration files only as JSON (``.json``, with ``.json.default``
+FLARE's generic configuration loader reads only JSON (``.json``, with ``.json.default``
 as the fallback). HOCON (``.conf``) and OmegaConf (``.yml``/``.yaml``) job and
 site configs are no longer recognized, and ``pyhocon`` is no longer a
 dependency. The ``CONFIG`` and ``core_opt`` install extras are removed.
-Provisioning and Kubernetes YAML files are not affected.
+Provisioning, Kubernetes, ``local/study_runtime.yaml``, and integration test
+scenario YAML files are not affected; they use separate PyYAML readers.
+See :ref:`configurations` for the formats used by each configuration type.
 
 Impact:
 

@@ -34,6 +34,28 @@ ALLOW_LOG_STREAMING_VAR = "allow_log_streaming"
 _logger = logging.getLogger(__name__)
 
 
+def client_log_staging_root(workspace):
+    """Keep active logs outside per-job directories removed by job cleanup."""
+    return os.path.join(workspace.get_log_root(), ".client_log_streams")
+
+
+def client_log_path(root, job_id, client_name, file_name):
+    """Resolve strict single components beneath a dedicated staging root."""
+    for value in (job_id, client_name, file_name):
+        if (
+            not isinstance(value, str)
+            or not value
+            or value in (".", "..")
+            or any(c in value for c in ("/", "\\", "\x00"))
+        ):
+            raise ValueError("Invalid client log path component")
+    root = os.path.realpath(root)
+    path = os.path.join(root, job_id, client_name, file_name)
+    if os.path.commonpath((root, os.path.realpath(path))) != root:
+        raise ValueError("Client log path escapes staging directory")
+    return path
+
+
 def is_log_streaming_allowed(fl_ctx: FLContext = None) -> bool:
     """Check whether the site permits live log streaming.
 

@@ -788,6 +788,21 @@ def test_checkpoint_sealing_and_commit_share_storage_but_worker_input_is_isolate
     assert len(list((tmp_path / "state").glob("*.bin"))) == 1
 
 
+def test_resource_diagnostics_do_not_displace_a_near_limit_failure_message(tmp_path):
+    store = FileTaskArtifactStore(str(tmp_path / "attempts"))
+    identity = _identity()
+    store.create_attempt(identity)
+    facts = {"worker_pid": 1, "worker_ppid": 0, "started_at": 0, "failed_at": 1, "error_type": "ValueError"}
+    store.record_failure(identity, message="", **facts)
+    path = Path(store.attempt_dir(identity), "failure.json")
+    message = "x" * (artifacts._MAX_RECORD_BYTES - path.stat().st_size - 1)
+    path.unlink()
+    store.record_failure(identity, message=message, diagnostics={"resource_stats": {"issues": []}}, **facts)
+    record = store.read_failure(identity)
+    assert record["message"] == message
+    assert "diagnostics" not in record
+
+
 def test_identical_checkpoint_bytes_share_the_committed_payload_across_attempts(tmp_path):
     from contextlib import contextmanager
 

@@ -33,6 +33,7 @@ def task_loop(monkeypatch):
     clock = ManualClock()
     local_time = isolate_time(monkeypatch, hug_module, waiter_utils)
     monkeypatch.setattr(local_time, "time", clock.time)
+    monkeypatch.setattr(local_time, "monotonic", clock.monotonic)
     monkeypatch.setattr(local_time, "sleep", clock.advance)
     monkeypatch.setattr(hug_module.random, "uniform", lambda low, high: 0.25)
     gatherer = HierarchicalUpdateGatherer("", "", 1)

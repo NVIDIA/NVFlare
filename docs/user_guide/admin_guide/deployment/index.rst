@@ -15,6 +15,7 @@ Deployment Guide
    containerized_deployment
    slurm_job_launcher
    kubernetes_task_launcher
+   slurm_task_launcher
    helm_chart
    openshift
    brev_scripted_deployment

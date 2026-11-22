@@ -16,6 +16,7 @@ from abc import abstractmethod
 from typing import Any, List, Optional, Tuple
 
 from nvflare.fuel.f3.streaming.download_service import Consumer, Downloadable, DownloadService, ProduceRC
+from nvflare.fuel.f3.streaming.stream_types import DownloadUnavailableReason
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_non_negative_int
 
@@ -252,7 +253,8 @@ class ItemConsumer(Consumer):
         return state
 
     def download_failed(self, ref_id, reason: str):
-        self.logger.error(f"failed to download object with ref {ref_id}: {reason}")
+        log = self.logger.debug if isinstance(reason, DownloadUnavailableReason) else self.logger.error
+        log(f"failed to download object with ref {ref_id}: {reason}")
         self.error = reason
         self.result = None
 

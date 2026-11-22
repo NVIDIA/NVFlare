@@ -86,8 +86,8 @@ This can cause the server to run out of memory (since there could be many messag
 
 By default, ``get_task_timeout`` is unset, so the client uses its effective communication timeout. The site-level
 ``communication_timeout`` defaults to 300.0 seconds. A configured ``get_task_timeout`` can increase this wait, but
-cannot reduce it below the effective communication timeout. Tensor streaming may raise the required minimum
-automatically. To request a longer wait, set the value in config_fed_client.json:
+cannot reduce it below the effective communication timeout. To request a longer wait, set the value in
+config_fed_client.json:
 
 ``"get_task_timeout": 600.0``
 

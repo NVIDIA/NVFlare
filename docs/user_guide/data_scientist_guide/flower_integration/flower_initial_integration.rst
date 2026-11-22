@@ -2,8 +2,11 @@
 Initial Integration
 *******************
 
-Architecturally, Flower uses client/server communication. Clients communicate with the server
-via gRPC. FLARE uses the same architecture with the enhancement that multiple jobs can run at
+Historically, the initial integration used Flower's gRPC adapter. The current
+integration replaces that local adapter with HTTP; see :ref:`flower_http_design`.
+The diagram below describes the original transport and the shared architecture.
+
+Architecturally, Flower uses client/server communication. FLARE uses the same architecture with the enhancement that multiple jobs can run at
 the same time (each job requires one set of clients/server) without requiring multiple ports to
 be open on the server host.
 

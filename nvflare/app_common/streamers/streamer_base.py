@@ -31,6 +31,8 @@ KEY_FILE_SIZE = "FileStreamer.file_size"
 
 # LogStreamer-specific keys
 KEY_HEARTBEAT = "LogStreamer.heartbeat"
+# On a data chunk holding the first bytes of a file: the id (inode) of that file.
+KEY_FILE_ID = "LogStreamer.file_id"
 KEY_STREAM_DONE_CB = "LogStreamer.stream_done_cb"
 
 

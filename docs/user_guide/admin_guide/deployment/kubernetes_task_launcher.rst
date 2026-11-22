@@ -31,6 +31,9 @@ a replacement on the same job/site subtree. It preserves checkpoints and avoids
 repeating workspace download. Use updated images for both CP and CJ; older CJ
 images do not write the workspace initialization record required for recovery.
 
+Set ``NVFLARE_MAX_CJ_RESTART_FAILURES`` in CP's environment before startup;
+``0`` disables recovery.
+
 CJ and workers have no Kubernetes API token. CJ sends bounded commands to CP
 using a per-job capability token; CP fixes the Pod manifest and admits one
 unsettled attempt per job. Pod deletion alone does not prove settlement: CP uses
@@ -610,6 +613,15 @@ recovery state. Only the running CP may reuse its previous CJ's workspace;
 unrelated launches still reject an existing job/site directory. The shutdown
 upload remains in place for CP's result archive. Abrupt CJ loss preserves the
 jobs-PVC files without depending on that upload running.
+
+Stop a job with the FLARE abort command, not by deleting its CJ Pod. A CJ Pod
+removed outside FLARE (``kubectl delete pod``, node drain, eviction or
+preemption) is reported as an infrastructure failure. CP replaces it only if it
+observed the Pod's confirmed shutdown before Kubernetes removed the Pod object;
+otherwise the job ends. Treat CJ resume after Pod removal as best effort, and
+keep CJ Pods on nodes that are not routinely drained or preempted. Task worker
+Pods are held by their finalizer until shutdown is confirmed, so their removal
+resumes through the normal CJ replacement path.
 
 Local reproduction and deployment qualification
 --------------------------------------------------

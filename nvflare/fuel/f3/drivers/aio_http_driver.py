@@ -141,7 +141,7 @@ class AioHttpDriver(AioBaseDriver):
             url = f"{scheme}://{host}:{port}/{WS_PATH}"
 
             async with aiohttp.ClientSession(trust_env=True) as session:
-                async with session.ws_connect(url, ssl_context=self.ssl_context) as ws:
+                async with session.ws_connect(url, ssl_context=self.ssl_context, max_msg_size=MAX_FRAME_SIZE) as ws:
                     await self._connection_handler(ws)
 
         try:
