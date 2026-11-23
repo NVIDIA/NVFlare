@@ -11,7 +11,7 @@ In version 1, `CatalogExecutor` selects a `CatalogConnector`, calls `read_catalo
 | File | Read the site-configured file. Validate and return a steward-provided ODCS document. For CSV, import the file locally and filter the result to the column names in the header. Other supported file formats use their qualified file importer. |
 | Live source | Connect to a running database, warehouse or catalog service using the site’s configured identity. Publish the structural fields from the returned ODCS document. |
 
-PostgreSQL, Snowflake and Databricks Unity Catalog illustrate the live path. For PostgreSQL the importer inspects database catalog metadata. For Snowflake it connects to the configured account, database and schema. For Databricks it can look up the configured tables through the Unity Catalog API. All three yield ODCS documents. These upstream importers are candidates for FLARE integration; each still needs verification against the site's selection and credential requirements. [PostgreSQL importer](https://github.com/datacontract/datacontract-cli/blob/75160dcce44e4ffe3c0be1ca2a9093dd4a194705/datacontract/imports/postgres_importer.py) · [Snowflake importer](https://github.com/datacontract/datacontract-cli/blob/75160dcce44e4ffe3c0be1ca2a9093dd4a194705/datacontract/imports/snowflake_importer.py) · [Unity Catalog importer](https://github.com/datacontract/datacontract-cli/blob/75160dcce44e4ffe3c0be1ca2a9093dd4a194705/datacontract/imports/unity_importer.py)
+The implementation uses SQLAlchemy reflection for PostgreSQL and SQLite, a read-only DuckDB connection, Parquet footers, and paginated REST requests for Unity Catalog. Snowflake remains a candidate for qualification. The upstream project also provides PostgreSQL, Snowflake and Unity importers that can be evaluated against the same source-selection, credential and budget requirements. [PostgreSQL importer](https://github.com/datacontract/datacontract-cli/blob/75160dcce44e4ffe3c0be1ca2a9093dd4a194705/datacontract/imports/postgres_importer.py) · [Snowflake importer](https://github.com/datacontract/datacontract-cli/blob/75160dcce44e4ffe3c0be1ca2a9093dd4a194705/datacontract/imports/snowflake_importer.py) · [Unity Catalog importer](https://github.com/datacontract/datacontract-cli/blob/75160dcce44e4ffe3c0be1ca2a9093dd4a194705/datacontract/imports/unity_importer.py)
 
 At the per-dataset call site, the executor supplies the authenticated site name for generated contract IDs and a secret lookup scoped to that dataset. The reader chooses the source from site configuration.
 
@@ -20,7 +20,7 @@ contract = read_odcs(dataset, secret, remaining_limits, site=site_name)
 catalogs.append({"dataset": dataset.name, "contract": contract})
 ```
 
-A configured contract file takes precedence. CSV imports use only a bounded header projection. For SQL, DuckDB, Parquet and Unity Catalog, the reader can retain the existing bounded metadata queries and footer reads to generate native ODCS. A new warehouse driver needs verification against its actual deployment before it is listed as supported. The Python importer and schema ship in the optional `nvflare[catalog]` extra.
+A configured contract file takes precedence. CSV imports use only a bounded header projection. For SQL, DuckDB, Parquet and Unity Catalog, the reader can retain the existing bounded metadata queries and footer reads to generate native ODCS. A new warehouse driver needs verification against its actual deployment before it is listed as supported. The FLARE wheel includes Bitol’s tagged schema. Installing `nvflare[catalog]` adds the validator, upstream CSV importer and local backend dependencies. Network SQL sources also need their dialect driver.
 
 The executor continues to obtain the job’s Study configuration and handle request selection, cancellation, read budgets and per-dataset outcomes. The reader owns source access and ODCS production. The server handles results from authenticated sites. A reader failure marks that dataset unavailable and allows the site to return its other documents. A budget stop retains the existing `skipped` outcome. [Existing executor call site](https://github.com/NVIDIA/NVFlare/blob/d03b6658ff7553b223da3c87a41d4c248125acf6/nvflare/app_common/fdn/catalog/site/executor.py) · [Upstream import API](https://github.com/datacontract/datacontract-cli/blob/75160dcce44e4ffe3c0be1ca2a9093dd4a194705/datacontract/data_contract.py)
 
@@ -44,12 +44,12 @@ studies:
         uri: file:///data/oncology/visits.csv
       measurements:
         type: sql
-        uri: postgresql://measurements.example/study
+        uri: postgresql+psycopg://measurements.example/study
         options: {schema: approved}
         secrets: {username: STUDY_DB_USER, password: STUDY_DB_PASSWORD}
 ```
 
-For this configuration, the job reads the registry contract without contacting PostgreSQL, imports the visits CSV and applies the header-name filter, and asks the PostgreSQL importer for the measurements schema. An unreadable or invalid registry contract produces an unavailable result for that dataset. It never triggers live discovery. A deployed site makes the contract file available to its job through the same workspace or read-only Study mounts used for other file inputs.
+For this configuration, the job reads the registry contract without contacting PostgreSQL, imports the visits CSV and applies the header-name filter, and uses SQLAlchemy to reflect the configured PostgreSQL schema for measurements. An unreadable or invalid registry contract produces an unavailable result for that dataset. It never triggers live discovery. A deployed site makes the contract file available to its job through the same workspace or read-only Study mounts used for other file inputs.
 
 The executor accepts exactly the new contract reference there and rejects obsolete sharing and exclusion rules, including a mixture of old and new keys. When the reference is absent, the configured source determines whether the reader opens a file or connects to a service. Publication boundaries remain the steward-approved file or the site’s configured source access. No catalog policy file is needed.
 
