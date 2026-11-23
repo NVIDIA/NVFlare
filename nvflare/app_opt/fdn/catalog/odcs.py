@@ -139,6 +139,4 @@ def _read_contract(dataset, secret, budget, *, site):
 
 def read_odcs(dataset, secret, budget, *, site):
     """Collect one dataset within the remaining site deadline."""
-    if "contract_uri" in (dataset.usage_rules("catalog") or {}):
-        return _read_contract(dataset, secret, budget, site=site)
     return discover(dataset, secret, budget, site)

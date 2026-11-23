@@ -185,6 +185,26 @@ def test_sqlite_rejects_partial_imports(tmp_path, ddl):
         read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
 
 
+def test_sqlite_unselected_virtual_table_needs_no_extension(tmp_path):
+    import sqlite3
+
+    pytest.importorskip("datacontract")
+    path = tmp_path / "study.db"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE visits(id INTEGER)")
+        # Model a database created at a site that had a virtual-table extension installed.
+        db.execute("PRAGMA writable_schema=ON")
+        db.execute(
+            "INSERT INTO sqlite_schema(type,name,tbl_name,rootpage,sql) "
+            "VALUES ('table','spatial','spatial',0,'CREATE VIRTUAL TABLE spatial USING site_extension(x)')"
+        )
+    with sqlite3.connect(path) as db, pytest.raises(sqlite3.OperationalError, match="no such module"):
+        db.execute("SELECT * FROM pragma_table_xinfo('spatial')").fetchall()
+    ds, secret = dataset_config(path=path, type_="sql", options={"tables": ["visits"]})
+    tables = read_odcs(ds, secret, ReadBudget(LIMITS), site="one")["schema"]
+    assert [(t["name"], [p["name"] for p in t["properties"]]) for t in tables] == [("visits", ["id"])]
+
+
 def test_duckdb_distinguishes_empty_and_missing_schema(tmp_path):
     duckdb = pytest.importorskip("duckdb")
     from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
@@ -202,13 +222,14 @@ def test_duckdb_distinguishes_empty_and_missing_schema(tmp_path):
                 read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
 
 
-def test_worker_passes_tls_only_to_child_and_reaps_it_on_timeout(monkeypatch):
+@pytest.mark.parametrize("provided", [False, True])
+def test_read_deadline_reaps_worker_for_postgres_and_approved_files(monkeypatch, provided):
     import os
     import subprocess
     from unittest.mock import MagicMock
 
     from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
-    from nvflare.app_opt.fdn.catalog import _read_worker
+    from nvflare.app_opt.fdn.catalog import _read_worker, odcs
 
     monkeypatch.setenv("PGSSLMODE", "require")
     proc = MagicMock()
@@ -218,13 +239,19 @@ def test_worker_passes_tls_only_to_child_and_reaps_it_on_timeout(monkeypatch):
     start = MagicMock(return_value=proc)
     monkeypatch.setattr(_read_worker.subprocess, "Popen", start)
     ds, _ = dataset_config(type_="sql", uri="postgresql://host/study?sslmode=verify-full")
+    if provided:
+        ds = replace(ds, usage={"catalog": {"contract_uri": "file:///approved.yaml"}})
     with pytest.raises(CatalogSourceError) as err:
-        _read_worker.discover(ds, lambda key: "local-value", ReadBudget(LIMITS), "one")
+        odcs.read_odcs(ds, None if provided else lambda key: "local-value", ReadBudget(LIMITS), site="one")
     assert err.value.budget
-    assert start.call_args.kwargs["env"]["PGSSLMODE"] == "verify-full" and os.environ["PGSSLMODE"] == "require"
+    assert start.call_args.kwargs["env"]["PGSSLMODE"] == ("require" if provided else "verify-full")
+    assert os.environ["PGSSLMODE"] == "require"
     assert "local-value" not in str(start.call_args.args)
     request = json.loads(proc.communicate.call_args.args[0])
-    assert request["dataset"]["uri"] == "postgresql://host/study"
+    if provided:
+        assert request["dataset"]["usage"] == ds.usage and request["secrets"] == {}
+    else:
+        assert request["dataset"]["uri"] == "postgresql://host/study"
     assert 0 < proc.communicate.call_args.kwargs["timeout"] <= LIMITS.max_duration_s
     proc.kill.assert_called_once()
     proc.wait.assert_called_once()

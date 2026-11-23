@@ -133,7 +133,12 @@ def _unity(dataset, secret, budget):
             budget,
             "unity",
             unity_table_full_name=[".".join(parts)],
-            config={"DATACONTRACT_DATABRICKS_SERVER_HOSTNAME": host, "DATACONTRACT_DATABRICKS_TOKEN": token},
+            config={
+                # The pinned importer gives a profile precedence over an explicit host and token.
+                "DATACONTRACT_DATABRICKS_PROFILE": "",
+                "DATACONTRACT_DATABRICKS_SERVER_HOSTNAME": host,
+                "DATACONTRACT_DATABRICKS_TOKEN": token,
+            },
         )
         if len(imported) != 1 or imported[0]["name"] != name:
             raise CatalogSourceError("Unity Catalog returned an unexpected table")
@@ -191,14 +196,23 @@ def _database_file(dataset, budget):
         if schema != "main":
             raise CatalogSourceError("SQLite file catalogs support the main schema")
         with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
-            columns = db.execute(
-                "SELECT s.name, c.name FROM sqlite_schema s JOIN pragma_table_xinfo(s.name) c "
-                "WHERE s.type='table' AND s.name NOT GLOB 'sqlite_*' AND c.hidden != 1 ORDER BY s.name, c.cid"
-            ).fetchall()
-            budget.request()
             rows = db.execute(
                 "SELECT name, sql FROM sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*' ORDER BY name"
             ).fetchall()
+            names = options.get("tables", list(dict(rows)))
+            columns = []
+            # Limit each IN list to fit SQLite's host parameter limit on older builds.
+            for offset in range(0, len(names), 500):
+                batch = names[offset : offset + 500]
+                placeholders = ",".join("?" for _ in batch)
+                budget.request()
+                columns.extend(
+                    db.execute(
+                        "SELECT s.name, c.name FROM sqlite_schema s CROSS JOIN pragma_table_xinfo(s.name, 'main') c "
+                        f"WHERE s.type='table' AND s.name IN ({placeholders}) AND c.hidden != 1 ORDER BY s.name, c.cid",
+                        batch,
+                    )
+                )
         dialect = "sqlite"
     definitions = dict(rows)
     names = options.get("tables", list(definitions))

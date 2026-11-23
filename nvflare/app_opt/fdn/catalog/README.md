@@ -11,7 +11,7 @@ Install `nvflare[catalog]` at sites running the federated catalog job. The site 
 | `type: duckdb` | Upstream SQL importer on table definitions from the mounted file opened read-only. |
 | `type: unity-catalog` | Upstream Unity importer using the Databricks SDK in the configured `catalog` and `schema`, optionally limited by `tables`. |
 
-Site credentials use dataset-scoped secret bindings. SQL accepts `username` and `password`; Unity Catalog accepts a bearer `token`. Site-wide `usage.catalog.limits` sets a shared deadline, call allowance and record allowance. Generated discovery runs in a site-local worker. The executor stops and reaps the worker at the deadline, then returns completed datasets. Site replies have a 16 MiB JSON limit. Source permissions and the approved contract file determine what the Study can discover.
+Site credentials use dataset-scoped secret bindings. SQL accepts `username` and `password`; Unity Catalog accepts a bearer `token`. Site-wide `usage.catalog.limits` sets a shared deadline, call allowance and record allowance. Both approved-file validation and generated discovery run in a site-local worker. The executor stops and reaps the worker at the deadline, then returns completed datasets. Site replies have a 16 MiB JSON limit. Source permissions and the approved contract file determine what the Study can discover.
 
 The validator uses [Bitol’s released ODCS 3.2.0 schema](https://github.com/bitol-io/open-data-contract-standard/blob/v3.2.0/schema/odcs-json-schema-v3.2.0.json). The CSV, PostgreSQL, Unity, Parquet and SQL importers ship with the optional MIT-licensed `datacontract-cli` package.
 

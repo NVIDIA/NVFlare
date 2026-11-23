@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Run a generated contract read in a disposable interpreter with a hard deadline."""
+"""Run a catalog read in a disposable interpreter with a hard deadline."""
 
 import json
 import os
@@ -29,7 +29,9 @@ def discover(dataset, secret, budget, site):
     uri = dataset.uri
     env = os.environ.copy()
     keys = ()
-    if dataset.type == "sql" and dataset.path is None:
+    rules = dict(dataset.usage_rules("catalog") or {})
+    provided = "contract_uri" in rules
+    if not provided and dataset.type == "sql" and dataset.path is None:
         keys = ("username", "password")
         url = urlsplit(uri)
         if url.query:
@@ -39,7 +41,7 @@ def discover(dataset, secret, budget, site):
                 raise CatalogSourceError("unsupported PostgreSQL URI query")
             env["PGSSLMODE"] = params[0][1]
             uri = url._replace(query="").geturl()
-    elif dataset.type == "unity-catalog" and "token" in dataset.secret_keys:
+    elif not provided and dataset.type == "unity-catalog" and "token" in dataset.secret_keys:
         keys = ("token",)
 
     budget.remaining()
@@ -50,7 +52,8 @@ def discover(dataset, secret, budget, site):
             "type": dataset.type,
             "uri": uri,
             "path": dataset.path,
-            "options": dict(dataset.options),
+            "options": {} if provided else dict(dataset.options),
+            "usage": {"catalog": rules},
             "secret_keys": keys,
         },
         "secrets": {key: secret(key) for key in keys},

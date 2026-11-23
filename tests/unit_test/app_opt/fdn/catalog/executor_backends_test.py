@@ -53,6 +53,7 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
     from datacontract.data_contract import DataContract
     from datacontract.imports import unity_importer
 
+    monkeypatch.setenv("DATACONTRACT_DATABRICKS_PROFILE", "other-study")
     formats = []
     upstream_import = DataContract.import_from_source
 

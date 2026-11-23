@@ -32,3 +32,19 @@ def test_csv_worker_preserves_wide_headers_and_charges_each_batch(tmp_path):
     contract = read_odcs(dataset, None, budget, site="one")
     assert contract["schema"] == [{"name": "visits", "properties": [{"name": name} for name in names]}]
     assert budget.calls_left == 1
+
+
+def test_approved_file_worker_preserves_contract_without_database_credentials(tmp_path):
+    import json
+
+    pytest.importorskip("jsonschema")
+    pytest.importorskip("ruamel.yaml")
+    contract = {"apiVersion": "v3.2.0", "kind": "DataContract", "id": "approved", "version": "1"}
+    path = tmp_path / "approved.json"
+    path.write_text(json.dumps(contract))
+    ds = DatasetConfig(
+        "study", "visits", "sql", "postgresql://unused/study", None, usage={"catalog": {"contract_uri": path.as_uri()}}
+    )
+    budget = ReadBudget(ReadLimits(60, 2, 10))
+    assert read_odcs(ds, None, budget, site="one") == contract
+    assert budget.calls_left == 1
