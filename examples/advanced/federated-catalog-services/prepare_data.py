@@ -147,7 +147,7 @@ def prepare_postgres(site):
             password=os.environ["POSTGRES_PASSWORD"],
             host="postgres",
             port=5432,
-            database="omop",
+            database="clinical_warehouse",
         ),
         connect_args={"timeout": 5},
         hide_parameters=True,
@@ -186,7 +186,7 @@ def prepare_postgres(site):
                         connection.execute(text(f"INSERT INTO omop.{table} VALUES ({values})"), rows)
             if not connection.execute(text("SELECT 1 FROM pg_roles WHERE rolname = 'catalog_reader'")).fetchone():
                 connection.execute(text("CREATE ROLE catalog_reader LOGIN PASSWORD 'local-demo-reader'"))
-            connection.execute(text("GRANT CONNECT ON DATABASE omop TO catalog_reader"))
+            connection.execute(text("GRANT CONNECT ON DATABASE clinical_warehouse TO catalog_reader"))
             connection.execute(text("GRANT USAGE ON SCHEMA omop TO catalog_reader"))
             # information_schema exposes these tables to the importer without granting row access.
             for table in data:

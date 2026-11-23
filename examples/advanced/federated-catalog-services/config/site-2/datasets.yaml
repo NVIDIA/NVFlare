@@ -4,9 +4,9 @@ format_version: 1
 studies:
   default:
     datasets:
-      omop:                       # the omop schema of the site's PostgreSQL database
+      clinical_records:            # the omop schema of the site's PostgreSQL database
         type: sql
-        uri: postgresql://postgres:5432/omop             # no credentials in the uri
+        uri: postgresql://postgres:5432/clinical_warehouse             # no credentials in the uri
         options:
           schema: omop
         secrets: {username: CATALOG_DB_USER, password: CATALOG_DB_PASSWORD}   # environment variable names

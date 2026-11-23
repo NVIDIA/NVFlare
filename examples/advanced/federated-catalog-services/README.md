@@ -77,8 +77,8 @@ read job to both sites, waits for it, prints a summary and saves the result:
 Catalog of Study default, job 3f1c...
   site-1: OK
   site-2: OK
-  site-1 / omop [ODCS]: condition_occurrence (16 columns), drug_exposure (23 columns), ...
-  site-2 / omop [ODCS]: condition_occurrence (16 columns), drug_exposure (23 columns), ...
+  site-1 / clinical_records [ODCS]: condition_occurrence (16 columns), drug_exposure (23 columns), ...
+  site-2 / clinical_records [ODCS]: condition_occurrence (16 columns), drug_exposure (23 columns), ...
 Full metadata: catalog_results.json
 ```
 
@@ -118,9 +118,9 @@ from nvflare.app_opt.fdn.catalog.visualization import CatalogVisualization
 vis = CatalogVisualization("catalog_results.json")
 vis.show_sites()
 vis.show_datasets()
-vis.show_schema("person", site="site-1", dataset="omop")
+vis.show_schema("person", site="site-1", dataset="clinical_records")
 vis.show_table_comparison()
-vis.show_column_comparison("person", dataset="omop")
+vis.show_column_comparison("person", dataset="clinical_records")
 ```
 
 Other views list tables and relationships or compare nullability and primary keys. Column headers identify both site
@@ -194,7 +194,7 @@ Rerun `python job.py` to read again after source changes. Use an external schedu
 | Site configuration | Dataset type | Source |
 | --- | --- | --- |
 | [site-1/datasets.yaml](config/site-1/datasets.yaml) | `unity-catalog` | Catalog `flare_demo`, schema `omop` on the site's Unity Catalog server, with its registered tables (`person`, `observation_period`, `visit_occurrence`, `condition_occurrence`, `drug_exposure`, `measurement`). |
-| [site-2/datasets.yaml](config/site-2/datasets.yaml) | `sql` | Schema `omop` in the site's PostgreSQL database (the same tables except `measurement`). |
+| [site-2/datasets.yaml](config/site-2/datasets.yaml) | `sql` | Schema `omop` in the site's `clinical_warehouse` PostgreSQL database (the same tables except `measurement`). |
 
 site-1's configuration:
 
@@ -203,15 +203,15 @@ format_version: 1
 studies:
   default:
     datasets:
-      omop:
+      clinical_records:
         type: unity-catalog
         uri: http://unity-catalog:8080/api/2.1/unity-catalog   # API root; authorization is off in this demo
         options: {catalog: flare_demo, schema: omop}
 ```
 
-site-2's dataset has `type: sql`, `uri: postgresql://postgres:5432/omop`, the option `schema: omop`, and `secrets: {username: CATALOG_DB_USER, password: CATALOG_DB_PASSWORD}`.
+site-2's dataset has `type: sql`, `uri: postgresql://postgres:5432/clinical_warehouse`, the option `schema: omop`, and `secrets: {username: CATALOG_DB_USER, password: CATALOG_DB_PASSWORD}`.
 
-The dataset is named `omop` in the `default` Study at both sites; the same name at two sites identifies two separate
+The dataset is named `clinical_records` in the `default` Study at both sites; the same name at two sites identifies two separate
 site catalogs. Data Contract CLI imports the Unity Catalog tables through the Databricks SDK and the PostgreSQL schema through psycopg. The job reads no
 business rows, and Spark is not required. There is no catalog publication policy; source identities and metadata permissions control visibility. An invalid configuration fails that site's read with `CONFIG_UNAVAILABLE`; a missing one means the site offers the Study no datasets. Jobs supply neither the
 configuration nor credentials.
@@ -249,7 +249,7 @@ The same Unity Catalog reader reads schema metadata from a Databricks workspace.
 dataset to:
 
 ```yaml
-      omop:
+      clinical_records:
         type: unity-catalog
         uri: https://<workspace>/api/2.1/unity-catalog
         options: {catalog: your_catalog, schema: your_schema}

@@ -4,6 +4,6 @@ format_version: 1
 studies:
   default:
     datasets:
-      omop:                       # a SQLite file whose table definitions go to the SQL importer
+      clinical_records:            # a SQLite file whose table definitions go to the SQL importer
         type: sql
-        uri: file://${SITE_DATA}/omop.sqlite
+        uri: file://${SITE_DATA}/clinical_warehouse.sqlite

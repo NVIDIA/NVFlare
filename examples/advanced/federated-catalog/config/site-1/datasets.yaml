@@ -4,9 +4,9 @@ format_version: 1
 studies:
   default:                        # SimEnv runs in the default Study
     datasets:
-      omop:                       # Parquet directory: one table per .parquet file
+      clinical_records:            # Parquet directory: one table per .parquet file
         type: parquet
-        uri: file://${SITE_DATA}/omop
+        uri: file://${SITE_DATA}/clinical_records
       lab_results:                # one CSV file
         type: csv
         uri: file://${SITE_DATA}/lab_results.csv

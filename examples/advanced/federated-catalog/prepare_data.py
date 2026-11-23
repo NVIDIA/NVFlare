@@ -194,19 +194,19 @@ def prepare_data(data_root, force=False):
         (site_root / "data").mkdir(parents=True)
         config = install_config(example_root / "config" / site / "datasets.yaml", site_root)
         datasets = config["studies"]["default"]["datasets"]
-        omop = datasets["omop"]
-        source = local_path(omop["uri"])
+        clinical_records = datasets["clinical_records"]
+        source = local_path(clinical_records["uri"])
         tables = make_tables(index, PEOPLE[site], site)
-        if omop["type"] == "parquet":
+        if clinical_records["type"] == "parquet":
             source.mkdir()
             for name, columns in tables.items():
                 pq.write_table(pa.table(columns), source / f"{name}.parquet")
-        elif omop["type"] == "sql":
+        elif clinical_records["type"] == "sql":
             write_sqlite(source, tables)
-        elif omop["type"] == "duckdb":
+        elif clinical_records["type"] == "duckdb":
             write_duckdb(source, tables)
         else:
-            raise ValueError(f"Synthetic data preparation does not support {omop['type']!r}")
+            raise ValueError(f"Synthetic data preparation does not support {clinical_records['type']!r}")
         for name, dataset in datasets.items():
             contract_uri = dataset.get("usage", {}).get("catalog", {}).get("contract_uri")
             if contract_uri:

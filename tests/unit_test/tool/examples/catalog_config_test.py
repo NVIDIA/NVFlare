@@ -35,11 +35,11 @@ def _site_config(example, site, site_data="/prepared/site/data"):
 @pytest.mark.parametrize(
     "example,site,datasets",
     [
-        ("federated-catalog", "site-1", {"omop": "parquet", "lab_results": "csv", "visits": "csv"}),
-        ("federated-catalog", "site-2", {"omop": "sql"}),
-        ("federated-catalog", "site-3", {"omop": "duckdb"}),
-        ("federated-catalog-services", "site-1", {"omop": "unity-catalog"}),
-        ("federated-catalog-services", "site-2", {"omop": "sql"}),
+        ("federated-catalog", "site-1", {"clinical_records": "parquet", "lab_results": "csv", "visits": "csv"}),
+        ("federated-catalog", "site-2", {"clinical_records": "sql"}),
+        ("federated-catalog", "site-3", {"clinical_records": "duckdb"}),
+        ("federated-catalog-services", "site-1", {"clinical_records": "unity-catalog"}),
+        ("federated-catalog-services", "site-2", {"clinical_records": "sql"}),
     ],
 )
 def test_example_site_configurations_are_valid_without_publication_rules(example, site, datasets):
@@ -55,8 +55,10 @@ def test_example_site_configurations_are_valid_without_publication_rules(example
 
 
 def test_the_services_database_credentials_are_secrets_not_part_of_the_uri():
-    omop = _site_config("federated-catalog-services", "site-2").get_dataset("omop")
-    assert "@" not in omop.uri and omop.secret_keys == ("username", "password")
+    dataset = _site_config("federated-catalog-services", "site-2").get_dataset("clinical_records")
+    assert dataset.uri == "postgresql://postgres:5432/clinical_warehouse"
+    assert dataset.options["schema"] == "omop"
+    assert dataset.secret_keys == ("username", "password")
     compose = yaml.safe_load((EXAMPLES / "federated-catalog-services/compose.yaml").read_text())
     environment = compose["services"]["nvflare-site-2"]["environment"]
     assert {"CATALOG_DB_USER", "CATALOG_DB_PASSWORD"} <= set(environment)
@@ -366,8 +368,8 @@ def test_service_database_readiness_checks_database_and_credentials():
     compose = yaml.safe_load((EXAMPLES / "federated-catalog-services/compose.yaml").read_text())
     database = compose["services"]["postgres"]
     # Keep this demo isolated from older postgres-data volumes with other databases/credentials.
-    assert database["volumes"] == ["omop-data:/var/lib/postgresql/data"]
-    assert "omop-data" in compose["volumes"]
+    assert database["volumes"] == ["clinical-warehouse-data:/var/lib/postgresql/data"]
+    assert "clinical-warehouse-data" in compose["volumes"]
     kind, command = database["healthcheck"]["test"]
     assert kind == "CMD-SHELL"
     args = shlex.split(command)
@@ -434,11 +436,11 @@ RESULTS = {
     "datasets": [
         {
             "site": "site-1",
-            "dataset": "omop",
+            "dataset": "clinical_records",
             "contract": {
                 "apiVersion": "v3.2.0",
                 "kind": "DataContract",
-                "id": "omop",
+                "id": "clinical_records",
                 "version": "1",
                 "schema": [{"name": "person", "properties": []}],
             },
@@ -453,7 +455,7 @@ def test_result_display_shows_sites_and_datasets(capsys, example):
     output = capsys.readouterr().out
     assert "site-1: OK, unavailable: registry, skipped: big" in output
     assert "site-2: NO_RESULT" in output
-    assert "site-1 / omop [ODCS]: person" in output
+    assert "site-1 / clinical_records [ODCS]: person" in output
 
 
 def test_unity_catalog_seed_repairs_corrupt_parquet_and_publishes_atomically(tmp_path, monkeypatch):
@@ -503,7 +505,7 @@ def test_service_job_reads_the_catalog_and_saves_the_result(monkeypatch, tmp_pat
     job.main()
     assert calls["env"]["startup_kit_location"] == "/kits/admin" and calls["env"]["username"] == "admin@nvidia.com"
     assert calls["read"] == {"sites": ["site-1", "site-2"], "output_path": str(tmp_path / "out.json")}
-    assert "site-1 / omop [ODCS]: person" in capsys.readouterr().out
+    assert "site-1 / clinical_records [ODCS]: person" in capsys.readouterr().out
 
 
 def test_service_job_without_an_admin_kit_explains_the_setup_step(monkeypatch, capsys):

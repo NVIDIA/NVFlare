@@ -43,7 +43,7 @@ Python API: read with ``get_catalog``
    from nvflare.recipe.catalog import get_catalog
 
    env = ProdEnv(startup_kit_location="/path/to/admin", study="oncology")
-   results = get_catalog(env, datasets={"site-1": ["omop"]}, output_path="catalog_results.json")
+   results = get_catalog(env, datasets={"site-1": ["clinical_records"]}, output_path="catalog_results.json")
 
 ``get_catalog`` submits the read, waits for it, and returns a version 2 snapshot. Each dataset entry contains ``site``, ``dataset`` and ``contract``.
 The download retains ``catalog/index.json`` and standalone ODCS files under ``catalog/contracts/``; when the read fails, the whole
@@ -92,7 +92,7 @@ control the job, for example to submit without waiting:
 
    from nvflare.recipe.catalog import CatalogRecipe
 
-   recipe = CatalogRecipe(datasets={"site-1": ["omop"]})
+   recipe = CatalogRecipe(datasets={"site-1": ["clinical_records"]})
    run = recipe.execute(env)
    results = recipe.get_catalog_results(run, output_path="catalog_results.json")
 
@@ -125,12 +125,12 @@ include them through pandas and JupyterLab.
    vis = CatalogVisualization("catalog_results.json")   # or the dict get_catalog returned
    vis.show_sites()
    vis.show_datasets()
-   vis.show_tables(dataset="omop")
-   vis.show_schema("person", site="site-1", dataset="omop")
-   vis.show_table_comparison(dataset="omop")
-   vis.show_column_comparison("person", dataset="omop")
-   vis.show_column_comparison("person", dataset="omop", field="nullable")
-   vis.show_relationships(dataset="omop")
+   vis.show_tables(dataset="clinical_records")
+   vis.show_schema("person", site="site-1", dataset="clinical_records")
+   vis.show_table_comparison(dataset="clinical_records")
+   vis.show_column_comparison("person", dataset="clinical_records")
+   vis.show_column_comparison("person", dataset="clinical_records", field="nullable")
+   vis.show_relationships(dataset="clinical_records")
 
 Each rendered view includes a title, which names the result's Study, and an explanation;
 ``vis.study`` returns the Study. Each comparison column identifies both
@@ -158,9 +158,9 @@ Each site describes its datasets per Study in one file, its dataset configuratio
    studies:
      oncology:
        datasets:
-         omop:
+         clinical_records:
            type: parquet                       # selects the source reader
-           uri: file:///data/oncology/omop     # where the dataset is
+           uri: file:///data/oncology/clinical_records     # where the dataset is
 
 The site installs ``nvflare[catalog]``. Supported source types are ``csv``, ``parquet``, ``sql``,
 ``duckdb`` and ``unity-catalog``. To supply an approved contract for a dataset, add the following
@@ -170,7 +170,7 @@ inside its entry beside ``type`` and ``uri``:
 
    usage:
      catalog:
-       contract_uri: file:///data/oncology/contracts/omop.odcs.yaml
+       contract_uri: file:///data/oncology/contracts/clinical_records.odcs.yaml
 
 This file takes precedence for catalog reads. A missing or invalid contract marks that dataset unavailable.
 

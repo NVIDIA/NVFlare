@@ -2,7 +2,7 @@
 
 This CPU-only example uses `get_catalog` and `SimEnv` to read the metadata of
 three sites on one host. It needs no Docker and starts no services. Every
-site has an `omop` dataset containing exactly two tables: `person` and
+site has a `clinical_records` dataset containing exactly two tables: `person` and
 `condition_occurrence`. Each site stores them differently.
 
 | Site | Storage | Dataset type | Tables | Synthetic persons |
@@ -41,15 +41,15 @@ and fills it like a deployed site would be:
 
 ```text
 site-1/
-  data/omop/                  Parquet files
+  data/clinical_records/                  Parquet files
   data/lab_results.csv        CSV
   data/visits.csv             CSV
   local/datasets.yaml         the site's dataset configuration
 site-2/
-  data/omop.sqlite            SQLite database
+  data/clinical_warehouse.sqlite            SQLite database
   local/datasets.yaml
 site-3/
-  data/omop.duckdb            DuckDB database
+  data/clinical_warehouse.duckdb            DuckDB database
   local/datasets.yaml
 ```
 
@@ -89,9 +89,9 @@ from nvflare.app_opt.fdn.catalog.visualization import CatalogVisualization
 vis = CatalogVisualization("/tmp/nvflare/federated-catalog/catalog_results.json")
 vis.show_sites()
 vis.show_datasets()
-vis.show_tables(dataset="omop")
-vis.show_schema("person", site="site-1", dataset="omop")
-vis.show_column_comparison("condition_occurrence", dataset="omop")
+vis.show_tables(dataset="clinical_records")
+vis.show_schema("person", site="site-1", dataset="clinical_records")
+vis.show_column_comparison("condition_occurrence", dataset="clinical_records")
 vis.show_table_comparison()  # compare every dataset, including CSV datasets
 ```
 
@@ -115,9 +115,9 @@ format_version: 1
 studies:
   default:                        # SimEnv runs in the default Study
     datasets:
-      omop:                       # Parquet directory: one table per .parquet file
+      clinical_records:            # Parquet directory: one table per .parquet file
         type: parquet
-        uri: file://${SITE_DATA}/omop
+        uri: file://${SITE_DATA}/clinical_records
       lab_results:                # one CSV file
         type: csv
         uri: file://${SITE_DATA}/lab_results.csv
@@ -129,7 +129,7 @@ studies:
             contract_uri: file://${SITE_DATA}/visits.odcs.yaml
 ```
 
-[config/site-2/datasets.yaml](config/site-2/datasets.yaml) has one `omop`
+[config/site-2/datasets.yaml](config/site-2/datasets.yaml) has one `clinical_records`
 dataset of type `sql` whose uri names its SQLite file.
 [config/site-3/datasets.yaml](config/site-3/datasets.yaml) has one of type
 `duckdb`. The dataset type selects the reader directly.

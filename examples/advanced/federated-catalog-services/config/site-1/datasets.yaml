@@ -4,7 +4,7 @@ format_version: 1
 studies:
   default:
     datasets:
-      omop:                       # the omop schema registered in the site's Unity Catalog server
+      clinical_records:            # the omop schema registered in the site's Unity Catalog server
         type: unity-catalog
         uri: http://unity-catalog:8080/api/2.1/unity-catalog   # API root; authorization is off in this demo
         options: {catalog: flare_demo, schema: omop}

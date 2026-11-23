@@ -4,6 +4,6 @@ format_version: 1
 studies:
   default:
     datasets:
-      omop:                       # a DuckDB database file
+      clinical_records:            # a DuckDB database file
         type: duckdb
-        uri: file://${SITE_DATA}/omop.duckdb
+        uri: file://${SITE_DATA}/clinical_warehouse.duckdb

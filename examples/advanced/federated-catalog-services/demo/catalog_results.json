@@ -1,8 +1,8 @@
 {
   "format_version": 2,
   "study": "default",
-  "job_id": "66a2ea29-fc91-4de6-9094-48d7921c1177",
-  "completed_at": "2026-11-23T08:50:08Z",
+  "job_id": "ec7e7ebb-bd5a-4514-8477-74e735dc7a45",
+  "completed_at": "2026-11-23T18:16:30Z",
   "sites": {
     "site-1": {
       "status": "OK",
@@ -20,14 +20,14 @@
   "datasets": [
     {
       "site": "site-1",
-      "dataset": "omop",
+      "dataset": "clinical_records",
       "contract": {
         "apiVersion": "v3.2.0",
         "kind": "DataContract",
-        "id": "urn:uuid:de9fc34d-e05e-5f73-96a6-5894fd1bb93f",
+        "id": "urn:uuid:c53a3ead-bcef-58b2-9a84-80df006711ce",
         "version": "1.0.0",
         "status": "draft",
-        "name": "omop",
+        "name": "clinical_records",
         "schema": [
           {
             "name": "condition_occurrence",
@@ -618,14 +618,14 @@
     },
     {
       "site": "site-2",
-      "dataset": "omop",
+      "dataset": "clinical_records",
       "contract": {
         "apiVersion": "v3.2.0",
         "kind": "DataContract",
-        "id": "urn:uuid:afa195ee-30e8-5e7a-a8d9-03f23c73d360",
+        "id": "urn:uuid:001e3e94-4d9e-5fc0-a7f0-b052eb024f82",
         "version": "1.0.0",
         "status": "draft",
-        "name": "omop",
+        "name": "clinical_records",
         "schema": [
           {
             "name": "condition_occurrence",
