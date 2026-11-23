@@ -283,7 +283,7 @@ class DockerJobHandle(JobHandleSpec):
         self.terminal_state: JobReturnCode = None  # set once, never cleared
         self.logger = logging.getLogger(self.__class__.__name__)
         self._state_lock = threading.Lock()
-        self._create_pending = create_pending
+        self._create_absence_deadline = time.monotonic() + docker_client.api.timeout if create_pending else None
         self._exit_watch_done = threading.Event()
         self._exit_watcher = None
         self._terminating = False
@@ -350,19 +350,32 @@ class DockerJobHandle(JobHandleSpec):
 
     def _lookup_container(self):
         with self._state_lock:
-            identity, create_pending = self.container_id, self._create_pending
+            identity, deadline = self.container_id, self._create_absence_deadline
+        # An inspect can overtake the timed-out create. Take the time before
+        # the request so a slow reply cannot turn an early 404 into evidence.
+        after_create_window = deadline is not None and time.monotonic() >= deadline
         try:
             container = self.docker_client.containers.get(identity)
         except docker.errors.NotFound:
-            if create_pending:
-                # An inspect can overtake the timed-out create on the daemon.
-                # Only absence of a previously observed container is definitive.
-                return None
-            raise
-        if create_pending:
+            if deadline is None:
+                raise
+            if after_create_window:
+                with self._state_lock:
+                    # Another lookup may already have observed the container.
+                    # In that case, subsequent reconciliation uses its ID.
+                    if self._create_absence_deadline is None or self.terminal_state is not None:
+                        return None
+                    self.terminal_state = JobReturnCode.ABORTED
+                self.logger.warning(
+                    "Docker coordinator %s not found after the create reconciliation window. "
+                    "Releasing the job. Remove the stopped container by name if it appears later.",
+                    self.container_name,
+                )
+            return None
+        if deadline is not None:
             with self._state_lock:
                 self.container_id = container.id
-                self._create_pending = False
+                self._create_absence_deadline = None
         return container
 
     def _get_container(self):

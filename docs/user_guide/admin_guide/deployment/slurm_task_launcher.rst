@@ -321,11 +321,13 @@ disabled in this initial implementation. CP continues cleanup while alive;
 CP crash/restart adoption is not implemented for any Slurm profile. Persistent
 files alone do not authorize automatic physical retry.
 
-After an uncertain Docker coordinator create, CP keeps the job registered while
-it looks for the generated container name. A Docker ``NotFound`` reply can
-precede container creation, so CP retains ownership until it can reconcile the
-container. If that never happens, investigate the create on the Docker daemon
-before restarting CP or resubmitting the job.
+After an uncertain Docker coordinator create, CP looks for the generated
+container name. It removes the container if it finds it. CP can also release
+the job after a fresh ``NotFound`` response to a lookup started at least one
+Docker client timeout after the create failed. A daemon or connection error
+keeps cleanup pending. CP never sent a start request for this container. If it
+appears after release, it is stopped and the site operator can remove it by the
+name recorded in the CP log.
 
 Manual cleanup after CP exits
 -----------------------------

@@ -43,6 +43,7 @@ from nvflare.private.fed.client.client_executor import launch_job
 from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES, TaskExecutionPolicy
 from nvflare.private.fed.client.task_runtime import _TaskExecutionState
 from nvflare.private.fed.utils.job_cert_utils import JobCertError
+from tests.timing_utils import ManualClock
 
 
 @pytest.fixture
@@ -94,6 +95,7 @@ def profile(tmp_path, monkeypatch):
     launcher = ClientDockerJobLauncher(**site["components"][0]["args"])
     dc = Mock()
     dc.api.base_url = "http+docker://localhost"
+    dc.api.timeout = 60
     dc.info.return_value = {"OSType": "linux", "MemoryLimit": True, "CpuCfsPeriod": True, "CpuCfsQuota": True}
     parent_container = Mock()
     parent_container.attrs = {
@@ -318,13 +320,19 @@ def test_lost_docker_start_response_retains_owner_until_cleanup(
             assert service.shutdown(timeout=5) == ()
 
 
-def test_timed_out_docker_create_retains_owner_until_late_container_is_removed(profile, monkeypatch):
+@pytest.mark.parametrize("appears_before_deadline", [True, False], ids=["late-create", "never-created"])
+def test_timed_out_docker_create_reconciles_within_client_timeout(profile, monkeypatch, appears_before_deadline):
     p = profile
+    clock = ManualClock()
+    monkeypatch.setattr(docker_module, "time", clock)
+    p.dc.api.timeout = 12
+    p.launcher.timeout = 1
     monkeypatch.setattr(docker_module, "DockerJobHandle", DockerJobHandle)
     p.site["task_execution"]["finalization_timeout"] = 0.03
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
     p.dc.containers.create.side_effect = ReadTimeout("Docker create response lost")
     appeared = threading.Event()
+    daemon_unavailable = threading.Event()
     container = Mock(id="late-coordinator", status="created")
     removed = threading.Event()
     container.remove.side_effect = lambda **kwargs: removed.set()
@@ -332,6 +340,8 @@ def test_timed_out_docker_create_retains_owner_until_late_container_is_removed(p
     def lookup(identity):
         if identity == "cp-container":
             return p.parent_container
+        if daemon_unavailable.is_set():
+            raise ConnectionError("daemon unavailable")
         if not appeared.is_set() or removed.is_set():
             raise docker_module.docker.errors.NotFound("not visible")
         return container
@@ -345,25 +355,55 @@ def test_timed_out_docker_create_retains_owner_until_late_container_is_removed(p
         handle = owner.cj_handle
         name = p.dc.containers.create.call_args.kwargs["name"]
         assert handle.container_id == name
+        clock.advance(p.dc.api.timeout - 1)
         assert handle.poll() == JobReturnCode.UNKNOWN
         handle.terminate()
         assert handle.poll() == JobReturnCode.UNKNOWN
         assert owner.thread.is_alive() and service.jobs["job-1"] is owner
         container.remove.assert_not_called()
 
-        appeared.set()
+        if appears_before_deadline:
+            appeared.set()
+        else:
+            daemon_unavailable.set()
+            clock.advance(1)
+            assert handle.poll() == JobReturnCode.UNKNOWN
+            assert owner.thread.is_alive()
+            daemon_unavailable.clear()
         owner.wake.set()
-        assert removed.wait(5)
         owner.thread.join(5)
-        assert handle.container_id == container.id
         assert owner.cj_settled and not service.jobs
-        container.remove.assert_called_once_with(force=True)
+        if appears_before_deadline:
+            assert handle.container_id == container.id
+            container.remove.assert_called_once_with(force=True)
+        else:
+            assert handle.container_id == name
+            container.remove.assert_not_called()
+        assert handle.poll() == JobReturnCode.ABORTED
         container.start.assert_not_called()
     finally:
+        daemon_unavailable.clear()
         appeared.set()
         service = getattr(p.cell, "_slurm_task_service", None)
         if service is not None:
             assert service.shutdown(timeout=5) == ()
+
+
+def test_not_found_from_lookup_started_before_create_deadline_does_not_settle(monkeypatch):
+    clock = ManualClock()
+    monkeypatch.setattr(docker_module, "time", clock)
+    dc = Mock()
+    dc.api.timeout = 10
+
+    def slow_not_found(_):
+        clock.advance(dc.api.timeout)
+        raise docker_module.docker.errors.NotFound("not visible")
+
+    dc.containers.get.side_effect = slow_not_found
+    handle = DockerJobHandle("generated-name", "generated-name", dc, create_pending=True)
+
+    assert handle.poll() == JobReturnCode.UNKNOWN
+    assert handle.poll() == JobReturnCode.ABORTED
 
 
 def test_handle_is_published_before_waiting_for_docker_startup(profile):
