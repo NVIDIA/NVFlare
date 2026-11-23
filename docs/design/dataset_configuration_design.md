@@ -38,34 +38,36 @@ A job loads the configuration once, when a component first asks for it, and keep
 
 ### 2.2 Format
 
+The dataset key is the name researchers pass to `get_catalog`. The top-level `uri` in each dataset entry identifies its source. A site that supplies an approved Open Data Contract Standard (ODCS) document sets a second URI, `usage.catalog.contract_uri`, pointing to that file.
+
 ```yaml
 format_version: 1
 studies:
-  oncology:                       # Study name
+  oncology:
     datasets:
-      omop:                       # dataset name: how recipes and results refer to it
-        type: parquet             # source type; selects how the dataset is read
-        uri: file:///data/oncology/omop   # required; where the container launcher mounts this dataset
-                                          # (three slashes: empty host, then the path /data/oncology/omop)
-      registry:                   # dataset name; here the dataset is a whole SQLite database
-        type: sql                 # SQLite is SQL; the file URI says it is a local database file
-        uri: file:///srv/oncology/registry.sqlite    # explicit file URI: the path is /srv/oncology/registry.sqlite
-      ehr:                        # dataset name; here part of a network database
+      registry:
         type: sql
-        uri: postgresql+psycopg://ehr-db.oncology.example:5432/ehr   # network URL: no credentials in it
-        options: {schema: public, tables: [visits, labs]}           # read only these tables; others are not read
-        secrets: {username: EHR_DB_USER, password: EHR_DB_PASSWORD}  # environment variable names, not values
-      warehouse:                  # dataset name; here a Unity Catalog schema
+        uri: file:///srv/oncology/registry.sqlite
+        usage:
+          catalog:
+            contract_uri: file:///data/oncology/contracts/registry.odcs.yaml
+      clinical_records:
+        type: sql
+        uri: postgresql://ehr-db.oncology.example:5432/clinical_warehouse
+        options: {schema: omop, tables: [person, visit_occurrence]}
+        secrets: {username: EHR_DB_USER, password: EHR_DB_PASSWORD}
+      warehouse:
         type: unity-catalog
-        uri: https://uc.oncology.example/api/2.1/unity-catalog       # network URL: the API root
+        uri: https://uc.oncology.example/api/2.1/unity-catalog
         options: {catalog: main, schema: oncology}
         secrets: {token: UC_TOKEN}
-        # the source identity determines which metadata the catalog can discover
 
-usage:                            # site-wide settings, per FLARE component
+usage:
   catalog:
     limits: {max_duration_s: 60, max_calls: 1000, max_records: 10000}
 ```
+
+For `registry`, the catalog job opens and validates the steward's ODCS file. Other components can use the SQLite source. For `clinical_records`, the site passes the PostgreSQL host, database, schema, table selection, and resolved credentials to Data Contract CLI's `postgres` importer. It generates an ODCS document in memory on the first read. For `warehouse`, the site lists tables in the configured Unity Catalog schema and passes their fully qualified names to the `unity` importer. [Catalog design](https://github.com/NVIDIA/NVFlare/pull/5741)
 
 | Key | Required / default | Meaning |
 | --- | --- | --- |
@@ -95,7 +97,7 @@ Unknown keys outside `usage` sections, wrong value types, a missing `type` or `u
 | Form | Example | Meaning |
 | --- | --- | --- |
 | `file` URI | `file:///srv/oncology/registry.sqlite` | A path in the job's filesystem: a Parquet directory, a CSV file, or a SQLite or DuckDB database file. |
-| Network URL | `postgresql+psycopg://ehr-db.example:5432/ehr`, `https://uc.example/api/2.1/unity-catalog` | Any other scheme: an address the job connects to, such as a SQLAlchemy database URL or an HTTPS API root. |
+| Network URL | `postgresql://ehr-db.example:5432/clinical_warehouse`, `https://uc.example/api/2.1/unity-catalog` | Any other scheme: an address the job connects to, such as a PostgreSQL database address or the HTTPS root of a catalog service. |
 
 **Required, with no default.** Every dataset states its `uri`. A missing `uri` makes the file invalid, so a network dataset or a process-launched site can never fall back to a mount path by mistake.
 
@@ -105,9 +107,9 @@ Unknown keys outside `usage` sections, wrong value types, a missing `type` or `u
 file:///data/<study>/<dataset>
 ```
 
-with the Study and dataset names filled in, for example `file:///data/oncology/omop`. A process-launched site mounts nothing, so it uses a `file` URI where its data already is.
+with the Study and dataset names filled in, for example `file:///data/oncology/clinical_records`. A process-launched site mounts nothing, so it uses a `file` URI where its data already is.
 
-**Three slashes.** A `file` URI is `file://`, then a host, then an absolute path. The host is always empty here, so the path's leading `/` makes three slashes: `file:///data/oncology/omop` is the path `/data/oncology/omop`. `file://data/oncology/omop` would make `data` a host and is rejected.
+**Three slashes.** A `file` URI is `file://`, then a host, then an absolute path. The host is always empty here, so the path's leading `/` makes three slashes: `file:///data/oncology/clinical_records` is the path `/data/oncology/clinical_records`. `file://data/oncology/clinical_records` would make `data` a host and is rejected.
 
 **Rules.** The API rejects the whole file when a `uri`:
 
@@ -172,7 +174,7 @@ studies:
       ehr_visits:
         <<: &ehr_db                      # shared settings, defined once
           type: sql
-          uri: postgresql+psycopg://ehr-db.oncology.example:5432/ehr
+          uri: postgresql://ehr-db.oncology.example:5432/clinical_warehouse
           secrets: {username: EHR_DB_USER, password: EHR_DB_PASSWORD}
         options: {schema: public, tables: [visits]}
       ehr_labs:
@@ -244,7 +246,7 @@ format_version: 2
 studies:
   oncology:
     datasets:
-      omop: {source: oncology-omop, mode: ro}         # PVC, mounted at /data/oncology/omop
+      clinical_records: {source: oncology-clinical-records, mode: ro}         # PVC, mounted at /data/oncology/clinical_records
     secret_env:
       EHR_DB_USER: {source: ehr-db, key: username}     # from Kubernetes Secret ehr-db
       EHR_DB_PASSWORD: {source: ehr-db, key: password}
@@ -256,12 +258,12 @@ format_version: 1
 studies:
   oncology:
     datasets:
-      omop:
+      clinical_records:
         type: parquet
-        uri: file:///data/oncology/omop                # where study_runtime.yaml mounts dataset omop
+        uri: file:///data/oncology/clinical_records                # where study_runtime.yaml mounts dataset clinical_records
       ehr:
         type: sql
-        uri: postgresql+psycopg://ehr-db.oncology.example:5432/ehr   # not mounted: the job connects
+        uri: postgresql://ehr-db.oncology.example:5432/clinical_warehouse   # not mounted: the job connects
         secrets: {username: EHR_DB_USER, password: EHR_DB_PASSWORD}  # variables set by secret_env
 ```
 
@@ -272,7 +274,7 @@ format_version: 1
 studies:
   oncology:
     datasets:
-      omop: {type: parquet, uri: file:///data/oncology/omop}
+      clinical_records: {type: parquet, uri: file:///data/oncology/clinical_records}
   cardiology:
     datasets:
       echo: {type: csv, uri: file:///data/cardiology/echo.csv}   # configured only for the cardiology Study
@@ -280,7 +282,7 @@ studies:
 
 | Job's Study | `list_datasets()` | Notes |
 | --- | --- | --- |
-| `oncology` | `["omop"]` | `get_dataset("echo")` raises `UnknownDatasetError`. |
+| `oncology` | `["clinical_records"]` | `get_dataset("echo")` raises `UnknownDatasetError`. |
 | `cardiology` | `["echo"]` | The catalog reads `echo` through its configured file access; oncology datasets are outside this Study. |
 | `default`, or any Study not in the file | `[]` | The site offers that Study no datasets. |
 
@@ -315,8 +317,8 @@ class DatasetConfig:
     study: str                         # the job's Study
     name: str                          # the dataset name: the key in the file
     type: str                          # source type, e.g. "parquet", "sql", "unity-catalog"
-    uri: str                           # absolute URI, required in the file, e.g. file:///data/oncology/omop
-    path: str | None                   # decoded local path of a file URI, e.g. /data/oncology/omop;
+    uri: str                           # absolute URI, required in the file, e.g. file:///data/oncology/clinical_records
+    path: str | None                   # decoded local path of a file URI, e.g. /data/oncology/clinical_records;
                                        # None for a network URL
     options: Mapping[str, Any]         # read-only, non-secret, type-specific; {} when omitted
     secret_keys: tuple[str, ...]       # keys of `secrets`, e.g. ("username", "password"); never values

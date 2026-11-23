@@ -29,9 +29,9 @@ CONFIG = {
     "studies": {
         "oncology": {
             "datasets": {
-                "omop": {
+                "clinical_records": {
                     "type": "parquet",
-                    "uri": "file:///data/oncology/omop",
+                    "uri": "file:///data/oncology/clinical_records",
                     "usage": {"training": {"shuffle": True}},
                 },
                 "ehr": {
@@ -60,11 +60,15 @@ class TestSnapshot:
     def test_study_view(self):
         config = parse(CONFIG)
         assert config.study == "oncology"
-        assert config.list_datasets() == ["omop", "ehr"]
-        omop = config.get_dataset("omop")
-        assert (omop.type, omop.uri, omop.path) == ("parquet", "file:///data/oncology/omop", "/data/oncology/omop")
-        assert omop.usage_rules("training")["shuffle"] is True
-        assert omop.usage_rules("cohort") is None
+        assert config.list_datasets() == ["clinical_records", "ehr"]
+        clinical_records = config.get_dataset("clinical_records")
+        assert (clinical_records.type, clinical_records.uri, clinical_records.path) == (
+            "parquet",
+            "file:///data/oncology/clinical_records",
+            "/data/oncology/clinical_records",
+        )
+        assert clinical_records.usage_rules("training")["shuffle"] is True
+        assert clinical_records.usage_rules("cohort") is None
         ehr = config.get_dataset("ehr")
         assert ehr.path is None and ehr.secret_keys == ("password",)
         assert ehr.options["tables"] == ("visits",)
@@ -81,11 +85,11 @@ class TestSnapshot:
         assert parse(CONFIG, study="default").list_datasets() == []
 
     def test_snapshot_is_read_only(self):
-        omop = parse(CONFIG).get_dataset("omop")
+        clinical_records = parse(CONFIG).get_dataset("clinical_records")
         with pytest.raises(TypeError):
-            omop.usage["training"]["shuffle"] = False
+            clinical_records.usage["training"]["shuffle"] = False
         with pytest.raises(TypeError):
-            omop.options["x"] = 1
+            clinical_records.options["x"] = 1
 
     def test_yaml_sets_are_read_only(self):
         data = yaml.safe_load(
@@ -134,9 +138,9 @@ class TestValidation:
             {"format_version": 1, "studies": {"oncology": {"description": "x"}}},
             with_dataset(uri="file:///x"),
             with_dataset(type="parquet"),
-            with_dataset(type="parquet", uri="data/omop"),
-            with_dataset(type="parquet", uri="file://data/omop"),
-            with_dataset(type="parquet", uri="file:///data/omop?x=1"),
+            with_dataset(type="parquet", uri="data/clinical_records"),
+            with_dataset(type="parquet", uri="file://data/clinical_records"),
+            with_dataset(type="parquet", uri="file:///data/clinical_records?x=1"),
             with_dataset(type="parquet", uri="file:relative/path"),
             with_dataset(type="sql", uri="postgresql://user:pw@host/db"),
             with_dataset(type="sql", uri="postgresql://host/db", secrets={"password": "not a variable!"}),
@@ -273,7 +277,7 @@ def write_site_file(workspace_root, data):
 class TestGetStudyDatasetConfig:
     def test_reads_local_datasets_yaml(self, tmp_path):
         write_site_file(tmp_path, CONFIG)
-        assert get_study_dataset_config(make_fl_ctx(tmp_path)).list_datasets() == ["omop", "ehr"]
+        assert get_study_dataset_config(make_fl_ctx(tmp_path)).list_datasets() == ["clinical_records", "ehr"]
 
     def test_missing_file_is_empty(self, tmp_path):
         assert get_study_dataset_config(make_fl_ctx(tmp_path)).list_datasets() == []
@@ -290,14 +294,20 @@ class TestGetStudyDatasetConfig:
         with pytest.raises(DatasetConfigError):
             get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-c"))
         path.write_text(yaml.safe_dump(CONFIG, sort_keys=False))
-        assert get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-c")).list_datasets() == ["omop", "ehr"]
+        assert get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-c")).list_datasets() == [
+            "clinical_records",
+            "ehr",
+        ]
 
     def test_the_removed_environment_variable_is_ignored(self, tmp_path, monkeypatch):
         other = tmp_path / "elsewhere.yaml"
         other.write_text(yaml.safe_dump({"format_version": 1, "studies": {"oncology": {"datasets": {}}}}))
         monkeypatch.setenv("NVFLARE_DATASET_CONFIG", str(other))
         write_site_file(tmp_path, CONFIG)
-        assert get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-env")).list_datasets() == ["omop", "ehr"]
+        assert get_study_dataset_config(make_fl_ctx(tmp_path, job_id="job-env")).list_datasets() == [
+            "clinical_records",
+            "ehr",
+        ]
 
 
 class TestKubernetesStudyPart:

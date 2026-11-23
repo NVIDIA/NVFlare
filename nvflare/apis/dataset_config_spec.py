@@ -52,8 +52,8 @@ class DatasetConfig:
     study: str  # the job's Study
     name: str  # the dataset name: the key in the file
     type: str  # source type, e.g. "parquet", "sql", "unity-catalog"
-    uri: str  # absolute URI, required in the file, e.g. file:///data/oncology/omop
-    path: str | None  # decoded local path of a file URI, e.g. /data/oncology/omop; None for a network URL
+    uri: str  # absolute URI, required in the file, e.g. file:///data/oncology/clinical_records
+    path: str | None  # decoded local path of a file URI, e.g. /data/oncology/clinical_records; None for a network URL
     options: Mapping[str, Any] = field(default_factory=dict)  # read-only, non-secret, type-specific
     secret_keys: tuple[str, ...] = ()  # keys of `secrets`, e.g. ("username", "password"); never values
     usage: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # read-only: component -> its rules

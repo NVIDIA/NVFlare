@@ -175,7 +175,7 @@ class TestWorkspaceTransferManager:
 
     @pytest.mark.parametrize(
         "study, expected",
-        [("oncology", ["omop"]), ("cardiology", ["echo"]), ("default", [])],
+        [("oncology", ["clinical_records"]), ("cardiology", ["echo"]), ("default", [])],
     )
     def test_workspace_bundle_carries_only_the_jobs_study_part_of_datasets_yaml(self, study, expected):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
@@ -184,7 +184,7 @@ class TestWorkspaceTransferManager:
                 os.path.join(ws_root, "local", "datasets.yaml"),
                 b"format_version: 1\n"
                 b"studies:\n"
-                b"  oncology: {datasets: {omop: {type: parquet, uri: 'file:///data/oncology/omop'}}}\n"
+                b"  oncology: {datasets: {clinical_records: {type: parquet, uri: 'file:///data/oncology/clinical_records'}}}\n"
                 b"  cardiology: {datasets: {echo: {type: csv, uri: 'file:///data/cardiology/echo.csv'}}}\n"
                 b"usage: {catalog: {limits: {max_records: 5}}}\n",
             )
@@ -222,7 +222,7 @@ class TestWorkspaceTransferManager:
             backing = os.path.join(local, "..2026_11_14_00_00_00.123456789")
             _write_file(
                 os.path.join(backing, "datasets.yaml"),
-                b"format_version: 1\nstudies:\n  oncology: {datasets: {omop: {type: parquet, uri: 'file:///o'}}}\n"
+                b"format_version: 1\nstudies:\n  oncology: {datasets: {clinical_records: {type: parquet, uri: 'file:///o'}}}\n"
                 b"  cardiology: {datasets: {echo: {type: csv, uri: 'file:///e'}}}\n",
             )
             _write_file(os.path.join(backing, "study_runtime.yaml"), b"format_version: 2\nstudies: {}\n")
@@ -247,7 +247,7 @@ class TestWorkspaceTransferManager:
             _make_workspace(ws_root, JOB_ID)
             _write_file(
                 os.path.join(ws_root, "local", "datasets.yaml"),
-                b"format_version: 1\nstudies:\n  oncology: {datasets: {omop: {type: parquet, uri: 'file:///o'}}}\n"
+                b"format_version: 1\nstudies:\n  oncology: {datasets: {clinical_records: {type: parquet, uri: 'file:///o'}}}\n"
                 b"  cardiology: {datasets: {echo: {type: csv, uri: 'file:///e'}}}\n",
             )
             owner_cell = _FakeCell(fqcn="site-1.parent")
