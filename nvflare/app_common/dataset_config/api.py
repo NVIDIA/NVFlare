@@ -161,7 +161,7 @@ def _check_uri(uri, label: str, source: str) -> str | None:
 
 
 def _dataset(study: str, name, entry, source: str) -> tuple[DatasetConfig, dict]:
-    if not isinstance(name, str) or not _NAME.match(name):
+    if not isinstance(name, str) or not _NAME.fullmatch(name):
         raise _error(source, f"study '{study}' has a dataset name that breaks the naming rule")
     label = f"studies.{study}.datasets.{name}"
     if not isinstance(entry, dict):
@@ -178,7 +178,7 @@ def _dataset(study: str, name, entry, source: str) -> tuple[DatasetConfig, dict]
     for key, variable in secrets.items():
         if not isinstance(key, str) or not key:
             raise _error(source, f"{label}.secrets keys must be non-empty strings")
-        if not isinstance(variable, str) or not _ENV_NAME.match(variable):
+        if not isinstance(variable, str) or not _ENV_NAME.fullmatch(variable):
             raise _error(source, f"{label}.secrets.{key} must name an environment variable, not hold a value")
     usage = _mapping(entry.get("usage"), f"{label}.usage", source)
     for component in usage:
@@ -256,7 +256,7 @@ def parse_study_config(data, study: str, source: str, revision: str | None = Non
     studies = _mapping(data.get("studies"), "studies", source)
     selected, selected_secrets = {}, {}
     for name, entry in studies.items():
-        if not isinstance(name, str) or not _NAME.match(name):
+        if not isinstance(name, str) or not _NAME.fullmatch(name):
             raise _error(source, "a Study name breaks the naming rule")
         entry = _mapping(entry, f"studies.{name}", source)
         unknown = set(entry) - _STUDY_KEYS
