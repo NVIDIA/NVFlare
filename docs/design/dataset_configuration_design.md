@@ -150,7 +150,7 @@ How that splits for each kind of source:
 | Object storage, REST API | Deliver the Study's credentials (`secret_env`, `secret_mounts`) | `type`, address, `secrets` names, `usage` |
 
 - **Where the halves meet:** at the mount path for a volume, and at the environment variable holding the credential otherwise. A database needs no Study runtime `datasets` entry.
-- **`usage` settings are not access control.** Source permissions and readable files determine what a job can read and what metadata its connectors can discover. The catalog applies no sharing or exclusion policy; qualify metadata visibility separately from row access.
+- **`usage` settings are not access control.** Source permissions and readable files determine what a job can read and what metadata it can discover. The catalog applies no sharing or exclusion policy; qualify metadata visibility separately from row access.
 - **Unreachable sources** are reported by the component that tries to read them; the API does not check paths or connect to sources.
 
 | Concern | Owner |
@@ -401,7 +401,7 @@ for name in config.list_datasets():
 - **Snapshot.** The configuration is validated as a whole when it is loaded. Every method answers from that content, and `revision` identifies it. The job keeps it for its life, so all of its components see the same configuration; Section 3.4 notes the Slurm task-scoped exception.
 - **Fail closed.** An unreadable or invalid configuration raises `DatasetConfigError` from `get_study_dataset_config`; a snapshot is never partly loaded. A site with no configuration is not an error: the snapshot has no datasets.
 - **Secrets stay out of the model.** `DatasetConfig` lists which secret keys exist but carries no values. `get_secret` reads the environment variable at call time. Error messages name the dataset and key, never the value.
-- **No interpretation.** The API applies the rules and defaults of Section 2 and nothing else. It does not resolve connectors, read sources, check that a URI is reachable or validate `usage` contents; each component validates its own rules.
+- **No interpretation.** The API applies the rules and defaults of Section 2 and nothing else. Each component interprets its own `usage` settings and handles source access and reachability.
 
 ### 3.3 Implementation
 
