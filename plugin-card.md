@@ -124,7 +124,7 @@ plus evaluation and verification of the final plugin, remain required.
 | Component integrity | Initial candidate: all 165 resource hashes matched. Current licensing candidate: retained signatures do not match changed resources; fresh member attestations are required |
 | Native loading and routing | Passed the host probes listed above |
 | Plugin security scan | Earlier candidate blocked: OSS SkillEvaluator 0.8.0 with SkillSpector 2.13.3 reported findings and incomplete analysis; final package scan remains required |
-| Plugin evaluation inputs | 107 plugin cases including `pytorch-convert-basic-v2`; the planned Codex/Claude skill and baseline matrix contains 428 attempts |
+| Plugin evaluation inputs | Five default plugin cases, covering 20 planned Codex/Claude plugin and baseline attempts; the 107-case regression suite is selected explicitly |
 | Plugin-level quality, lift, and agent/arm coverage | Not established; full workflow and formal plugin evaluation remain pending |
 
 Packaging and discovery checks do not constitute agent-driven conversion tests
@@ -143,7 +143,7 @@ records; an active campaign must not be represented as a completed experiment.
 
 The report component's unchanged four-case dataset represents **one positive and
 three target-relative negatives**. Earlier evaluator loaders normalized all four
-as positive for the report skill. The plugin-level suite explicitly expects the
+as positive for the report skill. The 107-case regression suite explicitly expects the
 report skill for the stopped campaign, Auto-FL for the two ongoing-work cases,
 and no skill for the global negative. It also prohibits report-skill routing on
 the two Auto-FL cases. Native schema validation passes; live evaluation and the

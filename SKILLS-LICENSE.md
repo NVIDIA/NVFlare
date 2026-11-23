@@ -12,8 +12,8 @@ the plugin: [Apache 2.0](LICENSE) and [CC BY 4.0](LICENSE-CC-BY-4.0).
 This policy covers NVIDIA-authored material in `skills/` and the corresponding
 copies in `plugins/nvidia-nvflare/skills/`, including future additions. It also
 covers the plugin-specific `PLUGIN.md` (distributed as `README.md`), plugin cards,
-and plugin evaluation task content in `evals.json` or `evals/` at the repository
-and plugin roots.
+and plugin evaluation task content under `evals/` and in `regression-evals.json`
+at the repository and plugin roots.
 
 - **Apache-2.0:** executable source code, scripts, code templates, configuration,
   and code examples, including code snippets embedded in documentation. Code-only

@@ -109,6 +109,10 @@ def verify_resources(files: dict[str, tuple[bytes, int]]) -> int:
 
 
 def collect_files(root: Path) -> tuple[dict[str, tuple[bytes, int]], dict]:
+    if (root / "evals.json").exists():
+        raise ValueError(
+            "Ambiguous evaluation suite: use evals/evals.json for the default and regression-evals.json for regressions"
+        )
     # Only tracked skill files enter the bundle; local logs, keys and caches do not.
     tracked = git(root, "ls-files", "-z", "--", "skills").strip("\0").split("\0")
     inventory = {PurePosixPath(p).parts[1] for p in tracked if p.endswith("/SKILL.md")}
@@ -118,10 +122,25 @@ def collect_files(root: Path) -> tuple[dict[str, tuple[bytes, int]], dict]:
     for path in MANIFESTS:
         files[path] = read_file(root, path)
     files["README.md"] = read_file(root, "PLUGIN.md")
-    files["evals.json"] = read_file(root, "evals.json")
-    files["evals/config.json"] = read_file(root, "evals/config.json")
-    for path in (LIGHTNING_EVAL_CHECKPOINT, *DICOM_EVAL_FILES):
+    eval_inputs = [
+        "evals/evals.json",
+        "regression-evals.json",
+        "evals/config.json",
+        LIGHTNING_EVAL_CHECKPOINT,
+        *DICOM_EVAL_FILES,
+    ]
+    for path in eval_inputs:
         files[path] = read_file(root, path)
+    # The native reader resolves member fixture paths relative to the launch suite.
+    # Keep their workspace paths and bytes identical to the corresponding regression cases.
+    for case in json.loads(files["evals/evals.json"][0])["evals"]:
+        for fixture in case["files"]:
+            if fixture.startswith("skills/"):
+                path = f"evals/{fixture}"
+                files[path] = read_file(root, path)
+                if files[path] != files[fixture]:
+                    raise ValueError(f"Plugin evaluation fixture differs from its member source: {path}")
+                eval_inputs.append(path)
     files["LICENSE"] = read_file(root, "LICENSE")
     files["LICENSE-CC-BY-4.0"] = read_file(root, "LICENSE-CC-BY-4.0")
     files["SKILLS-LICENSE.md"] = read_file(root, "SKILLS-LICENSE.md")
@@ -137,10 +156,7 @@ def collect_files(root: Path) -> tuple[dict[str, tuple[bytes, int]], dict]:
     packaging_paths = [
         *MANIFESTS,
         "PLUGIN.md",
-        "evals.json",
-        "evals/config.json",
-        LIGHTNING_EVAL_CHECKPOINT,
-        *DICOM_EVAL_FILES,
+        *eval_inputs,
         "LICENSE",
         "LICENSE-CC-BY-4.0",
         "SKILLS-LICENSE.md",

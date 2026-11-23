@@ -25,6 +25,24 @@ import zipfile
 import pytest
 
 from dev_tools.agent import package_plugin
+from dev_tools.agent.plugin_validation import ci_check
+
+
+def test_root_suite_cannot_shadow_the_default(tmp_path):
+    (tmp_path / "evals.json").write_text('{"evals": []}')
+    with pytest.raises(ValueError, match="Ambiguous evaluation suite"):
+        package_plugin.collect_files(tmp_path)
+
+
+def test_nested_launch_suite_stages_the_member_fixture_bytes():
+    files = package_plugin.read_bundle(package_plugin.bundle_path(ci_check.ROOT))
+    assert "evals.json" not in files
+    assert ci_check.validate_evaluation_cases(files) == 5
+
+    member_project = "skills/nvflare-convert-lightning/evals/files/hello-lightning"
+    files.pop(f"evals/{member_project}/train.py")
+    with pytest.raises(ValueError, match="Launch fixture differs"):
+        ci_check.validate_evaluation_cases(files)
 
 
 @pytest.fixture

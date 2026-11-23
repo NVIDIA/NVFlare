@@ -38,6 +38,13 @@ from dev_tools.agent import package_plugin
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMA_URL = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 SCHEMA_SHA256 = "0a4aad95ce337878ad38802ebf0daa3fde76abe3f65400c86bcbb1ec0b3ab883"
+LAUNCH_CASE_IDS = (
+    "huggingface-combined-fedstats-workflow-boundary",
+    "lightning-eval-only-v2",
+    "pytorch-convert-basic-v2",
+    "fedstats-image-dicom-dependency-v2",
+    "orient-global-negative-web-app",
+)
 
 
 def require(condition, message):
@@ -106,10 +113,17 @@ def validate_evaluation_cases(files):
             for name in row["files"]:
                 require(name in files, f"Missing plugin evaluation fixture: {name}")
             expected.append(row)
-    actual = json.loads(files["evals.json"][0])["evals"]
+    regression = json.loads(files["regression-evals.json"][0])["evals"]
     require(len({row["id"] for row in expected}) == len(expected), "Member case IDs must be globally unique")
-    require(actual == expected, "Plugin evals.json differs from the expected versioned member projection")
-    return len(expected)
+    require(regression == expected, "Regression suite differs from the expected versioned member projection")
+    launch = json.loads(files["evals/evals.json"][0])["evals"]
+    require(tuple(row["id"] for row in launch) == LAUNCH_CASE_IDS, "Launch suite case inventory differs")
+    require(launch == [row for row in expected if row["id"] in LAUNCH_CASE_IDS], "Launch suite cases differ")
+    for row in launch:
+        for fixture in row["files"]:
+            if fixture.startswith("skills/"):
+                require(files.get(f"evals/{fixture}") == files[fixture], f"Launch fixture differs: {fixture}")
+    return len(launch)
 
 
 def validate_contained_package(package, schema):

@@ -42,7 +42,7 @@ workspace and local simulation for initial testing.
 
 The distributable plugin is committed under `plugins/nvidia-nvflare/`. The
 existing repository `skills/` directories remain the source of truth; edit skills
-there and regenerate the bundle. The root manifests, plugin-level `evals.json`,
+there and regenerate the bundle. The root manifests, plugin-level `evals/evals.json` and `regression-evals.json`,
 `evals/config.json`, plugin evaluation fixtures, and this guide are also packaging inputs. The paths below
 are relative to the generated plugin directory.
 
@@ -62,7 +62,7 @@ for desktop execution.
 
 The build copies real files and preserves executable permissions. It packages
 only tracked skill files, the four manifests, this guide as `README.md`,
-the plugin-level `evals.json`, `evals/config.json`, evaluation fixtures, `LICENSE`, `LICENSE-CC-BY-4.0`,
+the plugin-level `evals/evals.json` and `regression-evals.json`, `evals/config.json`, evaluation fixtures, `LICENSE`, `LICENSE-CC-BY-4.0`,
 `SKILLS-LICENSE.md`, and `CONTRIBUTING.md` with the DCO text.
 The maintainer-authored root `plugin-card.md` is preparation material, excluded
 from the bundle; verification CI supplies the final card. Repository development
@@ -164,15 +164,19 @@ retained check evidence for probes already completed.
 
 ### Local evaluation and publication CI
 
-The bundled root `evals.json` contains 107 cases in the native NVCARPS plugin
-schema. Member evaluation datasets remain unchanged. The licensing update requires
-refreshed member cards and signatures before release. The suite
-promotes routing expectations into `expected_skill` and `routing`, retains
-assertions and expected outcomes as private grading references, and rebases
-fixture paths. Prompts with fixtures identify their workspace locations.
-Cases that edit a supplied project receive a writable copy. The
-package check verifies every row against its member case and the three plugin
-revisions described below.
+NVCARPS discovers five plugin cases in `evals/evals.json` by default. These
+cover a PyTorch FedAvg conversion, Lightning checkpoint evaluation, federated DICOM
+statistics, a request combining Hugging Face conversion and federated statistics,
+and an unrelated website request for which no NVFlare skill should activate.
+The cases retain the prompts, routing, grading criteria, and fixture bytes used
+in the broader regression suite. The two framework cases also stage their four
+member project files under `evals/skills/` to preserve their workspace paths.
+
+The plugin root's `regression-evals.json` retains the full 107-case member
+projection for explicitly selected regression runs. CI checks all projected
+cases, the five default cases, and their staged fixtures against the member
+sources and the three plugin-specific revisions below. Both evaluation variants
+receive the same fixtures and project-edit permissions.
 
 The plugin runs `pytorch-convert-basic-v2` in the original conversion slot.
 The signed `pytorch-convert-basic` asks for equal partitions of eight rows across
@@ -239,7 +243,6 @@ directly as `--config` in 1.3.1429 selects standalone defaults instead of the
 managed Codex/Claude, skill/baseline, and native-platform defaults.
 
 ```bash
-nvcarps update --stable
 nvcarps --version
 nvcarps plugin precheck plugins/nvidia-nvflare --evals \
   --config /tmp/nvflare-operator.json --allow-declared-access
@@ -251,21 +254,35 @@ nvcarps plugin eval plugins/nvidia-nvflare \
 nvcarps plugin eval verify /path/printed/by/the/cli/eval-result.json
 ```
 
-The default Codex and Claude configuration runs skill and baseline arms once,
-giving 428 expected attempts. Inspect the effective plan and retained results:
-all canonical cases, both agents and arms, execution and grading errors, scores,
-and security findings. A structurally valid result does not establish a pass.
-Copy the complete unedited CLI export (`eval-result.json`,
-`handoff-manifest.json`, and `overall-score.json`) to the plugin root and commit it
-with the exact plugin content evaluated. Never commit credentials or private logs.
+With NVCARPS 1.3.1430, the default suite schedules 20 attempts for five cases,
+two agents, and both plugin and baseline arms. To run all 107 cases against the
+same bundle, add the following binding to an operator config saved beside the
+`plugins/` directory. Both paths are relative to that config file.
 
-Submit the full `plugins/nvidia-nvflare/` directory and its evaluation export
-through the program's verification playground. Its CI checks source/evidence
-agreement and produces `BENCHMARK.md`, the final Plugin Card, and the plugin
-signature. Mirror the complete verified directory back into this repository
-without regenerating or editing its verification outputs. Read the benchmark's
-verdict and publication checks; a green
-workflow alone is insufficient. `PUBLISHABLE` and `PASS WITH WARNINGS` permit
+```json
+{
+  "target_bindings": [{
+    "target_relative_path": "plugins/nvidia-nvflare",
+    "dataset_path": "plugins/nvidia-nvflare/regression-evals.json"
+  }]
+}
+```
+
+Run `--readiness` with that config and confirm the expected 428 attempts.
+Inspect the plan, results, scores, security findings, and any capture or grading
+errors for the selected suite. A structurally valid result does not establish a pass.
+Submit the full `plugins/nvidia-nvflare/` directory to the verification playground
+with the complete unedited CLI export in one plugin-relative
+`.eval-results/<run-id>/` directory. This includes the result JSON, handoff
+manifest, canonical score, and HTML report. Keep the private raw run outside the
+submission for recovery. Never commit credentials or private logs.
+
+Playground CI verifies the submitted evidence against the plugin and produces
+`BENCHMARK.md`, the final Plugin Card, and the plugin signature. The product
+builder currently accepts the recognized verification files at the plugin root
+and flags a nested `.eval-results/` directory as extra content. Account for
+these two layouts when mirroring the verified release, and preserve the original
+signed files and evidence. Read the benchmark's verdict and publication checks. `PUBLISHABLE` and `PASS WITH WARNINGS` permit
 publication subject to repository review and approval requirements; `INCOMPLETE`
 and `NOT PUBLISHABLE` require resolution. Local results are self-assessed.
 Rebuild, re-evaluate, and re-sign after changing bundled inputs.
@@ -292,8 +309,8 @@ blocker. Do not edit signed resources or suppress findings to obtain a pass.
   task-polarity concern tracked in [NVFlare #5294](https://github.com/NVIDIA/NVFlare/pull/5294).
   Its four canonical cases represent one positive and three target-relative
   negatives. A report labeling all four positive does not validate that distinction.
-  The plugin suite now declares these expectations explicitly; live evaluation
-  and the generated plugin report must still confirm their interpretation.
+  The 107-case regression suite declares these expectations explicitly. Use the
+  regression suite to check the Auto-FL report case routing.
   The current `2.9` benchmark also retains a legacy internal container-image path;
   regenerate this report through the evaluation service instead of manually
   editing signed artifacts. Verify the final benchmark and card together.
