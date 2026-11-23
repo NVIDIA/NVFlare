@@ -133,8 +133,8 @@ also appear when invoked by the runner notebook.
 
 [example_setup.py](example_setup.py) runs these standard steps and prints each command and its output as it goes, so
 you can repeat them by hand or reuse them in your own deployment. It invokes the `nvflare` executable from your active
-environment. Rerunning it reuses existing kits and writes the Compose `.env` file again, including the matching SDK
-selection for container builds.
+environment. Rerunning it reuses existing kits and updates the three setup-managed keys in the Compose `.env` file.
+Your other settings, including `POSTGRES_PASSWORD`, are preserved.
 
 | Step | Command or file | What it sets up |
 | --- | --- | --- |

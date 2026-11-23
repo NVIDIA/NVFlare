@@ -312,7 +312,7 @@ def test_service_setup_refuses_kits_created_for_another_sdk(monkeypatch, tmp_pat
     assert commands == [] and not (example / ".env").exists()
 
 
-def test_service_setup_records_the_sdk_of_new_kits(monkeypatch, tmp_path):
+def test_service_setup_records_the_sdk_of_new_kits(monkeypatch, tmp_path, capsys):
     import shutil
 
     import yaml
@@ -342,7 +342,20 @@ def test_service_setup_records_the_sdk_of_new_kits(monkeypatch, tmp_path):
     setup.main()
     kits = workspace / project["name"] / "prod_00"
     assert (kits / setup.KIT_SDK_FILE).read_text() == "/opt/sdk/sdk.whl[catalog]"
+    env_file = example / ".env"
+    settings = "# Local settings\nPOSTGRES_PASSWORD='example $ecret #1'\nCUSTOM='first\nCATALOG_KITS=literal\nlast'"
+    with env_file.open("a") as stream:
+        stream.write(settings)
+    monkeypatch.setattr(setup, "installed_sdk_base_version", lambda: "3.2.0")
     setup.main()  # the same SDK reuses them
+    updated = env_file.read_text()
+    assert settings in updated
+    assert 'CATALOG_SDK_BASE_VERSION="3.2.0"' in updated
+    assert "3.1.0" not in updated
+    assert "example $ecret" not in capsys.readouterr().out
+    assert env_file.stat().st_mode & 0o777 == 0o600
+    setup.main()
+    assert env_file.read_text() == updated
 
 
 def test_service_database_readiness_checks_database_and_credentials():

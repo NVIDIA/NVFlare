@@ -36,8 +36,10 @@ import subprocess
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as distribution_version
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import yaml
+from dotenv import set_key
 from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parent
@@ -65,12 +67,19 @@ def run_command(*args):
     subprocess.run(command, check=True)
 
 
-def write_private(path, content):
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.touch(mode=0o600, exist_ok=True)
-    temporary.chmod(0o600)
-    temporary.write_text(content)
-    temporary.replace(path)
+def update_compose_env(path, values):
+    """Replace the setup-owned keys together, preserving user settings in the Compose file."""
+    with NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+        temporary = Path(stream.name)
+    try:
+        if path.exists():
+            shutil.copyfile(path, temporary)
+        for key, value in values.items():
+            quoted = json.dumps(value.replace("$", "$$"), ensure_ascii=False)
+            set_key(temporary, key, quoted, quote_mode="never")
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def installed_sdk_package():
@@ -198,11 +207,7 @@ def main():
         "CATALOG_SDK_PACKAGE": sdk_package,
         "CATALOG_SDK_BASE_VERSION": installed_sdk_base_version(),
     }
-    content = "".join(
-        f"{key}={json.dumps(value.replace('$', '$$'), ensure_ascii=False)}\n" for key, value in values.items()
-    )
-    write_private(env_file, content)
-    print(content, end="", flush=True)
+    update_compose_env(env_file, values)
 
     run_command("nvflare", "config", "list")
     print("\nNext: docker compose up -d --build --wait")
