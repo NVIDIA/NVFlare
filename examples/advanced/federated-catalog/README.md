@@ -161,6 +161,7 @@ All three sites publish these `person` columns:
 | `person_id` | `int64` | `INTEGER` | `INTEGER` |
 | `gender_concept_id` | `int64` | `INTEGER` | `INTEGER` |
 | `year_of_birth` | `int64` | `INTEGER` | `INTEGER` |
+| `person_source_value` | `string` | `TEXT` | `VARCHAR` |
 
 The `condition_occurrence` schemas overlap but each site has one column of its own:
 
@@ -171,6 +172,7 @@ The `condition_occurrence` schemas overlap but each site has one column of its o
 | `condition_concept_id` | `int64` | `INTEGER` | `INTEGER` |
 | `condition_start_date` | `date32[day]` | `TEXT` | `DATE` |
 | `condition_type_concept_id` | `int64` | `INTEGER` | `INTEGER` |
+| `condition_source_value` | `string` | `TEXT` | `VARCHAR` |
 | `condition_end_date` | `date32[day]` | absent | absent |
 | `condition_status_concept_id` | absent | `INTEGER` | absent |
 | `stop_reason` | absent | absent | `VARCHAR` |
