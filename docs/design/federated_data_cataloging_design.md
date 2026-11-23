@@ -1,8 +1,8 @@
 # Federated Data Cataloging Design
 
-**Proposed design.** Publish one Open Data Contract Standard (ODCS) document per dataset. The existing Study dataset configuration supplies either a file or a live source. The file path handles both steward-provided ODCS documents and CSV imports. CSV output passes through an additional filter that publishes only header names. The server records site status and stores the documents with the job. [ODCS read flow, configuration, results and migration](federated_data_cataloging_odcs.md)
+**ODCS design.** Publish one Open Data Contract Standard (ODCS) document per dataset. The existing Study dataset configuration supplies either a file or a live source. The file path handles both steward-provided ODCS documents and CSV imports. CSV output passes through an additional filter that publishes only header names. The server records site status and stores the documents with the job. [ODCS read flow, configuration, results and migration](federated_data_cataloging_odcs.md)
 
-**Implementation baseline (November 9, 2026).** Sections 1–9 and their figures describe the FLARE-specific payload currently proposed in [the core implementation PR](https://github.com/NVIDIA/NVFlare/pull/5738). They provide the reference for migrating the readers, wire format and example consumers to ODCS. The ODCS proposal above governs the target behavior where the two differ.
+**Version 1 reference (November 9, 2026).** Sections 1–9 and their figures document the earlier FLARE-specific payload. For current configuration and version 2 results, use the ODCS design above and the [core implementation PR](https://github.com/NVIDIA/NVFlare/pull/5738).
 
 ## 1. Purpose and assumptions
 

@@ -4,7 +4,7 @@ A researcher runs `get_catalog(env)` to discover the datasets available to a Stu
 
 ## Where the ODCS reader fits
 
-Today `CatalogExecutor` selects a `CatalogConnector`, calls `read_catalog(dataset, secret, limits)`, and receives a FLARE `CatalogInfo`. Keep that call site. Replace the connector lookup and `CatalogInfo` return path with a single site-local function, `read_odcs(dataset, secret, limits)`, which returns a native ODCS document. This function is the only FLARE adapter needed. It can dispatch to ordinary functions. There is no need for another plugin registry, a wrapper around every upstream importer, or an ODCS-to-`CatalogInfo` conversion.
+In version 1, `CatalogExecutor` selects a `CatalogConnector`, calls `read_catalog(dataset, secret, limits)`, and receives a FLARE `CatalogInfo`. Version 2 keeps the per-dataset call site and uses a single site-local function, `read_odcs(dataset, secret, limits, *, site)`, which returns a native ODCS document. This function is the only FLARE adapter needed. It can dispatch to ordinary functions. There is no need for another plugin registry, a wrapper around every upstream importer, or an ODCS-to-`CatalogInfo` conversion.
 
 | Site input | What `read_odcs` does |
 | --- | --- |
@@ -26,7 +26,7 @@ The executor continues to obtain the job’s Study configuration and handle requ
 
 ## How the site chooses the source
 
-Use the existing Study-scoped `local/datasets.yaml` and the Config API. A dataset’s existing `type`, `uri`, `options` and `secrets` describe its live source. For a steward-provided contract, the proposed single optional setting is `usage.catalog.contract_uri`. The underlying dataset keeps its original type and URI for other jobs. A researcher can request a subset of configured datasets; source locations, credentials and reader implementations belong to the site. [Study dataset configuration API](https://github.com/NVIDIA/NVFlare/pull/5750)
+Use the existing Study-scoped `local/datasets.yaml` and the Config API. A dataset’s existing `type`, `uri`, `options` and `secrets` describe its live source. For a steward-provided contract, the optional setting is `usage.catalog.contract_uri`. The underlying dataset keeps its original type and URI for other jobs. A researcher can request a subset of configured datasets; source locations, credentials and reader implementations belong to the site. [Study dataset configuration API](https://github.com/NVIDIA/NVFlare/pull/5750)
 
 ```yaml
 format_version: 1
@@ -57,7 +57,7 @@ The executor accepts exactly the new contract reference there and rejects obsole
 
 The initial target is ODCS v3.2.0. Report an unsupported contract version as unavailable for that dataset.
 
-**Provided contracts.** The steward supplies a document approved for the receiving Study. A curated contract can carry descriptions, units and other declarations that a database cannot infer. Validate the file locally and preserve its contract identity and version. The steward must remove source values and private connection details before sharing it. An ODCS file used internally may contain both.
+**Provided contracts.** The steward supplies a document approved for the receiving Study. A curated contract can carry descriptions, units and other declarations that a database cannot infer. Validate the complete document against Bitol’s tagged v3.2.0 JSON Schema and preserve its contract identity and version. A supplied file must be a self-contained YAML or JSON document with unique keys and no YAML aliases. The steward must remove source values and private connection details before sharing it. An ODCS file used internally may contain both.
 
 **Generated contracts.** Qualify the importer for the actual backend and input form. Pass source options explicitly and resolve credentials through the per-dataset secret callback only when connecting. Keep site settings out of the returned document. Construct the public document from ODCS fields for object and property names, reported types, nullability, keys and relationships where the source supports them. Apply this projection recursively, including nested properties. Copying an importer’s entire `schema` subtree can carry examples, observed ranges, free text or local paths into the result. This fixed behavior belongs in the reader and requires no site-authored exclusion rules.
 
