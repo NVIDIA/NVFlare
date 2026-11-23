@@ -62,7 +62,7 @@ class CatalogRecipe(Recipe):
             ``local/datasets.yaml``. A deployed site owns its configuration.
 
     Example:
-        >>> recipe = CatalogRecipe(datasets={"site-1": ["omop"]})
+        >>> recipe = CatalogRecipe(datasets={"site-1": ["clinical_records"]})
         >>> run = recipe.execute(ProdEnv(startup_kit_location="/path/to/admin", study="oncology"))
         >>> results = recipe.get_catalog_results(run)
     """

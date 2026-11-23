@@ -68,7 +68,9 @@ def written(tmp_path):
 class TestResults:
     def test_results_file(self, tmp_path):
         controller = make_controller(tmp_path)
-        ok = build_result(ResultStatus.OK, [contract_entry(dataset="omop")], unavailable=["registry"], skipped=["big"])
+        ok = build_result(
+            ResultStatus.OK, [contract_entry(dataset="clinical_records")], unavailable=["registry"], skipped=["big"]
+        )
         controller._record(client_task("site-a", reply(ReturnCode.OK, ok)), None)
         controller._write_results()
 
@@ -81,13 +83,13 @@ class TestResults:
             "skipped": ["big"],
         }
         assert doc["sites"]["site-b"]["status"] == "NO_RESULT"
-        assert [(d["site"], d["dataset"]) for d in doc["datasets"]] == [("site-a", "omop")]
+        assert [(d["site"], d["dataset"]) for d in doc["datasets"]] == [("site-a", "clinical_records")]
         assert [p.name for p in tmp_path.iterdir()] == ["catalog"]
 
     def test_a_requested_site_that_never_joined_is_no_result(self, tmp_path):
         # site-b was requested but excluded before the job started (offline, or no resources)
         controller = make_controller(tmp_path, clients=("site-a",), sites=["site-a", "site-b"])
-        ok = build_result(ResultStatus.OK, [contract_entry(dataset="omop")])
+        ok = build_result(ResultStatus.OK, [contract_entry(dataset="clinical_records")])
         controller._record(client_task("site-a", reply(ReturnCode.OK, ok)), None)
         controller._write_results()
 
@@ -165,7 +167,7 @@ class TestControlFlow:
         assert len(cancels) == 1 and (tmp_path / "catalog/index.json").exists()
 
     def test_each_site_gets_its_own_selection(self, tmp_path, monkeypatch):
-        controller = make_controller(tmp_path, datasets={"site-a": ["omop"]})
+        controller = make_controller(tmp_path, datasets={"site-a": ["clinical_records"]})
         sent = {}
 
         def send(task, fl_ctx, targets):
@@ -176,7 +178,7 @@ class TestControlFlow:
 
         monkeypatch.setattr(controller, "send", send)
         controller.control_flow(Signal(), FLContext())
-        assert sent["site-a"]["datasets"] == ["omop"] and "datasets" not in sent["site-b"]
+        assert sent["site-a"]["datasets"] == ["clinical_records"] and "datasets" not in sent["site-b"]
         assert all(0 < p["time_budget_s"] < controller.task_timeout_s for p in sent.values())
 
     def test_a_resent_task_carries_the_budget_left_at_resend(self, tmp_path, monkeypatch):
@@ -270,8 +272,8 @@ class TestArguments:
         [
             {},
             [],
-            ["omop"],
-            "omop",
+            ["clinical_records"],
+            "clinical_records",
             {"a": []},
             {"a": [1]},
             {"a": [""]},

@@ -74,8 +74,8 @@ class TestCatalogRecipe:
         assert server["server"] == {"task_request_interval": 1.5}
 
     def test_arguments_reach_the_controller(self, tmp_path):
-        _, server, _ = export(tmp_path, datasets={"site-a": ["omop"]}, task_timeout_s=30)
-        assert server["workflows"][0]["args"] == {"datasets": {"site-a": ["omop"]}, "task_timeout_s": 30}
+        _, server, _ = export(tmp_path, datasets={"site-a": ["clinical_records"]}, task_timeout_s=30)
+        assert server["workflows"][0]["args"] == {"datasets": {"site-a": ["clinical_records"]}, "task_timeout_s": 30}
 
     def test_named_sites_are_the_only_ones_deployed_to(self, tmp_path):
         CatalogRecipe(name="read_two", sites=["site-a", "site-b"]).export(str(tmp_path))
@@ -86,7 +86,7 @@ class TestCatalogRecipe:
         "kw",
         [
             {"datasets": []},
-            {"datasets": ["omop"]},
+            {"datasets": ["clinical_records"]},
             {"sites": []},
             {"datasets": {"a": []}},
             {"task_timeout_s": 0},
@@ -274,10 +274,17 @@ def test_get_catalog_is_the_recipe_in_one_call(tmp_path, monkeypatch):
     env = object()
     out = str(tmp_path / "o.json")
     assert (
-        get_catalog(env, datasets={"site-1": ["omop"]}, timeout_s=30, output_path=out, task_request_interval_s=2) == doc
+        get_catalog(
+            env, datasets={"site-1": ["clinical_records"]}, timeout_s=30, output_path=out, task_request_interval_s=2
+        )
+        == doc
     )
     controller = seen["recipe"]._job._deploy_map["server"].app_config.workflows[0].controller
-    assert seen["env"] is env and controller.datasets == {"site-1": ["omop"]} and controller.task_timeout_s == 30
+    assert (
+        seen["env"] is env
+        and controller.datasets == {"site-1": ["clinical_records"]}
+        and controller.task_timeout_s == 30
+    )
     assert (tmp_path / "o.json").exists()
     assert seen["run"].calls == [(30 + catalog_module._WAIT_MARGIN_S, False)]
     seen["recipe"].export(str(tmp_path / "exported"))

@@ -17,7 +17,7 @@ from nvflare.app_common.fdn.catalog.common.limits import ReadLimits
 LIMITS = ReadLimits(max_duration_s=60, max_calls=100, max_records=1000)
 
 
-def contract_entry(dataset="omop"):
+def contract_entry(dataset="clinical_records"):
     contract = {
         "apiVersion": "v3.2.0",
         "kind": "DataContract",
