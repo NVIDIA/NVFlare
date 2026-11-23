@@ -99,9 +99,10 @@ class TestParseResult:
         parsed = parse_result(result, ("a",), LIMITS)
         assert [c["dataset"] for c in parsed.catalogs] == ["a"] and parsed.unavailable == ()
 
-    def test_malformed_entry_becomes_unavailable_and_others_count(self):
+    @pytest.mark.parametrize("invalid_schema", [1, b"invalid"])
+    def test_malformed_entry_becomes_unavailable_and_others_count(self, invalid_schema):
         bad = contract_entry(dataset="bad")
-        bad["contract"]["schema"] = 1
+        bad["contract"]["schema"] = invalid_schema
         result = build_result(ResultStatus.OK, catalogs=[contract_entry(dataset="a")])
         result["catalogs"].append(bad)
         parsed = parse_result(result, None, LIMITS)
@@ -118,10 +119,18 @@ class TestParseResult:
         assert [entry["dataset"] for entry in parsed.catalogs] == ["ok"]
         assert parsed.unavailable == ("bad",)
 
-    def test_entry_over_the_server_limit_becomes_unavailable(self):
+    def test_server_refuses_reply_over_its_byte_limit(self, monkeypatch):
+        from nvflare.app_common.fdn.catalog.common import payload
+
+        reply = build_result(ResultStatus.OK, catalogs=[contract_entry("d")])
+        monkeypatch.setattr(payload, "MAX_SITE_REPLY_BYTES", payload.json_size(reply) - 1)
+        parsed = parse_result(reply, None, LIMITS)
+        assert parsed.status == ResultStatus.FAILED and not parsed.catalogs
+
+    def test_entry_over_the_server_limit_is_skipped(self):
         result = build_result(ResultStatus.OK, catalogs=[contract_entry(dataset="a")])
         parsed = parse_result(result, None, ReadLimits(max_duration_s=60, max_calls=10, max_records=2))
-        assert parsed.catalogs == () and parsed.unavailable == ("a",)
+        assert parsed.catalogs == () and parsed.skipped == ("a",) and not parsed.unavailable
 
     def test_duplicate_dataset_rejects_every_copy(self):
         result = build_result(ResultStatus.OK, catalogs=[contract_entry(dataset="a"), contract_entry(dataset="a")])

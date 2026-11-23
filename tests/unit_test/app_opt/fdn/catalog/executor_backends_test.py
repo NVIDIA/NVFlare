@@ -43,7 +43,11 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
     arrow = pytest.importorskip("pyarrow")
     pytest.importorskip("datacontract")
     parquet = pytest.importorskip("pyarrow.parquet")
-    pytest.importorskip("sqlalchemy")
+    from nvflare.app_opt.fdn.catalog import odcs
+
+    monkeypatch.setattr(
+        odcs, "discover", lambda dataset, secret, budget, site: odcs._read_contract(dataset, secret, budget, site=site)
+    )
     sdk = pytest.importorskip("databricks.sdk")
     from databricks.sdk.service.catalog import TableInfo
     from datacontract.data_contract import DataContract

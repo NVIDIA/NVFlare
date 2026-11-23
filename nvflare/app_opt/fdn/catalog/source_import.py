@@ -171,14 +171,31 @@ def _database_file(dataset, budget):
         import duckdb
 
         with closing(duckdb.connect(str(path), read_only=True, config={"enable_external_access": False})) as db:
+            if not db.execute(
+                "SELECT 1 FROM information_schema.schemata WHERE catalog_name=current_database() AND schema_name=?",
+                [schema],
+            ).fetchone():
+                raise CatalogSourceError("requested DuckDB schema unavailable")
+            budget.request()
+            columns = db.execute(
+                "SELECT table_name, column_name FROM duckdb_columns() WHERE database_name=current_database() AND schema_name=? ORDER BY table_name, column_index",
+                [schema],
+            ).fetchall()
+            budget.request()
             rows = db.execute(
-                "SELECT table_name, sql FROM duckdb_tables() WHERE schema_name = ? ORDER BY table_name", [schema]
+                "SELECT table_name, sql FROM duckdb_tables() WHERE database_name=current_database() AND schema_name = ? ORDER BY table_name",
+                [schema],
             ).fetchall()
         dialect = "duckdb"
     else:
         if schema != "main":
             raise CatalogSourceError("SQLite file catalogs support the main schema")
         with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
+            columns = db.execute(
+                "SELECT s.name, c.name FROM sqlite_schema s JOIN pragma_table_xinfo(s.name) c "
+                "WHERE s.type='table' AND s.name NOT GLOB 'sqlite_*' AND c.hidden != 1 ORDER BY s.name, c.cid"
+            ).fetchall()
+            budget.request()
             rows = db.execute(
                 "SELECT name, sql FROM sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*' ORDER BY name"
             ).fetchall()
@@ -196,6 +213,13 @@ def _database_file(dataset, budget):
         objects = _import_objects(budget, "sql", str(ddl), dialect=dialect)
     if {obj["name"] for obj in objects} != set(names):
         raise CatalogSourceError("SQL importer did not return all requested tables")
+    expected_columns = {name: [] for name in names}
+    for table_name, column_name in columns:
+        if table_name in expected_columns:
+            expected_columns[table_name].append(column_name)
+    for obj in objects:
+        if [p["name"] for p in obj.get("properties", [])] != expected_columns[obj["name"]]:
+            raise CatalogSourceError("SQL importer returned an incomplete table schema")
     # The DDL of a selected table can reference a table outside the publication scope.
     targets = {f"{obj['name']}.{col['name']}" for obj in objects for col in obj.get("properties", [])}
     for obj in objects:

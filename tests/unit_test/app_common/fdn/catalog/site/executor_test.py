@@ -265,3 +265,17 @@ class TestSourceSelection:
         monkeypatch.delenv("PW", raising=False)
         doc = config_doc({"secret-a": dataset(secrets={"password": "PW"})})
         assert result(run(doc)).unavailable == ("secret-a",)
+
+
+def test_site_reserves_space_for_statuses_when_reply_size_is_limited(monkeypatch):
+    from nvflare.app_common.fdn.catalog.common.payload import json_size
+
+    selected = ["first", "second"]
+    doc = config_doc({n: dataset() for n in selected})
+    full = run(doc)[CATALOG_READ_KEY]
+    limit = json_size(full) - 1
+    monkeypatch.setattr(executor_module, "MAX_SITE_REPLY_BYTES", limit)
+    reply = run(doc)[CATALOG_READ_KEY]
+    assert json_size(reply) <= limit
+    assert [e["dataset"] for e in reply["catalogs"]] == ["first"]
+    assert reply["skipped"] == ["second"]

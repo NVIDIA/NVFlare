@@ -17,6 +17,7 @@
 Dataset identifiers follow the Study Config API naming rule.
 """
 
+import json
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
@@ -60,7 +61,18 @@ class TaskPayload:
     time_budget_s: float | None = None  # seconds the site may spend reading; ends before the task timeout
 
 
+MAX_SITE_REPLY_BYTES = 16 * 1024 * 1024
 MIN_TIME_BUDGET_S = 0.1
+
+
+def json_size(value):
+    """Count encoded bytes, stopping once the site ceiling has been exceeded."""
+    size = 0
+    for chunk in json.JSONEncoder(ensure_ascii=False).iterencode(value):
+        size += len(chunk.encode("utf-8"))
+        if size > MAX_SITE_REPLY_BYTES:
+            break
+    return size
 
 
 def task_time_budget(task_timeout_s: float, elapsed_s: float = 0.0) -> float:
@@ -160,13 +172,29 @@ def parse_result(d: dict, wanted: tuple[str, ...] | None, limits: ReadLimits) ->
     """
     if not isinstance(d, dict) or not _is_supported_version(d.get("format_version")):
         return ParsedResult(unsupported=True)
+    entries = d.get("catalogs")
+    entries = entries if isinstance(entries, list) else []
+    try:
+        # Measure entries separately so a non-JSON contract cannot discard a valid sibling.
+        size = json_size({**d, "catalogs": []} if isinstance(d.get("catalogs"), list) else d) + 2 * max(
+            0, len(entries) - 1
+        )
+        for entry in entries:
+            try:
+                size += json_size(entry)
+            except (TypeError, ValueError, RecursionError):
+                continue  # check_contract below rejects malformed contracts individually
+            if size > MAX_SITE_REPLY_BYTES:
+                break
+        if size > MAX_SITE_REPLY_BYTES:
+            return ParsedResult(reason_code=ReasonCode.INTERNAL)
+    except (TypeError, ValueError, RecursionError):
+        return ParsedResult(reason_code=ReasonCode.INTERNAL)
     status = _enum_or_none(ResultStatus, d.get("status")) or ResultStatus.FAILED
     unavailable = _selected_names(d.get("unavailable"), wanted)
     skipped = [n for n in _selected_names(d.get("skipped"), wanted) if n not in unavailable]
     catalogs = []
     if status == ResultStatus.OK:
-        entries = d.get("catalogs")
-        entries = entries if isinstance(entries, list) else []
         names = [e.get("dataset") if isinstance(e, dict) else None for e in entries]
         counts = Counter(n for n in names if is_valid_dataset_name(n))
         remaining = limits.max_records
@@ -180,7 +208,8 @@ def parse_result(d: dict, wanted: tuple[str, ...] | None, limits: ReadLimits) ->
                     raise ValueError("dataset appears more than once")
                 records = check_contract(entry["contract"])
                 if records > remaining:
-                    raise ValueError("site record budget exceeded")
+                    skipped.append(name)
+                    continue
                 remaining -= records
                 catalogs.append({"dataset": name, "contract": entry["contract"]})
             except (ValueError, KeyError, TypeError, AttributeError, RecursionError):

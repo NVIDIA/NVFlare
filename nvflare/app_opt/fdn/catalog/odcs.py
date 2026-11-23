@@ -27,6 +27,7 @@ from uuid import NAMESPACE_URL, uuid5
 from nvflare.app_common.fdn.catalog.common.odcs import MAX_CONTRACT_BYTES, ODCS_VERSION, check_contract
 from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
 from nvflare.app_opt.fdn.catalog._metadata import local_path, selection
+from nvflare.app_opt.fdn.catalog._read_worker import discover
 from nvflare.app_opt.fdn.catalog.source_import import import_schema
 
 
@@ -93,20 +94,23 @@ def _csv_schema(dataset, budget):
     budget.records(2 + len(names))
     # The importer profiles rows and interpolates column names into SQL. Give it only a
     # header projection with safe identifiers. Restore the original names at publication.
-    aliases = {f"column_{i}": name for i, name in enumerate(names)}
+    # Batching bounds the upstream per-column profiling cost for wide headers.
+    ids = [f"column_{i}" for i in range(len(names))]
     with tempfile.TemporaryDirectory() as temp:
         staged = Path(temp) / "headers.csv"
         if "'" in str(staged):
             raise CatalogSourceError("CSV importer cannot quote the temporary directory")
-        staged.write_text(",".join(aliases) + "\n", encoding="ascii")
-        model = import_csv(str(staged))
-    columns = [prop.name for prop in model.schema_[0].properties]
-    if columns != list(aliases):
-        raise CatalogSourceError("CSV importer changed the header")
-    return [{"name": dataset.name, "properties": [{"name": aliases[col]} for col in columns]}]
+        for start in range(0, len(ids), 64):
+            batch = ids[start : start + 64]
+            budget.request()
+            staged.write_text(",".join(batch) + "\n", encoding="ascii")
+            model = import_csv(str(staged))
+            if [p.name for p in model.schema_[0].properties] != batch:
+                raise CatalogSourceError("CSV importer changed the header")
+    return [{"name": dataset.name, "properties": [{"name": name} for name in names]}]
 
 
-def read_odcs(dataset, secret, budget, *, site):
+def _read_contract(dataset, secret, budget, *, site):
     """Read a steward-approved file or generate a structural contract from the configured source."""
     rules = dataset.usage_rules("catalog") or {}
     if "contract_uri" in rules:
@@ -114,7 +118,6 @@ def read_odcs(dataset, secret, budget, *, site):
         contract = _provided(rules["contract_uri"])
     else:
         if dataset.type == "csv":
-            budget.request()
             objects = _csv_schema(dataset, budget)
         else:
             objects = import_schema(dataset, secret, budget)
@@ -132,3 +135,10 @@ def read_odcs(dataset, secret, budget, *, site):
     _validator().validate(contract)
     budget.remaining()
     return contract
+
+
+def read_odcs(dataset, secret, budget, *, site):
+    """Collect one dataset within the remaining site deadline."""
+    if "contract_uri" in (dataset.usage_rules("catalog") or {}):
+        return _read_contract(dataset, secret, budget, site=site)
+    return discover(dataset, secret, budget, site)

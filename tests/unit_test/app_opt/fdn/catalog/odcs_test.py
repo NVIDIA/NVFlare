@@ -20,7 +20,7 @@ import pytest
 
 from nvflare.app_common.fdn.catalog.common.limits import DEFAULT_LIMITS, ReadLimits
 from nvflare.app_opt.fdn.catalog._metadata import ReadBudget
-from nvflare.app_opt.fdn.catalog.odcs import read_odcs
+from nvflare.app_opt.fdn.catalog.odcs import _read_contract as read_odcs
 from tests.unit_test.app_opt.fdn.catalog.datasets import dataset_config
 
 LIMITS = ReadLimits(**DEFAULT_LIMITS)
@@ -168,3 +168,63 @@ def test_partition_decimal_precision_and_scale_survive_publication(tmp_path):
     parquet.write_table(arrow.table({"price": arrow.array([], type=arrow.decimal128(18, 6))}), parts / "b.parquet")
     with pytest.raises(CatalogSourceError, match="inconsistent"):
         read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
+
+
+@pytest.mark.parametrize("ddl", ["CREATE TABLE a(x INT, y, z TEXT)", "CREATE TABLE a AS SELECT 1 AS x, 'a' AS y"])
+def test_sqlite_rejects_partial_imports(tmp_path, ddl):
+    import sqlite3
+
+    pytest.importorskip("datacontract")
+    from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
+
+    path = tmp_path / "source.db"
+    with sqlite3.connect(path) as db:
+        db.execute(ddl)
+    dataset, secret = dataset_config(path=path, type_="sql")
+    with pytest.raises(CatalogSourceError):
+        read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
+
+
+def test_duckdb_distinguishes_empty_and_missing_schema(tmp_path):
+    duckdb = pytest.importorskip("duckdb")
+    from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
+
+    path = tmp_path / "study.db"
+    with duckdb.connect(str(path)) as db:
+        db.execute("CREATE SCHEMA empty_schema")
+    for schema in ("empty_schema", "missing"):
+        dataset, secret = dataset_config(path=path, type_="duckdb", options={"schema": schema})
+        if schema == "empty_schema":
+            pytest.importorskip("jsonschema")
+            assert read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")["schema"] == []
+        else:
+            with pytest.raises(CatalogSourceError, match="schema unavailable"):
+                read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
+
+
+def test_worker_passes_tls_only_to_child_and_reaps_it_on_timeout(monkeypatch):
+    import os
+    import subprocess
+    from unittest.mock import MagicMock
+
+    from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
+    from nvflare.app_opt.fdn.catalog import _read_worker
+
+    monkeypatch.setenv("PGSSLMODE", "require")
+    proc = MagicMock()
+    proc.__enter__.return_value = proc
+    proc.communicate.side_effect = subprocess.TimeoutExpired(["python"], 3)
+    proc.poll.return_value = None
+    start = MagicMock(return_value=proc)
+    monkeypatch.setattr(_read_worker.subprocess, "Popen", start)
+    ds, _ = dataset_config(type_="sql", uri="postgresql://host/study?sslmode=verify-full")
+    with pytest.raises(CatalogSourceError) as err:
+        _read_worker.discover(ds, lambda key: "local-value", ReadBudget(LIMITS), "one")
+    assert err.value.budget
+    assert start.call_args.kwargs["env"]["PGSSLMODE"] == "verify-full" and os.environ["PGSSLMODE"] == "require"
+    assert "local-value" not in str(start.call_args.args)
+    request = json.loads(proc.communicate.call_args.args[0])
+    assert request["dataset"]["uri"] == "postgresql://host/study"
+    assert 0 < proc.communicate.call_args.kwargs["timeout"] <= LIMITS.max_duration_s
+    proc.kill.assert_called_once()
+    proc.wait.assert_called_once()

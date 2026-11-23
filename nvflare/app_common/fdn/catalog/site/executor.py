@@ -26,11 +26,13 @@ from nvflare.app_common.fdn.catalog.common.odcs import check_contract
 from nvflare.app_common.fdn.catalog.common.payload import (
     CATALOG_JOB_META,
     CATALOG_READ_KEY,
+    MAX_SITE_REPLY_BYTES,
     TASK_NAME,
     PayloadError,
     ReasonCode,
     ResultStatus,
     build_result,
+    json_size,
     parse_task_payload,
 )
 from nvflare.app_common.fdn.catalog.site.settings import CATALOG_COMPONENT, SettingsError, parse_settings
@@ -92,6 +94,10 @@ class CatalogExecutor(Executor):
             duration = min(duration, task.time_budget_s)
         budget = ReadBudget(replace(limits, max_duration_s=duration))
         catalogs, unavailable, skipped = [], [], []
+        # Reserve a status entry for every selection before spending space on successful reads.
+        bytes_left = MAX_SITE_REPLY_BYTES - json_size(build_result(ResultStatus.OK, skipped=selected))
+        if bytes_left < 0:
+            return build_result(ResultStatus.FAILED, reason_code=ReasonCode.INTERNAL)
         for name in selected:
             if abort_signal.triggered:
                 return None
@@ -106,8 +112,13 @@ class CatalogExecutor(Executor):
                 )
                 records = check_contract(contract)
                 budget.records(records)
+                entry = {"dataset": name, "contract": contract}
+                size = json_size(entry) + 2  # separator between entries
+                if size > bytes_left:
+                    raise CatalogSourceError("site reply byte budget exceeded", budget=True)
+                bytes_left -= size
                 budget.records_left -= records
-                catalogs.append({"dataset": name, "contract": contract})
+                catalogs.append(entry)
             except CatalogSourceError as e:
                 (skipped if e.budget else unavailable).append(name)
             except Exception as e:
