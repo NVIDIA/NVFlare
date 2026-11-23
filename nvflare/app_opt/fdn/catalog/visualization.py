@@ -30,7 +30,7 @@ import pandas as pd
 
 from nvflare.app_common.fdn.catalog.common.odcs import check_contract
 from nvflare.app_common.fdn.catalog.common.payload import PayloadError, check_catalog_results
-from nvflare.app_common.fdn.catalog.common.schema import CatalogInfo, ValidationError
+from nvflare.app_opt.fdn.catalog._legacy_snapshot import CatalogInfo, ValidationError
 
 PUBLISHED, UNAVAILABLE, SKIPPED = "published", "unavailable", "skipped"
 

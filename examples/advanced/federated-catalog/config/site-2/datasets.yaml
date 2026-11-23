@@ -4,6 +4,6 @@ format_version: 1
 studies:
   default:
     datasets:
-      omop:                       # a SQLite database file, read with the built-in sql connector
+      omop:                       # a SQLite file whose table definitions go to the SQL importer
         type: sql
         uri: file://${SITE_DATA}/omop.sqlite

@@ -1,0 +1,164 @@
+{
+  "format_version": 1,
+  "study": "default",
+  "job_id": "job-1",
+  "completed_at": "2026-11-09T00:00:00Z",
+  "sites": {
+    "site-1": {
+      "status": "OK",
+      "reason_code": null,
+      "unavailable": [],
+      "skipped": []
+    },
+    "site-2": {
+      "status": "OK",
+      "reason_code": null,
+      "unavailable": [],
+      "skipped": [
+        "big"
+      ]
+    },
+    "site-3": {
+      "status": "OK",
+      "reason_code": null,
+      "unavailable": [
+        "omop"
+      ],
+      "skipped": []
+    },
+    "site-4": {
+      "status": "NO_RESULT",
+      "reason_code": null,
+      "unavailable": [],
+      "skipped": []
+    }
+  },
+  "datasets": [
+    {
+      "site": "site-1",
+      "dataset": "omop",
+      "metadata": {
+        "display_name": "OMOP",
+        "description": null,
+        "owner": null,
+        "tables": [
+          {
+            "name": "person",
+            "columns": [
+              {
+                "name": "id",
+                "type": "INTEGER",
+                "nullable": false
+              },
+              {
+                "name": "age",
+                "type": "INTEGER",
+                "nullable": null
+              }
+            ],
+            "primary_key": [
+              "id"
+            ],
+            "relationships": []
+          },
+          {
+            "name": "visit",
+            "columns": [
+              {
+                "name": "person_id",
+                "type": "INTEGER",
+                "nullable": false
+              }
+            ],
+            "primary_key": [],
+            "relationships": [
+              {
+                "columns": [
+                  "person_id"
+                ],
+                "target_table": "person",
+                "target_columns": [
+                  "id"
+                ]
+              }
+            ]
+          },
+          {
+            "name": "empty",
+            "columns": [],
+            "primary_key": [],
+            "relationships": []
+          }
+        ],
+        "resources": [],
+        "semantic_profile": {
+          "standard": null,
+          "version": null,
+          "vocabulary_version": null,
+          "mapping_version": null,
+          "declaration_ref": null,
+          "validation_ref": null
+        },
+        "modalities": [],
+        "operations": [],
+        "source_version": null,
+        "lineage": [],
+        "provenance": {
+          "source": "parquet",
+          "declaration_ref": null,
+          "validation_ref": null
+        }
+      },
+      "observed_at": null
+    },
+    {
+      "site": "site-2",
+      "dataset": "omop",
+      "metadata": {
+        "display_name": "OMOP",
+        "description": null,
+        "owner": null,
+        "tables": [
+          {
+            "name": "person",
+            "columns": [
+              {
+                "name": "id",
+                "type": "BIGINT",
+                "nullable": false
+              },
+              {
+                "name": "consent",
+                "type": "TEXT",
+                "nullable": true
+              }
+            ],
+            "primary_key": [
+              "id"
+            ],
+            "relationships": []
+          }
+        ],
+        "resources": [],
+        "semantic_profile": {
+          "standard": null,
+          "version": null,
+          "vocabulary_version": null,
+          "mapping_version": null,
+          "declaration_ref": null,
+          "validation_ref": null
+        },
+        "modalities": [],
+        "operations": [],
+        "source_version": null,
+        "lineage": [],
+        "provenance": {
+          "source": "sql",
+          "declaration_ref": null,
+          "validation_ref": null
+        }
+      },
+      "observed_at": null
+    }
+  ]
+}

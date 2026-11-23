@@ -14,7 +14,6 @@
 
 import copy
 import json
-from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -22,51 +21,13 @@ import pandas as pd
 import pytest
 
 from nvflare.app_common.fdn.catalog.common.payload import SiteEntry, SiteStatus, build_catalog_results
-from nvflare.app_common.fdn.catalog.common.schema import CatalogInfo, ColumnInfo, Provenance, Relationship, TableInfo
 from nvflare.app_opt.fdn.catalog.visualization import CatalogVisualization
-
-
-def catalogs():
-    person = TableInfo(
-        "person", (ColumnInfo("id", "INTEGER", False), ColumnInfo("age", "INTEGER", None)), primary_key=("id",)
-    )
-    visit = TableInfo(
-        "visit",
-        (ColumnInfo("person_id", "INTEGER", False),),
-        relationships=(Relationship(("person_id",), "person", ("id",)),),
-    )
-    first = CatalogInfo("omop", "OMOP", Provenance("parquet"), tables=(person, visit, TableInfo("empty", ())))
-    second = CatalogInfo(
-        "omop",
-        "OMOP",
-        Provenance("sql"),
-        tables=(replace(person, columns=(ColumnInfo("id", "BIGINT", False), ColumnInfo("consent", "TEXT", True))),),
-    )
-    return first, second
-
-
-def make_results(extra_site_1=()):
-    """A catalog read: site-1 and site-2 publish omop, site-3 reports it unavailable, site-4 gives no result."""
-    first, second = catalogs()
-    result = build_catalog_results(
-        "default",
-        "job-1",
-        "2026-11-09T00:00:00Z",
-        {
-            "site-1": SiteEntry(SiteStatus.OK, None, tuple(c.to_wire() for c in (first, *extra_site_1))),
-            "site-2": SiteEntry(SiteStatus.OK, None, (second.to_wire(),), (), ("big",)),
-            "site-3": SiteEntry(SiteStatus.OK, None, (), ("omop",)),
-            "site-4": SiteEntry(SiteStatus.NO_RESULT),
-        },
-    )
-
-    result["format_version"] = 1
-    return result
 
 
 @pytest.fixture
 def results():
-    return make_results()
+    path = Path(__file__).with_name("data") / "catalog_v1.json"
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize("source", ["dict", "file", "path_str"])
@@ -197,9 +158,9 @@ def test_nullability_and_keys_are_distinct_from_publication_and_unknown_metadata
         view.get_column_comparison("person", field="unrecognized")
 
 
-def test_multiple_datasets_at_one_site_are_compared_separately():
-    first, _ = catalogs()
-    view = CatalogVisualization(make_results(extra_site_1=(replace(first, dataset="cohort"),)))
+def test_multiple_datasets_at_one_site_are_compared_separately(results):
+    results["datasets"].append({**results["datasets"][0], "dataset": "cohort"})
+    view = CatalogVisualization(results)
     frame = view.get_column_comparison("person")
     assert frame.columns.tolist()[:3] == [("site-1", "cohort"), ("site-1", "omop"), ("site-2", "big")]
     assert view.get_datasets(site="site-1")["dataset"].tolist() == ["cohort", "omop"]
@@ -230,6 +191,20 @@ def test_rejects_other_documents_invalid_metadata_and_duplicates(results):
     duplicated["sites"]["site-1"]["unavailable"] = ["omop"]
     with pytest.raises(ValueError, match="Duplicate site/dataset"):
         CatalogVisualization(duplicated)
+
+
+@pytest.mark.parametrize("invalid_field", ["missing_owner", "invalid_name", "invalid_timestamp"])
+def test_viewer_rejects_malformed_legacy_snapshot(results, invalid_field):
+    item = results["datasets"][0]
+    if invalid_field == "missing_owner":
+        del item["metadata"]["owner"]
+    elif invalid_field == "invalid_name":
+        item["metadata"]["tables"][0]["name"] = 12345
+    else:
+        item["observed_at"] = 12345
+    with pytest.raises(ValueError, match="Invalid catalog metadata for site-1/omop") as error:
+        CatalogVisualization(results)
+    assert "12345" not in str(error.value)
 
 
 def test_notebook_html_escapes_values_labels_and_captions(monkeypatch):

@@ -191,10 +191,10 @@ Rerun `python job.py` to read again after source changes. Use an external schedu
 
 ### Site dataset configurations
 
-| Site configuration | Dataset type and connector | Source |
+| Site configuration | Dataset type | Source |
 | --- | --- | --- |
-| [site-1/datasets.yaml](config/site-1/datasets.yaml) | `unity-catalog`, built in | Catalog `flare_demo`, schema `omop` on the site's Unity Catalog server, with its registered tables (`person`, `observation_period`, `visit_occurrence`, `condition_occurrence`, `drug_exposure`, `measurement`). |
-| [site-2/datasets.yaml](config/site-2/datasets.yaml) | `sql`, built in | Schema `omop` in the site's PostgreSQL database (the same tables except `measurement`). |
+| [site-1/datasets.yaml](config/site-1/datasets.yaml) | `unity-catalog` | Catalog `flare_demo`, schema `omop` on the site's Unity Catalog server, with its registered tables (`person`, `observation_period`, `visit_occurrence`, `condition_occurrence`, `drug_exposure`, `measurement`). |
+| [site-2/datasets.yaml](config/site-2/datasets.yaml) | `sql` | Schema `omop` in the site's PostgreSQL database (the same tables except `measurement`). |
 
 site-1's configuration:
 
