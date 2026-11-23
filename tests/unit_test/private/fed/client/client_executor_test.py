@@ -3081,17 +3081,20 @@ def test_late_launch_cleanup_finalizes_without_admin_abort(tmp_path, cleanup_dea
     assert sum(c.args[0] == EventType.JOB_COMPLETED for c in ctx.get_engine().fire_event.call_args_list) == 1
 
 
-@pytest.mark.parametrize("launch_failed", [False, True], ids=["completed-cj", "lost-launch-reply"])
+@pytest.mark.parametrize("launch_outcome", ["completed-cj", "lost-launch-reply", "shutdown-during-launch"])
 @pytest.mark.parametrize("unsettled", ["coordinator", "worker"])
 def test_composed_handle_retains_shared_ownership_until_physical_cleanup(
-    tmp_path, cleanup_deadlines, launch_failed, unsettled
+    tmp_path, cleanup_deadlines, launch_outcome, unsettled
 ):
     from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskExecutionStatus
     from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
     from nvflare.app_opt.job_launcher.slurm.task_service import _Job
+    from nvflare.private.fed.client import task_runtime
     from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers
     from nvflare.private.fed.task_worker.task_service import _Attempt
 
+    launch_failed = launch_outcome != "completed-cj"
+    late_handle = launch_outcome == "shutdown-during-launch"
     meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
     executor = JobExecutor(client, workspace.get_startup_kit_dir())
     resources = MagicMock()
@@ -3101,7 +3104,10 @@ def test_composed_handle_retains_shared_ownership_until_physical_cleanup(
     native._is_cleanup_complete.side_effect = lambda: unsettled == "worker" or settled.is_set()
     owner = _Job(SimpleNamespace(poll_interval=0.01), "job-1", "site-1", "token", "site-1.job-1")
     owner.manage_cj = True
-    owner.attach_cj(native)
+    if late_handle:
+        owner.cj_launch_pending = True
+    else:
+        owner.attach_cj(native)
     owner.on_done = Mock()
     if unsettled == "worker":
         worker = Mock(execution_id="slurm:allocation-1")
@@ -3124,6 +3130,28 @@ def test_composed_handle_retains_shared_ownership_until_physical_cleanup(
     launcher = MagicMock()
 
     def launch(_meta, context):
+        if late_handle:
+            engine = context.get_engine()
+            engine._task_execution_state = task_runtime._TaskExecutionState()
+            service = Mock(add_job=Mock(return_value=owner), shutdown=Mock(side_effect=lambda **_: owner.release()))
+            binding = task_runtime.TaskExecutionBinding(
+                owner.backend,
+                Mock(get_or_create=Mock(return_value=service)),
+                "OWNER",
+                "TOKEN",
+                meta,
+                task_runtime.JobLaunchOptions(),
+            )
+
+            def create(_meta, launch_context):
+                task_runtime.shutdown_task_execution(engine)
+                publish_job_handle(native, launch_context)
+                return native
+
+            with patch.object(task_runtime, "JobHandleWithTaskWorkers", return_value=wrapped):
+                return task_runtime._launch_job_with_task_workers(
+                    binding, Mock(launch_job=create), context, cleanup_timeout=0.01
+                )
         publish_job_handle(wrapped, context)
         if launch_failed:
             raise ValueError("start response lost")
@@ -3145,6 +3173,8 @@ def test_composed_handle_retains_shared_ownership_until_physical_cleanup(
                 assert executor.get_run_processes_keys() == ["job-1"]
                 assert executor.run_processes["job-1"][RunProcessKey.JOB_HANDLE]._job_handle is wrapped
                 assert find_job_cert(str(run_dir)) is not None
+                with pytest.raises(RuntimeError, match="still registered"):
+                    executor.delete_run("job-1", str(run_dir))
                 resources.free_resources.assert_not_called()
                 client.send_request_before_shutdown.assert_not_called()
                 assert owner.thread.is_alive()

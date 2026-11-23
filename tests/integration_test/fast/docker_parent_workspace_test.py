@@ -30,9 +30,9 @@ from nvflare.tool.deploy.docker_deploy import _write_docker_start_script
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="Docker startup requires Bash and Unix sockets")
 
 
-@pytest.mark.parametrize("role", ["client", "server"])
+@pytest.mark.parametrize("role, opt_in", [("client", False), ("client", True), ("server", True)])
 @pytest.mark.parametrize("workspace_name", ["prepared site", "prepared, site"])
-def test_docker_parent_keeps_job_workspace_and_mounts_native_task_view(tmp_path, role, workspace_name):
+def test_docker_parent_mounts_native_workspace_only_for_opted_in_clients(tmp_path, role, opt_in, workspace_name):
     workspace = tmp_path / workspace_name
     (workspace / "startup").mkdir(parents=True)
     script = _write_docker_start_script(
@@ -63,6 +63,9 @@ def test_docker_parent_keeps_job_workspace_and_mounts_native_task_view(tmp_path,
             "NVFL_DOCKER_SOCK_GID": str(os.getgid()),
             "DOCKER_ARGS_RECORD": str(record),
         }
+        env.pop("NVFL_DOCKER_NATIVE_WORKSPACE", None)
+        if opt_in:
+            env["NVFL_DOCKER_NATIVE_WORKSPACE"] = "1"
         sock.bind(str(endpoint))
         result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -70,7 +73,7 @@ def test_docker_parent_keeps_job_workspace_and_mounts_native_task_view(tmp_path,
     # Unlike --mount's CSV fields, -v keeps commas and spaces in bind paths.
     volumes = [args[i + 1] for i, arg in enumerate(args) if arg == "-v"]
     assert f"{workspace}:/var/tmp/nvflare/workspace" in volumes
-    assert f"{workspace}:{workspace}" in volumes
+    assert (f"{workspace}:{workspace}" in volumes) == (role == "client" and opt_in)
     module = "server.server_train" if role == "server" else "client.client_train"
     module_index = args.index(f"nvflare.private.fed.app.{module}")
     assert args[args.index("-m", module_index + 1) + 1] == "/var/tmp/nvflare/workspace"

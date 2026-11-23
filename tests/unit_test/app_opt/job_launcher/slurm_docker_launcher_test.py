@@ -22,6 +22,7 @@ from unittest.mock import Mock
 
 import pytest
 from docker.models.containers import ContainerCollection
+from requests import Request, Response
 from requests.exceptions import ConnectionError, ReadTimeout
 
 from nvflare.apis.event_type import EventType
@@ -163,8 +164,8 @@ def test_cp_host_container_uses_cj_budget_and_isolated_canonical_paths(profile, 
         monkeypatch.setenv(name, "parent-only")
     monkeypatch.setenv("NVFL_DOCKER_NETWORK", "unrelated-bridge")
     handle = launch_job(p.launcher, p.meta, p.context)
-    (image,) = p.dc.containers.run.call_args.args
-    run = p.dc.containers.run.call_args.kwargs
+    (image,) = p.dc.containers.create.call_args.args
+    run = p.dc.containers.create.call_args.kwargs
     assert image == "site/coordinator:tested" and run["network"] == "host"
     assert run["extra_hosts"] == {"site-1": "172.20.0.2"}
     assert (run["nano_cpus"], run["mem_limit"]) == (500_000_000, 512 * 1024**2)
@@ -215,6 +216,7 @@ def test_lost_docker_start_response_retains_owner_until_cleanup(
     containers = ContainerCollection(p.dc)
     p.dc.containers = containers
     container = Mock()
+    container.id = "coordinator-id"
     container.status = "created"
     exists = False
     allow_cleanup, cleanup_attempted = threading.Event(), threading.Event()
@@ -296,10 +298,9 @@ def test_lost_docker_start_response_retains_owner_until_cleanup(
         assert len(published) == 1
         owner = published[0].owner
         service = p.cell._slurm_task_service
-        name = containers.create.call_args.kwargs["name"]
-        assert owner.cj_handle.container_id == name
+        assert owner.cj_handle.container_id == container.id
         assert cleanup_attempted.wait(5)
-        assert lookups and set(lookups) == {name}
+        assert lookups and set(lookups) == {container.id}
         assert not owner.cj_handle._is_cleanup_complete()
         assert owner.thread.is_alive() and service.jobs["job-1"] is owner
         assert owner.released and not owner.cj_settled
@@ -314,6 +315,54 @@ def test_lost_docker_start_response_retains_owner_until_cleanup(
         allow_cleanup.set()
         service = service or getattr(p.cell, "_slurm_task_service", None)
         if service:
+            assert service.shutdown(timeout=5) == ()
+
+
+def test_timed_out_docker_create_retains_owner_until_late_container_is_removed(profile, monkeypatch):
+    p = profile
+    monkeypatch.setattr(docker_module, "DockerJobHandle", DockerJobHandle)
+    p.site["task_execution"]["finalization_timeout"] = 0.03
+    (p.root / "local/resources.json").write_text(json.dumps(p.site))
+    p.dc.containers.create.side_effect = ReadTimeout("Docker create response lost")
+    appeared = threading.Event()
+    container = Mock(id="late-coordinator", status="created")
+    removed = threading.Event()
+    container.remove.side_effect = lambda **kwargs: removed.set()
+
+    def lookup(identity):
+        if identity == "cp-container":
+            return p.parent_container
+        if not appeared.is_set() or removed.is_set():
+            raise docker_module.docker.errors.NotFound("not visible")
+        return container
+
+    p.dc.containers.get.side_effect = lookup
+    try:
+        with pytest.raises(ReadTimeout, match="Docker create response lost"):
+            launch_job(p.launcher, p.meta, p.context)
+        service = p.cell._slurm_task_service
+        owner = service.jobs["job-1"]
+        handle = owner.cj_handle
+        name = p.dc.containers.create.call_args.kwargs["name"]
+        assert handle.container_id == name
+        assert handle.poll() == JobReturnCode.UNKNOWN
+        handle.terminate()
+        assert handle.poll() == JobReturnCode.UNKNOWN
+        assert owner.thread.is_alive() and service.jobs["job-1"] is owner
+        container.remove.assert_not_called()
+
+        appeared.set()
+        owner.wake.set()
+        assert removed.wait(5)
+        owner.thread.join(5)
+        assert handle.container_id == container.id
+        assert owner.cj_settled and not service.jobs
+        container.remove.assert_called_once_with(force=True)
+        container.start.assert_not_called()
+    finally:
+        appeared.set()
+        service = getattr(p.cell, "_slurm_task_service", None)
+        if service is not None:
             assert service.shutdown(timeout=5) == ()
 
 
@@ -344,18 +393,29 @@ def test_publication_failure_stops_cj_and_releases_task_admission(profile):
     p.native.enter_states.assert_not_called()
 
 
-def test_docker_creation_failure_seals_task_owner(profile):
+def test_docker_create_rejection_seals_task_owner_without_claiming_a_container(profile):
     p = profile
     owners = []
+    published = Mock()
+    p.context.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, published)
 
     def fail(*args, **kwargs):
         owners.append(p.cell._slurm_task_service.jobs["job-1"])
-        raise RuntimeError("daemon unavailable")
+        response = Response()
+        response.status_code = 409
+        response.reason = "Conflict"
+        response.request = Request("POST", "http://docker/containers/create").prepare()
+        raise docker_module.docker.errors.APIError("name conflict", response=response)
 
-    p.dc.containers.run.side_effect = fail
-    with pytest.raises(RuntimeError, match="daemon unavailable"):
+    p.dc.containers.create.side_effect = fail
+    with pytest.raises(RuntimeError, match="409 Client Error"):
         launch_job(p.launcher, p.meta, p.context)
-    assert owners[0].released and owners[0].closed
+    owner = owners[0]
+    owner.thread.join(5)
+    assert owner.released and owner.closed and not owner.thread.is_alive()
+    assert not p.cell._slurm_task_service.jobs
+    published.assert_not_called()
+    p.native.terminate.assert_not_called()
 
 
 def test_docker_proxy_start_needs_cp_capability_but_no_scheduler_environment(profile, monkeypatch):
@@ -378,7 +438,7 @@ def test_gpu_cj_budget_is_rejected_before_creation(profile, spec):
     profile.meta["cj_resource_spec"]["site-1"] = spec
     with pytest.raises(ValueError, match="CPU-only"):
         launch_job(profile.launcher, profile.meta, profile.context)
-    profile.dc.containers.run.assert_not_called()
+    profile.dc.containers.create.assert_not_called()
 
 
 @pytest.mark.parametrize("docker_spec", [{"image": "job/image"}, {"device_requests": []}, {"entrypoint": ["sh"]}])
@@ -386,7 +446,7 @@ def test_job_cannot_override_cp_host_container(profile, docker_spec):
     profile.meta["launcher_spec"] = {"site-1": {"docker": docker_spec}}
     with pytest.raises(ValueError, match="site-owned"):
         launch_job(profile.launcher, profile.meta, profile.context)
-    profile.dc.containers.run.assert_not_called()
+    profile.dc.containers.create.assert_not_called()
 
 
 def test_resident_job_uses_ordinary_docker_without_task_ownership(profile):
@@ -421,7 +481,7 @@ def test_coordinator_resources_are_independent_of_resident_container_defaults(pr
     TaskExecutionPolicy.from_workspace(p.workspace)
     p.meta["cj_resource_spec"] = {"site-1": {"num_of_cpus": 64, "memory": "512Gi"}}
     handle = launch_job(p.launcher, p.meta, p.context)
-    run = p.dc.containers.run.call_args.kwargs
+    run = p.dc.containers.create.call_args.kwargs
     assert run["nano_cpus"] == 64_000_000_000
     assert run["mem_limit"] == 512 * 1024**3
     assert not set(resident_defaults).intersection(run)
@@ -453,7 +513,7 @@ def test_docker_task_profile_requires_owning_docker_cp(profile, monkeypatch, mut
         p.parent_container.attrs["NetworkSettings"]["Networks"] = {}
     with pytest.raises(ValueError, match="Docker CP|CP container"):
         launch_job(p.launcher, p.meta, p.context)
-    p.dc.containers.run.assert_not_called()
+    p.dc.containers.create.assert_not_called()
 
 
 @pytest.mark.parametrize("explicit_null", [False, True])
@@ -467,7 +527,7 @@ def test_cj_validates_ordinary_docker_site_without_parent_environment(profile, m
     monkeypatch.delenv("NVFL_DOCKER_NETWORK")
     policy = TaskExecutionPolicy.from_workspace(p.workspace)
     assert policy.launcher.cj_runtime == "docker"
-    p.dc.containers.run.assert_not_called()
+    p.dc.containers.create.assert_not_called()
 
 
 def test_secure_cj_requires_own_job_certificate_and_preserves_mtls(profile):
@@ -479,12 +539,12 @@ def test_secure_cj_requires_own_job_certificate_and_preserves_mtls(profile):
     (p.root / "job-1/job_cert/job.key").unlink()
     with pytest.raises(JobCertError):
         launch_job(p.launcher, p.meta, p.context)
-    p.dc.containers.run.assert_not_called()
+    p.dc.containers.create.assert_not_called()
     (p.root / "job-1/job_cert/job.key").write_text("job.key")
     # Release the failed launch's owner before another explicit launch.
     p.cell._slurm_task_service.shutdown(timeout=5)
     launch_job(p.launcher, p.meta, p.context)
-    command = p.dc.containers.run.call_args.kwargs["command"]
+    command = p.dc.containers.create.call_args.kwargs["command"]
     assert command[command.index("-p") + 1] == "stcp://site-1:8102"
     assert command[command.index("--parent_conn_sec") + 1] == "mtls"
 
@@ -494,7 +554,7 @@ def test_live_owner_fences_a_second_cj_launch(profile):
     handle = launch_job(p.launcher, p.meta, p.context)
     with pytest.raises(ValueError, match="already owns"):
         launch_job(p.launcher, p.meta, p.context)
-    assert p.dc.containers.run.call_count == 1
+    assert p.dc.containers.create.call_count == 1
     assert not handle.owner.closed
     assert not handle.can_restart()
 
@@ -526,14 +586,14 @@ def test_cp_host_admission_does_not_reserve_compute_gpus(profile):
     p.launcher.handle_event(EventType.BEFORE_CHECK_RESOURCE_MANAGER, p.context)
     with pytest.raises(ValueError, match="CPU-only"):
         launch_job(p.launcher, p.meta, p.context)
-    p.dc.containers.run.assert_not_called()
+    p.dc.containers.create.assert_not_called()
 
 
 def test_root_cp_is_rejected(profile, monkeypatch):
     monkeypatch.setattr(docker_module.os, "getuid", lambda: 0)
     with pytest.raises(ValueError, match="Docker CP with a nonroot"):
         launch_job(profile.launcher, profile.meta, profile.context)
-    profile.dc.containers.run.assert_not_called()
+    profile.dc.containers.create.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -564,7 +624,7 @@ def test_task_policy_selects_the_ordinary_client_docker_launcher(profile):
     server = docker_module.ServerDockerJobLauncher(workspace=str(profile.root))
     with pytest.raises(ValueError, match="unsupported client-job/task launcher pairing"):
         launch_job(server, profile.meta, profile.context)
-    profile.dc.containers.run.assert_not_called()
+    profile.dc.containers.create.assert_not_called()
     launch_job(profile.launcher, profile.meta, profile.context)
 
 
@@ -577,7 +637,7 @@ def test_unsupported_daemon_is_rejected_before_container_creation(profile, unsup
         p.dc.info.return_value[unsupported] = False
     with pytest.raises(ValueError, match="daemon"):
         launch_job(p.launcher, p.meta, p.context)
-    p.dc.containers.run.assert_not_called()
+    p.dc.containers.create.assert_not_called()
 
 
 def test_nonstandard_cpu_capability_keys_cannot_satisfy_daemon_check(profile):
@@ -585,7 +645,7 @@ def test_nonstandard_cpu_capability_keys_cannot_satisfy_daemon_check(profile):
     p.dc.info.return_value = {"OSType": "linux", "MemoryLimit": True, "CPUCfsPeriod": True, "CPUCfsQuota": True}
     with pytest.raises(ValueError, match="daemon"):
         launch_job(p.launcher, p.meta, p.context)
-    p.dc.containers.run.assert_not_called()
+    p.dc.containers.create.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -600,7 +660,7 @@ def test_cj_defaults_are_independent_of_compute(profile, spec, expected):
     p = profile
     p.meta["cj_resource_spec"]["site-1"] = spec
     launch_job(p.launcher, p.meta, p.context)
-    run = p.dc.containers.run.call_args.kwargs
+    run = p.dc.containers.create.call_args.kwargs
     assert (run.get("nano_cpus"), run.get("mem_limit")) == expected
 
 
@@ -619,7 +679,7 @@ def test_cp_owns_a_physical_backend_that_reaches_native_task_launch(profile, mon
 def test_cj_budget_is_not_capped_by_resident_defaults(profile, budget, key, value):
     profile.meta["cj_resource_spec"]["site-1"] = budget
     launch_job(profile.launcher, profile.meta, profile.context)
-    assert profile.dc.containers.run.call_args.kwargs[key] == value
+    assert profile.dc.containers.create.call_args.kwargs[key] == value
 
 
 @pytest.mark.parametrize(
@@ -632,7 +692,7 @@ def test_coordinator_security_does_not_inherit_resident_defaults(profile, reside
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
     TaskExecutionPolicy.from_workspace(p.workspace)
     handle = launch_job(p.launcher, p.meta, p.context)
-    run = p.dc.containers.run.call_args.kwargs
+    run = p.dc.containers.create.call_args.kwargs
     assert run["cap_drop"] == ["ALL"]
     assert run["security_opt"] == ["no-new-privileges:true"]
     handle.terminate()
@@ -656,14 +716,14 @@ def test_docker_memory_string_is_valid_at_policy_load_and_launch(profile):
     p.launcher.default_job_container_kwargs["mem_limit"] = "1g"
     p.meta["cj_resource_spec"]["site-1"] = {}
     launch_job(p.launcher, p.meta, p.context)
-    assert "mem_limit" not in p.dc.containers.run.call_args.kwargs
+    assert "mem_limit" not in p.dc.containers.create.call_args.kwargs
 
 
 def test_federation_docker_default_does_not_replace_site_coordinator(profile):
     p = profile
     p.meta["launcher_spec"] = {"default": {"docker": {"image": "federation/compute"}}, "site-1": {"docker": {}}}
     launch_job(p.launcher, p.meta, p.context)
-    assert p.dc.containers.run.call_args.args == ("site/coordinator:tested",)
+    assert p.dc.containers.create.call_args.args == ("site/coordinator:tested",)
     assert p.meta["launcher_spec"]["default"]["docker"]["image"] == "federation/compute"
 
 
@@ -673,14 +733,14 @@ def test_cp_host_rejects_unconnectable_parent_address(profile, url):
     p.context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_URL] = ("-p", url)
     with pytest.raises(ValueError, match="parent"):
         launch_job(p.launcher, p.meta, p.context)
-    p.dc.containers.run.assert_not_called()
+    p.dc.containers.create.assert_not_called()
 
 
 def test_docker_parent_wildcard_listener_uses_cp_container_address(profile):
     p = profile
     p.context.get_prop(FLContextKey.JOB_PROCESS_ARGS)[JobProcessArgs.PARENT_URL] = ("-p", "tcp://0.0.0.0:8102")
     launch_job(p.launcher, p.meta, p.context)
-    run = p.dc.containers.run.call_args.kwargs
+    run = p.dc.containers.create.call_args.kwargs
     assert run["command"][run["command"].index("-p") + 1] == "tcp://site-1:8102"
     assert run["extra_hosts"] == {"site-1": "172.20.0.2"}
 
@@ -698,7 +758,7 @@ def test_shutdown_retains_inflight_creation_and_cleans_late_container(profile, c
     p.context.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, published)
     p.site["task_execution"]["finalization_timeout"] = 0.01
     (p.root / "local/resources.json").write_text(json.dumps(p.site))
-    original_create = p.dc.containers.run.return_value
+    original_create = p.dc.containers.create.return_value
 
     def create(*args, **kwargs):
         entered.set()
@@ -707,7 +767,7 @@ def test_shutdown_retains_inflight_creation_and_cleans_late_container(profile, c
             raise RuntimeError("creation failed")
         return original_create
 
-    p.dc.containers.run.side_effect = create
+    p.dc.containers.create.side_effect = create
 
     def launch():
         with pytest.raises(RuntimeError, match="creation failed" if creation_fails else "shut down during"):
@@ -725,7 +785,9 @@ def test_shutdown_retains_inflight_creation_and_cleans_late_container(profile, c
         join_thread(worker)
         join_thread(owner.thread)
         assert "job-1" not in service.jobs
-    published.assert_not_called()
+    published.assert_called_once()
+    wrapper = published.call_args.args[0]
+    assert wrapper.owner is owner and wrapper.handle is p.native
     p.native.terminate.assert_called_once()
     p.native.wait.assert_not_called()
 
@@ -745,11 +807,11 @@ def test_fractional_cj_budget_uses_nanocpu_quotas(profile, cpus):
     p = profile
     p.meta["cj_resource_spec"]["site-1"] = {"num_of_cpus": cpus}
     launch_job(p.launcher, p.meta, p.context)
-    assert p.dc.containers.run.call_args.kwargs["nano_cpus"] == round(cpus * 1_000_000_000)
+    assert p.dc.containers.create.call_args.kwargs["nano_cpus"] == round(cpus * 1_000_000_000)
 
 
 def test_optional_null_launcher_spec_keeps_site_default_coordinator(profile):
     p = profile
     p.meta["launcher_spec"] = None
     launch_job(p.launcher, p.meta, p.context)
-    assert p.dc.containers.run.call_args.args == ("site/coordinator:tested",)
+    assert p.dc.containers.create.call_args.args == ("site/coordinator:tested",)

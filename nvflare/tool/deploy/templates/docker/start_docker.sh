@@ -142,10 +142,11 @@ if [ "${CUDA_VISIBLE_DEVICES+x}" = "x" ]; then
     GPU_ENV_ARGS=(-e "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES")
 fi
 
-# Slurm task workers use the native shared path. Keep it visible to CP as
-# an alias while preserving the ordinary Docker workspace and job-mode layout.
+# Sites using Slurm task workers opt in to a second workspace view in CP.
 SHARED_WORKSPACE_ARGS=()
-if [ "$HOST_WORKSPACE" != "@@NVFLARE_WORKSPACE_MOUNT_PATH@@" ]; then
+if [ "@@NVFLARE_ROLE_LABEL@@" = "client" ] &&
+    [ "${NVFL_DOCKER_NATIVE_WORKSPACE:-0}" = "1" ] &&
+    [ "$HOST_WORKSPACE" != "@@NVFLARE_WORKSPACE_MOUNT_PATH@@" ]; then
     SHARED_WORKSPACE_ARGS=(-v "$HOST_WORKSPACE:$HOST_WORKSPACE")
 fi
 

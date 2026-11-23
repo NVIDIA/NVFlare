@@ -177,10 +177,13 @@ def _launch_job_with_task_workers(prepared, launcher, fl_ctx, *, cleanup_timeout
         result = JobHandleWithTaskWorkers(native, owner, cleanup_timeout, allow_restart=False)
         with state.lock:
             owner.attach_cj(native)
-            if state.closing:
-                raise RuntimeError("parent task runtime shut down during coordinator creation")
+        # Publish even when shutdown has begun so the executor retains the
+        # registration until the task owner confirms physical cleanup.
         if previous_callback is not None:
             previous_callback(result)
+        with state.lock:
+            if state.closing:
+                raise RuntimeError("parent task runtime shut down during coordinator creation")
         return result
 
     environment = dict(prepared.options.environment or {})

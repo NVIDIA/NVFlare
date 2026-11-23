@@ -120,6 +120,18 @@ _RESERVED_WORKSPACE_CHILD_NAMES = {
 _RESERVED_DEFAULT_KWARGS = RESERVED_DOCKER_KWARGS
 
 
+def _docker_create_may_have_succeeded(error):
+    if isinstance(error, docker.errors.ImageNotFound):
+        return False
+    if isinstance(error, docker.errors.APIError) and error.response is not None:
+        request = error.response.request
+        # The SDK also inspects the container after a successful POST. An
+        # error from that GET says nothing about whether Docker created it.
+        if request is not None and request.method == "POST" and error.status_code in (400, 401, 403, 404, 409):
+            return False
+    return True
+
+
 def _is_gpu_request(request):
     # Docker's NVIDIA driver also accepts these capabilities without the literal "gpu".
     gpu_capabilities = {"gpu", "nvidia", "compute", "compat32", "graphics", "utility", "video", "display"}
@@ -261,6 +273,7 @@ class DockerJobHandle(JobHandleSpec):
         timeout: int = 30,
         container=None,
         watch_exit: bool = True,
+        create_pending: bool = False,
     ):
         super().__init__()
         self.container_id = container_id
@@ -270,6 +283,7 @@ class DockerJobHandle(JobHandleSpec):
         self.terminal_state: JobReturnCode = None  # set once, never cleared
         self.logger = logging.getLogger(self.__class__.__name__)
         self._state_lock = threading.Lock()
+        self._create_pending = create_pending
         self._exit_watch_done = threading.Event()
         self._exit_watcher = None
         self._terminating = False
@@ -334,6 +348,23 @@ class DockerJobHandle(JobHandleSpec):
         finally:
             self._exit_watch_done.set()
 
+    def _lookup_container(self):
+        with self._state_lock:
+            identity, create_pending = self.container_id, self._create_pending
+        try:
+            container = self.docker_client.containers.get(identity)
+        except docker.errors.NotFound:
+            if create_pending:
+                # An inspect can overtake the timed-out create on the daemon.
+                # Only absence of a previously observed container is definitive.
+                return None
+            raise
+        if create_pending:
+            with self._state_lock:
+                self.container_id = container.id
+                self._create_pending = False
+        return container
+
     def _get_container(self):
         """Query Docker for the current container object.
 
@@ -341,7 +372,7 @@ class DockerJobHandle(JobHandleSpec):
         when no exit watcher can still provide the container's final exit code.
         """
         try:
-            return self.docker_client.containers.get(self.container_id)
+            return self._lookup_container()
         except docker.errors.NotFound:
             self.logger.info(f"container {self.container_name} not found")
             if self._exit_watcher is None or self._exit_watch_done.is_set():
@@ -419,7 +450,13 @@ class DockerJobHandle(JobHandleSpec):
         if self._get_terminal_state() is None:
             self._set_terminating()
         try:
-            container = self.docker_client.containers.get(self.container_id)
+            container = self._lookup_container()
+            if container is None:
+                return
+            if container.status == DockerStatus.CREATED:
+                container.remove(force=True)
+                self._set_terminal_state(JobReturnCode.ABORTED)
+                return
             container.stop(timeout=0)
             self._set_terminal_state(JobReturnCode.ABORTED)
             container.remove(force=True)
@@ -836,7 +873,8 @@ class DockerJobLauncher(JobLauncherSpec):
         require_job_cert(fl_ctx, workspace_obj.get_run_dir(job_id))
 
         docker_client = self._get_docker_client()
-        launch_attempted = False
+        creating = False
+        container = None
         try:
             # bind the kit file by file: site private keys never enter the job container;
             # the job credential arrives through the read-write job workspace bind
@@ -890,9 +928,7 @@ class DockerJobLauncher(JobLauncherSpec):
                             read_only=True,
                         )
                     )
-            launch_attempted = True
-            container = docker_client.containers.run(
-                job_image,
+            launch_args = dict(
                 command=command,
                 name=container_name,
                 network=merged_container_kwargs.pop("network", self.network),
@@ -907,25 +943,41 @@ class DockerJobLauncher(JobLauncherSpec):
                 user=f"{os.getuid()}:{os.getgid()}",
                 **merged_container_kwargs,
             )
-        except docker.errors.ImageNotFound:
-            raise RuntimeError(f"image '{job_image}' not found for job {job_id}")
+            if options.publish_failed_launch_handle:
+                # A failed start can be reconciled by ID. A lost create reply
+                # has only the generated name and needs different absence rules.
+                creating = True
+                try:
+                    container = docker_client.containers.create(job_image, **launch_args)
+                except docker.errors.ImageNotFound:
+                    creating = False
+                    docker_client.images.pull(job_image, platform=launch_args.get("platform"))
+                    creating = True
+                    container = docker_client.containers.create(job_image, **launch_args)
+                creating = False
+                container.start()
+            else:
+                container = docker_client.containers.run(job_image, **launch_args)
         except Exception as e:
-            if launch_attempted and options.publish_failed_launch_handle:
-                # Docker may have started the container before losing its reply.
-                # Publish only to a caller that retains uncertain executions.
+            if options.publish_failed_launch_handle and (
+                container is not None or (creating and _docker_create_may_have_succeeded(e))
+            ):
                 try:
                     publish_job_handle(
                         DockerJobHandle(
-                            container_id=container_name,
+                            container_id=container_name if container is None else container.id,
                             container_name=container_name,
                             docker_client=docker_client,
                             timeout=self.timeout,
                             watch_exit=False,
+                            create_pending=container is None,
                         ),
                         fl_ctx,
                     )
                 except Exception:
                     self.logger.exception("Error publishing cleanup handle for container %s", container_name)
+            if isinstance(e, docker.errors.ImageNotFound):
+                raise RuntimeError(f"image '{job_image}' not found for job {job_id}") from e
             if isinstance(e, docker.errors.APIError):
                 raise RuntimeError(f"error creating container for job {job_id}: {e}") from e
             raise

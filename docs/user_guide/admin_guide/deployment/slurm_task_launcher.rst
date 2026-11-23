@@ -228,8 +228,11 @@ This initial profile requires:
 * A canonical shared workspace on the Docker daemon host and compute hosts,
   with coherent atomic file operations. Docker CP retains its ordinary internal
   ``/var/tmp/nvflare/workspace`` mount and also needs that workspace mounted at
-  its canonical native path. The generated Docker startup script supplies both
-  views; site-managed startup must do the same. CP binds the Slurm backend through
+  its canonical native path. Start the prepared client with
+  ``NVFL_DOCKER_NATIVE_WORKSPACE=1 ./startup/start_docker.sh`` from the workspace
+  to mount both views. Choose a native path that leaves the parent image's
+  installation paths accessible. Site-managed startup must mount both views
+  as well. CP binds the Slurm backend through
   the native view, without rewriting staged worker records. A task CJ receives a tmpfs
   root at that path, read-only ``local`` and permitted startup files, and only
   its own job directory as a persistent writable bind. Other job directories,
@@ -317,6 +320,12 @@ The login node ``process`` and ``docker`` task profiles keep automatic CJ recove
 disabled in this initial implementation. CP continues cleanup while alive;
 CP crash/restart adoption is not implemented for any Slurm profile. Persistent
 files alone do not authorize automatic physical retry.
+
+After an uncertain Docker coordinator create, CP keeps the job registered while
+it looks for the generated container name. A Docker ``NotFound`` reply can
+precede container creation, so CP retains ownership until it can reconcile the
+container. If that never happens, investigate the create on the Docker daemon
+before restarting CP or resubmitting the job.
 
 Manual cleanup after CP exits
 -----------------------------
