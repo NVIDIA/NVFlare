@@ -29,9 +29,7 @@ def discover(dataset, secret, budget, site):
     uri = dataset.uri
     env = os.environ.copy()
     keys = ()
-    rules = dict(dataset.usage_rules("catalog") or {})
-    provided = "contract_uri" in rules
-    if not provided and dataset.type == "sql" and dataset.path is None:
+    if dataset.type == "sql" and dataset.path is None:
         keys = ("username", "password")
         url = urlsplit(uri)
         if url.query:
@@ -41,7 +39,7 @@ def discover(dataset, secret, budget, site):
                 raise CatalogSourceError("unsupported PostgreSQL URI query")
             env["PGSSLMODE"] = params[0][1]
             uri = url._replace(query="").geturl()
-    elif not provided and dataset.type == "unity-catalog" and "token" in dataset.secret_keys:
+    elif dataset.type == "unity-catalog" and "token" in dataset.secret_keys:
         keys = ("token",)
 
     budget.remaining()
@@ -52,8 +50,7 @@ def discover(dataset, secret, budget, site):
             "type": dataset.type,
             "uri": uri,
             "path": dataset.path,
-            "options": {} if provided else dict(dataset.options),
-            "usage": {"catalog": rules},
+            "options": dict(dataset.options),
             "secret_keys": keys,
         },
         "secrets": {key: secret(key) for key in keys},

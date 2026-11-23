@@ -34,17 +34,20 @@ def test_csv_worker_preserves_wide_headers_and_charges_each_batch(tmp_path):
     assert budget.calls_left == 1
 
 
-def test_approved_file_worker_preserves_contract_without_database_credentials(tmp_path):
-    import json
+def test_sqlite_worker_discovers_current_schema_on_each_read(tmp_path):
+    import sqlite3
 
-    pytest.importorskip("jsonschema")
-    pytest.importorskip("ruamel.yaml")
-    contract = {"apiVersion": "v3.2.0", "kind": "DataContract", "id": "approved", "version": "1"}
-    path = tmp_path / "approved.json"
-    path.write_text(json.dumps(contract))
-    ds = DatasetConfig(
-        "study", "visits", "sql", "postgresql://unused/study", None, usage={"catalog": {"contract_uri": path.as_uri()}}
-    )
-    budget = ReadBudget(ReadLimits(60, 2, 10))
-    assert read_odcs(ds, None, budget, site="one") == contract
-    assert budget.calls_left == 1
+    pytest.importorskip("datacontract")
+    path = tmp_path / "registry.sqlite"
+    dataset = DatasetConfig("study", "registry", "sql", path.as_uri(), str(path))
+    for ddl, names in [
+        ("CREATE TABLE visits (id INTEGER)", ["id"]),
+        ("ALTER TABLE visits ADD COLUMN visit_date TEXT", ["id", "visit_date"]),
+    ]:
+        with sqlite3.connect(path) as db:
+            db.execute(ddl)
+        contract = read_odcs(dataset, None, ReadBudget(ReadLimits(60, 10, 100)), site="one")
+        assert contract["name"] == "registry"
+        (table,) = contract["schema"]
+        assert table["name"] == "visits"
+        assert [p["name"] for p in table["properties"]] == names

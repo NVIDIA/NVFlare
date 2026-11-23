@@ -74,11 +74,8 @@ class CatalogExecutor(Executor):
             return build_result(ResultStatus.FAILED, reason_code=ReasonCode.CONFIG_UNAVAILABLE)
 
         listed = config.list_datasets()
-        # A catalog can name other datasets through lineage, even on a selective read.
-        # Refuse an unmigrated Study before returning any identifiers.
-        if any(
-            set(config.get_dataset(name).usage_rules(CATALOG_COMPONENT) or {}) - {"contract_uri"} for name in listed
-        ):
+        # Fail closed on obsolete publication rules before disclosing any dataset name.
+        if any(config.get_dataset(name).usage_rules(CATALOG_COMPONENT) for name in listed):
             self.log_error(
                 fl_ctx,
                 "obsolete usage.catalog settings; configure source metadata permissions "

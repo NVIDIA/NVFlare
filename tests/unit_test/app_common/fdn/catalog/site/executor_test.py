@@ -143,7 +143,7 @@ class TestConfiguration:
             {"exclude_columns": {"secret_table": ["secret_column"]}},
             {"connector": "fake"},
             {"operations": ["cohort.count"]},
-            {"contract_uri": "file:///a", "share": True},
+            {"contract_uri": "file:///a"},
         ],
     )
     @pytest.mark.parametrize("selection", [None, ["good"]])

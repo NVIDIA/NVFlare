@@ -21,10 +21,9 @@ import tempfile
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
 from uuid import NAMESPACE_URL, uuid5
 
-from nvflare.app_common.fdn.catalog.common.odcs import MAX_CONTRACT_BYTES, ODCS_VERSION, check_contract
+from nvflare.app_common.fdn.catalog.common.odcs import ODCS_VERSION, check_contract
 from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
 from nvflare.app_opt.fdn.catalog._metadata import local_path, selection
 from nvflare.app_opt.fdn.catalog._read_worker import discover
@@ -37,36 +36,6 @@ def _validator():
 
     schema = json.loads(files(__package__).joinpath("odcs-json-schema-v3.2.0.json").read_text(encoding="utf-8"))
     return Draft201909Validator(schema)
-
-
-def _provided(uri):
-    parsed = urlsplit(uri)
-    if parsed.scheme != "file" or parsed.netloc not in ("", "localhost") or parsed.query or parsed.fragment:
-        raise ValueError("a local contract file URI is required")
-    path = Path(unquote(parsed.path))
-    if not path.is_absolute() or not path.is_file():
-        raise ValueError("contract file unavailable")
-    with path.open("rb") as stream:
-        contents = stream.read(MAX_CONTRACT_BYTES + 1)
-    if len(contents) > MAX_CONTRACT_BYTES:
-        raise ValueError("contract file is too large")
-    from ruamel.yaml import YAML
-    from ruamel.yaml.constructor import SafeConstructor
-    from ruamel.yaml.events import AliasEvent
-
-    class ContractConstructor(SafeConstructor):
-        # Dates in ODCS are strings. YAML's implicit timestamp conversion would
-        # otherwise turn a valid document into a non-JSON Python object.
-        yaml_constructors = {
-            **SafeConstructor.yaml_constructors,
-            "tag:yaml.org,2002:timestamp": SafeConstructor.construct_scalar,
-        }
-
-    loader = YAML(typ="safe", pure=True)
-    loader.Constructor = ContractConstructor
-    if any(isinstance(event, AliasEvent) for event in loader.parse(contents)):
-        raise ValueError("contract YAML aliases are unsupported")
-    return loader.load(contents)
 
 
 def _csv_schema(dataset, budget):
@@ -111,26 +80,21 @@ def _csv_schema(dataset, budget):
 
 
 def _read_contract(dataset, secret, budget, *, site):
-    """Read a steward-approved file or generate a structural contract from the configured source."""
-    rules = dataset.usage_rules("catalog") or {}
-    if "contract_uri" in rules:
-        budget.request()
-        contract = _provided(rules["contract_uri"])
+    """Generate an ODCS contract from the configured source metadata."""
+    if dataset.type == "csv":
+        objects = _csv_schema(dataset, budget)
     else:
-        if dataset.type == "csv":
-            objects = _csv_schema(dataset, budget)
-        else:
-            objects = import_schema(dataset, secret, budget)
-        identity = json.dumps([dataset.study, site, dataset.name], ensure_ascii=False)
-        contract = {
-            "apiVersion": ODCS_VERSION,
-            "kind": "DataContract",
-            "id": uuid5(NAMESPACE_URL, identity).urn,
-            "version": "1.0.0",
-            "status": "draft",
-            "name": dataset.name,
-            "schema": objects,
-        }
+        objects = import_schema(dataset, secret, budget)
+    identity = json.dumps([dataset.study, site, dataset.name], ensure_ascii=False)
+    contract = {
+        "apiVersion": ODCS_VERSION,
+        "kind": "DataContract",
+        "id": uuid5(NAMESPACE_URL, identity).urn,
+        "version": "1.0.0",
+        "status": "draft",
+        "name": dataset.name,
+        "schema": objects,
+    }
     budget.records(check_contract(contract))
     _validator().validate(contract)
     budget.remaining()

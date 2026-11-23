@@ -14,7 +14,6 @@
 
 
 import json
-from dataclasses import replace
 
 import pytest
 
@@ -64,36 +63,6 @@ def test_invalid_csv_header_is_refused(tmp_path, content):
     path.write_text(content)
     dataset, secret = dataset_config(path=path, type_="csv")
     with pytest.raises((CatalogSourceError, csv.Error)):
-        read_odcs(dataset, secret, ReadBudget(LIMITS), site="site")
-
-
-def test_provided_contract_wins_even_when_missing_or_invalid(tmp_path, monkeypatch):
-    pytest.importorskip("ruamel.yaml")
-    pytest.importorskip("jsonschema")
-    from jsonschema import ValidationError
-
-    from nvflare.app_opt.fdn.catalog import odcs
-
-    def no_live_discovery(*args):
-        pytest.fail("a supplied contract must never trigger SQL access")
-
-    monkeypatch.setattr(odcs, "import_schema", no_live_discovery)
-    path = tmp_path / "approved.yaml"
-    dataset, secret = dataset_config(type_="sql", uri="postgresql://example.org/study")
-    dataset = replace(dataset, usage={"catalog": {"contract_uri": path.as_uri()}})
-    with pytest.raises(ValueError):
-        read_odcs(dataset, secret, ReadBudget(LIMITS), site="site")
-    contract = {
-        "apiVersion": "v3.2.0",
-        "kind": "DataContract",
-        "id": "steward-id",
-        "version": "5",
-        "description": {"purpose": "Approved by the steward"},
-    }
-    path.write_text(json.dumps(contract))
-    assert read_odcs(dataset, secret, ReadBudget(LIMITS), site="site") == contract
-    path.write_text(json.dumps({**contract, "unsupported": True}))
-    with pytest.raises(ValidationError):
         read_odcs(dataset, secret, ReadBudget(LIMITS), site="site")
 
 
@@ -222,8 +191,7 @@ def test_duckdb_distinguishes_empty_and_missing_schema(tmp_path):
                 read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
 
 
-@pytest.mark.parametrize("provided", [False, True])
-def test_read_deadline_reaps_worker_for_postgres_and_approved_files(monkeypatch, provided):
+def test_read_deadline_reaps_postgres_worker(monkeypatch):
     import os
     import subprocess
     from unittest.mock import MagicMock
@@ -239,19 +207,14 @@ def test_read_deadline_reaps_worker_for_postgres_and_approved_files(monkeypatch,
     start = MagicMock(return_value=proc)
     monkeypatch.setattr(_read_worker.subprocess, "Popen", start)
     ds, _ = dataset_config(type_="sql", uri="postgresql://host/study?sslmode=verify-full")
-    if provided:
-        ds = replace(ds, usage={"catalog": {"contract_uri": "file:///approved.yaml"}})
     with pytest.raises(CatalogSourceError) as err:
-        odcs.read_odcs(ds, None if provided else lambda key: "local-value", ReadBudget(LIMITS), site="one")
+        odcs.read_odcs(ds, lambda key: "local-value", ReadBudget(LIMITS), site="one")
     assert err.value.budget
-    assert start.call_args.kwargs["env"]["PGSSLMODE"] == ("require" if provided else "verify-full")
+    assert start.call_args.kwargs["env"]["PGSSLMODE"] == "verify-full"
     assert os.environ["PGSSLMODE"] == "require"
     assert "local-value" not in str(start.call_args.args)
     request = json.loads(proc.communicate.call_args.args[0])
-    if provided:
-        assert request["dataset"]["usage"] == ds.usage and request["secrets"] == {}
-    else:
-        assert request["dataset"]["uri"] == "postgresql://host/study"
+    assert request["dataset"]["uri"] == "postgresql://host/study"
     assert 0 < proc.communicate.call_args.kwargs["timeout"] <= LIMITS.max_duration_s
     proc.kill.assert_called_once()
     proc.wait.assert_called_once()
