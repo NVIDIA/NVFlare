@@ -116,16 +116,22 @@ def test_registration_event_receives_client_name_from_request(client_name):
     server.engine.fire_event.assert_any_call(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=context)
 
 
+@pytest.mark.parametrize("stage", ["verification", "issuance"])
 @pytest.mark.parametrize("failure", [RuntimeError, TimeoutError])
-def test_registration_rejects_unexpected_cc_verifier_exceptions(failure, caplog):
+def test_registration_rejects_unexpected_cc_exceptions(stage, failure, caplog):
     site = "cc-client"
     context = FLContext()
     context.set_prop(FLContextKey.SECURE_MODE, True)
     manager = CCManager([], [], cc_enabled_sites=[site])
     verifier = MagicMock()
-    verifier.verify_for_site.side_effect = failure("sensitive-provider-detail")
+    verifier.verify_for_site.return_value = True
     manager.cc_verifiers = {"test": verifier}
-    manager._generate_and_attach_tokens = MagicMock()
+    issuer = MagicMock()
+    manager.cc_issuers = {issuer: 3600}
+    if stage == "verification":
+        verifier.verify_for_site.side_effect = failure("sensitive-provider-detail")
+    else:
+        issuer.generate_with_retry.side_effect = failure("sensitive-provider-detail")
 
     server = object.__new__(FederatedServer)
     server.logger = logging.getLogger(__name__)
@@ -162,9 +168,14 @@ def test_registration_rejects_unexpected_cc_verifier_exceptions(failure, caplog)
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
     server.client_manager.authenticate.assert_not_called()
     server.sign_auth_token.assert_not_called()
-    manager._generate_and_attach_tokens.assert_not_called()
     assert not server.tokens
-    assert f"CC verifier test raised {failure.__name__} for site {site}" in caplog.messages
+    if stage == "verification":
+        issuer.generate_with_retry.assert_not_called()
+        diagnostic = "CC verifier test"
+    else:
+        issuer.generate_with_retry.assert_called_once()
+        diagnostic = "CC token generation"
+    assert f"{diagnostic} raised {failure.__name__} for site {site}" in caplog.messages
     for sensitive in ("sensitive-provider-detail", "test-evidence"):
         assert sensitive not in caplog.text
         assert sensitive not in str(reply.headers)

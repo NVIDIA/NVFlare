@@ -213,12 +213,15 @@ class CCManager(FLComponent):
             self.logger.info(f"Processing CC validation for client (type={client_type})")
 
             peer = fl_ctx.get_peer_context()
-            verdict = self._registration_verdict(
-                fl_ctx.get_prop(FLContextKey.CLIENT_NAME), peer.get_prop(CC_INFO) if peer else None
-            )
+            client_name = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
+            verdict = self._registration_verdict(client_name, peer.get_prop(CC_INFO) if peer else None)
             if verdict.error:
                 raise NotAuthenticated(f"CC info validation failed: {verdict.error}")
-            self._generate_and_attach_tokens(fl_ctx)
+            try:
+                self._generate_and_attach_tokens(fl_ctx)
+            except Exception as exc:
+                self.logger.warning(f"CC token generation raised {type(exc).__name__} for site {client_name}")
+                raise NotAuthenticated("CC token generation failed during registration") from None
         elif event_type == EventType.BEFORE_CHECK_CLIENT_RESOURCES:
             # Server side: job scheduler check client resources
             # Perform cross-site validation before scheduling jobs
