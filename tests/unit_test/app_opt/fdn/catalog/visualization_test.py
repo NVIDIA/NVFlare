@@ -346,7 +346,15 @@ def test_legacy_composite_key_retains_its_declared_order(results):
     assert tables.at["person", "primary_key"] == "age, id"
 
 
-def test_property_relationship_is_in_summary_and_detail():
+@pytest.mark.parametrize(
+    ("reference", "display"),
+    [
+        ("visits.id", "visits(id)"),
+        ("other-study.yaml#/schema/person/properties/id", "other-study.yaml#/schema/person/properties/id"),
+        (["visits.id", "other.yaml#/schema/t/properties/id"], "visits.id, other.yaml#/schema/t/properties/id"),
+    ],
+)
+def test_property_relationship_is_in_summary_and_detail(reference, display):
     contract = {
         "kind": "DataContract",
         "apiVersion": "v3.2.0",
@@ -355,7 +363,7 @@ def test_property_relationship_is_in_summary_and_detail():
         "schema": [
             {
                 "name": "visits",
-                "properties": [{"name": "id"}, {"name": "previous", "relationships": [{"to": "visits.id"}]}],
+                "properties": [{"name": "id"}, {"name": "previous", "relationships": [{"to": reference}]}],
             }
         ],
     }
@@ -367,7 +375,7 @@ def test_property_relationship_is_in_summary_and_detail():
     )
     view = CatalogVisualization(doc)
     assert view.get_tables().iloc[0]["relationships"] == 1
-    assert view.get_relationships().iloc[0]["references"] == "visits(id)"
+    assert view.get_relationships().iloc[0]["references"] == display
 
 
 def test_nested_relationship_paths_in_overview_and_detail():

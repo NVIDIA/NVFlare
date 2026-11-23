@@ -412,6 +412,9 @@ class CatalogVisualization:
                 for ref in refs:
                     if ref.lstrip("/") in names:
                         resolved.append(names[ref.lstrip("/")])
+                    elif self._results["format_version"] == 2 and ("/" in ref or "#" in ref):
+                        # An external or unresolved ID reference remains meaningful verbatim.
+                        resolved.append(("", ref))
                     else:
                         if self._results["format_version"] == 1:
                             table_name, sep, column = ref.rpartition(".")
@@ -426,8 +429,8 @@ class CatalogVisualization:
                     target_tables = {name for name, _ in targets}
                     target = (
                         f"{targets[0][0]}({', '.join(col for _, col in targets)})"
-                        if len(target_tables) == 1
-                        else ", ".join(f"{name}.{col}" for name, col in targets)
+                        if len(target_tables) == 1 and targets[0][0]
+                        else ", ".join(f"{name}.{col}" if name else col for name, col in targets)
                     )
                     rows.append(
                         {
