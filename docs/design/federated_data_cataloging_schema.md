@@ -54,14 +54,14 @@ The site checks its own output. The controller does not trust that and checks ev
 
 | Where | Call | On failure |
 | --- | --- | --- |
-| Site executor, after the rules are applied | `validate(catalog, remaining site record budget)` | The dataset is reported `unavailable` with no partial schema. A record or time overrun makes it `skipped` instead (Section 3.6 of the main design). |
+| Site executor, after reading source metadata | `validate(catalog, remaining site record budget)` | The dataset is reported `unavailable` with no partial schema. A record or time overrun makes it `skipped` instead (Section 3.6 of the main design). |
 | Server controller, parsing a site's result | `CatalogInfo.from_wire(entry)` for each entry | The entry is dropped and its dataset is added to that site's `unavailable` list; the site's other entries continue. |
 | Server controller, before writing the result | `validate(catalog, controller limits)` | The same. |
 | User, loading a saved result | `CatalogInfo.from_wire(entry)` | `CatalogVisualization` and other readers hold saved files to the same shape. |
 
 The controller validates each catalog with its own `max_records` of 10000. A site's limits never raise it, so a site that permits a larger catalog still has that catalog rejected by the controller.
 
-The rules are applied before validation, so a catalog is validated after excluded tables, columns and their relationships are removed. A validation failure therefore never exposes an excluded name.
+The executor validates the complete source-reported catalog without publication filtering. Source administrators control which metadata the configured identity and file projection expose. A validation failure returns no partial schema; error messages name fields, never source values.
 
 ## 4. Record count
 

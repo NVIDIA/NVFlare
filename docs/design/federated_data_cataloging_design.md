@@ -5,7 +5,7 @@
 
 ## 1. Purpose and assumptions
 
-Discover and describe the datasets of an existing FLARE Study. A catalog read is an ordinary FLARE job. Each site reads the metadata of its own datasets, applies its own publication policy, and returns what it permits. The result is saved with the job's workspace in the job store, and the user who submitted the read downloads it. The server keeps no separate catalog and merges nothing. Every read returns the complete current answer, and the latest read supersedes all earlier ones.
+Discover and describe the datasets of an existing FLARE Study. A catalog read is an ordinary FLARE job. Each site reads the metadata of its own datasets, returns the metadata visible through the source identity and files its administrator configured. The result is saved with the job's workspace in the job store, and the user who submitted the read downloads it. The server keeps no separate catalog and merges nothing. Every read returns the complete current answer, and the latest read supersedes all earlier ones.
 
 Use FLARE's existing concepts:
 
@@ -18,7 +18,7 @@ Use FLARE's existing concepts:
 | Job, Task, Shareable | Execution, request/result correlation, transport and serialization |
 | Job result download | Delivery of the catalog to the user who ran the read |
 
-The site's configuration may withhold fields or an entire dataset. Catalog visibility never grants access to source records.
+The site chooses the datasets for the Study and configures the files, database views and credentials used to read their metadata. Catalog visibility never grants access to source records.
 
 ### 1.1 Architecture at a glance
 
@@ -37,7 +37,7 @@ The site's configuration may withhold fields or an entire dataset. Catalog visib
 
 ## 2. Read flow
 
-A read follows the arrows of Figure 1. The user submits the catalog job. The `CatalogController` sends each site a `catalog_read` task, and each `CatalogExecutor` reads its Study's dataset configuration and the metadata of each shared dataset, applies the site's rules, validates, and returns its result. The controller validates every entry and writes `catalog_results.json`. When the job finishes, the job runner saves the workspace to the job store, and the user downloads the result.
+A read follows the arrows of Figure 1. The user submits the catalog job. The `CatalogController` sends each site a `catalog_read` task, and each `CatalogExecutor` reads its Study's dataset configuration and the source-visible metadata of each selected dataset, validates, and returns its result. The controller validates every entry and writes `catalog_results.json`. When the job finishes, the job runner saves the workspace to the job store, and the user downloads the result.
 
 The user calls `get_catalog(...)` or runs `CatalogRecipe` from Python (Section 6). The job takes its Study from existing FLARE job metadata and the client identity from FLARE execution context. The only selector a request carries is an optional list of dataset names per site. No request supplies a filesystem path, database endpoint, credential, connector or Python import path.
 
@@ -45,20 +45,19 @@ Each read is a bounded full metadata read of every selected dataset. There is no
 
 ## 3. Site side
 
-**Figure 2. What the site executor does for one task.** Every selected dataset ends as `catalog`, `unavailable` or `skipped`, or is omitted because the site does not share it; a configuration failure fails the whole read.
+**Figure 2. What the site executor does for one task.** Every selected dataset ends as `catalog`, `unavailable` or `skipped`; a configuration failure fails the whole read.
 
 ![What the site executor does for one task](../resources/catalog_design_f02_site_executor.svg)
 
 ### 3.1 Dataset configuration
 
-The executor reads the site's datasets and rules only through the read-only [dataset configuration API](dataset_configuration_design.md). The configuration of the job's Study is loaded once per job, so an edited configuration applies to the next read, which is a new job. It does not open configuration files, detect the deployment mode or parse launcher configuration.
+The executor reads the site's datasets and connector settings only through the read-only [dataset configuration API](dataset_configuration_design.md). The configuration of the job's Study is loaded once per job, so an edited configuration applies to the next read, which is a new job. It does not open configuration files, detect the deployment mode or parse launcher configuration.
 
 | Catalog need | Source |
 | --- | --- |
 | The Study's datasets | `list_datasets()` |
 | How to read one | `get_dataset(name)`: `type`, `uri` and `options` |
 | Credentials | `get_secret(name, key)`, called by the connector when it connects |
-| Publication rules | `get_dataset(name).usage_rules("catalog")` (Section 3.3) |
 | Read limits, extra connectors, installed operations | `site_usage("catalog")` (Section 3.3) |
 
 Container launchers mount a file-based dataset at `/data/<study>/<dataset>`, and its configuration gives that location as `uri: file:///data/<study>/<dataset>`. The mount comes from the existing [Study runtime configuration](study_runtime_config.md). A process-launched site mounts nothing; its configuration gives the `file` URI where the data already is. Network sources, such as a SQL server or Unity Catalog, use site-owned options and secrets, never a mount.
@@ -75,7 +74,7 @@ The dataset's `type` selects the connector class. The built-in classes are in `n
 | `duckdb` | `DuckDBConnector` | DuckDB's own `information_schema` and `duckdb_constraints()` on the database file the `file` URI names, opened read-only with external access disabled. DuckDB is a SQL database too, but SQLAlchemy reflection fails on its catalog, so it has its own type and connector. | Not resolved automatically: the site declares `nvflare.app_opt.fdn.catalog.duckdb_connector.DuckDBConnector` under `usage.catalog.connectors`; requires `duckdb>=1.1`. A file held open for writing is unavailable. |
 | `unity-catalog` | `UnityCatalogConnector` | The [list-tables REST API](https://docs.databricks.com/api/uc-tables/v1/list-tables) at `/api/2.1/unity-catalog`: column names, `type_text` and nullability. The `uri` is the HTTPS API root, `options` requires `catalog` and `schema`, with optional `tables`, and `token` is a secret. No table data, storage credentials or object paths are fetched, and no lineage or keys (list-table responses omit constraints). | Exercised against UC OSS; Databricks-shaped responses and pagination covered by contract tests; live workspace privileges need qualification. |
 
-A dataset's rules may name another connector with `connector`, and site-wide settings may declare extra connector classes (Section 3.3). An unknown name fails that dataset; there is no type guessing or fallback after a selected connector fails.
+Site-wide settings may declare extra connector classes selected by the dataset's `type` (Section 3.3). An unknown name fails that dataset; there is no type guessing or fallback after a selected connector fails.
 
 **Optional dependencies.** Sites install `nvflare[catalog]`, which supplies `pyarrow>=14`, `SQLAlchemy>=2.0,<3` and `duckdb>=1.1`; a network SQL database also needs its driver. Unity Catalog uses the existing Requests dependency.
 
@@ -94,22 +93,22 @@ class CatalogConnector(ABC):
 
 ![Connectors implementing the CatalogConnector interface](../resources/catalog_design_f03_connectors.svg)
 
-**Custom reading logic.** A site that needs another reader writes a `CatalogConnector` subclass, installs it, and declares it under `usage.catalog.connectors`; a dataset's rules select it with `connector`. Code that reads a site's data therefore always comes from the site, never from a job, so the metadata-only guarantees hold for every connector the site chooses to install.
+**Custom reading logic.** A site that needs another reader writes a `CatalogConnector` subclass, installs it, and declares it under `usage.catalog.connectors`; the dataset's `type` selects its declared name. Code that reads a site's data therefore always comes from the site, never from a job, so the metadata-only guarantees hold for every connector the site chooses to install.
 
-**Common contract.** Report what the source has: observed names, types and case are not rewritten or harmonized. Publish only what the source itself reports: keys and relationships appear only when the source exposes them as constraints, and a reported constraint is not proof that it is enforced. Descriptive and semantic fields that no source reports, such as a description, owner or declared standard, stay null; no other file supplies them. If sites need to add such information later, it belongs in the dataset's `usage.catalog` rules.
+**Common contract.** Report what the source has: observed names, types and case are not rewritten or harmonized. Publish only what the source itself reports: keys and relationships appear only when the source exposes them as constraints, and a reported constraint is not proof that it is enforced. Descriptive and semantic fields that no source reports, such as a description, owner or declared standard, stay null; no other file supplies them. Any future authored annotations need a separate, explicit metadata contract; they are not publication rules.
 
-### 3.3 Catalog rules in the dataset configuration
+### 3.3 Source-owned visibility and catalog settings
 
-The catalog reads two parts of the [dataset configuration](dataset_configuration_design.md): the `catalog` rules of each dataset, and the site-wide `catalog` settings.
-
-The executor uses the configuration of the job's Study as follows:
+The catalog reads the datasets configured for the job's Study through the
+[dataset configuration](dataset_configuration_design.md), and the site-wide `catalog` settings. Every configured
+dataset is eligible for a read; an optional request selection can narrow that set but cannot add another source.
+There is no catalog publication policy, sharing flag or table/column/metadata exclusion layer.
 
 | Catalog need | API call |
 | --- | --- |
 | Which datasets the Study has at this site | `list_datasets()` |
-| How to read a dataset | `get_dataset(name)`: the type selects the connector; the URI, options and secrets locate the source |
-| Connection credentials | `get_secret(name, key)`, called by the connector when it connects |
-| Whether and what to publish | `get_dataset(name).usage_rules("catalog")`, the publication rules |
+| How to read a dataset | `get_dataset(name)`: the type selects the connector; URI, options and secrets locate the source |
+| Connection credentials | `get_secret(name, key)`, called by the connector |
 | Read limits, extra connectors, installed operations | `site_usage("catalog")` |
 
 ```yaml
@@ -118,44 +117,36 @@ studies:
   oncology:
     datasets:
       omop:
-        type: parquet
-        uri: file:///data/oncology/omop
-        usage:
-          catalog:
-            share: true
-            exclude_tables: [measurement]
-            exclude_columns: {person: [person_source_value]}
-      internal:
-        type: parquet
-        uri: file:///data/oncology/internal   # no usage.catalog: never published
+        type: sql
+        uri: postgresql+psycopg://ehr-db.example:5432/clinical
+        options: {schema: study_oncology}
+        secrets: {username: CATALOG_USER, password: CATALOG_PASSWORD}
 usage:
   catalog:
     limits: {max_duration_s: 60, max_calls: 1000, max_records: 10000}
 ```
 
-**Per-dataset rules** (`studies.<study>.datasets.<dataset>.usage.catalog`):
-
-| Field | Type / default | Meaning |
-| --- | --- | --- |
-| `share` | Required boolean | `true` publishes the filtered metadata view; `false` publishes nothing. A dataset without catalog rules is not shared. Sharing grants no access to records or execution. |
-| `exclude_tables` | List of names; `[]` | Remove these tables. |
-| `exclude_columns` | Map of table to column names; `{}` | Remove these columns. |
-| `exclude_resources` | List of names; `[]` | Remove these resource types. |
-| `exclude_metadata` | List; `[]` | Any of `description`, `owner`, `modalities`, `semantic_profile`, `source_version`, `lineage`, `provenance`. Removed fields become null or empty. Identity, display name and structure cannot be excluded; set `share: false` instead. |
-| `operations` | List of names; `[]` | Operations that may be advertised: the intersection with the connector's declarations and the site's `installed_operations`. Enables nothing. |
-| `connector` | Connector name; derived from `type` | Overrides the connector of Section 3.2. |
+The database administrator owns metadata visibility: use a scoped identity and a source namespace or selected
+projection whose schema may be disclosed to the Study. Verify metadata visibility for the chosen provider;
+restricting access to rows does not necessarily hide names and columns in system catalogs. For file sources, the
+site administrator controls readable files/directories and mounts. Source-provided descriptions, references and
+lineage are returned without catalog redaction, so that responsibility includes those fields.
 
 **Site-wide settings** (`usage.catalog`):
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `limits` | `max_duration_s=60`, `max_calls=1000`, `max_records=10000` | Positive integers; omitted values keep the defaults. |
-| `connectors` | `{}` | Extra connector names mapped to `{class: "fully.qualified.Connector", args: {}}`. `args` is non-secret. |
-| `installed_operations` | `[]` | Operations this site can actually run. A catalog-only site omits it. |
+| `limits` | `max_duration_s=60`, `max_calls=1000`, `max_records=10000` | Positive integers; omitted values keep defaults. |
+| `connectors` | `{}` | Extra connector names mapped to `{class: "fully.qualified.Connector", args: {}}`. `args` is non-secret; a dataset's `type` selects the connector name. |
+| `installed_operations` | `[]` | Installed site capabilities. Connector-advertised operations are intersected with this set; advertising grants no execution rights. |
 
-Unknown fields, wrong types, a bad `exclude_metadata` name or a missing `share` make the catalog rules invalid. Invalid site-wide settings fail the whole read with `CONFIG_UNAVAILABLE`; invalid rules for one dataset stop that dataset from being read. It is listed as `unavailable` only when its rules explicitly set `share: true`; otherwise it is omitted like any unshared dataset, and the site log does not name it either. Rule errors name fields only, never a table, column, key or other name the site typed, because those can be private. Dataset names match exactly. Table, column and resource exclusions match without regard to case, have no wildcards, and act as sets. An exclusion that matches nothing excludes nothing and is logged at the site with the dataset and entry, so check the site log after editing rules.
+Invalid site-wide settings fail the read with `CONFIG_UNAVAILABLE`. Per-dataset `usage.catalog` is no longer
+supported. If any dataset in the Study retains these settings, the site returns `CONFIG_UNAVAILABLE`
+without disclosing dataset names, even for a selective read. Other components' dataset usage remains independent.
 
-**Filtering before validation.** Remove excluded tables, columns and resources, then relationships that reference removed structure. If any column of a primary key is excluded, the primary key becomes empty rather than a smaller, misleading key. Remove every `lineage` entry whose `dataset` the site does not share (`share: false` or no `usage.catalog`), so a shared derived dataset never reveals the name of an unshared source. Validate the remaining view: a genuine broken reference that the rules did not cause still fails the dataset. Because filtering comes first, a validation error never names an excluded object.
+The executor validates the complete source-reported catalog and returns no partial schema after validation or
+source failure. It does not repair relationships or keys by deleting metadata. A later source permission change
+is reflected by the next read; already downloaded snapshots are not retracted.
 
 ### 3.4 Data structures and metadata format
 
@@ -188,9 +179,9 @@ class CatalogInfo:
 | `resources` | List of FHIR resource objects defined below |
 | `semantic_profile` | Profile object defined below; declarations, not inferred validation |
 | `modalities` | Unique strings, e.g. `clinical_tabular` |
-| `operations` | Unique site-chosen operation names, e.g. `cohort.count`, as permitted in Section 3.3 |
+| `operations` | Unique site-chosen operation names, e.g. `cohort.count`, intersected with installed capabilities as in Section 3.3 |
 | `source_version` | Opaque source revision string or null; never synthesized from read time |
-| `lineage` | List of `{dataset, source_version, relation: "derived_from"}` within this Study and client; names only datasets the site shares |
+| `lineage` | List of `{dataset, source_version, relation: "derived_from"}` reported by the source for this client; reference visibility is source-admin controlled |
 | `provenance` | `{source, declaration_ref, validation_ref}`; `source` is the connector's `source` label, never a path, endpoint or credential |
 
 Nested objects have exactly these fields:
@@ -200,7 +191,7 @@ Nested objects have exactly these fields:
 - Resource: `type`, `supported_search: list[string]`.
 - Profile: `standard`, `version`, `vocabulary_version`, `mapping_version`, `declaration_ref`, `validation_ref`, all strings or null. Declared by the site, never inferred.
 
-Strings except `description` are nonempty and at most 256 characters; `description` is at most 4096 and may be empty. Names are unique within their list, and lineage is unique by `dataset`. Only `operations` is sorted; everything else is reported as given. Primary keys and relationships must resolve within the entry. `max_records` counts dataset, table, column, relationship, resource and lineage objects across the whole site read. When `provenance` is excluded, `source` stays and the two references become null. A dataset name appearing twice in one result rejects every copy.
+Strings except `description` are nonempty and at most 256 characters; `description` is at most 4096 and may be empty. Names are unique within their list, and lineage is unique by `dataset`. Only `operations` is sorted; everything else is reported as given. Primary keys and relationships must resolve within the entry. `max_records` counts dataset, table, column, relationship, resource and lineage objects across the whole site read. A dataset name appearing twice in one result rejects every copy.
 
 **Where the schema is enforced.** The site validates each catalog after filtering and before returning it. The server-side controller parses every entry again with `CatalogInfo.from_wire` and validates it with its own limits before writing the result, so a user never receives an entry that does not match this format. The model, both checks and example errors are in the [schema details](federated_data_cataloging_schema.md).
 
@@ -247,15 +238,15 @@ A site result:
 | Outcome for a selected dataset | Where it appears |
 | --- | --- |
 | Shared, read and validated | `catalogs` |
-| Shared, but its source was absent, inaccessible or invalid, its connector unknown, or its rules invalid while setting `share: true` | `unavailable` |
+| Configured, but its source was absent, inaccessible or invalid, or its connector was unknown | `unavailable` |
 | Shared, but not read completely because a time or record budget ran out | `skipped` |
-| Not shared (`share: false` or no catalog rules) | Omitted; its name does not leave the site |
+| Not configured for the job's Study | Not read or named as a dataset result |
 
-The three lists are disjoint. A non-empty `skipped` list is the signal to raise the site's limits; it carries no reason code. `status` is `OK` when the read completed, even with unavailable or skipped datasets or nothing to share. `FAILED`, with a safe `reason_code`, means the read as a whole could not run: `CONFIG_UNAVAILABLE` when the dataset configuration or the catalog settings are invalid (a missing configuration file reads as no datasets, and missing catalog settings use the defaults), `INTERNAL` otherwise. A failed read returns no catalogs. Any other status is read as `FAILED`. Source exceptions, paths and credentials never appear in a result; details go to the site log.
+The three lists are disjoint. A non-empty `skipped` list is the signal to raise the site's limits; it carries no reason code. `status` is `OK` when the read completed, even with unavailable or skipped datasets or no configured datasets. `FAILED`, with a safe `reason_code`, means the read as a whole could not run: `CONFIG_UNAVAILABLE` when the dataset configuration or the catalog settings are invalid (a missing configuration file reads as no datasets, and missing catalog settings use the defaults), `INTERNAL` otherwise. A failed read returns no catalogs. Any other status is read as `FAILED`. Source exceptions, paths and credentials never appear in a result; details go to the site log.
 
 ### 3.6 Budgets and failure isolation
 
-Each connector call receives `max_calls` and the remaining whole-read time and record budgets; the executor counts records across datasets rather than granting each dataset a fresh allowance. A dataset that exceeds a budget is discarded whole, never truncated, and is `skipped`, not `unavailable`: the budget, not the source, stopped it. When the whole-read budget runs out, that dataset and the remaining shared datasets are `skipped`, and the completed catalogs are still returned. A corrupt footer, missing source or denied access affects only that dataset. The executor reopens a failed connection before the next dataset. The whole read ends by the site's `max_duration_s` or the task's `time_budget_s`, whichever comes first. The task timeout runs from when the server schedules the task, so the controller computes the budget when it sends the task to the site: the time the task has left, less a reserve of 20% of the timeout (between 1 and 30 seconds) to return completed catalogs. A connector must honor the remaining time it is given; one that blocks past it can still lose the site's result. A framework timeout, abort or disconnect produces no site result; the job result records that site as `NO_RESULT`.
+Each connector call receives `max_calls` and the remaining whole-read time and record budgets; the executor counts records across datasets rather than granting each dataset a fresh allowance. A dataset that exceeds a budget is discarded whole, never truncated, and is `skipped`, not `unavailable`: the budget, not the source, stopped it. When the whole-read budget runs out, that dataset and the remaining selected datasets are `skipped`, and the completed catalogs are still returned. A corrupt footer, missing source or denied access affects only that dataset. The executor reopens a failed connection before the next dataset. The whole read ends by the site's `max_duration_s` or the task's `time_budget_s`, whichever comes first. The task timeout runs from when the server schedules the task, so the controller computes the budget when it sends the task to the site: the time the task has left, less a reserve of 20% of the timeout (between 1 and 30 seconds) to return completed catalogs. A connector must honor the remaining time it is given; one that blocks past it can still lose the site's result. A framework timeout, abort or disconnect produces no site result; the job result records that site as `NO_RESULT`.
 
 ## 4. The catalog result
 
@@ -291,7 +282,7 @@ A catalog read is the standard Job Recipe `CatalogRecipe`. One job covers every 
 
 The job uses only the execute task. There is no server-side manager, job hook, admission check, result inbox or persistence. Cancellation uses the normal job and task lifecycle, and an interrupted read returns no result for that site.
 
-**Trust.** The site is the trust boundary: each site decides from its own configuration what metadata leaves it, regardless of which server components a job carries. Once returned, the result is an ordinary job result. Who may download it follows the existing `download_job` authorization of the job's Study, as for any other job. Where that authorization denies the submitter a download, as the confidential-computing default policy does for `lead`, the submitter cannot retrieve the catalog either. Any member allowed to submit jobs to the Study may run a read.
+**Trust.** The site is the trust boundary: each site configures the source identity, metadata visibility and readable files used by its Study, regardless of which server components a job carries. Once returned, the result is an ordinary job result. Who may download it follows the existing `download_job` authorization of the job's Study, as for any other job. Where that authorization denies the submitter a download, as the confidential-computing default policy does for `lead`, the submitter cannot retrieve the catalog either. Any member allowed to submit jobs to the Study may run a read.
 
 **Latency.** Catalog tasks finish in well under a second, so the recipe sets the server's `task_request_interval` for this job to 0.1 s instead of the 2 s default; `task_request_interval_s` changes it. Otherwise each site waits up to 2 s after returning its result before it notices the run has ended.
 
@@ -407,7 +398,7 @@ Neither `get_catalog` nor the recipe carries a connection, credential, URI, conn
 
 ## 7. Semantics and later work
 
-**Semantic boundaries.** Names and types are structural evidence, not proof of scientific equivalence. An operation still defines units, terminology, observation windows and subject linkage. The catalog may advertise an operation only when the site's rules and installed operations allow it; advertising authorizes nothing.
+**Semantic boundaries.** Names and types are structural evidence, not proof of scientific equivalence. An operation still defines units, terminology, observation windows and subject linkage. The catalog may advertise an operation only when the connector reports it and the site's installed capabilities include it; advertising authorizes nothing.
 
 **Declared standards.** The metadata model has fields for a declared standard, release, vocabulary and mapping version. The built-in connectors leave them null, because no source they read reports them, and the catalog never guesses a standard from table names. Standards validation, such as checking an OMOP 5.4 schema, is a separate approved quality operation that names the specification it checked.
 
@@ -421,9 +412,9 @@ Required checks:
 
 - Read datasets only from the dataset configuration snapshot of the job's Study; a request cannot add a dataset, path, connector or credential. A missing configuration file reads as no datasets; an invalid one fails the read with `CONFIG_UNAVAILABLE`.
 - Corrupt dataset B among A, B and C: A and C are returned, B is `unavailable` with no partial schema. Exhaust a dataset budget and the whole-read budget separately; budget-skipped datasets appear in `skipped`.
-- A dataset with `share: false` or without catalog rules never appears in the result, not even by name.
-- Exclude a referenced table or column: dependent relationships and partial primary keys are removed, and the rest is published without leaking excluded names.
-- Share a derived dataset whose source is not shared: its lineage entry for that source is removed, and the source's name appears nowhere in the result.
+- Read all configured Study datasets without per-dataset rules; preserve source-reported tables, columns, keys, resources, metadata and lineage.
+- Reject obsolete per-dataset publication rules instead of silently broadening disclosure. Keep site-wide settings and installed-operation filtering.
+- Qualify source metadata visibility using the intended database identity/projection; a revoked or unreadable source is unavailable on the next read, without reusing an older schema.
 - Two sites with a dataset of the same name stay separate entries. A site that times out is `NO_RESULT` and the other sites' results are complete.
 - The controller rejects a malformed or over-budget site entry and keeps the site's other entries.
 - Validate every metadata example against Section 3.4: unknown keys, duplicate or unresolved columns, source types reported unchanged, future-dated or malformed observations stored as null.
@@ -441,7 +432,6 @@ Required checks:
 | Site configuration | The generic read-only [dataset configuration API](dataset_configuration_design.md) | Catalog-specific configuration files | A dataset is declared once for every component that uses it, and the catalog never opens configuration files. The cost is a new site file for operators to maintain. |
 | How a read runs | A standard FLARE job per read | The server calling sites directly | The job reuses authentication, task delivery, launchers, abort, logs and result download. It costs one job per read in the job store. |
 | What a read returns | Full bounded metadata per selected dataset | Incremental reads with checkpoints | No checkpoint protocol. The cost is more source reads, so incremental reads wait for measured cost. |
-| Datasets a site does not share | Omitted, including its name | Reported as withheld | The result does not reveal that an unshared dataset exists. |
+| Publication control | Source-admin credentials, namespaces and readable files; every configured Study dataset is eligible | Catalog-specific share and exclusion rules | One source-owned visibility boundary. Administrators must qualify schema visibility as well as row access; downloaded snapshots remain historical artifacts. |
 | Unity Catalog, SQL and DuckDB | REST API, SQLAlchemy reflection, DuckDB's own catalog views | Spark or a vendor SDK | No heavy dependency at the site. The cost is that only what these interfaces expose can be cataloged. |
 | Where connectors are chosen | By the site's dataset configuration | A connector option in the recipe | A request-supplied connector would let a job reach a source the site did not approve. The cost is that adding a backend, or custom reading logic, needs a site operator. |
-| A rule that matches nothing | Logged at the site; excludes nothing | Failing closed, withholding the whole dataset | A typo does not withhold a dataset. The cost is that the site log is the only signal. |

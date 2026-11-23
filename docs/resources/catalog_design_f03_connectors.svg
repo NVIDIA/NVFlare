@@ -64,5 +64,5 @@ text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif
 <polyline class="arr" points="402,296 402,254" marker-end="url(#ah)"/>
 <polyline class="arr" points="560,296 560,254" marker-end="url(#ah)"/>
 <polyline class="arr" points="718,296 718,254" marker-end="url(#ah)"/>
-<text class="l muted" x="10" y="402" text-anchor="start">Amber boxes are owned by the site. A site adds a connector by declaring its class; a dataset's rules may select it.</text>
+<text class="l muted" x="10" y="402" text-anchor="start">Amber boxes are owned by the site. A site adds a connector by declaring its class; the dataset type selects it.</text>
 </svg>

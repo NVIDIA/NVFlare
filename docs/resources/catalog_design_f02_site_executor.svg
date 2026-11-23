@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 660" width="780" height="660" role="img" aria-labelledby="t d">
-<title id="t">What the site executor does for one task</title><desc id="d">Flow of one catalog task at a site: check the job is a catalog read, parse the payload, take a dataset configuration snapshot of the job Study, then for each selected dataset check the catalog rules and read it with a connector, ending in catalog, unavailable or skipped outcomes. Datasets the site does not share are omitted.</desc>
+<title id="t">What the site executor does for one task</title><desc id="d">Flow of one catalog task at a site: check the job is a catalog read, parse the payload, take a dataset configuration snapshot of the job Study, then for each selected dataset check its configuration and read source-visible metadata with a connector, ending in catalog, unavailable or skipped outcomes. Source administrators control visibility.</desc>
 <style>
 :root { --bg:#fbfcfb; --zone:#f0f3f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6764; --line:#b9c4c0;
   --accent:#0b6e67; --accent-tint:#d7ece9; --warn:#8f5400; --warn-tint:#f5e5c6; }
@@ -58,19 +58,19 @@ text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif
 <text class="b" x="620.0" y="218.0" text-anchor="middle">FAILED, CONFIG_UNAVAILABLE</text>
 <text class="" x="620.0" y="235.0" text-anchor="middle">no catalogs returned</text>
 <rect class="box" x="30" y="258" width="330" height="52" rx="7"/>
-<text class="" x="195.0" y="280.0" text-anchor="middle">For each selected dataset: do its</text>
-<text class="" x="195.0" y="297.0" text-anchor="middle">catalog rules share it?</text>
+<text class="" x="195.0" y="280.0" text-anchor="middle">Check every dataset in the Study</text>
+<text class="" x="195.0" y="297.0" text-anchor="middle">Any obsolete catalog settings?</text>
 <polyline class="arr" points="195.0,310 195.0,320" marker-end="url(#ah)"/>
 <polyline class="arr" points="360,284 480,284" marker-end="url(#ah)"/>
-<text class="l s" x="420.0" y="276" text-anchor="middle">no</text>
+<text class="l s" x="420.0" y="276" text-anchor="middle">yes</text>
 <rect class="box w" x="480" y="259" width="280" height="50" rx="7"/>
-<text class="b" x="620.0" y="280.0" text-anchor="middle">omitted</text>
-<text class="" x="620.0" y="297.0" text-anchor="middle">its name never leaves the site</text>
+<text class="b" x="620.0" y="280.0" text-anchor="middle">FAILED, CONFIG_UNAVAILABLE</text>
+<text class="" x="620.0" y="297.0" text-anchor="middle">remove obsolete publication settings</text>
 <rect class="box" x="30" y="320" width="330" height="46" rx="7"/>
-<text class="" x="195.0" y="347.5" text-anchor="middle">Connector reads that one dataset</text>
+<text class="" x="195.0" y="347.5" text-anchor="middle">Read each selected dataset</text>
 <polyline class="arr" points="195.0,366 195.0,382" marker-end="url(#ah)"/>
 <rect class="box" x="30" y="382" width="330" height="46" rx="7"/>
-<text class="" x="195.0" y="409.5" text-anchor="middle">Apply rules, check limits, validate</text>
+<text class="" x="195.0" y="409.5" text-anchor="middle">Check capabilities, limits, validate</text>
 <rect class="box a" x="30" y="490" width="200" height="52" rx="7"/>
 <text class="b" x="130.0" y="520.5" text-anchor="middle">catalog</text>
 <rect class="box" x="260" y="490" width="200" height="52" rx="7"/>
@@ -83,7 +83,7 @@ text { font-family:system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif
 <polyline class="arr" points="130,452 130,490" marker-end="url(#ah)"/>
 <text class="l s" x="138" y="474" text-anchor="start">accepted</text>
 <polyline class="arr" points="360,452 360,490" marker-end="url(#ah)"/>
-<text class="l s" x="368" y="474" text-anchor="start">source, rules or validation error</text>
+<text class="l s" x="368" y="474" text-anchor="start">source/config/validation failed</text>
 <polyline class="arr" points="625,452 625,490" marker-end="url(#ah)"/>
 <text class="l s" x="633" y="474" text-anchor="start">a budget ran out</text>
 <rect class="box a" x="30" y="600" width="730" height="46" rx="7"/>
