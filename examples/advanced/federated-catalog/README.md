@@ -31,7 +31,7 @@ server and provisioned startup kits.
 From this directory in an activated Python environment with FLARE installed:
 
 ```bash
-python -m pip install -r requirements.txt
+python -m pip install "nvflare[catalog]>=2.10.0" -r requirements.txt
 python prepare_data.py
 python job.py
 ```
@@ -225,7 +225,7 @@ nvflare.app_common.fdn.catalog.simulation.SimulationCatalogExecutor
 ```
 
 A site's read budget is part of its dataset configuration: add
-`usage: {catalog: {limits: {max_records: 50}}}` to a site's `datasets.yaml` to
+`usage: {catalog: {limits: {max_records: 20}}}` to site-1's `datasets.yaml` to
 see datasets reported as `skipped`. In a deployment, omit `site_config_root`:
 each site keeps its own `local/datasets.yaml`, and `get_catalog` runs against a
 `ProdEnv`; see the [catalog services example](../federated-catalog-services).

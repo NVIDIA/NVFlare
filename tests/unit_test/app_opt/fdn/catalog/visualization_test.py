@@ -389,3 +389,9 @@ def test_nested_relationship_paths_in_overview_and_detail():
     rows = view.get_relationships()
     assert rows["columns"].tolist() == ["history.previous", "events[].previous", "lookup.value.previous"]
     assert rows["references"].tolist() == ["visits(history.id)"] * 3
+
+
+def test_legacy_qualified_table_name_in_relationship(results):
+    visit = results["datasets"][0]["metadata"]["tables"][1]
+    visit["relationships"][0]["target_table"] = "omop.person"
+    assert CatalogVisualization(results).get_relationships().iloc[0]["references"] == "omop.person(id)"

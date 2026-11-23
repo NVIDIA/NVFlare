@@ -413,7 +413,10 @@ class CatalogVisualization:
                     if ref.lstrip("/") in names:
                         resolved.append(names[ref.lstrip("/")])
                     else:
-                        table_name, sep, column = ref.partition(".")
+                        if self._results["format_version"] == 1:
+                            table_name, sep, column = ref.rpartition(".")
+                        else:
+                            table_name, sep, column = ref.partition(".")
                         resolved.append((table_name, column) if sep else ("", ref))
                 return resolved
 

@@ -180,13 +180,12 @@ The database administrator controls metadata visibility through scoped credentia
 selected projections. Verify metadata visibility separately from row access: database system catalogs may expose
 schemas even when the identity cannot read data. For files, control which paths the job can read.
 
-When upgrading an existing Study, review every dataset in its ``datasets.yaml``. Earlier catalog reads omitted
-datasets without ``usage.catalog``. The new catalog includes them. Remove datasets the Study should not discover,
+Review every dataset in the Study’s ``datasets.yaml``, including entries without ``usage.catalog``. Remove datasets the Study should not discover,
 or expose approved metadata through a database view. For the live PostgreSQL importer, explicitly select that view with
-``options: {tables: [approved_view]}`` in the dataset entry. Without a table list it discovers base tables.
+``options: {tables: [approved_view]}`` in the dataset entry. Without a table list it discovers tables and views visible in the configured PostgreSQL schema.
 Remove obsolete per-dataset sharing and exclusion rules. If any remain, the site reports
 ``CONFIG_UNAVAILABLE`` for the Study without naming datasets. Site-wide ``usage.catalog.limits``
-sets the read budgets. Network credentials are secret
+sets the read budgets. A PostgreSQL dataset may specify ``?sslmode=verify-full`` in its URI and use the site’s ``PGSSLROOTCERT`` CA file. Network credentials are secret
 environment variable names, never values in the configuration or result. Source changes affect the next read;
 previously downloaded snapshots are not retracted.
 
