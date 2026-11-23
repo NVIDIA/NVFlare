@@ -17,6 +17,15 @@ from typing import List
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandRegister
+from nvflare.fuel.sec.admin_audit import (
+    AdminContext,
+    audit_context,
+    is_sensitive,
+    record,
+    reject,
+    snapshot,
+    update_context,
+)
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .constants import ConnProps
@@ -70,19 +79,25 @@ class ServerCommandRegister(CommandRegister):
         conn.args = args
         conn.command = command
 
+        if not args:
+            reject("admin.command.rejected", reason="missing_command")
         cmd_name = args[0]
         entries = self.get_command_entries(cmd_name)
         if len(entries) <= 0:
+            reject("admin.command.rejected", reason="unknown_command")
             conn.append_error('Unknown command "{}"'.format(cmd_name))
             return
         elif len(entries) == 1:
             conn.set_prop(ConnProps.CMD_ENTRY, entries[0])
             handler = entries[0].handler
+            update_context(command=entries[0].name)
         else:
+            reject("admin.command.rejected", reason="ambiguous_command")
             conn.append_error('Command "{}" exists in multiple scopes. Please use full command name'.format(cmd_name))
             return
 
         if handler is None:
+            reject("admin.command.rejected", reason="missing_handler")
             conn.append_error('Unknown command "{}"'.format(cmd_name))
             return
 
@@ -93,19 +108,41 @@ class ServerCommandRegister(CommandRegister):
                 if not ok:
                     return
 
-        handler(conn, args)
+        conn._audit_handler_entered = True
+        sensitive = is_sensitive(snapshot().command)
+        if sensitive:
+            record("admin.command.dispatched")
+        try:
+            handler(conn, args)
+        except Exception:
+            if sensitive:
+                record("admin.command.error", stage="handler", reason="processing_error")
+            raise
+        if sensitive:
+            record("admin.command.handler_returned")
 
         # invoke post filters
-        if len(self.filters) > 0:
-            for f in self.filters:
-                f.post_command(conn, args)
+        try:
+            if len(self.filters) > 0:
+                for f in self.filters:
+                    f.post_command(conn, args)
+        except Exception:
+            if sensitive:
+                record("admin.command.error", stage="after_handler", reason="processing_error")
+            raise
 
     def process_command(self, conn: Connection, command: str):
-        try:
-            self._do_command(conn, command)
-        except Exception as e:
-            secure_log_traceback()
-            conn.append_error(f"Exception Occurred: {secure_format_exception(e)}")
+        with audit_context(AdminContext()):
+            conn._audit_handler_entered = False
+            try:
+                self._do_command(conn, command)
+            except Exception as e:
+                # Handler and post-filter exceptions are recorded at their exact boundary.
+                # A filter exception can occur before the ordinary command audit filter.
+                if is_sensitive(snapshot().command) and not getattr(conn, "_audit_handler_entered", False):
+                    record("admin.command.error", stage="before_handler", reason="processing_error")
+                secure_log_traceback()
+                conn.append_error(f"Exception Occurred: {secure_format_exception(e)}")
 
     def close(self):
         if self.closed:

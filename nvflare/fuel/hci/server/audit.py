@@ -14,6 +14,7 @@
 from typing import List
 
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.sec.admin_audit import prepare, record, snapshot, update_context
 from nvflare.fuel.sec.audit import Auditor
 
 from .constants import ConnProps
@@ -35,12 +36,16 @@ class CommandAudit(CommandFilter):
         self.auditor = auditor
 
     def pre_command(self, conn: Connection, args: List[str]):
-        user_name = conn.get_prop(ConnProps.USER_NAME, "?")
+        def _record_request():
+            entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            command = entry.name if entry else snapshot().command
+            event_id = record(
+                command,
+                user=snapshot().user,
+                writer=self.auditor,
+            )
+            conn.set_prop(ConnProps.EVENT_ID, event_id)
+            update_context(request_id=event_id, command=command)
 
-        event_id = self.auditor.add_event(
-            user=user_name,
-            action=conn.command[:100],  # at most 100 chars
-        )
-
-        conn.set_prop(ConnProps.EVENT_ID, event_id)
+        prepare(_record_request)
         return True

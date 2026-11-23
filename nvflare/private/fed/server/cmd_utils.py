@@ -20,6 +20,7 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.admin_audit import reject
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.security.study_registry import StudyRegistryService
@@ -172,6 +173,7 @@ class CommandUtil(object):
         # must stay scoped to the cert/global role.
         role = conn.get_prop(ConnProps.USER_ROLE, "")
         if role not in ["project_admin"]:
+            reject("admin.permission.denied", reason="role_denied")
             conn.append_error(
                 f"{ReplyKeyword.NOT_AUTHORIZED} for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED)
             )

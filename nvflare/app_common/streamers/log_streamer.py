@@ -68,6 +68,7 @@ from .streamer_base import (  # noqa: F401
     KEY_DATA,
     KEY_DATA_SIZE,
     KEY_EOF,
+    KEY_FILE_ID,
     KEY_FILE_NAME,
     KEY_HEARTBEAT,
     KEY_STREAM_DONE_CB,
@@ -159,6 +160,7 @@ class _LogChunkConsumer(BaseChunkConsumer):
         self._validate_chunk(data, data_size)
 
         if data and self._chunk_received_cb:
+            stream_ctx[KEY_FILE_ID] = shareable.get(KEY_FILE_ID)
             self._chunk_received_cb(data, stream_ctx, fl_ctx, **self._cb_kwargs)
 
         eof = shareable.get(KEY_EOF)
@@ -291,13 +293,14 @@ class _LogTailProducer(BaseChunkProducer):
 
             # Read the next chunk from the current position.
             if self.file:
+                try:
+                    offset = self.file.tell()
+                except OSError:
+                    offset = None
                 # Record the pre-read offset so process_replies() can roll back
                 # if the first send hits a bootstrap miss on the receiver.
                 if not self._first_ok_received:
-                    try:
-                        self._last_data_offset = self.file.tell()
-                    except OSError:
-                        self._last_data_offset = None
+                    self._last_data_offset = offset
                 chunk = self.file.read(self.chunk_size)
                 if chunk:
                     self._draining = False  # new data arrived — reset drain state
@@ -307,6 +310,10 @@ class _LogTailProducer(BaseChunkProducer):
                     result[KEY_DATA] = chunk
                     result[KEY_DATA_SIZE] = len(chunk)
                     result[KEY_EOF] = False
+                    if offset == 0:
+                        # A receiver that already holds this file's start can tell
+                        # a replay of it from the start of a rotated-in file.
+                        result[KEY_FILE_ID] = self.inode
                     return result, self.chunk_timeout
 
             # No new data — drain completely before honouring stop/abort so we
@@ -414,6 +421,7 @@ class LogStreamer(StreamerBase):
             chunk_received_cb: called for each received data chunk (heartbeats are
                 silently absorbed and never forwarded):
                 ``chunk_received_cb(data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext, **cb_kwargs)``
+                During the call, :meth:`get_file_id` tells whether the chunk starts a sender file.
             stream_done_cb: called when the stream ends (normal EOF, engine abort, or
                 idle timeout); follows ``stream_done_cb_signature`` in
                 ``nvflare.apis.streaming``.  The ``stream_ctx`` passed to this callback
@@ -571,3 +579,20 @@ class LogStreamer(StreamerBase):
         Returns: file base name string, or None
         """
         return stream_ctx.get(KEY_FILE_NAME)
+
+    @staticmethod
+    def get_file_id(stream_ctx: StreamContext):
+        """Get the id of the sender's file that the chunk being received starts.
+
+        Intended for use inside ``chunk_received_cb``. The sender tails its log
+        from the beginning and again after each rotation; a new stream whose
+        first chunk carries the id of the file a previous stream ended in is a
+        replay of that file.
+
+        Args:
+            stream_ctx: the stream context
+
+        Returns: the file id, or None when the chunk continues a file or the
+            sender does not report it
+        """
+        return stream_ctx.get(KEY_FILE_ID)
