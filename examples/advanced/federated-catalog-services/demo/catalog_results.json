@@ -680,7 +680,7 @@
               },
               {
                 "name": "condition_source_value",
-                "type": "TEXT",
+                "type": "VARCHAR(50)",
                 "nullable": true
               },
               {
@@ -818,7 +818,7 @@
               },
               {
                 "name": "drug_source_value",
-                "type": "TEXT",
+                "type": "VARCHAR(50)",
                 "nullable": true
               },
               {
@@ -965,7 +965,7 @@
               },
               {
                 "name": "person_source_value",
-                "type": "TEXT",
+                "type": "VARCHAR(50)",
                 "nullable": true
               },
               {

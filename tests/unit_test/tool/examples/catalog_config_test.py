@@ -177,12 +177,24 @@ def test_preparation_refuses_a_site_folder_it_did_not_create(tmp_path, monkeypat
 def test_services_sample_contains_the_complete_source_schemas():
     omop = _load("federated-catalog-services", "omop_data")
     sample = json.loads((EXAMPLES / "federated-catalog-services/demo/catalog_results.json").read_text())
+    # Physical types reported by each source for the demo schema.
+    types = {
+        "site-1": {"int": "integer", "date": "date", "datetime": "timestamp", "str": "string", "float": "double"},
+        "site-2": {
+            "int": "INTEGER",
+            "date": "DATE",
+            "datetime": "TIMESTAMP WITHOUT TIME ZONE",
+            "str": "VARCHAR(50)",
+            "float": "DOUBLE PRECISION",
+        },
+    }
+    assert {entry["site"] for entry in sample["datasets"]} == set(types)
     for entry in sample["datasets"]:
         source = omop.schema(entry["site"])
         assert {table["name"] for table in entry["metadata"]["tables"]} == set(source)
         for table in entry["metadata"]["tables"]:
-            assert [column["name"] for column in table["columns"]] == [
-                name for name, _kind, _required in source[table["name"]]
+            assert [(column["name"], column["type"]) for column in table["columns"]] == [
+                (name, types[entry["site"]][kind]) for name, kind, _required in source[table["name"]]
             ]
 
 

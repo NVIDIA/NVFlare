@@ -10,7 +10,7 @@ column names, types, keys and relationships). You read the catalog with one Pyth
 and get every site's answer back as one result. Catalog visibility never grants access to
 the records themselves.
 
-A catalog read is an ordinary FLARE job. It reads metadata only, never rows. Its result is
+A catalog read is an ordinary FLARE job. Only metadata leaves the site. The CSV connector samples rows locally to infer column types. Its result is
 saved with the job in the job store and downloaded to you; the server keeps no other copy.
 
 ****************
@@ -61,12 +61,12 @@ workspace is left unchanged. It works in any recipe environment: ``SimEnv``, ``P
      - required
      - Where the read runs, and which Study it reads.
    * - ``sites``
-     - every site of the Study
-     - Sites to read.
+     - the sites participating when the job starts
+     - Explicitly requested sites that do not participate appear as ``NO_RESULT``.
    * - ``datasets``
-     - everything each site shares
-     - ``{site: [names]}``. A site reads the listed names it shares and skips the rest.
-       A site not in the mapping reads everything it shares.
+     - all configured datasets at each participating site
+     - ``{site: [names]}``. A site reads the listed names present in its Study configuration.
+       A site absent from the mapping reads all its configured Study datasets.
    * - ``timeout_s``
      - ``300``
      - Seconds to wait for each site before recording it as ``NO_RESULT``.
@@ -107,7 +107,7 @@ The result
 ``FAILED`` or ``NO_RESULT``), and every published dataset in ``datasets``, with its site,
 tables, columns, types, nullability, keys and relationships. Datasets a site could not read
 are listed as ``unavailable``; datasets its read budget did not reach are listed as
-``skipped``. A dataset a site does not share does not appear at all, not even by name.
+``skipped``. Only selected, configured datasets can have their own result entries. Source-reported lineage may also name datasets outside the selection or Study configuration.
 
 *************************************
 Visualize saved catalog results
@@ -161,6 +161,7 @@ Each site describes its datasets per Study in one file, its dataset configuratio
          omop:
            type: parquet                       # selects the connector
            uri: file:///data/oncology/omop     # where the dataset is
+
 The dataset's ``type`` selects the connector. ``parquet``, ``csv``, ``sql`` and
 ``unity-catalog`` are built in; a site declares others, such as DuckDB, by class:
 
@@ -179,7 +180,9 @@ schemas even when the identity cannot read data. For files, control which paths 
 
 When upgrading an existing Study, review every dataset in its ``datasets.yaml``. Earlier catalog reads omitted
 datasets without ``usage.catalog``. The new catalog includes them. Remove datasets the Study should not discover,
-or configure a source view that exposes only approved metadata. Then remove per-dataset ``usage.catalog`` entries.
+or expose approved metadata through a database view. For the SQL connector, explicitly select that view with
+``options: {tables: [approved_view]}`` in the dataset entry. Without a table list it discovers base tables.
+Then remove per-dataset ``usage.catalog`` entries.
 If any dataset retains an entry, the site reports ``CONFIG_UNAVAILABLE`` for the Study without naming datasets. Site-wide
 ``usage.catalog`` remains for read limits, connector declarations and ``installed_operations``. Advertised
 operations are limited to installed capabilities and grant no execution rights. Network credentials are secret
@@ -209,7 +212,7 @@ against the OHDSI vocabulary.
 Limits
 **********
 
-* The catalog is shared by all users of the Study. It does not provide per-user views.
+* Each read produces a job result. Access follows the Study’s job-download permissions.
 * A site that does not answer in time, or a site named in ``sites`` that is offline, is
   reported as ``NO_RESULT`` in that read; nothing from an earlier read is carried over. Without
   ``sites``, a read covers the sites that are online when it starts.
