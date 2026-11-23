@@ -10,7 +10,7 @@ column names, types, keys and relationships). You read the catalog with one Pyth
 and get every site's answer back as one result. Catalog visibility never grants access to
 the records themselves.
 
-A catalog read is an ordinary FLARE job. Only metadata leaves the site. Each successful dataset contributes one ODCS v3.2.0 contract. CSV discovery publishes header names only. Its result is
+A catalog read is an ordinary FLARE job. The site publishes generated schema metadata or the complete steward-approved contract. Each successful dataset contributes one ODCS v3.2.0 contract. CSV discovery publishes header names only. Its result is
 saved with the job in the job store and downloaded to you; the server keeps no other copy.
 
 ****************
@@ -218,7 +218,8 @@ Limits
   reported as ``NO_RESULT`` in that read; nothing from an earlier read is carried over. Without
   ``sites``, a read covers the sites that are online when it starts.
 * Each read adds one job to the server's job store.
-* Connectors publish only what a source reports. Parquet files carry no keys, and
-  descriptions or declared standards are not published.
+* Generated contracts carry structural fields reported by the source. A supplied contract preserves
+  descriptions and other declarations. Stewards must review the complete file for sample values and
+  private connection details before publishing it to the Study.
 * The catalog is for discovery. Using a dataset still goes through the Study's normal
   authorization.

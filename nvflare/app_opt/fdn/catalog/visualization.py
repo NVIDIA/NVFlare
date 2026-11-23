@@ -79,12 +79,14 @@ def _read_entries(results) -> list[_Entry]:
                 ) from error
             tables = []
             for t in catalog.tables:
+                positions = {name: pos for pos, name in enumerate(t.primary_key, start=1)}
                 props = [
                     {
                         "name": c.name,
                         "physicalType": c.type,
                         "required": None if c.nullable is None else not c.nullable,
-                        "primaryKey": c.name in t.primary_key,
+                        "primaryKey": c.name in positions,
+                        "primaryKeyPosition": positions.get(c.name, -1),
                     }
                     for c in t.columns
                 ]
@@ -239,7 +241,8 @@ class CatalogVisualization:
                         for p in sorted(table.get("properties", []), key=lambda prop: prop.get("primaryKeyPosition", 0))
                         if p.get("primaryKey")
                     ),
-                    "relationships": len(table.get("relationships", [])),
+                    "relationships": len(table.get("relationships", []))
+                    + sum(len(prop.get("relationships", [])) for prop in table.get("properties", [])),
                 }
                 for entry in self._select(site, dataset)
                 if entry.tables is not None

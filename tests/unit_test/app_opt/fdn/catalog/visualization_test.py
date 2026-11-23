@@ -363,3 +363,33 @@ def test_native_contracts_distinguish_present_untyped_missing_and_unavailable():
     assert pd.isna(frame.at["id", ("two", "visits")])
     assert frame.at["date", ("two", "visits")] == "DATE"
     assert frame.attrs["unavailable"] == [("three", "visits")]
+
+
+def test_legacy_composite_key_retains_its_declared_order(results):
+    results["datasets"][0]["metadata"]["tables"][0]["primary_key"] = ["age", "id"]
+    tables = CatalogVisualization(results).get_tables(site="site-1").set_index("table")
+    assert tables.at["person", "primary_key"] == "age, id"
+
+
+def test_property_relationship_is_in_summary_and_detail():
+    contract = {
+        "kind": "DataContract",
+        "apiVersion": "v3.2.0",
+        "version": "1",
+        "id": "a",
+        "schema": [
+            {
+                "name": "visits",
+                "properties": [{"name": "id"}, {"name": "previous", "relationships": [{"to": "visits.id"}]}],
+            }
+        ],
+    }
+    doc = build_catalog_results(
+        "study",
+        "job",
+        "2026-11-09T00:00:00Z",
+        {"one": SiteEntry(SiteStatus.OK, catalogs=({"dataset": "visits", "contract": contract},))},
+    )
+    view = CatalogVisualization(doc)
+    assert view.get_tables().iloc[0]["relationships"] == 1
+    assert view.get_relationships().iloc[0]["references"] == "visits(id)"
