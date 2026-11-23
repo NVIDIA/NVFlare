@@ -32,7 +32,7 @@ A site's per-Study configuration is two files in `local/`:
 | `study_runtime.yaml` | The launcher | How each Study's jobs are run: image, mounts, environment, secret sources, launcher settings | FLARE 2.9 (process mode: 2.10) |
 | `datasets.yaml` | Components, through this API | What each Study's datasets are and how components may use them | FLARE 2.10 (this design) |
 
-`study_data.yaml`, the 2.8 mount-only file that `study_runtime.yaml` replaces, is legacy. Docker and Kubernetes still read it for kits that have not migrated, Slurm rejects it, and process mode ignores it. New sites, and this design, use `study_runtime.yaml`.
+`study_data.yaml`, the 2.8 mount-only file that `study_runtime.yaml` replaces, was removed in 2.10. Sites use `study_runtime.yaml` for mounts and credential delivery.
 
 A job loads the configuration once, when a component first asks for it, and keeps it for the job's life, so an edit applies from the next job, without a restart of the site. Section 3.4 gives the details for each deployment mode, including the one exception: task workers of a task-scoped job on Slurm read the file when they start.
 
@@ -115,6 +115,12 @@ with the Study and dataset names filled in, for example `file:///data/oncology/o
 - is not absolute (it has no scheme);
 - is a `file` URI with a host, a query or a fragment, or a path that is not absolute;
 - contains a password (`user:password@`), or a query parameter that carries a credential, by name and case-insensitively: `password`, `pwd`, `secret`, `token`, `api_key`, `sig`, `signature`, `X-Amz-Signature`, `X-Goog-Signature` and similar (signed and SAS URLs, connection strings with passwords). A URI is not secret; credentials go in `secrets`.
+
+For ODBC authentication using a database account, declare a DSN such as `mssql+pyodbc://study_dsn`
+and map `secrets.username` and `secrets.password` to the site's environment variable names. At connection
+time the SQL connector resolves these through `get_secret(dataset, key)` and passes them to the driver.
+A credential-free `odbc_connect` string also works for driver-managed authentication, such as an integrated
+connection. Embedded password attributes (including `PWD` and `Password`) are rejected.
 
 The credential check is best-effort: it cannot recognize a token used as a user name (`https://TOKEN@host`) or one hidden in a path. Sites must still keep credentials out of `uri`. Error messages name the offending parameter, never its value.
 

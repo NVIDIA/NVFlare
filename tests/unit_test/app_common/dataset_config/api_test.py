@@ -165,11 +165,23 @@ class TestValidation:
             "jdbc:postgresql://db:5432/x?user=u&password=SECRET",
             "https://api.example/v1?api_key=SECRET",
             "https://api.example/v1?Token=SECRET",
+            "mssql+pyodbc:///?odbc_connect=DRIVER%3D%7BODBC+Driver+18%7D%3BPwD%3DSECRET",
+            "mssql+pyodbc:///?ODBC_CONNECT=DSN%3Dapproved%3B+Password+%3D%7BSECRET%3Bvalue%7D",
+            "mssql+pyodbc:///?odbc_connect=DSN%3Dapproved%253Bpwd%253DSECRET",
         ],
     )
     def test_credentials_in_the_query_are_rejected_without_echoing_them(self, uri):
         with pytest.raises(DatasetConfigError, match="carries a credential") as error:
             parse(with_dataset(type="sql", uri=uri))
+        assert "SECRET" not in str(error.value)
+
+    def test_odbc_settings_allow_braced_attributes_and_integrated_authentication(self):
+        uri = "mssql+pyodbc:///?odbc_connect=DRIVER%3D%7Bdemo%3BPWD%3Dliteral%7D%3BTrusted_Connection%3Dyes"
+        assert parse(with_dataset(type="sql", uri=uri)).get_dataset("d").uri == uri
+
+    def test_invalid_odbc_attribute_is_rejected_without_echoing_the_string(self):
+        with pytest.raises(DatasetConfigError, match="invalid odbc_connect") as error:
+            parse(with_dataset(type="sql", uri="mssql+pyodbc:///?odbc_connect=DSN%3Dgood%3BSECRET"))
         assert "SECRET" not in str(error.value)
 
     def test_ordinary_query_parameters_are_allowed(self):

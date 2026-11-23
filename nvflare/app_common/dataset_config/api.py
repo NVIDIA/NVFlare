@@ -28,7 +28,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
-from urllib.parse import parse_qsl, unquote, urlsplit
+from urllib.parse import parse_qsl, unquote, unquote_plus, urlsplit
 
 import yaml
 
@@ -71,6 +71,8 @@ _CREDENTIAL_QUERY_KEYS = frozenset(
         "x-goog-credential",
     }
 )
+# A braced ODBC attribute can include semicolons and escaped closing braces (}}).
+_ODBC_ATTRIBUTE = re.compile(r"\s*([^=;]+?)\s*=\s*(?:\{(?:[^}]|}})*\}\s*|(?!\{)[^;]*)(?:;|$)")
 _SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*$")
 _TOP_KEYS = frozenset({"format_version", "studies", "usage"})
 # Set, with a reason, in the Study part the Kubernetes workspace transfer writes when the site file is invalid, so the
@@ -108,6 +110,22 @@ def _mapping(value, label: str, source: str) -> dict:
     return value
 
 
+def _check_odbc_connect(value: str, label: str, source: str):
+    position = 0
+    while position < len(value):
+        if value[position] == ";" or value[position].isspace():
+            position += 1
+            continue
+        match = _ODBC_ATTRIBUTE.match(value, position)
+        if not match:
+            raise _error(source, f"{label}.uri contains an invalid odbc_connect string")
+        if match[1].strip().lower() in _CREDENTIAL_QUERY_KEYS:
+            raise _error(
+                source, f"{label}.uri parameter 'odbc_connect' carries a credential; put credentials in secrets"
+            )
+        position = match.end()
+
+
 def _check_uri(uri, label: str, source: str) -> str | None:
     """Validate a dataset URI; return the decoded local path of a file URI, else None."""
     if not isinstance(uri, str) or not uri:
@@ -121,11 +139,17 @@ def _check_uri(uri, label: str, source: str) -> str | None:
         raise _error(source, f"{label}.uri must be an absolute URI with a scheme")
     if parts.password is not None:
         raise _error(source, f"{label}.uri must not contain a password; put credentials in secrets")
-    for key, _ in parse_qsl(parts.query, keep_blank_values=True):
+    for key, value in parse_qsl(parts.query, keep_blank_values=True):
         if key.lower() in _CREDENTIAL_QUERY_KEYS:  # the name only: the value may be a live credential
             raise _error(
                 source, f"{label}.uri query parameter '{key}' carries a credential; put credentials in secrets"
             )
+        if key.lower() == "odbc_connect":
+            # SQLAlchemy versions differ in whether the pyodbc dialect URL-decodes the string again.
+            decoded = unquote_plus(value)
+            if decoded != value:
+                _check_odbc_connect(decoded, label, source)
+            _check_odbc_connect(value, label, source)
     if parts.scheme.lower() != "file":
         return None
     if parts.netloc or parts.query or parts.fragment:
