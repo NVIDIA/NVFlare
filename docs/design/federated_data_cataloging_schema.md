@@ -65,4 +65,4 @@ The executor validates the complete source-reported catalog without publication 
 
 ## 4. Record count
 
-`record_count()` is what the site budgets against: each completed catalog consumes records from the whole-read budget, and the next dataset gets the remainder. Example: one dataset, two tables, five columns, one relationship and one lineage entry is 10 records. The example site-1 OMOP dataset has 6 tables and 102 columns, about 1.2% of the default 10000.
+`record_count()` is what the site budgets against: each completed catalog consumes records from the whole-read budget, and the next dataset gets the remainder. Example: one dataset, two tables, five columns, one relationship and one lineage entry is 10 records. In the three-site simulation, site-1 OMOP has two Parquet tables with four columns in `person` and seven in `condition_occurrence`. Its catalog uses 14 records including the dataset and both tables.

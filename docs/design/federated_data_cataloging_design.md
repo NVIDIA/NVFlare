@@ -14,7 +14,7 @@ Use FLARE's existing concepts:
 | Study | The existing Study name and membership; the job's Study selects which datasets a site reads |
 | Participating users | Existing users of the Study; permissions come from FLARE authorization |
 | Client | The participating site running the job; identity comes from FLARE |
-| Dataset | A dataset the site declares for the Study in its [dataset configuration](dataset_configuration_design.md) |
+| Dataset | A dataset the site declares for the Study in its [dataset configuration][dataset-config] |
 | Job, Task, Shareable | Execution, request/result correlation, transport and serialization |
 | Job result download | Delivery of the catalog to the user who ran the read |
 
@@ -29,7 +29,7 @@ The site chooses the datasets for the Study and configures the files, database v
 | To understand | Read |
 | --- | --- |
 | One read from request to result | Section 2, then Section 5 |
-| How a site finds, reads and filters its datasets | Section 3 |
+| How a site selects its Study datasets and reads their metadata | Section 3 |
 | The metadata model and the checks that enforce it | Section 3.4, then the [schema details](federated_data_cataloging_schema.md) |
 | The result the user receives | Section 4 |
 | Running a read and using the result | Section 6 |
@@ -51,7 +51,7 @@ Each read is a bounded full metadata read of every selected dataset. There is no
 
 ### 3.1 Dataset configuration
 
-The executor reads the site's datasets and connector settings only through the read-only [dataset configuration API](dataset_configuration_design.md). The configuration of the job's Study is loaded once per job, so an edited configuration applies to the next read, which is a new job. It does not open configuration files, detect the deployment mode or parse launcher configuration.
+The executor reads the site's datasets and connector settings only through the read-only [dataset configuration API][dataset-config]. The configuration of the job's Study is loaded once per job, so an edited configuration applies to the next read, which is a new job. It does not open configuration files, detect the deployment mode or parse launcher configuration.
 
 | Catalog need | Source |
 | --- | --- |
@@ -100,7 +100,7 @@ class CatalogConnector(ABC):
 ### 3.3 Source-owned visibility and catalog settings
 
 The catalog reads the datasets configured for the job's Study through the
-[dataset configuration](dataset_configuration_design.md), and the site-wide `catalog` settings. Every configured
+[dataset configuration][dataset-config], and the site-wide `catalog` settings. Every configured
 dataset is eligible for a read; an optional request selection can narrow that set but cannot add another source.
 There is no catalog publication policy, sharing flag or table/column/metadata exclusion layer.
 
@@ -128,7 +128,7 @@ usage:
 
 The database administrator owns metadata visibility: use a scoped identity and a source namespace or selected
 projection whose schema may be disclosed to the Study. Verify metadata visibility for the chosen provider;
-restricting access to rows does not necessarily hide names and columns in system catalogs. For file sources, the
+restricting access to rows does not necessarily hide names and columns in system catalogs. For SQL views, set `options.tables: [approved_view]` to reflect the intended view. Default SQL discovery lists base tables. For file sources, the
 site administrator controls readable files/directories and mounts. Source-provided descriptions, references and
 lineage are returned without catalog redaction, so that responsibility includes those fields.
 
@@ -193,7 +193,7 @@ Nested objects have exactly these fields:
 
 Strings except `description` are nonempty and at most 256 characters; `description` is at most 4096 and may be empty. Names are unique within their list, and lineage is unique by `dataset`. Only `operations` is sorted; everything else is reported as given. Primary keys and relationships must resolve within the entry. `max_records` counts dataset, table, column, relationship, resource and lineage objects across the whole site read. A dataset name appearing twice in one result rejects every copy.
 
-**Where the schema is enforced.** The site validates each catalog after filtering and before returning it. The server-side controller parses every entry again with `CatalogInfo.from_wire` and validates it with its own limits before writing the result, so a user never receives an entry that does not match this format. The model, both checks and example errors are in the [schema details](federated_data_cataloging_schema.md).
+**Where the schema is enforced.** The site validates the source-reported metadata before returning each catalog. The server-side controller parses every entry again with `CatalogInfo.from_wire` and validates it with its own limits before writing the result, so a user never receives an entry that does not match this format. The model, both checks and example errors are in the [schema details](federated_data_cataloging_schema.md).
 
 ### 3.5 Task payload and site result
 
@@ -237,9 +237,9 @@ A site result:
 
 | Outcome for a selected dataset | Where it appears |
 | --- | --- |
-| Shared, read and validated | `catalogs` |
+| Selected, read and validated | `catalogs` |
 | Configured, but its source was absent, inaccessible or invalid, or its connector was unknown | `unavailable` |
-| Shared, but not read completely because a time or record budget ran out | `skipped` |
+| Selected, but not read completely because a time or record budget ran out | `skipped` |
 | Not configured for the job's Study | Not read or named as a dataset result |
 
 The three lists are disjoint. A non-empty `skipped` list is the signal to raise the site's limits; it carries no reason code. `status` is `OK` when the read completed, even with unavailable or skipped datasets or no configured datasets. `FAILED`, with a safe `reason_code`, means the read as a whole could not run: `CONFIG_UNAVAILABLE` when the dataset configuration or the catalog settings are invalid (a missing configuration file reads as no datasets, and missing catalog settings use the defaults), `INTERNAL` otherwise. A failed read returns no catalogs. Any other status is read as `FAILED`. Source exceptions, paths and credentials never appear in a result; details go to the site log.
@@ -274,11 +274,11 @@ The controller collects one result per site and writes `catalog_results.json` in
 - `datasets` lists each accepted catalog with its site. Two sites with a dataset of the same name stay separate entries. The controller rejects an entry that fails `from_wire` or validation, adds that dataset to the site's `unavailable` list, and keeps the site's other entries. It does not merge schemas, infer equivalence or combine populations.
 - `completed_at` is server time when the controller wrote the result. `observed_at` is the source's own observation time, stored as null when it is not valid RFC 3339 UTC or is more than 300 seconds after `completed_at`.
 
-The result is the complete answer of that read. A dataset absent from it was not shared, not selected or not read this time; nothing carries over from an earlier read. To compare two reads, the user compares their results.
+The result is the complete answer of that read. Dataset entries cover the configured sources selected and successfully read for this job. Source-reported lineage may also name other datasets. To compare two reads, the user compares their results.
 
 ## 5. Job execution
 
-A catalog read is the standard Job Recipe `CatalogRecipe`. One job covers every targeted site of the Study. `CatalogController` sends the task with each site's optional dataset selection, waits up to `task_timeout_s` for each site, validates the results and writes `catalog_results.json`. `CatalogExecutor` reads the dataset configuration, reads the selected shared datasets and returns a `Shareable`. The job carries the meta property `fdn_catalog_read`; the executor rejects a task from a job without it before reading configuration or sources.
+A catalog read is the standard Job Recipe `CatalogRecipe`. One job covers every targeted site of the Study. `CatalogController` sends the task with each site's optional dataset selection, waits up to `task_timeout_s` for each site, validates the results and writes `catalog_results.json`. `CatalogExecutor` reads the dataset configuration, reads the selected configured datasets and returns a `Shareable`. The job carries the meta property `fdn_catalog_read`; the executor rejects a task from a job without it before reading configuration or sources.
 
 The job uses only the execute task. There is no server-side manager, job hook, admission check, result inbox or persistence. Cancellation uses the normal job and task lifecycle, and an interrupted read returns no result for that site.
 
@@ -313,7 +313,7 @@ results = get_catalog(
 )
 ```
 
-It builds a `CatalogRecipe`, runs it, waits for the job and returns the parsed `catalog_results.json` (Section 4). It prints nothing. Every call submits a new job that reads the sites again, so keep the returned result, or the saved file, and work from it rather than calling again to look at the same data.
+It builds a `CatalogRecipe`, runs it, waits for the job and returns the parsed `catalog_results.json` (Section 4). The recipe reports progress and a run summary in the simulator. Every call submits a new job that reads the sites again, so keep the returned result, or the saved file, and work from it rather than calling again to look at the same data.
 
 **How it relates to `CatalogRecipe`.** `get_catalog` adds no behavior of its own: it is the recipe job of Section 6.2. The call above runs exactly this:
 
@@ -345,8 +345,8 @@ The job each call submits is the same `CatalogRecipe` job, named `get_catalog` b
 def get_catalog(
     env: ExecEnv,                              # where the read runs: any recipe environment
     *,
-    sites: list[str] | None = None,            # None: every site of the Study
-    datasets: dict[str, list[str]] | None = None,  # None: everything each site shares
+    sites: list[str] | None = None,            # None: the sites participating at job start
+    datasets: dict[str, list[str]] | None = None,  # None: all datasets configured for the Study at that site
     timeout_s: int = 300,                      # per site, as CatalogRecipe.task_timeout_s
     output_path: str | None = None,            # also save catalog_results.json here
     site_config_root: str | None = None,       # SimEnv only: the simulated sites' files
@@ -357,8 +357,8 @@ def get_catalog(
 | Argument | Default | Meaning |
 | --- | --- | --- |
 | `env` | Required | Where the read runs, and which Study it reads. Any recipe environment works: `SimEnv`, `PocEnv` or `ProdEnv`. For example, `ProdEnv(startup_kit_location=..., study=...)` reads a deployed Study, and `SimEnv(clients=[...])` simulates the sites on one host in the `default` Study, using `site_config_root`. |
-| `sites` | every site of the Study | Sites to read. An empty list is an error. |
-| `datasets` | everything each site shares | `{site: [names]}`, as in `CatalogRecipe`. |
+| `sites` | the sites participating at job start | An explicit list retains absent sites in the result as `NO_RESULT`. An empty list is an error. |
+| `datasets` | all datasets configured for the Study at that site | `{site: [names]}`, as in `CatalogRecipe`. |
 | `timeout_s` | 300 | Seconds to wait for each site before recording it as `NO_RESULT`. After the job is submitted, the call waits at most `timeout_s` plus 60 seconds for it to finish. In `SimEnv`, submitting runs the whole simulation before that wait starts, so the limit does not bound simulator startup or shutdown; the per-site timeout still bounds each site's task. |
 | `output_path` | none | Also write the result there, ready for `CatalogVisualization`. |
 | `site_config_root` | none | Required with `SimEnv` and refused in other environments, as in `CatalogRecipe` (Section 6.2): the folder that holds each simulated site's `local/datasets.yaml` and data. |
@@ -384,8 +384,8 @@ results = recipe.get_catalog_results(run)          # waits, downloads, loads cat
 | Argument | Default | Meaning |
 | --- | --- | --- |
 | `name` | `get_catalog` | Job name. |
-| `sites` | every site of the Study | Sites to read. An empty list is an error. |
-| `datasets` | everything each site shares | `{site: [names]}`. A site reads the listed names it shares and skips the rest. A site absent from the mapping reads everything it shares. Naming a site that is not read is an error. |
+| `sites` | the sites participating at job start | An explicit list retains absent sites in the result as `NO_RESULT`. An empty list is an error. |
+| `datasets` | all datasets configured for the Study at that site | `{site: [names]}`. A site reads the requested names present in its Study configuration. A site absent from the mapping reads all its configured Study datasets. If `sites` is explicit, every key in `datasets` must also appear in `sites`. |
 | `task_timeout_s` | 300 | Seconds to wait for each site before recording it as `NO_RESULT`. |
 | `task_request_interval_s` | 0.1 | How often, in seconds, sites ask the server for work during this job: the server's `task_request_interval` for this job only. The default lets sites notice the end of the run right after returning their results. Must be positive. |
 | `site_config_root` | none | `SimEnv` only: the parent folder of one folder per site, each with that site's `local/datasets.yaml` and its data. In `SimEnv` the executor reads that file instead of the job workspace's, the one exception to how jobs load the configuration. A simulated job runs in the `default` Study, so these files declare datasets under `studies: default:`. It is required with `SimEnv` and refused in other environments. |
@@ -426,12 +426,14 @@ Required checks:
 
 | Area | Chosen | Set aside | Trade-off |
 | --- | --- | --- | --- |
-| Where the catalog lives | Returned to the submitter as the job's result; nothing stored on the server | A server-side catalog store, merged across reads and searched in place | No reconciliation, persistence, locking, recovery or result-trust machinery on the server. The cost is that each user gets the catalog by running a read; there is no shared, always-on index to search, and an offline site is simply missing from that read. |
+| Where the catalog lives | Returned to the submitter as the job's result; stored with the job in the job store | A server-side catalog store, merged across reads and searched in place | No reconciliation, persistence, locking, recovery or result-trust machinery on the server. The cost is that each user gets the catalog by running a read; there is no shared, always-on index to search, and an offline site is simply missing from that read. |
 | Current state | The latest read is the complete answer | Merging reads, with versions and availability history | Nothing to keep consistent across reads. The cost is no catalog or schema version counters; comparing two reads is the user's choice. |
 | Entry point | `get_catalog` for one-call reads, built on `CatalogRecipe` | A dedicated command-line tool | One Python surface, consistent with other recipes, with a single call for the common case. The cost is that a read needs Python, not a shell command. |
-| Site configuration | The generic read-only [dataset configuration API](dataset_configuration_design.md) | Catalog-specific configuration files | A dataset is declared once for every component that uses it, and the catalog never opens configuration files. The cost is a new site file for operators to maintain. |
+| Site configuration | The generic read-only [dataset configuration API][dataset-config] | Catalog-specific configuration files | A dataset is declared once for every component that uses it, and the catalog never opens configuration files. The cost is a new site file for operators to maintain. |
 | How a read runs | A standard FLARE job per read | The server calling sites directly | The job reuses authentication, task delivery, launchers, abort, logs and result download. It costs one job per read in the job store. |
 | What a read returns | Full bounded metadata per selected dataset | Incremental reads with checkpoints | No checkpoint protocol. The cost is more source reads, so incremental reads wait for measured cost. |
 | Publication control | Source-admin credentials, namespaces and readable files; every configured Study dataset is eligible | Catalog-specific share and exclusion rules | One source-owned visibility boundary. Administrators must qualify schema visibility as well as row access; downloaded snapshots remain historical artifacts. |
 | Unity Catalog, SQL and DuckDB | REST API, SQLAlchemy reflection, DuckDB's own catalog views | Spark or a vendor SDK | No heavy dependency at the site. The cost is that only what these interfaces expose can be cataloged. |
 | Where connectors are chosen | By the site's dataset configuration | A connector option in the recipe | A request-supplied connector would let a job reach a source the site did not approve. The cost is that adding a backend, or custom reading logic, needs a site operator. |
+
+[dataset-config]: https://github.com/NVIDIA/NVFlare/blob/0bca2a8efe11392df1561653d7cd9b654f499c8a/docs/design/dataset_configuration_design.md
