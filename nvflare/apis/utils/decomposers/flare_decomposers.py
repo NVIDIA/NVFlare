@@ -30,7 +30,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.datum import Datum, DatumManager, DatumRef
-from nvflare.fuel.utils.fobs.decomposer import Decomposer, DictDecomposer, Externalizer, Internalizer
+from nvflare.fuel.utils.fobs.decomposer import DATA_CONTENT, Decomposer, DictDecomposer, Externalizer, Internalizer
 
 
 # The __init__ initializes logger so generic decomposers can't be used
@@ -69,8 +69,15 @@ class DXODecomposer(Decomposer):
         return (target.data_kind, externalizer.externalize(target.meta), externalizer.externalize(target.data))
 
     def recompose(self, data: Any, datum_manager=None) -> DXO:
-        assert isinstance(data, tuple)
-        dk, m, d = data
+        if isinstance(data, dict):
+            # Older standalone DXO writers serialized the instance attributes.
+            attrs = data.get(DATA_CONTENT)
+            if not isinstance(attrs, dict) or not {"data_kind", "meta", "data"}.issubset(attrs):
+                raise ValueError("Invalid legacy DXO payload")
+            dk, m, d = attrs["data_kind"], attrs["meta"], attrs["data"]
+        else:
+            assert isinstance(data, tuple)
+            dk, m, d = data
         internalizer = Internalizer(datum_manager)
         return DXO(data_kind=dk, meta=internalizer.internalize(m), data=internalizer.internalize(d))
 

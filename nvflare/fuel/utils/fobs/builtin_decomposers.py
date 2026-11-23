@@ -42,6 +42,11 @@ BUILTIN_TYPE_DECOMPOSERS: dict[str, str] = {
     "tenseal.CKKSVector": "nvflare.app_opt.he.decomposers.CKKSVectorDecomposer",
 }
 
+# Older wire names understood by the corresponding receiver-owned built-in decoder.
+BUILTIN_LEGACY_DECOMPOSER_NAMES = {
+    "nvflare.apis.dxo.DXO": (f"{_BUILTIN_DECOMPOSER_MODULE}.DataClassDecomposer",),
+}
+
 # These enums have a dedicated decoder when the statistics codecs are registered
 # and otherwise use the generic enum format, including older untagged payloads.
 BUILTIN_ENUM_TYPES = {

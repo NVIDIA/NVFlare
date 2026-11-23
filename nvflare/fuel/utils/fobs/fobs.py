@@ -25,6 +25,7 @@ import msgpack
 from nvflare.fuel.utils.class_loader import get_class_name, load_class
 from nvflare.fuel.utils.fobs.builtin_decomposers import (
     BUILTIN_ENUM_TYPES,
+    BUILTIN_LEGACY_DECOMPOSER_NAMES,
     BUILTIN_TYPE_DECOMPOSERS,
     BUILTIN_TYPES,
     OPTIONAL_TYPE_DECOMPOSERS,
@@ -221,7 +222,7 @@ def _get_lazy_decomposer(type_name: str, decomposer_name: str | None) -> Decompo
 
 
 def _check_decomposer_name(type_name: str, decomposer_name: str | None, expected_name: str) -> None:
-    if decomposer_name != expected_name:
+    if decomposer_name != expected_name and decomposer_name not in BUILTIN_LEGACY_DECOMPOSER_NAMES.get(type_name, ()):
         raise ValueError(f"Type '{type_name}' requires decomposer '{expected_name}'")
 
 
