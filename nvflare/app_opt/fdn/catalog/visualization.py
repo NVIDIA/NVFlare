@@ -14,10 +14,9 @@
 
 """Offline catalog views, following the federated statistics visualization pattern.
 
-Pass the ``catalog_results.json`` of a catalog read, as a file path or the loaded dict, for example the result of
-``get_catalog(...)``. No server connection is opened here. ``get_*`` methods return DataFrames; ``show_*`` methods
-return pandas Stylers that Jupyter renders with a title and explanation. pandas and Jinja2 are visualization
-dependencies only.
+Open the job's ``catalog/`` output directory, a saved snapshot JSON file, or the dict returned by ``get_catalog(...)``.
+The viewer runs offline. The ``get_*`` methods return DataFrames and the ``show_*`` methods return pandas Stylers
+for display in Jupyter. pandas and Jinja2 are visualization dependencies only.
 """
 
 import json
@@ -28,6 +27,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from nvflare.app_common.fdn.catalog.common.artifacts import read_index
 from nvflare.app_common.fdn.catalog.common.odcs import check_contract
 from nvflare.app_common.fdn.catalog.common.payload import PayloadError, check_catalog_results
 from nvflare.app_opt.fdn.catalog._legacy_snapshot import CatalogInfo, ValidationError
@@ -47,10 +47,14 @@ class _Entry:
 
 def _load(data) -> Mapping:
     if isinstance(data, (str, Path)):
-        with Path(data).open() as stream:
-            data = json.load(stream)
+        path = Path(data)
+        if path.is_dir():
+            data = read_index(path / "index.json")
+        else:
+            with path.open(encoding="utf-8") as stream:
+                data = json.load(stream)
     if not isinstance(data, Mapping):
-        raise ValueError("Expected a catalog_results.json file path or its loaded dict.")
+        raise ValueError("Expected a catalog output directory, snapshot JSON file path or its loaded dict.")
     try:
         if type(data.get("format_version")) is int and data["format_version"] == 1:
             if not isinstance(data.get("datasets"), list) or not isinstance(data.get("sites"), dict):

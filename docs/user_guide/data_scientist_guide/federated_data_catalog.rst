@@ -113,8 +113,10 @@ are listed as ``unavailable``; datasets its read budget did not reach are listed
 Visualize saved catalog results
 *************************************
 
-Like federated statistics visualization, ``CatalogVisualization`` accepts a saved result
-and provides reusable views. It opens no federation connection. Install ``pandas`` and
+Pass the job's default ``catalog/`` output directory (the folder containing ``index.json``
+and ``contracts/``) directly to ``CatalogVisualization``. The viewer loads the referenced
+contracts offline. It also accepts a saved snapshot JSON file or the dict returned by
+``get_catalog()``. Install ``pandas`` and
 ``jinja2`` for these optional visualization functions; the example notebook requirements
 include them through pandas and JupyterLab.
 
@@ -122,7 +124,7 @@ include them through pandas and JupyterLab.
 
    from nvflare.app_opt.fdn.catalog.visualization import CatalogVisualization
 
-   vis = CatalogVisualization("catalog_results.json")   # or the dict get_catalog returned
+   vis = CatalogVisualization("path/to/job-output/catalog")
    vis.show_sites()
    vis.show_datasets()
    vis.show_tables(dataset="clinical_records")

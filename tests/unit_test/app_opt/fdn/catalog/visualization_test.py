@@ -20,6 +20,7 @@ from unittest.mock import Mock
 import pandas as pd
 import pytest
 
+from nvflare.app_common.fdn.catalog.common.artifacts import write_index
 from nvflare.app_common.fdn.catalog.common.payload import SiteEntry, SiteStatus, build_catalog_results
 from nvflare.app_opt.fdn.catalog.visualization import CatalogVisualization
 
@@ -314,7 +315,8 @@ def test_runner_notebook_reads_the_catalog_and_passes_the_result_to_the_explorer
     assert display.call_count >= 8
 
 
-def test_native_contracts_distinguish_present_untyped_missing_and_unavailable():
+@pytest.mark.parametrize("source", ["dict", "folder", "snapshot"])
+def test_native_contracts_distinguish_present_untyped_missing_and_unavailable(source, tmp_path):
     contract = {
         "apiVersion": "v3.2.0",
         "kind": "DataContract",
@@ -333,7 +335,15 @@ def test_native_contracts_distinguish_present_untyped_missing_and_unavailable():
             "three": SiteEntry(SiteStatus.OK, unavailable=("visits",)),
         },
     )
-    frame = CatalogVisualization(doc).get_column_comparison("visits")
+    if source == "folder":
+        data = tmp_path / "catalog"
+        write_index(data / "index.json", doc)
+    elif source == "snapshot":
+        data = tmp_path / "catalog_results.json"
+        data.write_text(json.dumps(doc), encoding="utf-8")
+    else:
+        data = doc
+    frame = CatalogVisualization(data).get_column_comparison("visits")
     assert frame.at["id", ("one", "visits")] == "unknown"
     assert pd.isna(frame.at["id", ("two", "visits")])
     assert frame.at["date", ("two", "visits")] == "DATE"
