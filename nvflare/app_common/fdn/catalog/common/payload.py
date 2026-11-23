@@ -14,14 +14,15 @@
 
 """The catalog_read task payload, a site's result, and the assembled researcher snapshot.
 
-This module has no FLARE or I/O imports.
+Dataset identifiers follow the Study Config API naming rule.
 """
 
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 
-from nvflare.app_common.fdn.catalog.common.limits import MAX_TEXT_LEN, ReadLimits
+from nvflare.apis.dataset_config_spec import is_valid_dataset_name
+from nvflare.app_common.fdn.catalog.common.limits import ReadLimits
 from nvflare.app_common.fdn.catalog.common.odcs import check_contract
 
 CATALOG_READ_KEY = "catalog_read"  # the Shareable key of the task payload and the site result
@@ -86,12 +87,8 @@ def _is_supported_version(value) -> bool:
     return type(value) is int and value == FORMAT_VERSION
 
 
-def _is_name(value) -> bool:
-    return isinstance(value, str) and 0 < len(value) <= MAX_TEXT_LEN
-
-
 def _names(value, path: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or not all(_is_name(x) for x in value):
+    if not isinstance(value, list) or not all(is_valid_dataset_name(x) for x in value):
         raise PayloadError(f"{path} must be a list of names")
     if len(set(value)) != len(value):
         raise PayloadError(f"{path} has duplicate entries")
@@ -142,7 +139,7 @@ def _selected_names(value, wanted: tuple[str, ...] | None) -> list[str]:
         return []
     out = []
     for name in value:
-        if _is_name(name) and (wanted is None or name in wanted) and name not in out:
+        if is_valid_dataset_name(name) and (wanted is None or name in wanted) and name not in out:
             out.append(name)
     return out
 
@@ -171,10 +168,10 @@ def parse_result(d: dict, wanted: tuple[str, ...] | None, limits: ReadLimits) ->
         entries = d.get("catalogs")
         entries = entries if isinstance(entries, list) else []
         names = [e.get("dataset") if isinstance(e, dict) else None for e in entries]
-        counts = Counter(n for n in names if _is_name(n))
+        counts = Counter(n for n in names if is_valid_dataset_name(n))
         remaining = limits.max_records
         for entry, name in zip(entries, names):
-            if not (_is_name(name) and (wanted is None or name in wanted)):
+            if not (is_valid_dataset_name(name) and (wanted is None or name in wanted)):
                 continue
             if name in unavailable or name in skipped:
                 continue

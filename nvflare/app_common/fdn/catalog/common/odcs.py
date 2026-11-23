@@ -21,6 +21,17 @@ MAX_CONTRACT_BYTES = 4 * 1024 * 1024
 ODCS_VERSION = "v3.2.0"
 
 
+# Fields consumed by the offline viewer. The site performs full ODCS schema validation.
+_ELEMENT_TYPES = {
+    "name": str,
+    "id": str,
+    "physicalType": str,
+    "logicalType": str,
+    "required": bool,
+    "primaryKey": bool,
+}
+
+
 def check_contract(contract):
     """Check the transport envelope and count schema records, including nested ODCS properties."""
     if (
@@ -38,6 +49,13 @@ def check_contract(contract):
     def count_element(item, *, named=True, table=False):
         if not isinstance(item, dict) or (named and not (isinstance(item.get("name"), str) and item["name"])):
             raise ValueError("invalid ODCS schema element")
+        for key, expected in _ELEMENT_TYPES.items():
+            if key in item and type(item[key]) is not expected:
+                raise ValueError(f"invalid ODCS {key}")
+        if "primaryKeyPosition" in item:
+            position = item["primaryKeyPosition"]
+            if type(position) is not int and not (type(position) is float and position.is_integer()):
+                raise ValueError("invalid ODCS primaryKeyPosition")
         relations = item.get("relationships", [])
         if not isinstance(relations, list):
             raise ValueError("invalid ODCS relationships")
@@ -54,7 +72,10 @@ def check_contract(contract):
         if "items" in item:
             records += count_element(item["items"], named=False)
         if "map" in item:
-            records += sum(count_element(item["map"][key], named=False) for key in ("key", "value"))
+            mapping = item["map"]
+            if not isinstance(mapping, dict) or set(mapping) != {"key", "value"}:
+                raise ValueError("invalid ODCS map")
+            records += sum(count_element(child, named=False) for child in mapping.values())
         return records
 
     tables = contract.get("schema", [])

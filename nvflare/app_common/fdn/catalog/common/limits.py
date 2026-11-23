@@ -16,8 +16,6 @@
 
 from dataclasses import dataclass
 
-MAX_TEXT_LEN = 256
-
 
 @dataclass(frozen=True)
 class ReadLimits:

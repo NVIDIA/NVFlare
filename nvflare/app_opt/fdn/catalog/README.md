@@ -6,7 +6,7 @@ Install `nvflare[catalog]` at sites running the federated catalog job. The site 
 | --- | --- |
 | `usage.catalog.contract_uri: file:///…` on any dataset | The approved ODCS v3.2.0 contract. An unreadable or invalid contract marks the dataset unavailable. |
 | `type: csv` | Only original header names, in order. The importer receives a header projection. Data rows, types, source paths and statistics stay out of the contract. |
-| `type: parquet` | Upstream Parquet importer, once per file footer. Directory partitions must agree on schema. |
+| `type: parquet` | Import one representative footer per table after checking that all partition footers have the same Arrow schema. Decimal type names include precision and scale. |
 | `type: sql` | Live PostgreSQL importer for a `postgresql://` URI and site credentials, or upstream SQL DDL import for table definitions in a read-only SQLite file. Scope PostgreSQL with `options.schema` and `options.tables`. |
 | `type: duckdb` | Upstream SQL importer on table definitions from the mounted file opened read-only. |
 | `type: unity-catalog` | Upstream Unity importer using the Databricks SDK in the configured `catalog` and `schema`, optionally limited by `tables`. |

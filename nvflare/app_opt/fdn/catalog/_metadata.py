@@ -23,9 +23,9 @@ from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
 
 class ReadBudget:
     def __init__(self, limits):
-        self.limits = limits
+        self.calls_left = limits.max_calls
+        self.records_left = limits.max_records
         self.deadline = time.monotonic() + limits.max_duration_s
-        self.calls = 0
 
     def remaining(self):
         remaining = self.deadline - time.monotonic()
@@ -35,13 +35,13 @@ class ReadBudget:
 
     def request(self):
         self.remaining()
-        self.calls += 1
-        if self.calls > self.limits.max_calls:
+        if self.calls_left == 0:
             raise CatalogSourceError("metadata call budget exceeded", budget=True)
+        self.calls_left -= 1
 
     def records(self, count):
         self.remaining()
-        if count > self.limits.max_records:
+        if count > self.records_left:
             raise CatalogSourceError("metadata record budget exceeded", budget=True)
 
 

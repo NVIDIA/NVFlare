@@ -41,8 +41,9 @@ class FakeReader:
         self.secrets = []
         self.durations = []
 
-    def __call__(self, dataset, secret, limits, *, site):
-        self.durations.append(limits.max_duration_s)
+    def __call__(self, dataset, secret, budget, *, site):
+        budget.request()
+        self.durations.append(budget.remaining())
         name = dataset.name
         if name.startswith("corrupt") or dataset.type != "fake":
             raise CatalogSourceError("unreadable")
@@ -155,6 +156,12 @@ class TestConfiguration:
         for private in ("private", "secret_table", "secret_column"):
             assert private not in caplog.text and private not in str(reply[CATALOG_READ_KEY])
 
+    @pytest.mark.parametrize("rules", [False, True, []])
+    def test_malformed_rules_refuse_the_study_before_discovery(self, rules, reader):
+        parsed = result(run(config_doc({"good": dataset(), "private": dataset(rules=rules)})))
+        assert parsed.reason_code == ReasonCode.CONFIG_UNAVAILABLE
+        assert not parsed.catalogs and not reader.durations
+
     def test_no_datasets_is_an_ok_empty_read(self):
         parsed = result(run(config_doc({})))
         assert parsed.status == ResultStatus.OK and parsed.catalogs == ()
@@ -201,6 +208,11 @@ class TestFailures:
         parsed = result(run(config_doc({"budget-a": dataset(), "good": dataset()})))
         assert parsed.skipped == ("budget-a",) and [c["dataset"] for c in parsed.catalogs] == ["good"]
 
+    @pytest.mark.parametrize("first,status", [("good", "catalogs"), ("corrupt", "unavailable")])
+    def test_call_limit_is_shared_even_when_a_read_fails(self, first, status):
+        parsed = result(run(config_doc({first: dataset(), "second": dataset()}, settings={"limits": {"max_calls": 1}})))
+        assert getattr(parsed, status) and parsed.skipped == ("second",)
+
     def test_exhausted_record_budget_skips_the_rest(self):
         settings = {**SETTINGS, "limits": {"max_records": 3}}
         parsed = result(run(config_doc({"good": dataset(), "good-b": dataset()}, settings=settings)))
@@ -222,12 +234,19 @@ class TestDeadline:
         assert reader.durations[0] <= 3
 
     def test_an_exhausted_budget_skips_and_keeps_completed_catalogs(self, monkeypatch):
-        from nvflare.app_common.fdn.catalog.site import executor as executor_module
+        from nvflare.app_opt.fdn.catalog import _metadata
+        from tests.timing_utils import ManualClock
 
-        clock = iter([0.0, 0.0, 0.0, 0.0, 0.0, 9.0, 9.0, 9.0, 9.0])
-        from types import SimpleNamespace
+        clock = ManualClock()
+        monkeypatch.setattr(_metadata, "time", clock)
+        reader = FakeReader()
 
-        monkeypatch.setattr(executor_module, "time", SimpleNamespace(monotonic=lambda: next(clock, 9.0)))
+        def read(dataset, secret, budget, *, site):
+            if dataset.name == "good-b":
+                clock.advance(9)
+            return reader(dataset, secret, budget, site=site)
+
+        monkeypatch.setattr(executor_module, "read_odcs", read)
         parsed = result(run(config_doc({"good": dataset(), "good-b": dataset()}), time_budget_s=8))
         assert [c["dataset"] for c in parsed.catalogs] == ["good"] and parsed.skipped == ("good-b",)
 

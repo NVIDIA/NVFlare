@@ -14,7 +14,6 @@
 
 """The site-side executor of the catalog_read task."""
 
-import time
 from dataclasses import replace
 
 from nvflare.apis.dataset_config_spec import DatasetConfigError, StudyDatasetConfig, get_study_dataset_config
@@ -36,6 +35,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
 )
 from nvflare.app_common.fdn.catalog.site.settings import CATALOG_COMPONENT, SettingsError, parse_settings
 from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
+from nvflare.app_opt.fdn.catalog._metadata import ReadBudget
 from nvflare.app_opt.fdn.catalog.odcs import read_odcs
 
 
@@ -90,29 +90,23 @@ class CatalogExecutor(Executor):
         duration = limits.max_duration_s
         if task.time_budget_s is not None:
             duration = min(duration, task.time_budget_s)
-        deadline = time.monotonic() + duration
+        budget = ReadBudget(replace(limits, max_duration_s=duration))
         catalogs, unavailable, skipped = [], [], []
-        used_records = 0
         for name in selected:
             if abort_signal.triggered:
                 return None
-            if time.monotonic() >= deadline or used_records >= limits.max_records:
+            if not budget.calls_left or not budget.records_left:
                 skipped.append(name)
                 continue
             dataset = config.get_dataset(name)
-            remaining = replace(
-                limits,
-                max_duration_s=max(0.0, deadline - time.monotonic()),
-                max_records=limits.max_records - used_records,
-            )
             try:
+                budget.remaining()
                 contract = read_odcs(
-                    dataset, lambda key, n=name: config.get_secret(n, key), remaining, site=fl_ctx.get_identity_name()
+                    dataset, lambda key, n=name: config.get_secret(n, key), budget, site=fl_ctx.get_identity_name()
                 )
                 records = check_contract(contract)
-                if records > remaining.max_records or time.monotonic() >= deadline:
-                    raise CatalogSourceError("read budget exceeded", budget=True)
-                used_records += records
+                budget.records(records)
+                budget.records_left -= records
                 catalogs.append({"dataset": name, "contract": contract})
             except CatalogSourceError as e:
                 (skipped if e.budget else unavailable).append(name)

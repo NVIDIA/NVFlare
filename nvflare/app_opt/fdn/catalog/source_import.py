@@ -32,6 +32,12 @@ def _structure(element):
         for key in ("id", "name", "physicalType", "logicalType", "required", "primaryKey", "primaryKeyPosition")
         if key in element
     }
+    # The Parquet importer stores DECIMAL parameters as numeric ODCS custom properties.
+    if result.get("physicalType") == "DECIMAL":
+        params = {p["property"]: p.get("value") for p in element.get("customProperties", [])}
+        precision, scale = params.get("precision"), params.get("scale")
+        if type(precision) is int and type(scale) is int:
+            result["physicalType"] = f"DECIMAL({precision},{scale})"
     if "relationships" in element:
         result["relationships"] = [
             {key: rel[key] for key in ("type", "from", "to") if key in rel} for rel in element["relationships"]
@@ -136,16 +142,21 @@ def _unity(dataset, secret, budget):
 
 
 def _parquet(dataset, budget):
+    from pyarrow import parquet
+
     selection(dataset.options, ())
     objects = []
     for name, parts in table_files(local_path(dataset), budget.deadline, budget.request):
-        table = None
-        for path in parts:
-            (part,) = _import_objects(budget, "parquet", str(path))
-            part["name"] = name
-            if table is not None and part != table:
-                raise CatalogSourceError("inconsistent Parquet part schemas")
-            table = part
+        if len(parts) > 1:
+            # Compare the native footer types before the upstream importer simplifies them.
+            budget.request()
+            schema = parquet.read_schema(parts[0])
+            for path in parts[1:]:
+                budget.request()
+                if not schema.equals(parquet.read_schema(path), check_metadata=False):
+                    raise CatalogSourceError("inconsistent Parquet part schemas")
+        (table,) = _import_objects(budget, "parquet", str(parts[0]))
+        table["name"] = name
         objects.append(table)
     return objects
 

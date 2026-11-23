@@ -26,7 +26,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from nvflare.app_common.fdn.catalog.common.odcs import MAX_CONTRACT_BYTES, ODCS_VERSION, check_contract
 from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
-from nvflare.app_opt.fdn.catalog._metadata import ReadBudget, local_path, selection
+from nvflare.app_opt.fdn.catalog._metadata import local_path, selection
 from nvflare.app_opt.fdn.catalog.source_import import import_schema
 
 
@@ -68,7 +68,7 @@ def _provided(uri):
     return loader.load(contents)
 
 
-def _csv_schema(dataset, limits):
+def _csv_schema(dataset, budget):
     from datacontract.imports.csv_importer import import_csv
 
     selection(dataset.options, ())
@@ -90,8 +90,7 @@ def _csv_schema(dataset, limits):
         names = next(csv.reader(header_lines(), strict=True), [])
     if not names or any(not name.strip() for name in names) or len(set(names)) != len(names):
         raise CatalogSourceError("CSV requires nonempty, unique column headers")
-    if 2 + len(names) > limits.max_records:
-        raise CatalogSourceError("CSV record budget exceeded", budget=True)
+    budget.records(2 + len(names))
     # The importer profiles rows and interpolates column names into SQL. Give it only a
     # header projection with safe identifiers. Restore the original names at publication.
     aliases = {f"column_{i}": name for i, name in enumerate(names)}
@@ -107,9 +106,8 @@ def _csv_schema(dataset, limits):
     return [{"name": dataset.name, "properties": [{"name": aliases[col]} for col in columns]}]
 
 
-def read_odcs(dataset, secret, limits, *, site):
+def read_odcs(dataset, secret, budget, *, site):
     """Read a steward-approved file or generate a structural contract from the configured source."""
-    budget = ReadBudget(limits)
     rules = dataset.usage_rules("catalog") or {}
     if "contract_uri" in rules:
         budget.request()
@@ -117,7 +115,7 @@ def read_odcs(dataset, secret, limits, *, site):
     else:
         if dataset.type == "csv":
             budget.request()
-            objects = _csv_schema(dataset, limits)
+            objects = _csv_schema(dataset, budget)
         else:
             objects = import_schema(dataset, secret, budget)
         identity = json.dumps([dataset.study, site, dataset.name], ensure_ascii=False)

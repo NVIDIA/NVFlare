@@ -107,6 +107,17 @@ class TestParseResult:
         parsed = parse_result(result, None, LIMITS)
         assert [c["dataset"] for c in parsed.catalogs] == ["a"] and parsed.unavailable == ("bad",)
 
+    @pytest.mark.parametrize(
+        "field,value",
+        [("primaryKeyPosition", "1"), ("primaryKeyPosition", True), ("physicalType", []), ("required", 1), ("id", {})],
+    )
+    def test_malformed_property_is_isolated_at_receipt(self, field, value):
+        bad = contract_entry(dataset="bad")
+        bad["contract"]["schema"][0]["properties"][0][field] = value
+        parsed = parse_result(build_result(ResultStatus.OK, catalogs=[bad, contract_entry("ok")]), None, LIMITS)
+        assert [entry["dataset"] for entry in parsed.catalogs] == ["ok"]
+        assert parsed.unavailable == ("bad",)
+
     def test_entry_over_the_server_limit_becomes_unavailable(self):
         result = build_result(ResultStatus.OK, catalogs=[contract_entry(dataset="a")])
         parsed = parse_result(result, None, ReadLimits(max_duration_s=60, max_calls=10, max_records=2))
