@@ -12,6 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Group local Parquet files into named tables for a FLARE catalog request.
+
+A dataset URI can point to a single file or to a directory containing several tables.
+For example, given a directory with ``person.parquet``, ``visits/2024/part.parquet``
+and ``visits/2025/part.parquet``, FLARE reports two tables: ``person`` and ``visits``.
+Both files under ``visits/`` are parts of that table.
+
+The site reader calls ``table_files(local_path(dataset), budget.deadline, budget.request)``.
+For each returned table, it checks that the parts have matching footer schemas and
+passes one representative file to the upstream Parquet importer.
+"""
+
 import time
 from pathlib import Path
 
@@ -19,9 +31,13 @@ from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
 
 
 def table_files(root: Path, deadline: float, spend) -> list[tuple[str, list[Path]]]:
-    """(table name, part files) in name order. The mount's listing order is not stable, so sort. Each part file
-    listed costs one call of the read budget (``spend``), which its footer read then costs again, so the walk of
-    a partitioned table stops at the budget and a deep tree cannot take long to list."""
+    """Return sorted (table name, sorted part paths) pairs for the configured root.
+
+    A single file takes its table name from its stem. Under a directory root, each
+    top-level Parquet file or directory containing Parquet parts names one table.
+    During traversal, check the absolute monotonic ``deadline`` and call ``spend()``
+    for each discovered part. Ambiguous table names raise ``CatalogSourceError``.
+    """
 
     def check():
         if time.monotonic() >= deadline:
