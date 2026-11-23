@@ -47,12 +47,9 @@ def _get_container_type(container: Any) -> str:
 
 
 class _EntryConsumer(ObjectConsumer):
-    def __init__(self, stream_ctx: StreamContext):
+    def __init__(self, stream_ctx: StreamContext, container_class):
         self.logger = get_obj_logger(self)
-        container_type = stream_ctx.get(_CTX_TYPE)
-        if type(container_type) is not str or container_type not in _CONTAINER_TYPES:
-            raise ValueError("Unsupported container type for streaming")
-        self.container = _CONTAINER_TYPES[container_type]()
+        self.container = container_class()
         self.size = stream_ctx.get(_CTX_SIZE)
 
     def consume(
@@ -95,8 +92,16 @@ class _EntryConsumer(ObjectConsumer):
 
 
 class _EntryConsumerFactory(ConsumerFactory):
+    def __init__(self, on_unsupported_type=None):
+        self.on_unsupported_type = on_unsupported_type
+
     def get_consumer(self, stream_ctx: StreamContext, fl_ctx: FLContext) -> ObjectConsumer:
-        return _EntryConsumer(stream_ctx)
+        container_type = stream_ctx.get(_CTX_TYPE)
+        if type(container_type) is not str or container_type not in _CONTAINER_TYPES:
+            if self.on_unsupported_type:
+                self.on_unsupported_type(stream_ctx, fl_ctx)
+            raise ValueError("Unsupported container type for streaming")
+        return _EntryConsumer(stream_ctx, _CONTAINER_TYPES[container_type])
 
 
 class _EntryProducer(ObjectProducer):
@@ -168,6 +173,8 @@ class ContainerStreamer(StreamerBase):
         channel: str,
         topic: str,
         stream_done_cb=None,
+        *,
+        on_unsupported_type=None,
         **cb_kwargs,
     ):
         """Register for stream processing on the receiving side.
@@ -177,6 +184,7 @@ class ContainerStreamer(StreamerBase):
             channel: the app channel
             topic: the app topic
             stream_done_cb: if specified, the callback to be called when the file is completely received
+            on_unsupported_type: callback receiving the stream context and FLContext when type validation fails
             **cb_kwargs: the kwargs for the stream_done_cb
 
         Returns: None
@@ -192,7 +200,7 @@ class ContainerStreamer(StreamerBase):
         engine.register_stream_processing(
             channel=channel,
             topic=topic,
-            factory=_EntryConsumerFactory(),
+            factory=_EntryConsumerFactory(on_unsupported_type),
             stream_done_cb=stream_done_cb,
             **cb_kwargs,
         )

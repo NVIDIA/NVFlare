@@ -17,11 +17,19 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey, ProcessType, ReservedKey
 from nvflare.apis.fl_context import FLContextManager
-from nvflare.apis.shareable import ReturnCode, Shareable
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import StreamableEngine
 from nvflare.app_common.streamers.container_retriever import ContainerRetriever
 from nvflare.app_common.streamers.container_streamer import ContainerStreamer
+from nvflare.app_common.streamers.object_retriever import RETRIEVER_TX_ID
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.message import Message
+from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
+from nvflare.private.fed.client.client_run_manager import ClientRunManager
+from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.stream_runner import TOPIC_STREAM_ABORT, TOPIC_STREAM_REQUEST, HeaderKey, ObjectStreamer
 
 
@@ -111,3 +119,74 @@ def test_retriever_rejects_unsupported_container_at_registration():
         retriever.add_container("model", UserList([2]))
 
     assert retriever.containers["model"] is container
+
+
+def test_legacy_container_rejection_completes_only_its_retrieval_from_the_expected_peer():
+    engine = Mock(spec=ClientRunManager)
+    engine._get_aux_msg_target.return_value = AuxMsgTarget("source", "relay.source")
+    context_manager = FLContextManager(
+        engine=engine,
+        identity_name="receiver",
+        job_id="job",
+        private_stickers={FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_JOB},
+    )
+    engine.new_context.side_effect = context_manager.new_context
+    aux = AuxRunner(engine)
+    engine.dispatch.side_effect = aux.dispatch
+    engine.register_aux_message_handler.side_effect = aux.register_aux_message_handler
+    streamer = ObjectStreamer(aux)
+    engine.register_stream_processing.side_effect = streamer.register_stream_processing
+    agent = CommandAgent(Mock())
+    agent.engine = engine
+    retriever = ContainerRetriever()
+    fl_ctx = engine.new_context()
+    stream_replies = []
+    waiter_ready = []
+
+    def send_legacy_container(origin, stream_id, retrieval_id):
+        # An older sender acknowledges the retrieval and describes its mapping
+        # subclass using the original first-chunk headers.
+        stream_request = Shareable({"ContainerStreamer.entry": ("key", 1), "ContainerStreamer.last": True})
+        stream_request.set_header(HeaderKey.TX_ID, stream_id)
+        stream_request.set_header(HeaderKey.SEQ, 0)
+        stream_request.set_header(HeaderKey.CHANNEL, retriever.stream_channel)
+        stream_request.set_header(HeaderKey.TOPIC, retriever.topic)
+        stream_request.set_header(
+            HeaderKey.CTX,
+            {
+                RETRIEVER_TX_ID: retrieval_id,
+                "ContainerStreamer.type": "collections.defaultdict",
+                "ContainerStreamer.size": 1,
+            },
+        )
+        # The wrong sender also claims to be the expected site in the payload.
+        stream_request.set_peer_props({ReservedKey.IDENTITY_NAME: "source"})
+        message = Message(
+            {MessageHeaderKey.TOPIC: TOPIC_STREAM_REQUEST, MessageHeaderKey.ORIGIN: origin}, stream_request
+        )
+        stream_replies.append(agent.aux_communication(message).payload.get_return_code())
+
+    def send_aux_request(*, request, targets, **kwargs):
+        assert targets == ["source"]
+        retrieval_id = request[RETRIEVER_TX_ID]
+        waiter = retriever.tx_table[retrieval_id]
+        for origin, stream_id, claimed_retrieval in (
+            ("relay.source.job", "wrong-request", "different-retrieval"),
+            ("relay.other.job", "wrong-peer", retrieval_id),
+            ("relay.source.job", "matching", retrieval_id),
+        ):
+            send_legacy_container(origin, stream_id, claimed_retrieval)
+            waiter_ready.append(waiter.is_set())
+        return {"source": make_reply(ReturnCode.OK)}
+
+    engine.send_aux_request.side_effect = send_aux_request
+    try:
+        retriever.handle_event(EventType.START_RUN, fl_ctx)
+        result = retriever.retrieve_container("source", fl_ctx, timeout=0.5, name="model")
+        assert result == (ReturnCode.UNSUPPORTED_CONTAINER_TYPE, None)
+        assert waiter_ready == [False, False, True]
+        assert stream_replies == [ReturnCode.EXECUTION_EXCEPTION] * 3
+        assert not retriever.tx_table
+        assert not streamer.tx_table
+    finally:
+        streamer.shutdown()

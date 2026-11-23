@@ -26,6 +26,13 @@ The following implementations are included in NVFlare,
 * `ContainerStreamer` streams containers entry by entry. It supports `dict`, `list`, `set`, and `collections.OrderedDict`.
 * `FileStreamer`: This class is used to stream a file
 
+The top-level container type must exactly match one of the four supported types. For example, passing a
+`Counter` or `defaultdict` to `ContainerRetriever.add_container()` or `ContainerStreamer.stream_container()`
+raises `ValueError`. Use `dict(value)` to stream the entries and reconstruct any specialized behavior locally.
+The four supported types keep their wire names during a rolling upgrade. Update every server or client
+that receives container streams. A patched retriever reports `UNSUPPORTED_CONTAINER_TYPE` if an older
+sender streams an unsupported type.
+
 Note that the container streamer split the stream by the top level entries. All the sub entries of a top entry are expected to be
 sent as a whole, therefore the memory is determined by the largest entry at top level.
 

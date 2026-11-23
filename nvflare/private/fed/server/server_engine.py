@@ -69,6 +69,7 @@ from nvflare.private.defs import (
     AUTH_CLIENT_NAME_FOR_SJ,
     CellChannel,
     CellMessageHeaderKeys,
+    InternalFLContextKey,
     RequestHeader,
     TrainingTopic,
     new_cell_message,
@@ -604,6 +605,12 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             fl_ctx.set_prop(
                 FLContextKey.CLIENT_NAME,
                 request.get_header(CellMessageHeaderKeys.CLIENT_NAME),
+                private=True,
+                sticky=False,
+            )
+            fl_ctx.set_prop(
+                InternalFLContextKey.AUX_MESSAGE_ORIGIN,
+                request.get_header(MessageHeaderKey.ORIGIN),
                 private=True,
                 sticky=False,
             )

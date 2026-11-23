@@ -21,7 +21,7 @@ from nvflare.fuel.f3.cellnet.defs import MessagePropKey
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
+from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, InternalFLContextKey, new_cell_message
 from nvflare.private.fed.app.callback_admission import CallbackAdmission
 
 from .server_commands import ServerCommands
@@ -162,6 +162,12 @@ class ServerCommandAgent(object):
             fl_ctx.set_prop(
                 FLContextKey.CLIENT_NAME,
                 request.get_header(CellMessageHeaderKeys.CLIENT_NAME),
+                private=True,
+                sticky=False,
+            )
+            fl_ctx.set_prop(
+                InternalFLContextKey.AUX_MESSAGE_ORIGIN,
+                request.get_header(MessageHeaderKey.ORIGIN),
                 private=True,
                 sticky=False,
             )

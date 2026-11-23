@@ -32,7 +32,7 @@ from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.sec.admin_audit import record, snapshot
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
-from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, new_cell_message
+from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, InternalFLContextKey, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.utils.app_deployer import AppDeployer
@@ -149,6 +149,12 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
 
         topic = request.get_header(MessageHeaderKey.TOPIC)
         with self.new_context() as fl_ctx:
+            fl_ctx.set_prop(
+                InternalFLContextKey.AUX_MESSAGE_ORIGIN,
+                request.get_header(MessageHeaderKey.ORIGIN),
+                private=True,
+                sticky=False,
+            )
             reply = self.aux_runner.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
             assert isinstance(reply, Shareable)
             shared_fl_ctx = gen_new_peer_ctx(fl_ctx)

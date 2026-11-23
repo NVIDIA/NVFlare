@@ -21,7 +21,7 @@ from nvflare.fuel.f3.cellnet.core_cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import MessagePropKey
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.log_utils import get_obj_logger
-from nvflare.private.defs import CellChannel, new_cell_message
+from nvflare.private.defs import CellChannel, InternalFLContextKey, new_cell_message
 from nvflare.private.fed.app.callback_admission import CallbackAdmission
 
 from .admin_commands import AdminCommands
@@ -111,6 +111,12 @@ class CommandAgent(object):
 
         with self.engine.new_context() as fl_ctx:
             topic = request.get_header(MessageHeaderKey.TOPIC)
+            fl_ctx.set_prop(
+                InternalFLContextKey.AUX_MESSAGE_ORIGIN,
+                request.get_header(MessageHeaderKey.ORIGIN),
+                private=True,
+                sticky=False,
+            )
             reply = self.engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
             assert isinstance(reply, Shareable)
             shared_fl_ctx = gen_new_peer_ctx(fl_ctx)

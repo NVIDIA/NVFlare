@@ -192,6 +192,7 @@ JobFailureMsgKey = JobOutcomeMsgKey
 
 class InternalFLContextKey:
 
+    AUX_MESSAGE_ORIGIN = "aux_message_origin"
     CLIENT_REG_SESSION = "client_reg_session"
 
 

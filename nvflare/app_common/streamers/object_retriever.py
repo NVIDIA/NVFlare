@@ -22,6 +22,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import StreamContext
+from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.security.logging import secure_format_exception
 
 RETRIEVER_TX_ID = "_rtr_tx_id_"
@@ -33,9 +34,14 @@ class _Waiter(threading.Event):
     def __init__(self):
         super().__init__()
         self.result = None
+        self.expected_origin = None
+        self._result_lock = threading.Lock()
 
-    def set_result(self, rc: str, data: Any):
-        self.result = (rc, data)
+    def set_result(self, result):
+        with self._result_lock:
+            if self.result is None:
+                self.result = result
+                self.set()
 
 
 class ObjectRetriever(FLComponent, ABC):
@@ -165,6 +171,11 @@ class ObjectRetriever(FLComponent, ABC):
         self.log_debug(fl_ctx, f"set waiter for Rtr {tx_id}")
 
         try:
+            get_target = getattr(engine, "_get_aux_msg_target", None)
+            target = get_target(from_site) if get_target else None
+            if isinstance(target, AuxMsgTarget):
+                waiter.expected_origin = AuxRunner._get_target_fqcn(target, fl_ctx)
+
             request = Shareable({RETRIEVER_TX_ID: tx_id})
             if obj_attrs:
                 request.update(obj_attrs)
@@ -209,9 +220,9 @@ class ObjectRetriever(FLComponent, ABC):
         except Exception as ex:
             self.log_error(fl_ctx, f"exception occurred during retrieval: {secure_format_exception(ex)}")
             rc = ReturnCode.EXECUTION_EXCEPTION
-
-        self.tx_table.pop(tx_id, None)
-        self.log_debug(fl_ctx, f"popped waiter for RTR {tx_id}")
+        finally:
+            self.tx_table.pop(tx_id, None)
+            self.log_debug(fl_ctx, f"popped waiter for RTR {tx_id}")
 
         if waiter.result:
             # If the waiter already got result, we return it.
@@ -235,8 +246,7 @@ class ObjectRetriever(FLComponent, ABC):
             self.log_error(fl_ctx, f"Exception when get_result: {secure_format_exception(ex)}")
             result = (ReturnCode.EXECUTION_EXCEPTION, None)
 
-        waiter.result = result
-        waiter.set()
+        waiter.set_result(result)
         self.log_info(fl_ctx, f"got result for RTR {tx_id}: {type(waiter.result)}")
 
     def _handle_request(self, topic, request: Shareable, fl_ctx: FLContext) -> Shareable:
