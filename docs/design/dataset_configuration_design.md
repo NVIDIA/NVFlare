@@ -79,7 +79,7 @@ usage:                            # site-wide settings, per FLARE component
 | `<dataset>.usage` | Optional; `{}` | How the dataset may be used, per FLARE component: maps a component name, such as `training`, to that component's settings for this dataset. It never lists tables; a source's tables are discovered when it is read. A component absent from the map has no rules, and each component decides what that means (the catalog discovers source metadata by default; optional `usage.catalog.contract_uri` selects an approved ODCS file instead). |
 | `usage` | Optional; `{}` | Site-wide settings per component, such as the catalog's read limits. |
 
-Unknown keys outside `usage` sections, wrong value types, a missing `type` or `uri`, a `uri` that breaks the rules of Section 2.3, and a secret value given where a variable name is expected are rejected; the whole file is then invalid. Contents of `usage` sections are not validated by the API: each component validates its own section and rejects what it does not understand.
+Unknown keys outside `usage` sections, wrong value types, a missing `type` or `uri`, a `uri` that breaks the rules of Section 2.3, and a secret value given where a variable name is expected are rejected; the whole file is then invalid. At both scopes, `usage` maps each component name to a settings mapping. The component validates the contents of that mapping.
 
 **Format version.** Every file states `format_version`, as `study_runtime.yaml` does; it is the gate for changing the format later. This design is version 1.
 

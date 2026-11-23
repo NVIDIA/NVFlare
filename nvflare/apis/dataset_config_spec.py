@@ -20,12 +20,21 @@ only through :func:`get_study_dataset_config`, which returns an immutable snapsh
 the job's workspace transfer.
 """
 
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 DATASET_CONFIG_FILE = "datasets.yaml"  # under <workspace>/local
+
+
+_DATASET_NAME = re.compile(r"[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?")
+
+
+def is_valid_dataset_name(name: object) -> bool:
+    """Whether a name can identify a dataset in a Study configuration."""
+    return isinstance(name, str) and _DATASET_NAME.fullmatch(name) is not None
 
 
 class DatasetConfigError(Exception):

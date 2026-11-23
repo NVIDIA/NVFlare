@@ -149,6 +149,15 @@ class TestValidation:
         with pytest.raises(DatasetConfigError):
             parse(data)
 
+    @pytest.mark.parametrize("rules", [False, True, [], None, "settings"])
+    def test_component_settings_must_be_mappings_at_both_scopes(self, rules):
+        for doc in (
+            with_dataset(type="csv", uri="file:///x", usage={"catalog": rules}),
+            {**CONFIG, "usage": {"catalog": rules}},
+        ):
+            with pytest.raises(DatasetConfigError, match="settings mappings"):
+                parse(doc)
+
     def test_a_broken_entry_in_another_study_invalidates_the_file(self):
         data = {**CONFIG, "studies": {**CONFIG["studies"], "other": {"datasets": {"x": {"type": "csv"}}}}}
         with pytest.raises(DatasetConfigError):

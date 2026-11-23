@@ -38,11 +38,10 @@ from nvflare.apis.dataset_config_spec import (
     DatasetConfigError,
     StudyDatasetConfig,
     UnknownDatasetError,
+    is_valid_dataset_name,
 )
 
 FORMAT_VERSION = 1
-# the naming rule of Study runtime datasets (nvflare/app_opt/job_launcher/study_runtime.py)
-_NAME = re.compile(r"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?$")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # Query parameter names that carry a credential, compared case-insensitively: database passwords in a connection
 # string, signed or SAS URLs, and API tokens. A uri reaches every component, so these must go in secrets instead.
@@ -110,6 +109,14 @@ def _mapping(value, label: str, source: str) -> dict:
     return value
 
 
+def _component_settings(value, label, source):
+    settings = _mapping(value, label, source)
+    for component, rules in settings.items():
+        if not isinstance(component, str) or not component or not isinstance(rules, dict):
+            raise _error(source, f"{label} must map component names to settings mappings")
+    return settings
+
+
 def _check_odbc_connect(value: str, label: str, source: str):
     position = 0
     while position < len(value):
@@ -161,7 +168,7 @@ def _check_uri(uri, label: str, source: str) -> str | None:
 
 
 def _dataset(study: str, name, entry, source: str) -> tuple[DatasetConfig, dict]:
-    if not isinstance(name, str) or not _NAME.fullmatch(name):
+    if not is_valid_dataset_name(name):
         raise _error(source, f"study '{study}' has a dataset name that breaks the naming rule")
     label = f"studies.{study}.datasets.{name}"
     if not isinstance(entry, dict):
@@ -180,10 +187,7 @@ def _dataset(study: str, name, entry, source: str) -> tuple[DatasetConfig, dict]
             raise _error(source, f"{label}.secrets keys must be non-empty strings")
         if not isinstance(variable, str) or not _ENV_NAME.fullmatch(variable):
             raise _error(source, f"{label}.secrets.{key} must name an environment variable, not hold a value")
-    usage = _mapping(entry.get("usage"), f"{label}.usage", source)
-    for component in usage:
-        if not isinstance(component, str) or not component:
-            raise _error(source, f"{label}.usage keys must be non-empty component names")
+    usage = _component_settings(entry.get("usage"), f"{label}.usage", source)
     return DatasetConfig(
         study=study,
         name=name,
@@ -252,11 +256,11 @@ def parse_study_config(data, study: str, source: str, revision: str | None = Non
     version = data.get("format_version")
     if type(version) is not int or version != FORMAT_VERSION:
         raise _error(source, f"format_version must be {FORMAT_VERSION}")
-    site_usage = _mapping(data.get("usage"), "usage", source)
+    site_usage = _component_settings(data.get("usage"), "usage", source)
     studies = _mapping(data.get("studies"), "studies", source)
     selected, selected_secrets = {}, {}
     for name, entry in studies.items():
-        if not isinstance(name, str) or not _NAME.fullmatch(name):
+        if not is_valid_dataset_name(name):
             raise _error(source, "a Study name breaks the naming rule")
         entry = _mapping(entry, f"studies.{name}", source)
         unknown = set(entry) - _STUDY_KEYS
