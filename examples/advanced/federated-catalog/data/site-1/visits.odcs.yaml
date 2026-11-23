@@ -1,0 +1,16 @@
+apiVersion: v3.2.0
+kind: DataContract
+id: urn:uuid:cdd7d06e-a1da-4ec3-b0bb-2cd8d398889b
+version: 1.0.0
+status: active
+name: visits
+description:
+  purpose: Discover the visit fields approved for this Study.
+schema:
+- name: visits
+  properties:
+  - name: visit_id
+  - name: person_id
+  - name: visit_date
+  - name: visit_type
+  - name: duration_minutes

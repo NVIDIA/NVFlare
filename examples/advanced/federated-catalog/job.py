@@ -32,9 +32,9 @@ def print_catalog(results):
         extra = "".join(f", {key}: {', '.join(info[key])}" for key in ("unavailable", "skipped") if info[key])
         print(f"  {site}: {info['status']}{extra}")
     for entry in results["datasets"]:
-        metadata = entry["metadata"]
-        tables = ", ".join(f"{t['name']} ({len(t['columns'])} columns)" for t in metadata["tables"])
-        print(f"  {entry['site']} / {entry['dataset']} [{metadata['provenance']['source']}]: {tables}")
+        contract = entry["contract"]
+        tables = ", ".join(f"{t['name']} ({len(t.get('properties', []))} columns)" for t in contract.get("schema", []))
+        print(f"  {entry['site']} / {entry['dataset']} [ODCS]: {tables}")
 
 
 def main():

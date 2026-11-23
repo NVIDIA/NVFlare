@@ -10,7 +10,7 @@ column names, types, keys and relationships). You read the catalog with one Pyth
 and get every site's answer back as one result. Catalog visibility never grants access to
 the records themselves.
 
-A catalog read is an ordinary FLARE job. Only metadata leaves the site. The CSV connector samples rows locally to infer column types. Its result is
+A catalog read is an ordinary FLARE job. Only metadata leaves the site. Each successful dataset contributes one ODCS v3.2.0 contract. CSV discovery publishes header names only. Its result is
 saved with the job in the job store and downloaded to you; the server keeps no other copy.
 
 ****************
@@ -45,8 +45,8 @@ Python API: read with ``get_catalog``
    env = ProdEnv(startup_kit_location="/path/to/admin", study="oncology")
    results = get_catalog(env, datasets={"site-1": ["omop"]}, output_path="catalog_results.json")
 
-``get_catalog`` submits the read, waits for it, and returns the parsed
-``catalog_results.json``. Of the job's downloaded workspace it keeps only that file; when the read fails, the whole
+``get_catalog`` submits the read, waits for it, and returns a version 2 snapshot. Each dataset entry contains ``site``, ``dataset`` and ``contract``.
+The download retains ``catalog/index.json`` and standalone ODCS files under ``catalog/contracts/``; when the read fails, the whole
 workspace is kept for diagnosis. ``SimEnv`` returns its live simulation workspace instead of a download, and that
 workspace is left unchanged. It works in any recipe environment: ``SimEnv``, ``PocEnv`` or ``ProdEnv``.
 
@@ -159,18 +159,20 @@ Each site describes its datasets per Study in one file, its dataset configuratio
      oncology:
        datasets:
          omop:
-           type: parquet                       # selects the connector
+           type: parquet                       # selects the source reader
            uri: file:///data/oncology/omop     # where the dataset is
 
-The dataset's ``type`` selects the connector. ``parquet``, ``csv``, ``sql`` and
-``unity-catalog`` are built in; a site declares others, such as DuckDB, by class:
+The site installs ``nvflare[catalog]``. Supported source types are ``csv``, ``parquet``, ``sql``,
+``duckdb`` and ``unity-catalog``. To supply an approved contract for a dataset, add the following
+inside its entry beside ``type`` and ``uri``:
 
 .. code-block:: yaml
 
    usage:
      catalog:
-       connectors:
-         duckdb: {class: nvflare.app_opt.fdn.catalog.duckdb_connector.DuckDBConnector}
+       contract_uri: file:///data/oncology/contracts/omop.odcs.yaml
+
+This file takes precedence for catalog reads. A missing or invalid contract marks that dataset unavailable.
 
 Every dataset configured for the job's Study is eligible for cataloging, optionally narrowed by the request's
 dataset selection. The catalog does not apply sharing flags or table, column, resource or metadata exclusions.
@@ -182,10 +184,9 @@ When upgrading an existing Study, review every dataset in its ``datasets.yaml``.
 datasets without ``usage.catalog``. The new catalog includes them. Remove datasets the Study should not discover,
 or expose approved metadata through a database view. For the SQL connector, explicitly select that view with
 ``options: {tables: [approved_view]}`` in the dataset entry. Without a table list it discovers base tables.
-Then remove per-dataset ``usage.catalog`` entries.
-If any dataset retains an entry, the site reports ``CONFIG_UNAVAILABLE`` for the Study without naming datasets. Site-wide
-``usage.catalog`` remains for read limits, connector declarations and ``installed_operations``. Advertised
-operations are limited to installed capabilities and grant no execution rights. Network credentials are secret
+Remove obsolete per-dataset sharing and exclusion rules. If any remain, the site reports
+``CONFIG_UNAVAILABLE`` for the Study without naming datasets. Site-wide ``usage.catalog.limits``
+sets the read budgets. Network credentials are secret
 environment variable names, never values in the configuration or result. Source changes affect the next read;
 previously downloaded snapshots are not retracted.
 

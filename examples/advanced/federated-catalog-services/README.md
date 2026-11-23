@@ -77,8 +77,8 @@ read job to both sites, waits for it, prints a summary and saves the result:
 Catalog of Study default, job 3f1c...
   site-1: OK
   site-2: OK
-  site-1 / omop [unity-catalog]: condition_occurrence (15 columns), drug_exposure (22 columns), ...
-  site-2 / omop [sql]: condition_occurrence (15 columns), drug_exposure (22 columns), ...
+  site-1 / omop [ODCS]: condition_occurrence (15 columns), drug_exposure (22 columns), ...
+  site-2 / omop [ODCS]: condition_occurrence (15 columns), drug_exposure (22 columns), ...
 Full metadata: catalog_results.json
 ```
 
@@ -183,8 +183,8 @@ provisioned resources paths, so completed jobs and their results remain availabl
 
 A catalog read is an ordinary job. `CatalogController` runs in the job on the server and sends each site one task.
 `CatalogExecutor` runs at each site, reads the site's dataset configuration, reads each shared dataset's metadata
-through its connector and returns the source-visible metadata. The controller validates every entry and
-writes `catalog_results.json` in the job workspace, which is saved to the job store with the job; `get_catalog`
+with the ODCS reader and returns the source-visible metadata. The controller validates every entry and
+writes `catalog/index.json` and standalone ODCS contracts in the job workspace, which is saved to the job store with the job; `get_catalog`
 downloads it. The server keeps no catalog of its own.
 
 Rerun `python job.py` to read again after source changes. Use an external scheduler such as cron for regular reads.
@@ -249,7 +249,7 @@ installation is needed on the admin computer.
 
 ### Databricks Unity Catalog
 
-The same `UnityCatalogConnector` reads schema metadata from a Databricks workspace. For example, change site-1's
+The same Unity Catalog reader reads schema metadata from a Databricks workspace. For example, change site-1's
 dataset to:
 
 ```yaml
@@ -284,6 +284,6 @@ workspace. No Spark server or client is needed for this metadata-only path.
 | Start over with fresh demo data | `docker compose down --volumes --remove-orphans`, then `docker compose up -d --build --wait`. This deletes this project's current demo data and job results. |
 | PostgreSQL is unhealthy, or site-2's preparation hook fails | Check `docker compose logs postgres`. Existing volumes retain their initialized database and password; changing `POSTGRES_DB` or `POSTGRES_PASSWORD` does not update them. For disposable demo data, use the clean reset above. |
 
-The site images install the optional `nvflare[catalog]` dependencies (PyArrow, SQLAlchemy and DuckDB); network
+The site images install the optional `nvflare[catalog]` dependencies (datacontract-cli, PyArrow, SQLAlchemy and DuckDB); network
 databases also require their SQLAlchemy driver. Their license and notice files are included from the repository's
 `3rdParty` directory.

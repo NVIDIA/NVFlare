@@ -46,13 +46,12 @@ def test_example_site_configurations_are_valid_without_publication_rules(example
     config = _site_config(example, site)
     assert {name: config.get_dataset(name).type for name in config.list_datasets()} == datasets
     for name in datasets:
-        assert config.get_dataset(name).usage_rules("catalog") is None
-    settings = parse_settings(config.site_usage("catalog"))
-    if datasets.get("omop") == "duckdb":
-        # DuckDB is not built in, so the site declares the connector class.
-        assert settings.connectors["duckdb"].path == "nvflare.app_opt.fdn.catalog.duckdb_connector.DuckDBConnector"
-    else:
-        assert settings.connectors == {}
+        rules = config.get_dataset(name).usage_rules("catalog")
+        if name == "visits":
+            assert rules == {"contract_uri": "file:///prepared/site/data/visits.odcs.yaml"}
+        else:
+            assert rules is None
+    assert parse_settings(config.site_usage("catalog")).limits.max_records > 0
 
 
 def test_the_services_database_credentials_are_secrets_not_part_of_the_uri():
@@ -191,9 +190,9 @@ def test_services_sample_contains_the_complete_source_schemas():
     assert {entry["site"] for entry in sample["datasets"]} == set(types)
     for entry in sample["datasets"]:
         source = omop.schema(entry["site"])
-        assert {table["name"] for table in entry["metadata"]["tables"]} == set(source)
-        for table in entry["metadata"]["tables"]:
-            assert [(column["name"], column["type"]) for column in table["columns"]] == [
+        assert {table["name"] for table in entry["contract"]["schema"]} == set(source)
+        for table in entry["contract"]["schema"]:
+            assert [(column["name"], column["physicalType"]) for column in table["properties"]] == [
                 (name, types[entry["site"]][kind]) for name, kind, _required in source[table["name"]]
             ]
 
@@ -423,7 +422,13 @@ RESULTS = {
         {
             "site": "site-1",
             "dataset": "omop",
-            "metadata": {"tables": [{"name": "person", "columns": []}], "provenance": {"source": "parquet"}},
+            "contract": {
+                "apiVersion": "v3.2.0",
+                "kind": "DataContract",
+                "id": "omop",
+                "version": "1",
+                "schema": [{"name": "person", "properties": []}],
+            },
         }
     ],
 }
@@ -435,7 +440,7 @@ def test_result_display_shows_sites_and_datasets(capsys, example):
     output = capsys.readouterr().out
     assert "site-1: OK, unavailable: registry, skipped: big" in output
     assert "site-2: NO_RESULT" in output
-    assert "site-1 / omop [parquet]: person" in output
+    assert "site-1 / omop [ODCS]: person" in output
 
 
 def test_unity_catalog_seed_repairs_corrupt_parquet_and_publishes_atomically(tmp_path, monkeypatch):
@@ -485,7 +490,7 @@ def test_service_job_reads_the_catalog_and_saves_the_result(monkeypatch, tmp_pat
     job.main()
     assert calls["env"]["startup_kit_location"] == "/kits/admin" and calls["env"]["username"] == "admin@nvidia.com"
     assert calls["read"] == {"sites": ["site-1", "site-2"], "output_path": str(tmp_path / "out.json")}
-    assert "site-1 / omop [parquet]: person" in capsys.readouterr().out
+    assert "site-1 / omop [ODCS]: person" in capsys.readouterr().out
 
 
 def test_service_job_without_an_admin_kit_explains_the_setup_step(monkeypatch, capsys):

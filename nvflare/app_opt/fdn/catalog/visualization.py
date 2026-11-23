@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from nvflare.app_common.fdn.catalog.common.odcs import check_contract
 from nvflare.app_common.fdn.catalog.common.payload import PayloadError, check_catalog_results
 from nvflare.app_common.fdn.catalog.common.schema import CatalogInfo, ValidationError
 
@@ -39,7 +40,9 @@ class _Entry:
     site: str
     dataset: str
     status: str  # published, unavailable or skipped
-    catalog: CatalogInfo | None = None
+    tables: list | None = None
+    source: str | None = None
+    observed_at: str | None = None
 
 
 def _load(data) -> Mapping:
@@ -49,7 +52,12 @@ def _load(data) -> Mapping:
     if not isinstance(data, Mapping):
         raise ValueError("Expected a catalog_results.json file path or its loaded dict.")
     try:
-        results = check_catalog_results(data)
+        if type(data.get("format_version")) is int and data["format_version"] == 1:
+            if not isinstance(data.get("datasets"), list) or not isinstance(data.get("sites"), dict):
+                raise PayloadError("invalid legacy result")
+            results = data
+        else:
+            results = check_catalog_results(data)
     except PayloadError as error:
         raise ValueError(f"Not a catalog read result: {error}") from error
     if not isinstance(results.get("study"), str) or not results["study"]:
@@ -62,11 +70,36 @@ def _read_entries(results) -> list[_Entry]:
     for item in results["datasets"]:
         if not isinstance(item, Mapping) or not isinstance(item.get("site"), str) or not item["site"]:
             raise ValueError("Each published dataset needs a nonempty site.")
-        try:
-            catalog = CatalogInfo.from_wire({k: v for k, v in item.items() if k != "site"})
-        except ValidationError as error:
-            raise ValueError(f"Invalid catalog metadata for {item['site']}/{item.get('dataset')}: {error}") from error
-        entries.append(_Entry(item["site"], catalog.dataset, PUBLISHED, catalog))
+        if results["format_version"] == 1:
+            try:
+                catalog = CatalogInfo.from_wire({k: v for k, v in item.items() if k != "site"})
+            except ValidationError as error:
+                raise ValueError(
+                    f"Invalid catalog metadata for {item['site']}/{item.get('dataset')}: {error}"
+                ) from error
+            tables = []
+            for t in catalog.tables:
+                props = [
+                    {
+                        "name": c.name,
+                        "physicalType": c.type,
+                        "required": None if c.nullable is None else not c.nullable,
+                        "primaryKey": c.name in t.primary_key,
+                    }
+                    for c in t.columns
+                ]
+                relations = [
+                    {"from": list(r.columns), "to": [f"{r.target_table}.{col}" for col in r.target_columns]}
+                    for r in t.relationships
+                ]
+                tables.append({"name": t.name, "properties": props, "relationships": relations})
+            entries.append(
+                _Entry(item["site"], catalog.dataset, PUBLISHED, tables, catalog.provenance.source, catalog.observed_at)
+            )
+        else:
+            contract = item["contract"]
+            check_contract(contract)
+            entries.append(_Entry(item["site"], item["dataset"], PUBLISHED, contract.get("schema", []), "ODCS"))
     for site, info in results["sites"].items():
         if not isinstance(info, Mapping):
             raise ValueError(f"Invalid status for site {site}.")
@@ -169,16 +202,17 @@ class CatalogVisualization:
         """One row per site/dataset: its source, status and schema size."""
         rows = []
         for entry in self._select(site, dataset):
-            catalog = entry.catalog
             rows.append(
                 {
                     "site": entry.site,
                     "dataset": entry.dataset,
-                    "source": catalog.provenance.source if catalog else None,
+                    "source": entry.source,
                     "status": entry.status,
-                    "tables": len(catalog.tables) if catalog else None,
-                    "columns": sum(len(table.columns) for table in catalog.tables) if catalog else None,
-                    "observed_at": catalog.observed_at if catalog else None,
+                    "tables": len(entry.tables) if entry.tables is not None else None,
+                    "columns": (
+                        sum(len(t.get("properties", [])) for t in entry.tables) if entry.tables is not None else None
+                    ),
+                    "observed_at": entry.observed_at,
                 }
             )
         return pd.DataFrame(rows, columns=["site", "dataset", "source", "status", "tables", "columns", "observed_at"])
@@ -198,14 +232,18 @@ class CatalogVisualization:
                 {
                     "site": entry.site,
                     "dataset": entry.dataset,
-                    "table": table.name,
-                    "columns": len(table.columns),
-                    "primary_key": ", ".join(table.primary_key),
-                    "relationships": len(table.relationships),
+                    "table": table["name"],
+                    "columns": len(table.get("properties", [])),
+                    "primary_key": ", ".join(
+                        p["name"]
+                        for p in sorted(table.get("properties", []), key=lambda prop: prop.get("primaryKeyPosition", 0))
+                        if p.get("primaryKey")
+                    ),
+                    "relationships": len(table.get("relationships", [])),
                 }
                 for entry in self._select(site, dataset)
-                if entry.catalog is not None
-                for table in entry.catalog.tables
+                if entry.tables is not None
+                for table in entry.tables
             ],
             columns=["site", "dataset", "table", "columns", "primary_key", "relationships"],
         )
@@ -221,20 +259,20 @@ class CatalogVisualization:
         """One row per column, preserving each source's column order and type names."""
         rows = []
         for entry in self._select(site, dataset):
-            if entry.catalog is None:
+            if entry.tables is None:
                 continue
-            for info in entry.catalog.tables:
-                if info.name == table:
-                    for position, column in enumerate(info.columns, start=1):
+            for info in entry.tables:
+                if info["name"] == table:
+                    for position, column in enumerate(info.get("properties", []), start=1):
                         rows.append(
                             {
                                 "site": entry.site,
                                 "dataset": entry.dataset,
                                 "position": position,
-                                "column": column.name,
-                                "type": column.type,
-                                "nullable": column.nullable,
-                                "primary_key": column.name in info.primary_key,
+                                "column": column["name"],
+                                "type": column.get("physicalType") or column.get("logicalType") or "unknown",
+                                "nullable": None if column.get("required") is None else not column["required"],
+                                "primary_key": column.get("primaryKey"),
                             }
                         )
         return pd.DataFrame(rows, columns=["site", "dataset", "position", "column", "type", "nullable", "primary_key"])
@@ -254,15 +292,15 @@ class CatalogVisualization:
             key = (entry.site, entry.dataset)
             for name, value in values.get(key, {}).items():
                 frame.at[name, key] = value
-        frame.attrs["unavailable"] = [(e.site, e.dataset) for e in entries if e.catalog is None]
+        frame.attrs["unavailable"] = [(e.site, e.dataset) for e in entries if e.tables is None]
         return frame
 
     def get_table_comparison(self, site=None, dataset=None):
         """Compare published table presence and column counts across site/dataset pairs."""
         values = {
-            (entry.site, entry.dataset): {table.name: len(table.columns) for table in entry.catalog.tables}
+            (entry.site, entry.dataset): {table["name"]: len(table.get("properties", [])) for table in entry.tables}
             for entry in self._select(site, dataset)
-            if entry.catalog is not None
+            if entry.tables is not None
         }
         tables = sorted({table for counts in values.values() for table in counts})
         return self._comparison(values, tables, site, dataset)
@@ -330,22 +368,42 @@ class CatalogVisualization:
         )
 
     def get_relationships(self, site=None, dataset=None):
-        return pd.DataFrame(
-            [
-                {
-                    "site": entry.site,
-                    "dataset": entry.dataset,
-                    "table": table.name,
-                    "columns": ", ".join(relation.columns),
-                    "references": f"{relation.target_table}({', '.join(relation.target_columns)})",
-                }
-                for entry in self._select(site, dataset)
-                if entry.catalog is not None
-                for table in entry.catalog.tables
-                for relation in table.relationships
-            ],
-            columns=["site", "dataset", "table", "columns", "references"],
-        )
+        rows = []
+        for entry in self._select(site, dataset):
+            tables = entry.tables or []
+            names = {
+                f"schema/{t.get('id')}/properties/{col.get('id')}": (t["name"], col["name"])
+                for t in tables
+                for col in t.get("properties", [])
+                if t.get("id") and col.get("id")
+            }
+
+            def references(value):
+                refs = value if isinstance(value, list) else [value]
+                return [names.get(ref.lstrip("/"), tuple(ref.rpartition(".")[::2])) for ref in refs]
+
+            for table in tables:
+                relations = list(table.get("relationships", []))
+                for prop in table.get("properties", []):
+                    relations.extend({**rel, "from": prop["name"]} for rel in prop.get("relationships", []))
+                for rel in relations:
+                    targets = references(rel["to"])
+                    target_tables = {name for name, _ in targets}
+                    target = (
+                        f"{targets[0][0]}({', '.join(col for _, col in targets)})"
+                        if len(target_tables) == 1
+                        else ", ".join(f"{name}.{col}" for name, col in targets)
+                    )
+                    rows.append(
+                        {
+                            "site": entry.site,
+                            "dataset": entry.dataset,
+                            "table": table["name"],
+                            "columns": ", ".join(col for _, col in references(rel["from"])),
+                            "references": target,
+                        }
+                    )
+        return pd.DataFrame(rows, columns=["site", "dataset", "table", "columns", "references"])
 
     def show_relationships(self, site=None, dataset=None):
         return self._titled(

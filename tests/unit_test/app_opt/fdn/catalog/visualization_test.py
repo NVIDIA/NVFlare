@@ -48,17 +48,20 @@ def catalogs():
 def make_results(extra_site_1=()):
     """A catalog read: site-1 and site-2 publish omop, site-3 reports it unavailable, site-4 gives no result."""
     first, second = catalogs()
-    return build_catalog_results(
+    result = build_catalog_results(
         "default",
         "job-1",
         "2026-11-09T00:00:00Z",
         {
-            "site-1": SiteEntry(SiteStatus.OK, None, (first, *extra_site_1)),
-            "site-2": SiteEntry(SiteStatus.OK, None, (second,), (), ("big",)),
+            "site-1": SiteEntry(SiteStatus.OK, None, tuple(c.to_wire() for c in (first, *extra_site_1))),
+            "site-2": SiteEntry(SiteStatus.OK, None, (second.to_wire(),), (), ("big",)),
             "site-3": SiteEntry(SiteStatus.OK, None, (), ("omop",)),
             "site-4": SiteEntry(SiteStatus.NO_RESULT),
         },
     )
+
+    result["format_version"] = 1
+    return result
 
 
 @pytest.fixture
@@ -83,7 +86,7 @@ def test_loads_a_catalog_read_result_without_modifying_it(results, tmp_path, sou
         ("site-2", "omop", "published"),
         ("site-3", "omop", "unavailable"),
     ]
-    assert frame["source"].tolist() == ["parquet", None, "sql", None]
+    assert frame["source"].fillna("unavailable").tolist() == ["parquet", "unavailable", "sql", "unavailable"]
     assert pd.isna(frame.loc[3, "tables"])  # unavailable never means an empty database
     assert results == original
 
@@ -327,5 +330,36 @@ def test_runner_notebook_reads_the_catalog_and_passes_the_result_to_the_explorer
             exec(transformer.transform_cell("".join(cell["source"])), namespace)
     assert any("python job.py" in command for command in commands)
     assert not any("nvflare catalog" in command for command in commands)
-    assert namespace["vis"].get_datasets()["source"].tolist() == ["parquet", None, "sql", None]
+    assert namespace["vis"].get_datasets()["source"].fillna("unavailable").tolist() == [
+        "parquet",
+        "unavailable",
+        "sql",
+        "unavailable",
+    ]
     assert display.call_count >= 8
+
+
+def test_native_contracts_distinguish_present_untyped_missing_and_unavailable():
+    contract = {
+        "apiVersion": "v3.2.0",
+        "kind": "DataContract",
+        "id": "shared",
+        "version": "1",
+        "schema": [{"name": "visits", "properties": [{"name": "id"}]}],
+    }
+    other = {**contract, "schema": [{"name": "visits", "properties": [{"name": "date", "physicalType": "DATE"}]}]}
+    doc = build_catalog_results(
+        "study",
+        "job",
+        "2026-11-09T00:00:00Z",
+        {
+            "one": SiteEntry(SiteStatus.OK, catalogs=({"dataset": "visits", "contract": contract},)),
+            "two": SiteEntry(SiteStatus.OK, catalogs=({"dataset": "visits", "contract": other},)),
+            "three": SiteEntry(SiteStatus.OK, unavailable=("visits",)),
+        },
+    )
+    frame = CatalogVisualization(doc).get_column_comparison("visits")
+    assert frame.at["id", ("one", "visits")] == "unknown"
+    assert pd.isna(frame.at["id", ("two", "visits")])
+    assert frame.at["date", ("two", "visits")] == "DATE"
+    assert frame.attrs["unavailable"] == [("three", "visits")]

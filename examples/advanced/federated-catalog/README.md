@@ -5,11 +5,11 @@ three sites on one host. It needs no Docker and starts no services. Every
 site has an `omop` dataset containing exactly two tables: `person` and
 `condition_occurrence`. Each site stores them differently.
 
-| Site | Storage | Connector | Tables | Synthetic persons |
+| Site | Storage | Dataset type | Tables | Synthetic persons |
 | --- | --- | --- | --- | ---: |
-| site-1 | Parquet | `parquet` (built in) | `person`, `condition_occurrence` | 8 |
-| site-2 | SQLite | `sql` (built in, `SQLConnector`) | `person`, `condition_occurrence` | 12 |
-| site-3 | DuckDB | `duckdb`, declared by the site | `person`, `condition_occurrence` | 10 |
+| site-1 | Parquet | `parquet` | `person`, `condition_occurrence` | 8 |
+| site-2 | SQLite | `sql` | `person`, `condition_occurrence` | 12 |
+| site-3 | DuckDB | `duckdb` | `person`, `condition_occurrence` | 10 |
 
 There are two condition rows per person. The data is a small synthetic subset
 shaped after [OMOP CDM 5.4](https://ohdsi.github.io/CommonDataModel/cdm54.html).
@@ -20,18 +20,7 @@ Site-1 additionally shares two header-bearing CSV datasets, checked into
 Site-1 therefore publishes three dataset catalogs; site-2 and site-3 publish one
 each.
 
-| CSV dataset | Columns and inferred types |
-| --- | --- |
-| `lab_results` | `person_id`: int64, `test_name`: string, `result_value`: double, `collected_date`: date32[day], `abnormal`: bool |
-| `visits` | `visit_id`: int64, `person_id`: int64, `visit_date`: date32[day], `visit_type`: string, `duration_minutes`: int64 |
-
-The CSV connector delegates parsing and type inference to PyArrow. It infers
-from the first 64 KiB block, with at most 1 MiB of local source input for
-record boundaries and read-ahead, subject to site call/time/schema budgets.
-Only schema metadata is published; Arrow physical type names are retained.
-All-empty columns have Arrow type `null`. Nullability remains unknown, and no
-keys/relationships are inferred. Inferred types describe the initial block, not
-a validated full-file schema; later rows can differ.
+The catalog reads the `lab_results` CSV header, publishing only column names in their original order. For `visits`, the steward provides an [ODCS contract](data/site-1/visits.odcs.yaml) using the dataset’s `usage.catalog.contract_uri`. Its description is preserved. Other jobs can still use the underlying CSV.
 
 For a deployment with Unity Catalog and PostgreSQL servers running in Docker, see
 the [catalog services example](../federated-catalog-services). It runs a real
@@ -135,20 +124,15 @@ studies:
       visits:
         type: csv
         uri: file://${SITE_DATA}/visits.csv
+        usage:
+          catalog:
+            contract_uri: file://${SITE_DATA}/visits.odcs.yaml
 ```
 
 [config/site-2/datasets.yaml](config/site-2/datasets.yaml) has one `omop`
 dataset of type `sql` whose uri names its SQLite file.
 [config/site-3/datasets.yaml](config/site-3/datasets.yaml) has one of type
-`duckdb`, and declares the DuckDB connector by its class, because it is not
-built in:
-
-```yaml
-usage:
-  catalog:
-    connectors:
-      duckdb: {class: nvflare.app_opt.fdn.catalog.duckdb_connector.DuckDBConnector}
-```
+`duckdb`. The dataset type selects the reader directly.
 
 Every dataset configured for the Study is read. The source identity and readable files determine metadata visibility; the catalog does not exclude columns.
 
@@ -205,13 +189,12 @@ python -m json.tool /tmp/nvflare/federated-catalog/catalog_results.json
 With `jq`, display the table schemas at every site:
 
 ```bash
-jq '.datasets[] | {site, dataset, tables: .metadata.tables}' \
+jq '.datasets[] | {site, dataset, tables: .contract.schema}' \
   /tmp/nvflare/federated-catalog/catalog_results.json
 ```
 
 Each read returns the complete answer; the latest read is the current catalog.
-After a completed read, only `catalog_results.json` is kept in the simulation workspace. When a read fails, the
-whole workspace is kept, with the simulator logs under `/tmp/nvflare/federated-catalog/simulation/get_catalog/`.
+The simulation workspace contains the standalone ODCS files in the server run’s `catalog/contracts/` directory. The simulator logs are under `/tmp/nvflare/federated-catalog/simulation/get_catalog/`.
 
 ## Control source metadata visibility
 

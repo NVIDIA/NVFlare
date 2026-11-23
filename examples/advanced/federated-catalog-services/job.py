@@ -33,9 +33,9 @@ def print_catalog(results):
         reason = f" ({info['reason_code']})" if info["reason_code"] else ""
         print(f"  {site}: {info['status']}{reason}{extra}")
     for entry in results["datasets"]:
-        metadata = entry["metadata"]
-        tables = ", ".join(f"{t['name']} ({len(t['columns'])} columns)" for t in metadata["tables"])
-        print(f"  {entry['site']} / {entry['dataset']} [{metadata['provenance']['source']}]: {tables}")
+        contract = entry["contract"]
+        tables = ", ".join(f"{t['name']} ({len(t.get('properties', []))} columns)" for t in contract.get("schema", []))
+        print(f"  {entry['site']} / {entry['dataset']} [ODCS]: {tables}")
 
 
 def main():

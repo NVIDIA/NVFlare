@@ -7,7 +7,3 @@ studies:
       omop:                       # a DuckDB database file
         type: duckdb
         uri: file://${SITE_DATA}/omop.duckdb
-usage:
-  catalog:
-    connectors:                   # DuckDB is not built in, so the site declares its connector class
-      duckdb: {class: nvflare.app_opt.fdn.catalog.duckdb_connector.DuckDBConnector}
