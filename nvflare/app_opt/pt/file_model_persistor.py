@@ -35,6 +35,7 @@ from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
 from nvflare.fuel.utils import fobs
+from nvflare.private.fed.utils.fed_utils import authorize_job_component_paths
 
 
 class PTFileModelPersistor(ModelPersistor):
@@ -208,6 +209,7 @@ class PTFileModelPersistor(ModelPersistor):
                 self.system_panic(reason="Dict model config must have 'path' key with class path", fl_ctx=fl_ctx)
                 return
             try:
+                authorize_job_component_paths(fl_ctx, class_path)
                 self.model = instantiate_class(class_path, class_args)
             except Exception as e:
                 self.system_panic(

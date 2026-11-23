@@ -39,6 +39,12 @@ _WARN_MODE_AUDIT_ACTION = "component_authorization.unlisted_class_allowed"
 _COMPONENT_PATH_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
 
 
+_DECOMPOSER_REGISTER_PATHS = {
+    "nvflare.app_common.widgets.decomposer_reg.DecomposerRegister",
+    "nvflare.recipe.spec.DecomposerRegister",
+}
+
+
 class ClassListEnforcementMode(str, Enum):
     ENFORCE = "enforce"
     WARN = "warn"
@@ -72,32 +78,46 @@ class ComponentPathAuthorizer(Widget):
             return
 
         component_path = self._get_component_path(component_config)
-        if component_path is None:
-            return
+        paths = [component_path]
+        if component_path in _DECOMPOSER_REGISTER_PATHS:
+            paths.extend(self._get_decomposer_paths(component_config))
 
         allow_list, enforcement_mode, policy_source = self._get_policy(fl_ctx=fl_ctx, workspace=workspace)
         if ALLOW_ALL in allow_list:
             self._audit_allow_all(fl_ctx=fl_ctx, workspace=workspace, policy_source=policy_source)
             return
 
-        if not any(self._path_matches_prefix(component_path, prefix) for prefix in allow_list):
+        for path in paths:
+            if any(self._path_matches_prefix(path, prefix) for prefix in allow_list):
+                continue
+
             node_path = node.path() if node else ""
-            message = f"Component {component_path!r} at config path {node_path!r} is not in allow_list"
-            if enforcement_mode == ClassListEnforcementMode.WARN:
-                message = (
-                    f"{message}; allowing it because {CLASS_LIST_ENFORCEMENT_MODE} is "
-                    f"'{ClassListEnforcementMode.WARN.value}'"
-                )
-                self._audit_warn_mode_allow(
-                    component_path=component_path,
-                    message=message,
-                    policy_source=policy_source,
-                    fl_ctx=fl_ctx,
-                    workspace=workspace,
-                )
-                self._log_warning(fl_ctx, message)
-                return
-            raise UnsafeComponentError(message)
+            message = f"Component {path!r} at config path {node_path!r} is not in allow_list"
+            if enforcement_mode == ClassListEnforcementMode.ENFORCE:
+                raise UnsafeComponentError(message)
+
+            message = (
+                f"{message}; allowing it because {CLASS_LIST_ENFORCEMENT_MODE} is "
+                f"'{ClassListEnforcementMode.WARN.value}'"
+            )
+            self._audit_warn_mode_allow(
+                component_path=path,
+                message=message,
+                policy_source=policy_source,
+                fl_ctx=fl_ctx,
+                workspace=workspace,
+            )
+            self._log_warning(fl_ctx, message)
+
+    def _get_decomposer_paths(self, component_config):
+        args = component_config.get("args", {})
+        if isinstance(args, dict):
+            args = args.get("class_attributes", args)
+        # Require literal constructor data. A component-valued class_attributes
+        # could produce a mapping whose classes were invisible to this check.
+        if not isinstance(args, dict) or set(args) != {"classes"} or not isinstance(args["classes"], (list, tuple)):
+            raise UnsafeComponentError("DecomposerRegister requires a list of class paths in its classes argument")
+        return [self._get_component_path({"path": path}) for path in args["classes"]]
 
     def _audit_allow_all(self, policy_source: str, fl_ctx: Optional[FLContext] = None, workspace=None):
         audit_scope = self._get_audit_scope(fl_ctx=fl_ctx, workspace=workspace)

@@ -23,6 +23,7 @@ from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey,
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.model_desc import ModelDescriptor
 from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weights_dict
+from nvflare.private.fed.utils.fed_utils import authorize_job_component_paths
 
 
 class TFModelPersistor(ModelPersistor):
@@ -83,6 +84,7 @@ class TFModelPersistor(ModelPersistor):
                 self.system_panic(reason="Dict model config must have 'path' key with class path", fl_ctx=fl_ctx)
                 return None
             try:
+                authorize_job_component_paths(fl_ctx, class_path)
                 self.model = instantiate_class(class_path, class_args)
             except Exception as e:
                 self.system_panic(

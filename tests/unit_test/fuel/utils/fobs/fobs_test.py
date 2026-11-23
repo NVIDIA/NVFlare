@@ -16,16 +16,21 @@ import queue
 from datetime import datetime
 from typing import Any
 
+import msgpack
 import pytest
 
+from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
+from nvflare.app_common.abstract.statistics_spec import HistogramType
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.buffer_list import ConsumableBufferList
+from nvflare.fuel.utils.class_loader import get_class_name
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs import fobs as fobs_impl
 from nvflare.fuel.utils.fobs.datum import DatumManager
+from nvflare.fuel.utils.fobs.decomposer import DataClassDecomposer, EnumTypeDecomposer
 
 
 class TestFobs:
@@ -121,14 +126,15 @@ class TestFobs:
         new_class = fobs.loads(buf)
         assert new_class.name == TestFobs.NAME
 
-    def test_builtin_custom_decomposer_type_allowed_after_reset(self):
-        fobs.reset()
-        fobs.register(DXODecomposer)
+    @pytest.mark.parametrize("register_sender", [False, True])
+    def test_builtin_custom_decomposer_type_allowed_after_reset(self, isolated_fobs, register_sender):
+        if register_sender:
+            fobs.register(DXODecomposer)
         dxo = DXO(data_kind=DataKind.WEIGHTS, data={"w": 1.0})
         buf = fobs.dumps(dxo)
 
         # After reset, DXODecomposer will not be in _decomposers. The type name must still
-        # pass the whitelist gate so the builtin decomposer can be re-registered during unpack.
+        # pass the whitelist gate so the receiver can select its built-in decomposer.
         fobs.reset()
         restored = fobs.loads(buf)
         assert isinstance(restored, DXO)
@@ -149,6 +155,43 @@ class TestFobs:
             assert all(isinstance(key, DriverParams) for key in restored["params"])
         finally:
             fobs.reset()
+
+    @pytest.mark.parametrize("enum_type", [AnalyticsDataType, HistogramType])
+    def test_lazy_decode_keeps_process_registry_unchanged(self, isolated_fobs, enum_type):
+        value = next(iter(enum_type))
+        type_name = get_class_name(enum_type)
+        frame = {
+            fobs_impl.FOBS_TYPE: type_name,
+            fobs_impl.FOBS_DECOMPOSER: get_class_name(DataClassDecomposer),
+            fobs_impl.FOBS_DATA: {},
+        }
+
+        def decode():
+            return fobs_impl.deserialize(msgpack.packb(frame), manager=DatumManager())
+
+        with pytest.raises(ValueError, match="requires decomposer"):
+            decode()
+        assert type_name not in fobs_impl._decomposers
+
+        frame[fobs_impl.FOBS_DECOMPOSER] = get_class_name(EnumTypeDecomposer)
+        frame[fobs_impl.FOBS_DATA] = "unknown member"
+        with pytest.raises(KeyError):
+            decode()
+        assert type_name not in fobs_impl._decomposers
+
+        frame[fobs_impl.FOBS_DATA] = value.name
+        assert decode() is value
+        del frame[fobs_impl.FOBS_DECOMPOSER]
+        assert decode() is value
+        assert type_name not in fobs_impl._decomposers
+
+    def test_register_rejects_non_decomposer_before_construction(self):
+        class NotDecomposer:
+            def __init__(self):
+                pytest.fail("registration called a non-decomposer constructor")
+
+        with pytest.raises(TypeError, match="is not a Decomposer"):
+            fobs.register(NotDecomposer)
 
     def test_reset_mutates_whitelist_in_place(self):
         fobs.reset()

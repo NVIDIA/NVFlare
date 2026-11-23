@@ -745,3 +745,15 @@ def test_rejects_invalid_component_config(component_config):
 
     with pytest.raises(UnsafeComponentError):
         authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, fl_ctx)
+
+
+def test_decomposer_widget_applies_allowlist_during_component_build():
+    widget_path = "nvflare.recipe.spec.DecomposerRegister"
+    _set_class_allow_list([widget_path, "approved.Codec"])
+    config = {"path": widget_path, "args": {"classes": ["approved.Codec"]}}
+    authorizer = ComponentPathAuthorizer()
+    authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx(config))
+
+    config["args"]["classes"].append("unlisted.Codec")
+    with pytest.raises(UnsafeComponentError, match="unlisted.Codec.*allow_list"):
+        authorizer.handle_event(EventType.BEFORE_BUILD_COMPONENT, _make_fl_ctx(config))

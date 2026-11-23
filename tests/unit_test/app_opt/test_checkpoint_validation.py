@@ -18,6 +18,8 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
+from nvflare.apis.app_validation import AppValidationKey
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 
 
@@ -33,6 +35,8 @@ class TestCheckpointValidation(unittest.TestCase):
         """Test JoblibModelParamPersistor fails when model_path doesn't exist."""
         from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
 
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(FLContextKey.JOB_META, {AppValidationKey.BYOC: True})
         persistor = JoblibModelParamPersistor(model_path=self.nonexistent_path)
 
         # Mock _initialize to set save_path
@@ -41,7 +45,7 @@ class TestCheckpointValidation(unittest.TestCase):
             persistor.save_path = f"{tmpdir}/model.joblib"
 
             with self.assertRaises(ValueError) as context:
-                persistor.load_model(self.fl_ctx)
+                persistor.load_model(fl_ctx)
 
             self.assertIn("Model file not found", str(context.exception))
             self.assertIn(self.nonexistent_path, str(context.exception))

@@ -484,6 +484,17 @@ def split_gpus(gpus) -> [str]:
     return result
 
 
+def authorize_job_component_paths(fl_ctx: FLContext, *paths: str) -> None:
+    """Check the site allowlist before a job component imports secondary classes."""
+    workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+    if workspace is None and fl_ctx.get_engine() is not None:
+        workspace = fl_ctx.get_workspace()
+    for path in paths:
+        _DEFAULT_COMPONENT_PATH_AUTHORIZER.authorize_component_config(
+            {"path": path}, fl_ctx=fl_ctx, workspace=workspace
+        )
+
+
 def authorize_build_component(config_dict, config_ctx, node, fl_ctx: FLContext, event_handlers) -> str:
     workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
     if not workspace:

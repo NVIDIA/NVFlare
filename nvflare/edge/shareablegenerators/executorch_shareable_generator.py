@@ -13,8 +13,7 @@
 # limitations under the License.
 
 import base64
-import importlib
-from typing import Any, List
+from typing import List
 
 import numpy as np
 import torch
@@ -28,6 +27,9 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.edge.constants import MsgKey
 from nvflare.edge.model_protocol import ModelBufferType, ModelEncoding, ModelExchangeFormat, ModelNativeFormat
 from nvflare.edge.models.model import export_model
+from nvflare.fuel.utils.class_loader import load_class
+from nvflare.private.fed.utils.fed_utils import authorize_job_component_paths
+from nvflare.security.logging import secure_format_exception
 
 
 class ExecutorchShareableGenerator(ShareableGenerator):
@@ -39,28 +41,6 @@ class ExecutorchShareableGenerator(ShareableGenerator):
         self.output_shape = output_shape
         self.model = None
 
-    def _load_model(self, model_path: str, fl_ctx: FLContext) -> Any:
-        """Load model from model path.
-
-        Args:
-            model_path (str): model path in format "module.submodule.ClassName"
-            fl_ctx (FLContext): FL context
-
-        Returns:
-            model class instance
-        """
-        try:
-            module_path, class_name = model_path.rsplit(".", 1)
-            module = importlib.import_module(module_path)
-            model_class = getattr(module, class_name)
-            return model_class
-        except Exception as e:
-            self.system_panic(
-                reason=f"Failed to load model class from '{model_path}': {str(e)}",
-                fl_ctx=fl_ctx,
-            )
-            return None
-
     def _export_current_model(self) -> bytes:
         """Export current model in ExecutorTorch format."""
         input_tensor = torch.randn(self.input_shape)
@@ -71,11 +51,14 @@ class ExecutorchShareableGenerator(ShareableGenerator):
 
     def handle_event(self, event: str, fl_ctx: FLContext):
         if event == EventType.START_RUN:
-            base_model = self._load_model(self.base_model_path, fl_ctx)
-            executorch_model = self._load_model(self.executorch_model_path, fl_ctx)
-            base_model_inst = base_model()
-            self.model = executorch_model(base_model_inst)
-            # Verify self.model is a torch model
+            try:
+                authorize_job_component_paths(fl_ctx, self.base_model_path, self.executorch_model_path)
+                base_model = load_class(self.base_model_path)
+                executorch_model = load_class(self.executorch_model_path)
+                self.model = executorch_model(base_model())
+            except Exception as e:
+                self.system_panic(reason=f"Failed to load model: {secure_format_exception(e)}", fl_ctx=fl_ctx)
+                return
             if not isinstance(self.model, torch.nn.Module):
                 self.system_panic(reason="Model is not a torch model", fl_ctx=fl_ctx)
 

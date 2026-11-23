@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 
 from joblib import dump, load
 
+from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -56,6 +57,8 @@ class JoblibModelParamPersistor(ModelPersistor):
         Unlike PTFileModelPersistor, this persistor does NOT instantiate model classes.
         It only stores and transmits parameter values (e.g., hyperparameters, weights).
         The sklearn model class is instantiated on the client side using these params.
+        Loading a Joblib checkpoint requires a locally authorized BYOC job or a local
+        simulation because Joblib uses pickle. Other jobs initialize from initial_params.
 
         Args:
             initial_params: Initial parameters dict (e.g., {"n_clusters": 3, "kernel": "rbf"}).
@@ -93,19 +96,25 @@ class JoblibModelParamPersistor(ModelPersistor):
         """
         model = None
         initial_params = self.initial_params if isinstance(self.initial_params, dict) else {}
+        job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+        can_load_checkpoint = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE) is True or (
+            isinstance(job_meta, dict) and job_meta.get(AppValidationKey.BYOC) is True
+        )
 
         # Priority 1: Load from explicit model_path argument, or from initial_params (backward compat)
         path = self.model_path or initial_params.get(MODEL_PATH_KEY)
         if path:
             if not os.path.isabs(str(path)):
                 raise ValueError(f"model_path must be a non-empty absolute path, got: {path!r}")
+            if not can_load_checkpoint:
+                raise PermissionError("Loading a Joblib checkpoint requires BYOC authorization or local simulation")
             if not os.path.exists(path):
                 raise ValueError(f"Model file not found: {path}. Check that the file exists at runtime.")
             self.logger.info(f"Loading model from {path}")
             model = load(path)
 
         # Priority 2: Load from previously saved model
-        if model is None and os.path.exists(self.save_path):
+        if model is None and can_load_checkpoint and os.path.exists(self.save_path):
             self.logger.info("Loading server model")
             model = load(self.save_path)
 
@@ -118,9 +127,8 @@ class JoblibModelParamPersistor(ModelPersistor):
                     model = config
             if model is None:
                 raise ValueError(
-                    "No model parameters available. Provide initial_params (hyperparameters) "
-                    "and/or model_path (absolute path to saved .joblib/.pkl), "
-                    "or ensure a previously saved model exists."
+                    "No model parameters available. Provide initial_params (hyperparameters). "
+                    "Jobs authorized to load checkpoints can also use an absolute model_path or a saved model."
                 )
 
         model_learnable = make_model_learnable(weights=model, meta_props=dict())

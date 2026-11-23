@@ -168,3 +168,27 @@ def test_wrapped_constructor_arguments_cannot_hide_nested_components(authorize):
                 },
             }
         )
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_worker_applies_site_policy_to_decomposer_paths(authorize, wrapped):
+    check, ctx, resources = authorize
+    resources.write_text(json.dumps({"class_allow_list": ["allowed.", "nvflare."]}))
+    component = {
+        "id": "codecs",
+        "path": "nvflare.app_common.widgets.decomposer_reg.DecomposerRegister",
+        "args": {"classes": ["allowed.Codec", "unlisted.Codec"]},
+    }
+    if wrapped:
+        component["args"] = {"class_attributes": component["args"]}
+    with pytest.raises(ComponentNotAuthorized, match="unlisted.Codec.*allow_list"):
+        check({"path": "allowed.Executor"}, components=(component,))
+
+    resources.write_text(
+        json.dumps({"class_allow_list": ["allowed.", "nvflare."], "class_list_enforcement_mode": "warn"})
+    )
+    check({"path": "allowed.Executor"}, components=(component,))
+
+    resources.write_text(json.dumps({"class_allow_list": []}))
+    ctx.set_prop(FLContextKey.JOB_META, {"byoc": True})
+    check({"path": "allowed.Executor"}, components=(component,))
