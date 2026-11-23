@@ -24,7 +24,7 @@ import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import ReturnCode
-from nvflare.apis.fl_context import FLContextManager
+from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -154,7 +154,13 @@ def test_failed_capture_does_not_reuse_baseline(tmp_path):
 def test_baseline_stays_local_through_context_serialization(tmp_path, isolated_fobs):
     fl_ctx, auditor = context(tmp_path)
     marker = "AUDIT_BASELINE_MUST_NOT_ENTER_SERIALIZED_CONTEXT"
-    capture(FLModel(params={"w": 1}, meta={"marker": marker}, current_round=0), fl_ctx)
+    incoming = FLModel(params={"w": 1}, meta={"marker": marker}, current_round=0)
+    capture(incoming, fl_ctx)
+
+    direct_ctx = FLContext()
+    capture(incoming, direct_ctx)
+    assert getattr(direct_ctx, _BASELINE_ATTR).meta["marker"] == marker
+    assert marker.encode() not in fobs.dumps(direct_ctx)
 
     wire = fobs.dumps(get_serializable_data(fl_ctx))
     assert marker.encode() not in wire
