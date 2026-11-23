@@ -144,14 +144,6 @@ def _check_uri(uri, label: str, source: str, dataset_type: str) -> str | None:
         raise _error(source, f"{label}.uri is not a valid URI") from None
     if not parts.scheme or not _SCHEME.match(parts.scheme):
         raise _error(source, f"{label}.uri must be an absolute URI with a scheme")
-    # A raw /, ? or # inside user:password terminates the authority early.
-    # Force parsing the port so a truncated user:password prefix cannot pass as a host.
-    try:
-        _ = parts.port
-    except ValueError:
-        raise _error(source, f"{label}.uri has an invalid authority") from None
-    # SQLAlchemy-style database URLs accept raw delimiters in userinfo up to @.
-    # A numeric password prefix can otherwise masquerade as a valid port.
     sql_dialect = parts.scheme.lower().split("+", 1)[0] in {
         "postgres",
         "postgresql",
@@ -162,14 +154,17 @@ def _check_uri(uri, label: str, source: str, dataset_type: str) -> str | None:
         "snowflake",
         "redshift",
     }
-    if (
-        (dataset_type == "sql" or sql_dialect)
-        and ":" in parts.netloc
-        and "@" not in parts.netloc
-        and not parts.netloc.startswith("[")
-    ):
-        suffix = uri.partition("://")[2][len(parts.netloc) :]
-        if re.search(r"@[^/?#]+(?:[/?#]|$)", suffix):
+    # Some drivers accept a host list or a custom authority. Only single-host
+    # SQL and HTTP addresses use the standard library's single-port parser.
+    if (sql_dialect or parts.scheme in {"http", "https"}) and "," not in parts.netloc:
+        try:
+            _ = parts.port
+        except ValueError:
+            raise _error(source, f"{label}.uri has an invalid authority") from None
+    # A raw delimiter in SQL user:password terminates urlsplit's authority.
+    # SQLAlchemy still consumes the password up to @, including for socket URLs.
+    if (dataset_type == "sql" or sql_dialect) and ":" in parts.netloc and not parts.netloc.startswith("["):
+        if "@" not in parts.netloc and any("@" in field for field in (parts.path, parts.query, parts.fragment)):
             raise _error(source, f"{label}.uri has ambiguous user information")
     if parts.password is not None:
         raise _error(source, f"{label}.uri must not contain a password; put credentials in secrets")

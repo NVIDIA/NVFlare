@@ -202,10 +202,17 @@ class TestValidation:
 
     @pytest.mark.parametrize("separator", ["/", "?", "#"])
     @pytest.mark.parametrize("prefix", ["pw", "123"])
-    def test_unescaped_password_delimiter_is_rejected_without_echoing_it(self, separator, prefix):
+    @pytest.mark.parametrize("host", ["db", ""])
+    def test_unescaped_password_delimiter_is_rejected_without_echoing_it(self, separator, prefix, host):
         with pytest.raises(DatasetConfigError) as error:
-            parse(with_dataset(type="sql", uri=f"postgresql://reader:{prefix}{separator}private@db/study"))
+            parse(with_dataset(type="sql", uri=f"postgresql://reader:{prefix}{separator}private@{host}/study"))
         assert "private" not in str(error.value)
+
+    def test_replica_set_in_another_study_does_not_block_loading(self):
+        uri = "mongodb://db1:27017,db2:27017/study"
+        data = with_dataset(type="mongodb", uri=uri)
+        assert parse(data).get_dataset("d").uri == uri
+        assert parse(data, study="another").list_datasets() == []
 
     def test_username_without_password_is_allowed(self):
         config = parse(with_dataset(type="sql", uri="postgresql://reader@host/db"))
