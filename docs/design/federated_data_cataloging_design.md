@@ -6,7 +6,7 @@ The site generates one Open Data Contract Standard (ODCS) document in memory for
 
 ## Site execution
 
-For each selected dataset, `CatalogExecutor` calls `read_odcs(dataset, secret, budget, *, site)`.
+For each selected dataset, `CatalogExecutor` calls `run_catalog_discovery()` in `catalog_discovery_worker.py`. The child process calls `build_odcs_contract()` in `odcs_contract_builder.py` to generate and validate the document.
 
 The site administrator configures the source address in `datasets.yaml`. FLARE translates that address and the dataset options into arguments for the pinned Data Contract CLI importer. The importer returns metadata in memory. FLARE selects the structural fields, builds the ODCS document and validates it before sending it to the server. [Upstream Python entry point](https://github.com/datacontract/datacontract-cli/blob/fc6452e457fc449c4bbd948db15d9cd4eccb73f2/datacontract/data_contract.py#L402)
 
@@ -23,7 +23,7 @@ The live SQL implementation supports PostgreSQL. MySQL and Snowflake would requi
 At the per-dataset call site, the executor supplies the authenticated site name for generated contract IDs and a secret lookup scoped to that dataset. All datasets in the task share one deadline, call allowance and published-record allowance. The site runs each read in a local child process. At the deadline it can stop a blocked source read, import or validation and return the contracts already completed. The sender reserves space for status entries within a 16 MiB site reply. The controller enforces the same reply limit. The reader chooses the source from site configuration.
 
 ```python
-contract = read_odcs(dataset, secret, budget, site=site_name)
+contract = run_catalog_discovery(dataset, secret, budget, site=site_name)
 catalogs.append({"dataset": dataset.name, "contract": contract})
 ```
 
