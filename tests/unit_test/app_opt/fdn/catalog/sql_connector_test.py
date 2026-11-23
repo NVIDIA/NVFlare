@@ -23,6 +23,7 @@ from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLim
 from nvflare.app_common.fdn.catalog.site.connector import ConnectorError
 from nvflare.app_opt.fdn.catalog import _metadata
 from nvflare.app_opt.fdn.catalog.sql_connector import SQLConnector
+from tests.unit_test.app_opt.fdn.catalog.datasets import dataset_config
 from tests.unit_test.app_opt.fdn.catalog.datasets import read as read_dataset
 
 NETWORK = {
@@ -237,3 +238,29 @@ def test_sqlalchemy_receives_the_dialect_credentials_and_driver_settings(monkeyp
     assert url.drivername == "postgresql+psycopg" and url.database == "clinical" and url.host == "private-host"
     assert (url.username, url.password) == ("reader", "secret")
     assert kwargs["connect_args"] == {"connect_timeout": 5} and kwargs["hide_parameters"]
+
+
+def test_odbc_dsn_uses_dataset_secrets_at_connection_time(monkeypatch):
+    from sqlalchemy.dialects.mssql.pyodbc import MSDialect_pyodbc
+
+    dataset, secret = dataset_config(type_="sql", uri="mssql+pyodbc://study_dsn", secrets=NETWORK["secrets"])
+    monkeypatch.setenv("STUDY_DB_USER", "reader")
+    monkeypatch.setenv("STUDY_DB_PASSWORD", "demo")
+    args, _ = MSDialect_pyodbc().create_connect_args(SQLConnector._url(dataset, secret))
+    assert args[0].split(";") == ["dsn=study_dsn", "UID=reader", "PWD=demo"]
+    assert dataset.uri == "mssql+pyodbc://study_dsn"
+
+
+def test_odbc_pass_through_does_not_silently_ignore_configured_credentials():
+    dataset, secret = dataset_config(
+        type_="sql", uri="mssql+pyodbc:///?odbc_connect=DSN%3Ddemo", secrets=NETWORK["secrets"]
+    )
+    with pytest.raises(ConnectorError, match="use a DSN or hostname URL"):
+        SQLConnector._url(dataset, secret)
+
+
+def test_explicit_sql_view_returns_only_projected_columns(database):
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE VIEW approved AS SELECT year_of_birth FROM person")
+    result = read_dataset(SQLConnector(), LIMITS, type_="sql", path=database, options={"tables": ["approved"]})
+    assert [(t.name, [c.name for c in t.columns]) for t in result.tables] == [("approved", ["year_of_birth"])]

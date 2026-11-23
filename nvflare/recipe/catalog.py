@@ -55,7 +55,8 @@ class CatalogRecipe(Recipe):
 
     Args:
         name: the job name.
-        sites: the sites to read. None reads every site of the Study.
+        sites: the sites to read. None includes the participating clients at job start. Explicitly requested
+            sites that do not join the job are recorded as NO_RESULT.
         datasets: maps a site to the configured dataset names to read there. A site absent from the mapping reads
             all datasets declared for its Study. With None, every selected site reads all its Study datasets.
         task_timeout_s: how long to wait for a site before recording it as NO_RESULT.

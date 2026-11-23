@@ -81,6 +81,10 @@ support does not establish that every database and version has been qualified. S
 [SQLAlchemy reflection](https://docs.sqlalchemy.org/en/20/core/reflection.html) and
 [database URLs](https://docs.sqlalchemy.org/en/20/core/engines.html#database-urls).
 
+For password-authenticated ODBC connections, configure a DSN URL such as `mssql+pyodbc://study_dsn` and map
+the `username` and `password` secrets. The connector reads them when it builds the connection.
+Use a credential-free `odbc_connect` string for driver-managed authentication.
+
 A SQLite database file:
 
 ```yaml
@@ -192,6 +196,7 @@ across concurrent schema changes or prove that declared constraints are enforced
 The executor does not redact tables, columns, resources, descriptive metadata or lineage. Configure database
 identities and source schemas/table projections whose metadata may be published to the Study. Verify metadata
 visibility for the chosen database: restricting row reads does not necessarily hide system-catalog metadata.
+For SQL views, set `options.tables: [approved_view]` to select the view explicitly. Default SQL discovery lists base tables.
 For Parquet, CSV, SQLite and DuckDB files, restrict the files or directories made readable to the job. The dataset
 configuration and Study/job authorization remain site-owned; a request cannot supply another URI or credentials.
 

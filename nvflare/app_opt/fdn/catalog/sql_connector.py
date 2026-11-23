@@ -68,6 +68,9 @@ class SQLConnector(CatalogConnector):
                 raise ConnectorError("an existing database is required")
             path = Path(unquote(urlsplit(database).path) if database.startswith("file:") else database)
             return _sqlite_url(path)
+        if "odbc_connect" in url.query and {"username", "password"}.intersection(dataset.secret_keys):
+            # The pyodbc dialect ignores URL credentials when a complete connection string is supplied.
+            raise ConnectorError("use a DSN or hostname URL for ODBC connections with configured credentials")
         if "username" in dataset.secret_keys:
             url = url.set(username=secret("username"))
         if "password" in dataset.secret_keys:
