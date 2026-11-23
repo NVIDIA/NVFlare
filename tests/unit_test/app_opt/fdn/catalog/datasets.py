@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Builds the DatasetConfig a connector receives, through the dataset configuration API, as the executor does."""
+"""Build the ODCS reader input through the same Study configuration API as the executor."""
 
 from pathlib import Path
 

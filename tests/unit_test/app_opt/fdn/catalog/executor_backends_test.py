@@ -22,6 +22,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.app_common.fdn.catalog.common.limits import DEFAULT_LIMITS, ReadLimits
 from nvflare.app_common.fdn.catalog.common.payload import (
     CATALOG_JOB_META,
     CATALOG_READ_KEY,
@@ -30,7 +31,6 @@ from nvflare.app_common.fdn.catalog.common.payload import (
     build_task_payload,
     parse_result,
 )
-from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLimits
 from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor
 
 

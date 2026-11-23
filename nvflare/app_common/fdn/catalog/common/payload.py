@@ -21,8 +21,8 @@ from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 
+from nvflare.app_common.fdn.catalog.common.limits import MAX_TEXT_LEN, ReadLimits
 from nvflare.app_common.fdn.catalog.common.odcs import check_contract
-from nvflare.app_common.fdn.catalog.common.schema import MAX_TEXT_LEN, ReadLimits
 
 CATALOG_READ_KEY = "catalog_read"  # the Shareable key of the task payload and the site result
 TASK_NAME = "catalog_read"

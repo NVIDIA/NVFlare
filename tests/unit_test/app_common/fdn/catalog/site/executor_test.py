@@ -232,8 +232,8 @@ class TestDeadline:
         assert [c["dataset"] for c in parsed.catalogs] == ["good"] and parsed.skipped == ("good-b",)
 
 
-class TestConnectorSelection:
-    def test_type_without_a_connector_is_unavailable(self):
+class TestSourceSelection:
+    def test_unsupported_source_type_is_unavailable(self):
         assert result(run(config_doc({"x": dataset(type_="no-such-type")}))).unavailable == ("x",)
 
     def test_secrets_are_read_through_the_dataset(self, monkeypatch, reader):

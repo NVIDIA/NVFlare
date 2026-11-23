@@ -14,6 +14,7 @@
 
 import pytest
 
+from nvflare.app_common.fdn.catalog.common.limits import ReadLimits
 from nvflare.app_common.fdn.catalog.common.payload import (
     PayloadError,
     ReasonCode,
@@ -28,7 +29,6 @@ from nvflare.app_common.fdn.catalog.common.payload import (
     parse_task_payload,
     task_time_budget,
 )
-from nvflare.app_common.fdn.catalog.common.schema import ReadLimits
 from tests.unit_test.app_common.fdn.catalog.helpers import LIMITS, contract_entry
 
 

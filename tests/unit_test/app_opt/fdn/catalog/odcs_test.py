@@ -18,7 +18,7 @@ from dataclasses import replace
 
 import pytest
 
-from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLimits
+from nvflare.app_common.fdn.catalog.common.limits import DEFAULT_LIMITS, ReadLimits
 from nvflare.app_opt.fdn.catalog.odcs import read_odcs
 from tests.unit_test.app_opt.fdn.catalog.datasets import dataset_config
 

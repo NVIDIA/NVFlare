@@ -21,7 +21,7 @@ This module has no FLARE imports.
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLimits
+from nvflare.app_common.fdn.catalog.common.limits import DEFAULT_LIMITS, ReadLimits
 
 CATALOG_COMPONENT = "catalog"
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared metadata-only connector validation and read accounting."""
+"""Source settings and read budgets for ODCS discovery."""
 
 import time
 from collections.abc import Mapping
@@ -46,17 +46,16 @@ class ReadBudget:
 
 
 def local_path(dataset) -> Path:
-    """The local path of a dataset whose ``uri`` is a file URI; a network URL cannot be read by a file connector."""
+    """Return the local path for a file-backed dataset."""
     if dataset.path is None:
-        raise CatalogSourceError("this connector reads local files and needs a file:// uri")
+        raise CatalogSourceError("file-backed datasets require a file:// URI")
     return Path(dataset.path)
 
 
 def selection(options, allowed, required=()):
-    """The dataset's options as a plain dict, checked against the keys this connector accepts. The dataset
-    configuration API returns read-only mappings and tuples; "tables" comes back as a list."""
+    """Validate source options and return a mutable copy with the table selection as a list."""
     if not isinstance(options, Mapping) or set(options) - set(allowed) or set(required) - set(options):
-        raise CatalogSourceError("dataset options are invalid for this connector")
+        raise CatalogSourceError("invalid options for this dataset source")
     options = dict(options)
     for key, value in options.items():
         if key == "tables":

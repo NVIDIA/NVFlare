@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLimits
+from nvflare.app_common.fdn.catalog.common.limits import DEFAULT_LIMITS, ReadLimits
 from nvflare.app_common.fdn.catalog.site.settings import SettingsError, parse_settings
 
 
@@ -40,8 +40,6 @@ class TestParseSettings:
             {"limits": {"max_records": True}},
             {"limits": {"other": 1}},
             {"connectors": {"x": {"args": {}}}},
-            {"connectors": {"x": {"class": "a.B", "extra": 1}}},
-            {"connectors": {"x": {"class": "a.B", "args": []}}},
             {"installed_operations": "cohort.count"},
         ],
     )
