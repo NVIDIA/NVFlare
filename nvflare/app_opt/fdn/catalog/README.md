@@ -14,8 +14,9 @@ configuration API. Each call to a connector receives:
   configuration names;
 - `limits`: the remaining time, call and record budgets.
 
-The dataset's catalog rules (`usage.catalog`) decide what is published; the connector only reads. Connectors
-publish the structure the source itself reports. Descriptive and semantic fields, such as a description or a declared
+The source administrator controls metadata visibility through credentials, database namespaces and readable files.
+Every configured Study dataset can be cataloged without per-dataset publication rules. Connectors publish the
+structure the source itself reports. Descriptive and semantic fields, such as a description or a declared
 OMOP version, stay unknown.
 
 ## The connectors
@@ -29,7 +30,7 @@ OMOP version, stay unknown.
 | `UnityCatalogConnector` | `unity-catalog` (built in) | The REST API root | `catalog`, `schema` (required), `tables` | `token` |
 
 A file connector given a network URL fails the dataset with a safe error. A site declares an additional connector,
-such as DuckDB, under `usage.catalog.connectors`, and a dataset's rules may name another connector with `connector`.
+such as DuckDB, under `usage.catalog.connectors`; the dataset's `type` selects that name.
 
 ## ParquetConnector
 
@@ -40,8 +41,6 @@ such as DuckDB, under `usage.catalog.connectors`, and a dataset's rules may name
       omop:
         type: parquet
         uri: file:///data/oncology/omop
-        usage:
-          catalog: {share: true}
 ```
 
 The dataset is either one `.parquet` file or a directory:
@@ -66,8 +65,6 @@ header row with unique, nonempty column names. Install `pyarrow>=14`.
       lab_results:
         type: csv
         uri: file:///data/oncology/lab_results/lab_results.csv
-        usage:
-          catalog: {share: true}
 ```
 
 PyArrow infers column types from the first 64 KiB of a sample of at most 1 MiB of the file. These are sampled types,
@@ -90,8 +87,6 @@ A SQLite database file:
       registry:
         type: sql
         uri: file:///data/oncology/registry/registry.sqlite
-        usage:
-          catalog: {share: true}
 ```
 
 The file is opened read-only, and a missing database is never created. Columns and constraints come from
@@ -108,8 +103,6 @@ A network database:
           tables: [person, condition_occurrence]
           connect_args: {connect_timeout: 5}
         secrets: {username: EHR_DB_USER, password: EHR_DB_PASSWORD}
-        usage:
-          catalog: {share: true}
 ```
 
 The `uri` holds no credentials; the `username` and `password` secrets complete it when configured. The site delivers
@@ -133,8 +126,6 @@ in the same schema. Physical types are rendered by the database dialect, without
         uri: https://uc.oncology.example/api/2.1/unity-catalog
         options: {catalog: unity, schema: clinical}
         secrets: {token: UC_TOKEN}
-        usage:
-          catalog: {share: true}
 ```
 
 The `uri` is the API root, for example `http://localhost:8080/api/2.1/unity-catalog` for a local demo with
@@ -170,8 +161,6 @@ studies:
         type: duckdb
         uri: file:///data/oncology/claims/claims.duckdb
         options: {schema: main}
-        usage:
-          catalog: {share: true}
 usage:
   catalog:
     connectors:
@@ -197,3 +186,16 @@ Duration checks are cooperative, not a universal cancellation mechanism. Configu
 timeouts for the chosen driver; HTTP timeouts limit connect and read inactivity. A connector that blocks past the time
 it is given can still lose its site's result. A catalog read does not establish a transactionally consistent snapshot
 across concurrent schema changes or prove that declared constraints are enforced.
+
+## Source-owned visibility
+
+The executor does not redact tables, columns, resources, descriptive metadata or lineage. Configure database
+identities and source schemas/table projections whose metadata may be published to the Study. Verify metadata
+visibility for the chosen database: restricting row reads does not necessarily hide system-catalog metadata.
+For Parquet, CSV, SQLite and DuckDB files, restrict the files or directories made readable to the job. The dataset
+configuration and Study/job authorization remain site-owned; a request cannot supply another URI or credentials.
+
+Remove obsolete per-dataset `usage.catalog` entries, including `share`, exclusions, advertised-operation rules and
+connector overrides. A Study with any such entry returns `CONFIG_UNAVAILABLE` at that site until it is migrated. Site-wide
+`usage.catalog` remains for limits, connector declarations and `installed_operations`; advertised operations are
+intersected with installed capabilities and authorize no execution.

@@ -64,8 +64,8 @@ class CatalogController(Controller):
         task_timeout_s: int = 300,
         sites: list[str] | None = None,
     ):
-        """datasets maps a site to the names to read there; a site reads the named datasets it shares and skips the
-        rest. A site that is not in the mapping, or None, reads everything it shares. The job's clients are the sites
+        """datasets maps a site to the names to read there; a site reads the named datasets configured for its Study and skips the
+        rest. A site that is not in the mapping, or None, reads every dataset configured for its Study. The job's clients are the sites
         it was deployed to. sites lists the sites the caller asked for, if it named them: a named site that is not
         among the job's clients (offline, or not scheduled) is recorded as NO_RESULT instead of being left out."""
         super().__init__()

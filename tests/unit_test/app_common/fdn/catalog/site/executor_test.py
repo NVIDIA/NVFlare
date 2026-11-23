@@ -82,11 +82,10 @@ class BrokenConnector(CatalogConnector):
         raise RuntimeError("secret")
 
 
-SHARE = {"share": True, "operations": ["cohort.count"]}
 SETTINGS = {"connectors": {"fake": {"class": f"{MODULE}.FakeConnector"}}, "installed_operations": ["cohort.count"]}
 
 
-def dataset(type_="fake", rules=SHARE, **extra):
+def dataset(type_="fake", rules=None, **extra):
     entry = {"type": type_, "uri": "file:///data/study1/x", **extra}
     if rules is not None:
         entry["usage"] = {"catalog": rules}
@@ -160,64 +159,57 @@ class TestConfiguration:
         parsed = result(run(config_doc({"good": dataset()}, settings={"limits": {"max_records": 0}})))
         assert parsed.reason_code == ReasonCode.CONFIG_UNAVAILABLE and parsed.catalogs == ()
 
-    def test_invalid_rules_of_a_shared_dataset_make_it_unavailable(self):
-        bad = dataset(rules={"share": True, "exclude_tables": "t"})
-        parsed = result(run(config_doc({"good": dataset(), "bad": bad})))
-        assert [c.dataset for c in parsed.catalogs] == ["good"] and parsed.unavailable == ("bad",)
-
     @pytest.mark.parametrize(
         "rules",
         [
-            {"share": False, "exclude_tables": "t"},
-            {"share": "yes"},
-            {"exclude_tables": ["t"]},
-            ["share"],
-            {"share": False, "exclude_columns": {"secret_table": "secret_column"}},
-            {"share": True, "exclude_columns": {"secret_table": "secret_column"}},
-            {"share": True, "secret_table": ["x"]},
-            {"share": True, "exclude_metadata": ["secret_field"]},
+            {"share": False},
+            {"share": True},
+            {"exclude_columns": {"secret_table": ["secret_column"]}},
+            {"connector": "fake"},
+            {"operations": ["cohort.count"]},
+            {},
         ],
     )
-    def test_invalid_rules_of_a_dataset_not_explicitly_shared_never_name_it(self, rules, caplog):
-        reply = run(config_doc({"good": dataset(), "private-x": dataset(rules=rules)}))
+    @pytest.mark.parametrize("selection", [None, ["good"]])
+    def test_obsolete_policy_fails_the_study_without_disclosing_identifiers(self, rules, selection, caplog):
+        reply = run(config_doc({"good": dataset(), "private": dataset(rules=rules)}), datasets=selection)
         parsed = result(reply)
-        assert [c.dataset for c in parsed.catalogs] == ["good"]
-        assert parsed.unavailable == (("private-x",) if isinstance(rules, dict) and rules.get("share") is True else ())
-        if parsed.unavailable == ():
-            assert "private-x" not in str(reply[CATALOG_READ_KEY]) and "private-x" not in caplog.text
-        for secret in ("secret_table", "secret_column", "secret_field"):
-            assert secret not in caplog.text and secret not in str(reply[CATALOG_READ_KEY])
+        assert parsed.status == ResultStatus.FAILED and parsed.reason_code == ReasonCode.CONFIG_UNAVAILABLE
+        assert parsed.catalogs == parsed.unavailable == parsed.skipped == ()
+        assert "no longer supported" in caplog.text
+        for private in ("private", "secret_table", "secret_column"):
+            assert private not in caplog.text and private not in str(reply[CATALOG_READ_KEY])
 
     def test_no_datasets_is_an_ok_empty_read(self):
         parsed = result(run(config_doc({})))
         assert parsed.status == ResultStatus.OK and parsed.catalogs == ()
 
 
-class TestSharing:
-    def test_unshared_datasets_are_omitted_by_name(self):
-        doc = config_doc(
-            {"good": dataset(), "private": dataset(rules={"share": False}), "norules": dataset(rules=None)}
+class TestSourceMetadata:
+    def test_all_study_datasets_are_read_without_publication_rules(self):
+        doc = config_doc({"good": dataset(), "other": dataset()})
+        assert [c.dataset for c in result(run(doc)).catalogs] == ["good", "other"]
+
+    def test_reported_structure_and_lineage_are_preserved(self):
+        catalog = result(run(config_doc({"good": dataset()}))).catalogs[0]
+        source = make_catalog(
+            dataset="good",
+            operations=("cohort.count", "cohort.sum"),
+            lineage=(Lineage("good", None), Lineage("private", None)),
         )
-        reply = run(doc)
-        parsed = result(reply)
-        assert [c.dataset for c in parsed.catalogs] == ["good"]
-        text = str(reply[CATALOG_READ_KEY])
-        assert "private" not in text and "norules" not in text
+        assert catalog.tables == source.tables
+        assert catalog.lineage == source.lineage
+        assert catalog.description == source.description
 
-    def test_lineage_to_an_unshared_dataset_is_removed(self):
-        doc = config_doc({"good": dataset(), "private": dataset(rules={"share": False})})
-        catalog = result(run(doc)).catalogs[0]
-        assert [x.dataset for x in catalog.lineage] == ["good"]
-
-    def test_rules_are_applied(self):
-        rules = {**SHARE, "exclude_tables": ["visit"], "exclude_metadata": ["description"]}
-        catalog = result(run(config_doc({"good": dataset(rules=rules)}))).catalogs[0]
-        assert [t.name for t in catalog.tables] == ["person"]
+    def test_advertised_operations_are_limited_to_installed_capabilities(self):
+        catalog = result(run(config_doc({"good": dataset()}))).catalogs[0]
         assert catalog.operations == ("cohort.count",)
+        settings = {**SETTINGS, "installed_operations": []}
+        assert result(run(config_doc({"good": dataset()}, settings=settings))).catalogs[0].operations == ()
 
-    def test_selection_reads_only_listed_shared_datasets(self):
-        doc = config_doc({"good": dataset(), "good-b": dataset(), "private": dataset(rules={"share": False})})
-        parsed = result(run(doc, datasets=["good-b", "private", "unknown"]))
+    def test_selection_reads_only_requested_study_datasets(self):
+        doc = config_doc({"good": dataset(), "good-b": dataset()})
+        parsed = result(run(doc, datasets=["good-b", "unknown"]))
         assert [c.dataset for c in parsed.catalogs] == ["good-b"]
         assert parsed.unavailable == () and parsed.skipped == ()
 
@@ -236,6 +228,17 @@ class TestFailures:
         parsed = result(run(doc))
         assert [c.dataset for c in parsed.catalogs] == ["good"]
         assert set(parsed.unavailable) == {"corrupt-b", "boom-c", "swapped-d", "invalid-e"}
+
+    def test_revoked_source_access_does_not_reuse_a_previous_schema(self, monkeypatch):
+        doc = config_doc({"good": dataset()})
+        assert result(run(doc)).catalogs
+
+        def denied(*args):
+            raise ConnectorError("source unavailable")
+
+        monkeypatch.setattr(FakeConnector, "read_catalog", denied)
+        latest = result(run(doc))
+        assert latest.catalogs == () and latest.unavailable == ("good",)
 
     def test_budget_stop_is_skipped(self):
         parsed = result(run(config_doc({"budget-a": dataset(), "good": dataset()})))
@@ -278,8 +281,9 @@ class TestConnectorSelection:
     def test_type_without_a_connector_is_unavailable(self):
         assert result(run(config_doc({"x": dataset(type_="no-such-type")}))).unavailable == ("x",)
 
-    def test_rules_may_name_another_connector(self):
-        doc = config_doc({"x": dataset(type_="parquet", rules={**SHARE, "connector": "fake"})})
+    def test_the_dataset_type_selects_a_site_declared_connector(self):
+        settings = {"connectors": {"site-alias": {"class": f"{MODULE}.FakeConnector"}}}
+        doc = config_doc({"x": dataset(type_="site-alias")}, settings=settings)
         assert [c.dataset for c in result(run(doc)).catalogs] == ["x"]
 
     def test_connector_that_cannot_be_built_is_unavailable(self):

@@ -50,14 +50,14 @@ class CatalogRecipe(Recipe):
     """Reads the dataset catalogs of the sites in a Study.
 
     The Study is the one of the execution environment (for example ``ProdEnv(study=...)``). Each site reads the
-    datasets its dataset configuration declares and shares what its catalog rules permit. The controller writes the
+    datasets declared for that Study using the site-configured source access. The controller writes the
     result to ``catalog_results.json`` in the job workspace; ``get_catalog_results`` downloads and loads it.
 
     Args:
         name: the job name.
         sites: the sites to read. None reads every site of the Study.
-        datasets: maps a site to the dataset names to read there; the site reads those it shares and skips the
-            others. A site not in the mapping reads everything it shares, and so does None.
+        datasets: maps a site to the configured dataset names to read there. A site absent from the mapping reads
+            all datasets declared for its Study. With None, every selected site reads all its Study datasets.
         task_timeout_s: how long to wait for a site before recording it as NO_RESULT.
         task_request_interval_s: how often, in seconds, sites ask the server for work during this job (the server's
             ``task_request_interval`` for this job only). The 0.1 s default lets sites notice the end of the run right

@@ -20,7 +20,7 @@ from collections.abc import Callable
 from nvflare.apis.dataset_config_spec import DatasetConfig
 from nvflare.app_common.fdn.catalog.common.schema import CatalogInfo, ReadLimits
 
-# the connector the dataset's `type` selects, when its catalog rules name none
+# the connector selected by the dataset's site-configured `type`
 BUILTIN_CONNECTORS = {
     "parquet": "nvflare.app_opt.fdn.catalog.parquet_connector.ParquetConnector",
     "csv": "nvflare.app_opt.fdn.catalog.csv_connector.CSVConnector",
@@ -40,7 +40,12 @@ class ConnectorError(Exception):
 
 
 class CatalogConnector(ABC):
-    """Reads one dataset's metadata per call. Constructed with the non-secret args the site declares, with no I/O."""
+    """Read metadata visible to the configured source identity or file projection.
+
+    The source administrator controls publication through credentials, schemas and readable files. The executor
+    validates the returned catalog but does not redact its tables, columns, resources, metadata or lineage.
+    Constructed with the site's non-secret connector arguments, with no I/O.
+    """
 
     # what the connector connects to ("parquet", ...); a safe label, never a path or endpoint
     source: str

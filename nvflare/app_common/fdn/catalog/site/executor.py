@@ -15,7 +15,6 @@
 """The site-side executor of the catalog_read task."""
 
 import time
-from collections.abc import Mapping
 from dataclasses import replace
 
 from nvflare.apis.dataset_config_spec import DatasetConfigError, StudyDatasetConfig, get_study_dataset_config
@@ -36,13 +35,11 @@ from nvflare.app_common.fdn.catalog.common.payload import (
 )
 from nvflare.app_common.fdn.catalog.common.schema import ValidationError, validate
 from nvflare.app_common.fdn.catalog.site.connector import BUILTIN_CONNECTORS, CatalogConnector, ConnectorError
-from nvflare.app_common.fdn.catalog.site.rules import (
+from nvflare.app_common.fdn.catalog.site.settings import (
     CATALOG_COMPONENT,
     CatalogSettings,
     ConnectorSpec,
-    RulesError,
-    apply_policy,
-    parse_rule,
+    SettingsError,
     parse_settings,
 )
 from nvflare.fuel.utils.class_loader import load_class
@@ -109,30 +106,21 @@ class CatalogExecutor(Executor):
         try:
             config = self.load_config(fl_ctx)
             settings = parse_settings(config.site_usage(CATALOG_COMPONENT))
-        except (DatasetConfigError, RulesError) as e:
+        except (DatasetConfigError, SettingsError) as e:
             self.log_error(fl_ctx, f"catalog read refused: {e}")
             return build_result(ResultStatus.FAILED, reason_code=ReasonCode.CONFIG_UNAVAILABLE)
 
         listed = config.list_datasets()
+        # A catalog can name other datasets through lineage, even on a selective read.
+        # Refuse an unmigrated Study before returning any identifiers.
+        if any(config.get_dataset(name).usage_rules(CATALOG_COMPONENT) is not None for name in listed):
+            self.log_error(
+                fl_ctx,
+                "per-dataset usage.catalog is no longer supported; configure source metadata permissions "
+                "and remove the obsolete catalog rules from the site dataset configuration",
+            )
+            return build_result(ResultStatus.FAILED, reason_code=ReasonCode.CONFIG_UNAVAILABLE)
         selected = [n for n in task.datasets if n in listed] if task.datasets is not None else listed
-        rules, unavailable = {}, []
-        for name in listed:  # every rule is checked, so lineage can be filtered against what the site shares
-            raw = config.get_dataset(name).usage_rules(CATALOG_COMPONENT)
-            if raw is None:
-                continue
-            # Only a dataset whose rules explicitly share it may ever be named outside the site, in the result or in
-            # a log line (job logs can be streamed to the server).
-            explicitly_shared = isinstance(raw, Mapping) and raw.get("share") is True
-            label = f"datasets.{name}.usage.catalog" if explicitly_shared else "a dataset's usage.catalog"
-            try:
-                rules[name] = parse_rule(raw, label)
-            except RulesError as e:
-                # A rule error never names table or column names; the dataset is named only if explicitly shared.
-                self.log_error(fl_ctx, f"catalog rules are invalid and the dataset is not read: {e}")
-                if explicitly_shared and name in selected:
-                    unavailable.append(name)
-        shared = {name for name, rule in rules.items() if rule.share}
-
         limits = settings.limits
         # The read ends by the site's own limit or the time the task leaves, whichever is first, so completed catalogs
         # are returned before the controller gives up on this site.
@@ -140,19 +128,17 @@ class CatalogExecutor(Executor):
         if task.time_budget_s is not None:
             duration = min(duration, task.time_budget_s)
         deadline = time.monotonic() + duration
-        catalogs, skipped, opened = [], [], {}
+        catalogs, unavailable, skipped, opened = [], [], [], {}
         used_records = 0
         try:
             for name in selected:
-                if name not in shared:
-                    continue  # not shared: the name never leaves the site
                 if abort_signal.triggered:
                     return None
                 if time.monotonic() >= deadline or used_records >= limits.max_records:
                     skipped.append(name)
                     continue
                 dataset = config.get_dataset(name)
-                connector = self._connector_for(rules[name].connector or dataset.type, settings, fl_ctx, opened)
+                connector = self._connector_for(dataset.type, settings, fl_ctx, opened)
                 if connector is None:
                     unavailable.append(name)
                     continue
@@ -167,9 +153,10 @@ class CatalogExecutor(Executor):
                         raise ConnectorError("read budget exceeded", budget=True)
                     if catalog.dataset != name:
                         raise ValidationError("a connector may only return the dataset it was asked for")
-                    catalog = apply_policy(rules[name], catalog, settings.installed_operations)
-                    # lineage never names a dataset the site does not share
-                    catalog = replace(catalog, lineage=tuple(x for x in catalog.lineage if x.dataset in shared))
+                    # Advertising an operation is limited to installed capabilities; it grants no execution rights.
+                    catalog = replace(
+                        catalog, operations=tuple(sorted(set(catalog.operations) & settings.installed_operations))
+                    )
                     if catalog.record_count() > remaining.max_records:
                         raise ConnectorError("record budget exceeded", budget=True)
                     validate(catalog, remaining)

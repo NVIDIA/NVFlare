@@ -37,7 +37,7 @@ from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor
 @pytest.mark.parametrize("managed", [False, True], ids=["unity-catalog-oss", "databricks"])
 def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeypatch, managed):
     """Real file/SQL metadata and a controlled REST boundary, configured in one datasets.yaml and read through the
-    dataset configuration API, share the same task and catalog rules."""
+    dataset configuration API, use the same task and source-owned metadata boundary."""
     import sqlite3
 
     arrow = pytest.importorskip("pyarrow")
@@ -87,18 +87,16 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
 
     monkeypatch.setattr(uc_module.requests, "Session", Session)
 
-    def dataset(type_, uri, table, **extra):
+    def dataset(type_, uri, **extra):
         return {
             "type": type_,
             "uri": uri,
             **extra,
-            "usage": {"catalog": {"share": True, "exclude_columns": {table: ["secret"]}}},
         }
 
     catalog_entry = dataset(
         "unity-catalog",
         endpoint + "/api/2.1/unity-catalog",
-        "patients",
         options={"catalog": "health", "schema": "ehr"},
     )
     if managed:
@@ -108,9 +106,9 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
         "studies": {
             "study1": {
                 "datasets": {
-                    "parquet": dataset("parquet", (root / "parquet").as_uri(), "parquet"),
-                    "csv": dataset("csv", (root / "csv").as_uri(), "csv"),
-                    "sql": dataset("sql", (root / "sql").as_uri(), "patients", options={"tables": ["patients"]}),
+                    "parquet": dataset("parquet", (root / "parquet").as_uri()),
+                    "csv": dataset("csv", (root / "csv").as_uri()),
+                    "sql": dataset("sql", (root / "sql").as_uri(), options={"tables": ["patients"]}),
                     "catalog": catalog_entry,
                 }
             }
@@ -135,7 +133,9 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
         "sql": "sql",
         "catalog": "unity-catalog",
     }
-    assert all([column.name for table in c.tables for column in table.columns] == ["id"] for c in parsed.catalogs)
+    assert all(
+        [column.name for table in c.tables for column in table.columns] == ["id", "secret"] for c in parsed.catalogs
+    )
     assert len(calls) == 1 and calls[0][0] == endpoint + "/api/2.1/unity-catalog/tables"
     assert (calls[0][1]["headers"].get("Authorization") == "Bearer site-only-token") is managed
     assert "private-row" not in json.dumps(result) and "site-only-token" not in json.dumps(result)

@@ -7,7 +7,7 @@ design (`docs/design/federated_data_cataloging_design.md`) and the site dataset 
 A catalog read is an ordinary FLARE job, built by `CatalogRecipe`. Its server half, `CatalogController`, asks each
 site for its metadata and writes `catalog_results.json` in the job workspace. The job runner saves that workspace to
 the job store with the job, and the user downloads it with the job result. The server keeps no catalog of its own.
-At each site, `CatalogExecutor` reads the site's dataset configuration and returns only what the site shares.
+At each site, `CatalogExecutor` reads the site's dataset configuration and returns metadata visible through the source identity or files the site administrator configured.
 
 ## 1. The pieces
 
@@ -15,8 +15,8 @@ At each site, `CatalogExecutor` reads the site's dataset configuration and retur
 | --- | --- | --- |
 | `nvflare/recipe/catalog.py` | `CatalogRecipe`, `get_catalog`, `CatalogReadError` | Build and run the job; download and load its result. `get_catalog(env, ...)` is the recipe in one call. |
 | `server/controller.py` | `CatalogController` | Sends one `catalog_read` task per site, validates every returned entry with its own limits, and writes `catalog_results.json`. |
-| `site/executor.py` | `CatalogExecutor` | Runs the task at a site: takes a dataset configuration snapshot, applies the catalog rules, reads each shared dataset through its connector, and validates the result. |
-| `site/rules.py` | `parse_rule`, `parse_settings`, `apply_policy` | Validate a dataset's `usage.catalog` rules and the site-wide `usage.catalog` settings; apply a dataset's rules to its catalog. |
+| `site/executor.py` | `CatalogExecutor` | Runs the task at a site: takes a Study dataset configuration snapshot, reads selected datasets through their source identities, and validates the result. |
+| `site/settings.py` | `parse_settings` | Validate site-wide `usage.catalog` read limits, connector declarations and installed capabilities. |
 | `site/connector.py` | `CatalogConnector`, `ConnectorError`, `BUILTIN_CONNECTORS` | The connector interface, and the connector class each built-in dataset `type` selects. |
 | `common/schema.py` | `CatalogInfo`, `validate`, `ReadLimits` | The metadata model and its checks. No FLARE or I/O imports. |
 | `common/payload.py` | `build_task_payload`, `build_result`, `parse_result`, `build_catalog_results` | The task payload, a site's result, and the `catalog_results.json` document. No FLARE or I/O imports. |
@@ -48,11 +48,16 @@ Site code never imports server code, and `common/` imports only `common/`; `site
 1. `execute` refuses a task from a job without the meta property (`TASK_UNSUPPORTED`).
 2. `load_config` takes a dataset configuration snapshot of the job's Study, and `parse_settings` validates the
    site-wide catalog settings. Either failing returns `FAILED` with `CONFIG_UNAVAILABLE`.
-3. Every dataset's `usage.catalog` rules are parsed. A dataset without rules or with `share: false` is not shared
-   and never named. Invalid rules make a selected dataset unavailable.
-4. For each selected, shared dataset, the connector is the one its rules name, else the one its `type` selects.
-   Connectors are built once per name, from built-in classes or classes the site declares.
-5. The connector reads the dataset. The executor checks the dataset name, applies the rules, removes lineage to
-   datasets the site does not share, and validates the result against the remaining budget.
-6. A source or validation failure makes the dataset unavailable. A budget stop makes it, and every later shared
+3. Select the requested datasets from the Study's configured datasets, or all of them when no selection is given.
+   Per-dataset `usage.catalog` is no longer supported: remove old sharing/exclusion rules after configuring source
+   metadata permissions. If any dataset retains these settings, the site returns `CONFIG_UNAVAILABLE` without dataset names.
+4. Each dataset's `type` selects a built-in or site-declared connector, constructed once per name.
+5. The connector reads the source metadata. The executor checks the dataset name, limits advertised operations to
+   `installed_operations`, and validates the complete result without publication filtering. Reported structure,
+   metadata and lineage are preserved; their visibility is the source administrator's responsibility.
+6. A source or validation failure makes the dataset unavailable. A budget stop makes it, and every later selected
    dataset, skipped. An abort returns `TASK_ABORTED`.
+
+Configure a source identity and schema/table projection whose metadata is suitable for the Study. Row-level data
+permissions do not necessarily hide schema metadata. File sources require a suitable directory or file projection.
+Results are snapshots: a later source restriction affects the next read; it does not retract downloaded results.
