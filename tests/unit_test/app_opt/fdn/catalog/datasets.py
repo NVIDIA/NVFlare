@@ -30,8 +30,3 @@ def dataset_config(name="ds", type_="parquet", uri=None, path=None, options=None
         {"format_version": 1, "studies": {"study1": {"datasets": {name: entry}}}}, "study1", "datasets.yaml"
     )
     return config.get_dataset(name), lambda key: config.get_secret(name, key)
-
-
-def read(connector, limits, **kwargs):
-    dataset, secret = dataset_config(**kwargs)
-    return connector.read_catalog(dataset, secret, limits)

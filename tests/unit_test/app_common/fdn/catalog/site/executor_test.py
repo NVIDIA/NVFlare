@@ -31,8 +31,8 @@ from nvflare.app_common.fdn.catalog.common.payload import (
     parse_result,
 )
 from nvflare.app_common.fdn.catalog.site import executor as executor_module
-from nvflare.app_common.fdn.catalog.site.connector import ConnectorError
 from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor
+from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
 from tests.unit_test.app_common.fdn.catalog.helpers import LIMITS, contract_entry
 
 
@@ -45,9 +45,9 @@ class FakeReader:
         self.durations.append(limits.max_duration_s)
         name = dataset.name
         if name.startswith("corrupt") or dataset.type != "fake":
-            raise ConnectorError("unreadable")
+            raise CatalogSourceError("unreadable")
         if name.startswith("budget"):
-            raise ConnectorError("too big", budget=True)
+            raise CatalogSourceError("too big", budget=True)
         if name.startswith("boom"):
             raise RuntimeError("secret path /x/y")
         if name.startswith("invalid"):
@@ -191,7 +191,7 @@ class TestFailures:
         assert result(run(doc)).catalogs
 
         def denied(*args, **kwargs):
-            raise ConnectorError("source unavailable")
+            raise CatalogSourceError("source unavailable")
 
         monkeypatch.setattr(executor_module, "read_odcs", denied)
         latest = result(run(doc))

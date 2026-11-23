@@ -56,13 +56,13 @@ def test_csv_header_preserves_quoted_line_endings_and_ignores_row_encoding(tmp_p
 def test_invalid_csv_header_is_refused(tmp_path, content):
     import csv
 
-    from nvflare.app_common.fdn.catalog.site.connector import ConnectorError
+    from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
 
     pytest.importorskip("datacontract")
     path = tmp_path / "header.csv"
     path.write_text(content)
     dataset, secret = dataset_config(path=path, type_="csv")
-    with pytest.raises((ConnectorError, csv.Error)):
+    with pytest.raises((CatalogSourceError, csv.Error)):
         read_odcs(dataset, secret, LIMITS, site="site")
 
 
@@ -71,12 +71,12 @@ def test_provided_contract_wins_even_when_missing_or_invalid(tmp_path, monkeypat
     pytest.importorskip("jsonschema")
     from jsonschema import ValidationError
 
-    from nvflare.app_opt.fdn.catalog import sql_connector
+    from nvflare.app_opt.fdn.catalog import odcs
 
     def no_live_discovery(*args):
         pytest.fail("a supplied contract must never trigger SQL access")
 
-    monkeypatch.setattr(sql_connector, "read_tables", no_live_discovery)
+    monkeypatch.setattr(odcs, "import_schema", no_live_discovery)
     path = tmp_path / "approved.yaml"
     dataset, secret = dataset_config(type_="sql", uri="postgresql://example.org/study")
     dataset = replace(dataset, usage={"catalog": {"contract_uri": path.as_uri()}})
@@ -94,3 +94,56 @@ def test_provided_contract_wins_even_when_missing_or_invalid(tmp_path, monkeypat
     path.write_text(json.dumps({**contract, "unsupported": True}))
     with pytest.raises(ValidationError):
         read_odcs(dataset, secret, LIMITS, site="site")
+
+
+def test_sqlite_selection_imports_ddl_without_disclosing_external_foreign_keys(tmp_path):
+    import sqlite3
+
+    pytest.importorskip("datacontract")
+    path = tmp_path / "source.sqlite"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE private_target (id INTEGER PRIMARY KEY)")
+        db.execute("CREATE TABLE visits (id INTEGER PRIMARY KEY, subject INTEGER REFERENCES private_target(id))")
+    dataset, secret = dataset_config(type_="sql", path=path, options={"tables": ["visits"]})
+    contract = read_odcs(dataset, secret, LIMITS, site="one")
+    assert [table["name"] for table in contract["schema"]] == ["visits"]
+    assert [col["name"] for col in contract["schema"][0]["properties"]] == ["id", "subject"]
+    assert "private_target" not in json.dumps(contract)
+
+
+def test_postgres_import_connects_with_the_dataset_credential(monkeypatch):
+    pytest.importorskip("datacontract")
+    psycopg = pytest.importorskip("psycopg")
+    from unittest.mock import Mock
+
+    # Stop at the database boundary, after the real upstream importer has selected its driver.
+    connect = Mock(side_effect=RuntimeError("test connection reached"))
+    monkeypatch.setattr(psycopg, "connect", connect)
+    monkeypatch.setenv("SITE_DB_USER", "study_reader")
+    monkeypatch.setenv("SITE_DB_PASSWORD", "test-password")
+    dataset, secret = dataset_config(
+        type_="sql",
+        uri="postgresql://study.example:5544/clinical",
+        options={"schema": "study"},
+        secrets={"username": "SITE_DB_USER", "password": "SITE_DB_PASSWORD"},
+    )
+    with pytest.raises(RuntimeError, match="test connection reached"):
+        read_odcs(dataset, secret, LIMITS, site="one")
+    connect.assert_called_once_with(
+        host="study.example", port=5544, dbname="clinical", user="study_reader", password="test-password"
+    )
+
+
+def test_partition_parts_must_have_matching_imported_schemas(tmp_path):
+    pytest.importorskip("datacontract")
+    arrow = pytest.importorskip("pyarrow")
+    parquet = pytest.importorskip("pyarrow.parquet")
+    from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
+
+    parts = tmp_path / "visits"
+    parts.mkdir()
+    parquet.write_table(arrow.table({"id": [1]}), parts / "a.parquet")
+    parquet.write_table(arrow.table({"id": ["private"]}), parts / "b.parquet")
+    dataset, secret = dataset_config(path=tmp_path)
+    with pytest.raises(CatalogSourceError, match="inconsistent"):
+        read_odcs(dataset, secret, LIMITS, site="one")

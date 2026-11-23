@@ -44,7 +44,19 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
     pytest.importorskip("datacontract")
     parquet = pytest.importorskip("pyarrow.parquet")
     pytest.importorskip("sqlalchemy")
-    from nvflare.app_opt.fdn.catalog import unity_catalog_connector as uc_module
+    sdk = pytest.importorskip("databricks.sdk")
+    from databricks.sdk.service.catalog import TableInfo
+    from datacontract.data_contract import DataContract
+    from datacontract.imports import unity_importer
+
+    formats = []
+    upstream_import = DataContract.import_from_source
+
+    def traced_import(**kwargs):
+        formats.append(kwargs["format"])
+        return upstream_import(**kwargs)
+
+    monkeypatch.setattr(DataContract, "import_from_source", staticmethod(traced_import))
 
     root = tmp_path / "data" / "study1"
     root.mkdir(parents=True)
@@ -56,37 +68,33 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
     monkeypatch.setenv("SITE_CATALOG_TOKEN", "site-only-token")
     calls = []
 
-    class Response:
-        status_code = 200
+    class Tables:
+        def list(self, catalog_name, schema_name):
+            assert (catalog_name, schema_name) == ("health", "ehr")
+            return [SimpleNamespace(name="patients")]
 
-        def __enter__(self):
-            return self
+        def get(self, name):
+            assert name == "health.ehr.patients"
+            return TableInfo.from_dict(
+                {
+                    "name": "patients",
+                    "catalog_name": "health",
+                    "schema_name": "ehr",
+                    "comment": "private-comment",
+                    "storage_location": "s3://site-private-data",
+                    "columns": [
+                        {"name": "id", "type_text": "bigint", "nullable": False},
+                        {"name": "secret", "type_text": "string", "nullable": True},
+                    ],
+                }
+            )
 
-        def __exit__(self, *args):
-            pass
+    def workspace(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(tables=Tables())
 
-        def json(self):
-            return {
-                "tables": [
-                    {
-                        "name": "patients",
-                        "catalog_name": "health",
-                        "schema_name": "ehr",
-                        "columns": [
-                            {"name": "id", "type_text": "bigint", "nullable": False},
-                            {"name": "secret", "type_text": "string", "nullable": True},
-                        ],
-                        "storage_location": "s3://site-private-data",
-                    }
-                ]
-            }
-
-    class Session(Response):
-        def get(self, url, **kwargs):
-            calls.append((url, kwargs))
-            return Response()
-
-    monkeypatch.setattr(uc_module.requests, "Session", Session)
+    monkeypatch.setattr(sdk, "WorkspaceClient", workspace)
+    monkeypatch.setattr(unity_importer, "WorkspaceClient", workspace)
 
     def dataset(type_, uri, **extra):
         return {
@@ -133,6 +141,9 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
         assert [p["name"] for t in entry["contract"]["schema"] for p in t["properties"]] == ["id", "secret"]
         if entry["dataset"] == "csv":
             assert entry["contract"]["schema"][0]["properties"] == [{"name": "id"}, {"name": "secret"}]
-    assert len(calls) == 1 and calls[0][0] == endpoint + "/api/2.1/unity-catalog/tables"
-    assert (calls[0][1]["headers"].get("Authorization") == "Bearer site-only-token") is managed
-    assert "private-row" not in json.dumps(result) and "site-only-token" not in json.dumps(result)
+    assert sorted(formats) == ["parquet", "sql", "unity"]
+    assert len(calls) == 2  # discover names with the SDK, then run the upstream Unity importer
+    assert all(call["host"] == endpoint for call in calls)
+    assert all((call["token"] == "site-only-token") is managed for call in calls)
+    for private in ("private-row", "private-comment", "site-private-data", "site-only-token"):
+        assert private not in json.dumps(result)

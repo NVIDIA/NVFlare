@@ -34,8 +34,8 @@ from nvflare.app_common.fdn.catalog.common.payload import (
     build_result,
     parse_task_payload,
 )
-from nvflare.app_common.fdn.catalog.site.connector import ConnectorError
 from nvflare.app_common.fdn.catalog.site.settings import CATALOG_COMPONENT, SettingsError, parse_settings
+from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
 from nvflare.app_opt.fdn.catalog.odcs import read_odcs
 
 
@@ -111,10 +111,10 @@ class CatalogExecutor(Executor):
                 )
                 records = check_contract(contract)
                 if records > remaining.max_records or time.monotonic() >= deadline:
-                    raise ConnectorError("read budget exceeded", budget=True)
+                    raise CatalogSourceError("read budget exceeded", budget=True)
                 used_records += records
                 catalogs.append({"dataset": name, "contract": contract})
-            except ConnectorError as e:
+            except CatalogSourceError as e:
                 (skipped if e.budget else unavailable).append(name)
             except Exception as e:
                 self.log_warning(fl_ctx, f"catalog read failed for a dataset: {type(e).__name__}")
