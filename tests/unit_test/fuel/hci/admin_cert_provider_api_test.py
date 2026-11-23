@@ -17,7 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.hci.client.api import AdminAPI
+from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey
 from nvflare.fuel.hci.proto import InternalCommands
 from nvflare.fuel.sec.admin_cert_provider import AdminCertFiles
@@ -253,6 +253,38 @@ def test_user_login_reconnects_when_cell_is_missing_without_another_renewal(monk
     api._user_login()
 
     assert connected == [True]
+
+
+def test_explicit_login_registers_again_after_confirmed_session_loss(monkeypatch):
+    api = object.__new__(AdminAPI)
+    old_cell = object()
+    new_cell = object()
+    api.cell = old_cell
+    api.ensure_client_cert_valid = lambda: False
+    registrations = []
+    login_cells = []
+
+    def reset():
+        assert api.cell is old_cell
+        api.cell = None
+
+    def register():
+        assert api.cell is None
+        registrations.append(new_cell)
+        api.cell = new_cell
+
+    def login():
+        login_cells.append(api.cell)
+        status = APIStatus.ERROR_INACTIVE_SESSION if api.cell is old_cell else APIStatus.SUCCESS
+        return {ResultKey.STATUS: status}
+
+    monkeypatch.setattr(api, "_reset_cell", reset)
+    monkeypatch.setattr(api, "connect", register)
+    monkeypatch.setattr(api, "_login_on_cell", login)
+
+    assert api._user_login()[ResultKey.STATUS] == APIStatus.SUCCESS
+    assert registrations == [new_cell]
+    assert login_cells == [old_cell, new_cell]
 
 
 def test_connect_cleans_up_partial_cell_after_authentication_failure(monkeypatch):

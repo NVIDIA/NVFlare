@@ -34,6 +34,7 @@ from nvflare.apis.fl_constant import (
     ReturnCode,
 )
 from nvflare.apis.fl_context import FLContext, FLContextManager
+from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
@@ -665,7 +666,12 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             resp = self._user_login()
 
             status = resp.get(ResultKey.STATUS)
-            if status in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
+            if status in (
+                APIStatus.SUCCESS,
+                APIStatus.ERROR_AUTHENTICATION,
+                APIStatus.ERROR_CERT,
+                APIStatus.ERROR_INACTIVE_SESSION,
+            ):
                 if status == APIStatus.SUCCESS:
                     self.fire_session_event(EventType.LOGIN_SUCCESS)
                 else:
@@ -685,6 +691,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             self.fire_session_event(EventType.BEFORE_LOGIN)
             result = self._try_login()
             self.debug(f"login status: {result.get(ResultKey.STATUS)}")
+        except FLCommunicationError as e:
+            result = {ResultKey.STATUS: APIStatus.ERROR_SERVER_CONNECTION, ResultKey.DETAILS: str(e)}
         except Exception as e:
             result = {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
@@ -740,12 +748,12 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
     def _get_command_list_from_server(self) -> bool:
         self.server_cmd_received = False
         self.server_execute(InternalCommands.GET_CMD_LIST, _CmdListReplyProcessor())
-        self.server_cmd_reg.finalize(self.register_command)
         if not self.server_cmd_received:
             return False
         return True
 
     def _after_login(self) -> dict:
+        self.server_cmd_reg = CommandRegister(app_ctx=self)
         result = self._get_command_list_from_server()
         if not result:
             return {
@@ -763,6 +771,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                     if new_module_spec is not None:
                         extra_module_specs.append(new_module_spec)
 
+        self.client_cmd_reg = CommandRegister(app_ctx=self)
+        self.all_cmds.clear()
+        self.server_cmd_reg.finalize(self.register_command)
         self._load_client_cmds_from_modules(self.cmd_modules)
         if extra_module_specs:
             self._load_client_cmds_from_module_specs(extra_module_specs)
@@ -783,6 +794,15 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.ensure_client_cert_valid()
         if not self.cell:
             self.connect()
+        result = self._login_on_cell()
+        if result.get(ResultKey.STATUS) == APIStatus.ERROR_INACTIVE_SESSION:
+            # An explicit login can recover from a restart that discarded our registration.
+            self._reset_cell()
+            self.connect()
+            result = self._login_on_cell()
+        return result
+
+    def _login_on_cell(self):
         command = f"{InternalCommands.CERT_LOGIN} {self.user_name}"
         id_asserter = IdentityAsserter(private_key_file=self.client_key, cert_file=self.client_cert)
         cn_signature = id_asserter.sign_common_name(nonce="")
@@ -795,7 +815,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         }
 
         self.login_result = None
-        self.server_execute(command, _LoginReplyProcessor(), headers=headers)
+        result = self.server_execute(command, _LoginReplyProcessor(), headers=headers)
+        if result and result.get(ResultKey.STATUS) == APIStatus.ERROR_INACTIVE_SESSION:
+            return result
         if self.login_result is None:
             return {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
@@ -864,6 +886,13 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 request=request,
                 timeout=timeout,
             )
+            if (
+                isinstance(cell_reply, CellMessage)
+                and cell_reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.INVALID_SESSION
+            ):
+                self.server_sess_active = False
+                process_json_func(make_error(ReplyKeyword.SESSION_INACTIVE))
+                return
             reply = cell_reply.payload
 
         if reply:
@@ -994,6 +1023,11 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
                 fl_ctx=fl_ctx,
                 targets=[FQCN.ROOT_SERVER],  # to server
             )
+            if rc == CellReturnCode.INVALID_SESSION:
+                self.server_sess_active = False
+                error = Connection()
+                error.append_error(ReplyKeyword.SESSION_INACTIVE)
+                return error.close()
             if rc != ReturnCode.OK:
                 self.logger.error(f"failed to stream file to server: {rc}")
                 return None

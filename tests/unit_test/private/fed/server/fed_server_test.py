@@ -35,17 +35,27 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey, MessageType
+from nvflare.fuel.f3.cellnet.defs import CellChannelTopic, MessageHeaderKey, MessagePropKey, MessageType
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.streaming.blob_streamer import BlobStream
+from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver, RxTask
 from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer, TxTask
-from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, StreamDataType, StreamHeaderKey
+from nvflare.fuel.f3.streaming.stream_const import (
+    STREAM_ACK_TOPIC,
+    STREAM_CHANNEL,
+    STREAM_DATA_TOPIC,
+    STREAM_ERROR_TOPIC,
+    StreamDataType,
+    StreamHeaderKey,
+)
+from nvflare.fuel.f3.streaming.stream_types import StreamSessionInactive
 from nvflare.fuel.hci.proto import ReplyKeyword
 from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.hci.server.sess import SessionManager
+from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
 from nvflare.private.defs import (
     CellChannel,
@@ -762,6 +772,140 @@ class TestFederatedServer:
             binary_headers = server._validate_auth_headers(request)
             assert binary_headers.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
         finally:
+            manager.shutdown()
+
+    def test_registered_client_with_admin_shaped_name_can_send_heartbeat(self, auth_server):
+        server, private_key = auth_server
+        name = new_admin_client_name()
+        token = "regular-registration"
+        client = Client(name, token)
+        client.set_fqcn(name)
+        server.client_manager.clients[token] = client
+        request = new_cell_message(
+            {
+                MessageHeaderKey.ORIGIN: name,
+                MessageHeaderKey.DESTINATION: "server",
+                MessageHeaderKey.CHANNEL: CellChannel.SERVER_MAIN,
+                MessageHeaderKey.TOPIC: CellChannelTopic.HEART_BEAT,
+                CellMessageHeaderKeys.CLIENT_NAME: name,
+                CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content(name + token, private_key),
+            },
+            None,
+        )
+        request.set_prop(MessagePropKey.ENDPOINT, Endpoint(name))
+        assert server._validate_auth_headers(request) is None
+        assert request.get_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT) is None
+
+    def test_pending_admin_cannot_ack_another_sites_transfer(self, auth_server, monkeypatch):
+        server, private_key = auth_server
+        monkeypatch.setattr("nvflare.fuel.hci.server.sess.threading.Thread.start", lambda _: None)
+        monkeypatch.setattr("nvflare.fuel.f3.streaming.byte_streamer.reliable_retry_scheduler", MagicMock())
+        manager = SessionManager(MagicMock())
+        server.admin_server = SimpleNamespace(sess_mgr=manager)
+        core = MagicMock()
+        core.fire_and_forget.return_value = {}
+        streamer = server.cell.byte_streamer = ByteStreamer(core)
+        task = TxTask(core, 1024, "site-channel", "topic", "site-a", {}, BlobStream(b"OK", {}), True, False, True)
+        monkeypatch.setattr(ByteStreamer, "tx_task_map", {task.sid: task})
+        try:
+            request, grant = register_admin_transport(manager)
+            token = request.get_header(CellMessageHeaderKeys.TOKEN)
+            request.add_headers(
+                {
+                    MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+                    MessageHeaderKey.TOPIC: STREAM_ACK_TOPIC,
+                    MessageHeaderKey.MSG_TYPE: MessageType.REQ,
+                    MessageHeaderKey.DESTINATION: "server",
+                    StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
+                    StreamHeaderKey.STREAM_ID: task.sid,
+                    StreamHeaderKey.SEQUENCE: 0,
+                    StreamHeaderKey.OFFSET: 2,
+                    CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content(grant.user_name + token, private_key),
+                }
+            )
+            task.send_loop()
+            assert task.stopping
+            assert server._validate_auth_headers(request).get_header(MessageHeaderKey.RETURN_CODE) == (
+                F3ReturnCode.UNAUTHENTICATED
+            )
+            assert not task.stream_future.done()
+
+            manager.create_session(grant, "org", "lead")
+            assert server._validate_auth_headers(request) is None
+            streamer._ack_handler(request)
+            assert not task.stream_future.done()
+        finally:
+            task.stop()
+            manager.shutdown()
+
+    def test_revoked_admin_stream_only_reacks_matching_completed_request(self, auth_server, monkeypatch):
+        server, private_key = auth_server
+        monkeypatch.setattr("nvflare.fuel.hci.server.sess.threading.Thread.start", lambda _: None)
+        monkeypatch.setattr(RxTask, "rx_task_map", {})
+        manager = SessionManager(MagicMock())
+        server.admin_server = SimpleNamespace(sess_mgr=manager)
+        core = MagicMock()
+        core.fire_and_forget.return_value = {}
+        server.cell.byte_receiver = ByteReceiver(core)
+        task = None
+        try:
+            frame, grant = register_admin_transport(manager)
+            session, _ = manager.create_session(grant, "org", "lead")
+            token = frame.get_header(CellMessageHeaderKeys.TOKEN)
+            frame.add_headers(
+                {
+                    MessageHeaderKey.CHANNEL: STREAM_CHANNEL,
+                    MessageHeaderKey.TOPIC: STREAM_DATA_TOPIC,
+                    MessageHeaderKey.DESTINATION: "server",
+                    CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content(grant.user_name + token, private_key),
+                    StreamHeaderKey.STREAM_ID: 1,
+                    StreamHeaderKey.STREAM_REQ_ID: "logout-request",
+                    StreamHeaderKey.CHANNEL: CellChannel.HCI,
+                    StreamHeaderKey.TOPIC: "command",
+                    StreamHeaderKey.SEQUENCE: 0,
+                    StreamHeaderKey.DATA_TYPE: StreamDataType.FINAL,
+                    StreamHeaderKey.RELIABLE: True,
+                    StreamHeaderKey.SIZE: 1,
+                }
+            )
+            frame.payload = b"x"
+            assert server._validate_auth_headers(frame) is None
+            task = RxTask.find_or_create_task(frame, core)
+            assert task.process_chunk(frame)
+            assert task.completed
+            manager.end_session_by_id(session.sess_id)
+            frame.headers = dict(frame.headers)
+            frame.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, None)
+            core.fire_and_forget.reset_mock()
+
+            def reject(frame):
+                reply = server._validate_auth_headers(frame)
+                assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+                assert RxTask.rx_task_map == {(grant.origin, 1): task}
+
+            reject(frame)
+            core.fire_and_forget.assert_called_once()
+            _, topic, _, ack = core.fire_and_forget.call_args.args
+            assert topic == STREAM_ACK_TOPIC
+            assert ack.get_prop(MessagePropKey.TARGET_AUTH_PEER) == grant.peer
+            assert ack.get_header(StreamHeaderKey.SEQUENCE) == 0
+
+            for stream_id, sequence in ((1, 0), (2, 5)):
+                # A different correlation or a fresh out-of-order stream receives a bounded error.
+                core.fire_and_forget.reset_mock()
+                frame.set_header(StreamHeaderKey.STREAM_REQ_ID, "different-request")
+                frame.set_header(StreamHeaderKey.STREAM_ID, stream_id)
+                frame.set_header(StreamHeaderKey.SEQUENCE, sequence)
+                reject(frame)
+                topic_calls = [call.args[1] for call in core.fire_and_forget.call_args_list]
+                assert topic_calls == [STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC]
+                error = core.fire_and_forget.call_args_list[0].args[3]
+                assert error.get_prop(MessagePropKey.TARGET_AUTH_PEER) == grant.peer
+                assert error.get_header(StreamHeaderKey.ERROR_TYPE) == StreamSessionInactive.__name__
+        finally:
+            if task and task.cleanup_deadline:
+                task.cleanup_deadline.cancel()
             manager.shutdown()
 
     @pytest.mark.parametrize("peer_binding", ["certificate", "connection"])

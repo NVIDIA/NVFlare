@@ -33,6 +33,7 @@ from nvflare.fuel.f3.streaming.stream_types import (
     DownloadCancelled,
     DownloadUnavailable,
     StreamFuture,
+    StreamSessionInactive,
     StreamTargetUnreachable,
 )
 from nvflare.fuel.utils.fobs import FOBSContextKey
@@ -125,7 +126,14 @@ class Adapter:
             log = self.logger.info if isinstance(ex, DownloadUnavailable) else self.logger.debug
             log(f"request download unavailable: {secure_format_exception(ex)}")
             self._send_response(
-                make_reply(ReturnCode.SERVICE_UNAVAILABLE), stream_req_id, req_id, channel, topic, origin, secure
+                make_reply(ReturnCode.SERVICE_UNAVAILABLE),
+                stream_req_id,
+                req_id,
+                channel,
+                topic,
+                origin,
+                secure,
+                target_peer,
             )
             return
         except Exception as ex:
@@ -560,7 +568,12 @@ class Cell(StreamCell):
             if not sending_complete:
                 stream_error = waiter.stream_error
                 if future.error and not stream_error:
-                    waiter.result = make_reply(ReturnCode.COMM_ERROR, error=str(future.error))
+                    rc = (
+                        ReturnCode.INVALID_SESSION
+                        if isinstance(future.error, StreamSessionInactive)
+                        else ReturnCode.COMM_ERROR
+                    )
+                    waiter.result = make_reply(rc, error=str(future.error))
                     self.logger.debug(f"{req_id=}: sending failed with stream error: {future.error}")
                 elif stream_error:
                     self.logger.debug(f"{req_id=}: receiver rejected stream: {stream_error}")
@@ -680,8 +693,13 @@ class Cell(StreamCell):
                     )
                     return
 
+                rc = (
+                    ReturnCode.INVALID_SESSION
+                    if error_type == StreamSessionInactive.__name__
+                    else ReturnCode.COMM_ERROR
+                )
+                waiter.result = make_reply(rc, error=error)
                 waiter.stream_error = error
-                waiter.result = make_reply(ReturnCode.COMM_ERROR, error=error)
                 waiter.in_receiving.set()
                 return
 

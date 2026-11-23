@@ -59,13 +59,7 @@ from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.f3.streaming.stream_const import (
-    STREAM_ACK_TOPIC,
-    STREAM_CHANNEL,
-    STREAM_DATA_TOPIC,
-    STREAM_ERROR_TOPIC,
-    StreamHeaderKey,
-)
+from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.sec.admin_cert import admin_cert_expiry
 from nvflare.fuel.sec.authn import add_authentication_headers
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
@@ -567,19 +561,14 @@ class FederatedServer(BaseServer):
         is_local = local_fqcn is not None and destination == local_fqcn
         is_stream_data = channel == STREAM_CHANNEL and topic == STREAM_DATA_TOPIC
         application_channel = message.get_header(StreamHeaderKey.CHANNEL) if is_stream_data else channel
-        is_stream_control = channel == STREAM_CHANNEL and topic in (STREAM_ACK_TOPIC, STREAM_ERROR_TOPIC)
         is_registration = channel == CellChannel.SERVER_MAIN and topic in (
             CellChannelTopic.Register,
             CellChannelTopic.Challenge,
         )
         is_goodbye = channel == CellChannel.CELLNET and topic == CellChannelTopic.Bye and is_local
         peer_name = getattr(peer, "name", None)
-        direct_hci = (
-            is_local
-            and application_channel == CellChannel.HCI
-            and origin == peer_name
-            and is_valid_admin_client_name(origin)
-        )
+        direct_admin = is_local and origin == peer_name and is_valid_admin_client_name(origin)
+        direct_hci = direct_admin and application_channel == CellChannel.HCI
         admin_origin = is_valid_admin_client_name(origin) or is_valid_admin_client_name(peer_name)
         # Legacy signatures authenticate the concatenation. Check that same
         # string so moving part of a token into the name cannot hide its type.
@@ -590,32 +579,39 @@ class FederatedServer(BaseServer):
             and isinstance(token, str)
             and private_defs.ADMIN_TRANSPORT_TOKEN_PREFIX in client_name + token
         )
+        registered_client = self.client_manager.clients.get(token) if admin_origin and isinstance(token, str) else None
+        regular_origin = registered_client is not None and registered_client.name == client_name
         if is_goodbye and admin_origin:
             sess_mgr = getattr(self.admin_server, "sess_mgr", None)
             if sess_mgr:
                 sess_mgr.close_transport(message)
         elif not (is_registration or is_goodbye) and (
-            application_channel == CellChannel.HCI or admin_origin or admin_token
+            application_channel == CellChannel.HCI or (admin_origin and not regular_origin) or admin_token
         ):
+            if (
+                is_local
+                and channel == STREAM_CHANNEL
+                and topic == STREAM_ACK_TOPIC
+                and self.cell.byte_streamer.accepts_reply_ack(message)
+            ):
+                self._strip_peer_transit_headers(message)
+                return None
             sess_mgr = getattr(self.admin_server, "sess_mgr", None)
-            grant = sess_mgr and sess_mgr.get_transport(
-                message,
-                require_session=not (is_local and (application_channel == CellChannel.HCI or is_stream_control)),
-            )
-            # Direct HCI callers with an inactive grant may receive the protocol's
-            # login-required reply. The HCI handler rejects them before dispatch.
+            grant = sess_mgr and sess_mgr.get_transport(message, require_session=not direct_hci)
             if not grant:
-                if direct_hci:
-                    reply_peer = message.get_prop(MessagePropKey.PEER_CERT_FINGERPRINT) or message.get_prop(
-                        MessagePropKey.CONNECTION
-                    )
+                reply_peer = message.get_prop(MessagePropKey.PEER_CERT_FINGERPRINT) or message.get_prop(
+                    MessagePropKey.CONNECTION
+                )
+                if direct_hci and not is_stream_data:
                     message.set_prop(MessagePropKey.TARGET_AUTH_PEER, reply_peer)
-                elif not (
-                    is_local
-                    and channel == STREAM_CHANNEL
-                    and topic == STREAM_ACK_TOPIC
-                    and self.cell.byte_streamer.accepts_reply_ack(message)
-                ):
+                else:
+                    if (
+                        direct_admin
+                        and is_stream_data
+                        and reply_peer is not None
+                        and application_channel in (CellChannel.HCI, CellChannel.AUX_COMMUNICATION)
+                    ):
+                        self.cell.byte_receiver.reject_inactive(message, reply_peer)
                     return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, error="inactive admin registration")
             message.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, grant)
         self._strip_peer_transit_headers(message)

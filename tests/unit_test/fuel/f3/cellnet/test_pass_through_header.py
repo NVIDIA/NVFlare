@@ -399,6 +399,7 @@ class TestAdapterPassThroughHeader:
         cb = MagicMock()
         adapter = Adapter(cb=cb, my_info=SimpleNamespace(fqcn=fqcn), cell=cell)
         future = _make_future(_stream_headers(CellChannel.SERVER_COMMAND, ServerCommandNames.SUBMIT_UPDATE))
+        future.reply_target_peer = object()
         with (
             patch("nvflare.fuel.f3.cellnet.cell.decode_payload", side_effect=DownloadUnavailable("duplicate")),
             patch("nvflare.fuel.f3.cellnet.cell.os._exit") as exit_process,
@@ -410,6 +411,7 @@ class TestAdapterPassThroughHeader:
         assert (
             send_response.call_args.args[0].get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.SERVICE_UNAVAILABLE
         )
+        assert send_response.call_args.args[-1] is future.reply_target_peer
 
     @pytest.mark.parametrize("fqcn", ["server.job-1", "server.job-1.worker"])
     @pytest.mark.parametrize(

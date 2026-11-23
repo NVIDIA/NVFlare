@@ -13,10 +13,13 @@
 # limitations under the License.
 
 import logging
+import os
+from contextlib import suppress
 from typing import Optional, Union
 
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.streaming import StreamContext
+from nvflare.apis.streaming import StreamContext, StreamContextKey
 from nvflare.app_common.streamers.file_streamer import FileStreamer
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessagePropKey
@@ -171,20 +174,23 @@ class AdminServer:
             return False, "", conn
 
     def _process_upload(self, stream_ctx: StreamContext, fl_ctx: FLContext, **kwargs):
-        grant = fl_ctx.get_prop(InternalFLContextKey.ADMIN_TRANSPORT_GRANT)
-        if not grant:
-            return self._inactive_session_reply()
-        conn_data = stream_ctx.get("conn_data")
         file_location = FileStreamer.get_file_location(stream_ctx)
-        self.logger.debug("received admin upload")
-        ok, command, conn = self._create_conn(conn_data)
-        assert isinstance(conn, Connection)
-        conn.set_prop(ConnProps.FILE_LOCATION, file_location)
-        conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
-        if ok:
-            self.cmd_reg.process_command(conn, command)
-        result = conn.close()
-        return result
+        try:
+            grant = fl_ctx.get_prop(InternalFLContextKey.ADMIN_TRANSPORT_GRANT)
+            if not grant or stream_ctx.get(StreamContextKey.RC) != ReturnCode.OK:
+                return self._inactive_session_reply()
+            conn_data = stream_ctx.get("conn_data")
+            self.logger.debug("received admin upload")
+            ok, command, conn = self._create_conn(conn_data)
+            conn.set_prop(ConnProps.FILE_LOCATION, file_location)
+            conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
+            if ok:
+                self.cmd_reg.process_command(conn, command)
+            return conn.close()
+        finally:
+            if file_location:
+                with suppress(FileNotFoundError):
+                    os.unlink(file_location)
 
     @staticmethod
     def _inactive_session_reply():

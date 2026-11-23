@@ -37,7 +37,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamDataType,
     StreamHeaderKey,
 )
-from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
+from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture, StreamSessionInactive
 from nvflare.fuel.f3.streaming.stream_utils import ONE_MB, stream_stats_category, stream_thread_pool
 
 log = logging.getLogger(__name__)
@@ -546,6 +546,8 @@ class RxTask:
         if req_id:
             headers[StreamHeaderKey.STREAM_REQ_ID] = req_id
         message.add_headers(headers)
+        if self.reply_target_peer is not None:
+            message.set_prop(MessagePropKey.TARGET_AUTH_PEER, self.reply_target_peer)
         delivered = True
         # Keep the ACK-topic copy for pre-2.9 senders, which only consume
         # receiver errors in TxTask.handle_ack. New senders consume the
@@ -717,6 +719,8 @@ class RxTask:
                 StreamHeaderKey.SEQUENCE: seq,
             }
         )
+        if self.reply_target_peer is not None:
+            message.set_prop(MessagePropKey.TARGET_AUTH_PEER, self.reply_target_peer)
         try:
             errors = self.cell.fire_and_forget(
                 STREAM_CHANNEL, STREAM_ACK_TOPIC, self.origin, message, optional=optional
@@ -782,7 +786,7 @@ class ByteReceiver:
 
         self.registry.set(channel, topic, Callback(stream_cb, args, kwargs))
 
-    def reject(self, message: Message, error: StreamError):
+    def reject(self, message: Message, error: StreamError, *, target_peer=None):
         """Reject an incoming stream before allocating receive-side state."""
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         headers = {
@@ -798,10 +802,11 @@ class ByteReceiver:
             headers[StreamHeaderKey.STREAM_REQ_ID] = req_id
 
         for topic in (STREAM_ERROR_TOPIC, STREAM_ACK_TOPIC):
+            reply = Message(dict(headers))
+            if target_peer is not None:
+                reply.set_prop(MessagePropKey.TARGET_AUTH_PEER, target_peer)
             try:
-                errors = self.cell.fire_and_forget(
-                    STREAM_CHANNEL, topic, origin, Message(dict(headers)), optional=False
-                )
+                errors = self.cell.fire_and_forget(STREAM_CHANNEL, topic, origin, reply, optional=False)
             except Exception as ex:
                 log.error(f"failed to reject stream on {topic} to {origin}: {ex}")
                 continue
@@ -809,6 +814,57 @@ class ByteReceiver:
             send_error = errors.get(origin)
             if send_error:
                 log.error(f"failed to reject stream on {topic} to {origin}: {send_error}")
+
+    def reject_inactive(self, message: Message, peer):
+        if self._reack_completed(message, peer):
+            return
+        sid = message.get_header(StreamHeaderKey.STREAM_ID)
+        req_id = message.get_header(StreamHeaderKey.STREAM_REQ_ID)
+        topic = message.get_header(StreamHeaderKey.TOPIC)
+        if (
+            type(sid) is int
+            and isinstance(req_id, str)
+            and 0 < len(req_id) <= 128
+            and isinstance(topic, str)
+            and 0 < len(topic) <= 128
+            and message.get_header(StreamHeaderKey.DATA_TYPE) in (StreamDataType.CHUNK, StreamDataType.FINAL)
+        ):
+            self.reject(message, StreamSessionInactive("admin session is inactive"), target_peer=peer)
+
+    def _reack_completed(self, message: Message, peer) -> bool:
+        """Re-ack a retransmitted frame without creating state or dispatching it."""
+        sid = message.get_header(StreamHeaderKey.STREAM_ID)
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        seq = message.get_header(StreamHeaderKey.SEQUENCE)
+        if (
+            peer is None
+            or type(sid) is not int
+            or type(seq) is not int
+            or seq < 0
+            or message.get_header(StreamHeaderKey.DATA_TYPE) not in (StreamDataType.CHUNK, StreamDataType.FINAL)
+        ):
+            return False
+
+        with RxTask.map_lock:
+            task = RxTask.rx_task_map.get((origin, sid))
+        if (
+            not task
+            or task.cell is not self.cell
+            or not task.reliable
+            or task.reply_target_peer != peer
+            or task.channel != message.get_header(StreamHeaderKey.CHANNEL)
+            or task.topic != message.get_header(StreamHeaderKey.TOPIC)
+            or (task.headers or {}).get(StreamHeaderKey.STREAM_REQ_ID)
+            != message.get_header(StreamHeaderKey.STREAM_REQ_ID)
+        ):
+            return False
+
+        with task.stop_lock:
+            if not task.completed or task.failed or seq > task.seq:
+                return False
+            offset, ack_seq = task._get_ack_offset(), task.seq
+        task._send_ack(offset, ack_seq)
+        return True
 
     def _data_handler(self, message: Message):
 

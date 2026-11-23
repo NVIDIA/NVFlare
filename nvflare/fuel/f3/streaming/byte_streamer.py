@@ -42,6 +42,7 @@ from nvflare.fuel.f3.streaming.stream_types import (
     Stream,
     StreamError,
     StreamFuture,
+    StreamSessionInactive,
     StreamTargetUnreachable,
     StreamTaskSpec,
 )
@@ -577,17 +578,22 @@ class TxTask(StreamTaskSpec):
         return origin == self.target == getattr(endpoint, "name", None) and self.target_peer == peer
 
     def handle_ack(self, message: Message):
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        if origin != self.target:
+            return
         if self.target_peer is not None and not self._matches_authenticated_peer(message):
             return
 
-        origin = message.get_header(MessageHeaderKey.ORIGIN)
         ack_seq = message.get_header(StreamHeaderKey.SEQUENCE, None)
         offset = message.get_header(StreamHeaderKey.OFFSET, None)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
 
         if error:
             error_type = message.get_header(StreamHeaderKey.ERROR_TYPE)
-            error_class = BlobSizeError if error_type == BlobSizeError.__name__ else StreamError
+            error_class = {
+                BlobSizeError.__name__: BlobSizeError,
+                StreamSessionInactive.__name__: StreamSessionInactive,
+            }.get(error_type, StreamError)
             self.stop(error_class(f"{self} Received error from {origin}: {error}"), notify=False)
             return
 
@@ -955,6 +961,7 @@ class ByteStreamer:
         error_classes = {
             BlobSizeError.__name__: BlobSizeError,
             StreamTargetUnreachable.__name__: StreamTargetUnreachable,
+            StreamSessionInactive.__name__: StreamSessionInactive,
         }
         error_class = error_classes.get(error_type, StreamError)
         sender = self.cell.my_info.fqcn

@@ -216,12 +216,12 @@ class Session(SessionSpec):
 
         try:
             self.api.connect(timeout)
+            result = self.api.login()
         except FLCommunicationError as e:
             message = str(e)
             if "cannot connect to server" in message or "cannot authenticate to server" in message:
                 raise NoConnection(message) from e
             raise
-        result = self.api.login()
         status = result.get(ResultKey.STATUS) if isinstance(result, dict) else None
         details = result.get(ResultKey.DETAILS, "") if isinstance(result, dict) else ""
         if status == APIStatus.SUCCESS:
@@ -232,6 +232,8 @@ class Session(SessionSpec):
             raise AuthorizationError(details or "authorization failed")
         if status == APIStatus.ERROR_SERVER_CONNECTION:
             raise NoConnection(details or "cannot connect to server")
+        if status == APIStatus.ERROR_INACTIVE_SESSION:
+            raise SessionClosed(details or "the session is closed on server")
         raise InternalError(details or f"login failed: {status}")
 
     def _do_command(self, command: str, enforce_meta=True, props=None):
@@ -249,6 +251,9 @@ class Session(SessionSpec):
 
         if not isinstance(result, dict):
             raise InternalError(f"result from server must be dict but got {type(result)}")
+
+        if result.get(ResultKey.STATUS) == APIStatus.ERROR_INACTIVE_SESSION:
+            raise SessionClosed("the session is closed on server")
 
         # Check meta status if available
         # There are still some commands that do not return meta. But for commands that do return meta, we will check
@@ -313,8 +318,6 @@ class Session(SessionSpec):
             raise AuthenticationError(details or f"user not authenticated: {status}", auth_code=result.get("auth_code"))
         elif status == APIStatus.ERROR_AUTHORIZATION:
             raise AuthorizationError(f"user not authorized for the action '{command}'")
-        elif status == APIStatus.ERROR_INACTIVE_SESSION:
-            raise SessionClosed("the session is closed on server")
         elif status in [APIStatus.ERROR_PROTOCOL, APIStatus.ERROR_SYNTAX]:
             status_text = status.value if hasattr(status, "value") else str(status)
             details = result.get(ResultKey.DETAILS, "")

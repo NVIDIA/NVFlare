@@ -13,13 +13,22 @@
 # limitations under the License.
 
 import threading
+from pathlib import Path
 from unittest.mock import Mock
 
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, StreamContextKey
+from nvflare.app_common.streamers.file_streamer import KEY_DATA, KEY_DATA_SIZE, KEY_FILE_SIZE, FileStreamer
+from nvflare.app_common.streamers.file_streamer import _ChunkConsumerFactory as FileConsumerFactory
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
+from nvflare.fuel.hci.proto import StreamChannel
+from nvflare.fuel.hci.server.hci import AdminServer
+from nvflare.fuel.hci.server.sess import SessionManager
+from nvflare.private.defs import InternalFLContextKey
 from nvflare.private.stream_runner import TOPIC_STREAM_REQUEST, HeaderKey, ObjectStreamer
+from tests.admin_session_test_utils import register_admin_transport
 
 
 class _Consumer(ObjectConsumer):
@@ -74,4 +83,62 @@ def test_repeated_start_of_a_live_stream_ends_it_without_blocking_the_streamer()
         handle("next", 0)
         assert replies[-1] == ReturnCode.OK
     finally:
+        streamer.shutdown()
+
+
+def test_admin_upload_rejects_other_owners_and_removes_partial_file_on_revocation(tmp_path, monkeypatch):
+    monkeypatch.setattr("nvflare.fuel.hci.server.sess.threading.Thread.start", lambda _: None)
+    manager = SessionManager(Mock())
+    streamer = ObjectStreamer(Mock())
+    admin = object.__new__(AdminServer)
+    admin.cmd_reg = Mock()
+    streamer.register_stream_processing(
+        StreamChannel.UPLOAD,
+        "topic",
+        FileConsumerFactory(str(tmp_path)),
+        stream_done_cb=admin._process_upload,
+    )
+
+    def create_owner(user):
+        _, grant = register_admin_transport(manager, user=user)
+        session, _ = manager.create_session(grant, "org", "lead")
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(InternalFLContextKey.ADMIN_UPLOAD_OWNER, (manager, session), private=True, sticky=False)
+        fl_ctx.set_prop(InternalFLContextKey.ADMIN_TRANSPORT_GRANT, grant, private=True, sticky=False)
+        return session, fl_ctx
+
+    def chunk(seq, data):
+        request = _request("upload-id", seq)
+        request.set_header(HeaderKey.CHANNEL, StreamChannel.UPLOAD)
+        if seq == 0:
+            request.set_header(HeaderKey.CTX, {KEY_FILE_SIZE: 2})
+        request[KEY_DATA] = data
+        request[KEY_DATA_SIZE] = len(data)
+        return request
+
+    try:
+        owner, owner_ctx = create_owner("lead@example.com")
+        _, other_ctx = create_owner("other@example.com")
+        open_reply = streamer._handle_request(TOPIC_STREAM_REQUEST, chunk(0, b"a"), owner_ctx)
+        assert open_reply.get_return_code() == ReturnCode.OK
+        info = streamer.tx_table["upload-id"]
+        file = info.consumer.file
+        file_location = Path(FileStreamer.get_file_location(info.stream_ctx))
+        assert file_location.exists()
+
+        other_chunk = streamer._handle_request(TOPIC_STREAM_REQUEST, chunk(1, b"b"), other_ctx)
+        other_abort = streamer._handle_abort("abort", _request("upload-id", 1), other_ctx)
+        assert other_chunk.get_return_code() == other_abort.get_return_code() == CellReturnCode.UNAUTHENTICATED
+        assert streamer.tx_table["upload-id"] is info
+        file.flush()
+        assert file_location.read_bytes() == b"a"
+
+        manager.end_session_by_id(owner.sess_id)
+        assert not streamer.tx_table
+        assert not manager.uploads
+        assert file.closed
+        assert not file_location.exists()
+        admin.cmd_reg.process_command.assert_not_called()
+    finally:
+        manager.shutdown()
         streamer.shutdown()

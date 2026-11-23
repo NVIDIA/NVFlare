@@ -124,6 +124,7 @@ class SessionManager(CommandModule):
         self._transport_grants = {}  # registration token digest => AdminTransportGrant
         self._origin_grants = {}
         self.downloads = {}  # session ID => {transaction ID: cancel callback}
+        self.uploads = {}
         self.idle_timeout = idle_timeout
         self.monitor_interval = monitor_interval
         self._stop_event = threading.Event()
@@ -322,6 +323,29 @@ class SessionManager(CommandModule):
         self._finish_session(sess, downloads, _EXPIRED_MESSAGE, reason)
         return None
 
+    def get_transport_session(self, grant: AdminTransportGrant):
+        with self.sess_update_lock:
+            sess = self.sessions.get(grant.session_id)
+            if sess and sess.grant is grant and not self._expiry_reason(sess, time.time()):
+                return sess
+        return None
+
+    def bind_upload(self, sess: Session, tx_id: str, transfer, cancel_cb: Callable[[], None]) -> bool:
+        """Register cleanup for this upload, even if its transaction ID is reused."""
+        with self.sess_update_lock:
+            if self.sessions.get(sess.sess_id) is not sess or self._expiry_reason(sess, time.time()):
+                return False
+            self.uploads.setdefault(sess.sess_id, {})[(tx_id, transfer)] = cancel_cb
+        return True
+
+    def end_upload(self, sess: Session, tx_id: str, transfer):
+        with self.sess_update_lock:
+            uploads = self.uploads.get(sess.sess_id)
+            if uploads:
+                uploads.pop((tx_id, transfer), None)
+                if not uploads:
+                    self.uploads.pop(sess.sess_id, None)
+
     def bind_download(self, sess_id: str, tx_id: str, cancel_cb: Callable[[], None]) -> bool:
         """Bind an authorized download transaction to its current session."""
         with self.sess_update_lock:
@@ -372,14 +396,18 @@ class SessionManager(CommandModule):
             self._session_tokens.pop(sess.token_digest, None)
             if revoke_transport:
                 self._detach_grant(sess.grant)
-        return sess, self.downloads.pop(sess_id, {})
+        downloads = self.downloads.pop(sess_id, {})
+        uploads = self.uploads.pop(sess_id, {})
+        transfers = list(downloads.items())
+        transfers.extend((tx_id, cancel) for (tx_id, _), cancel in uploads.items())
+        return sess, transfers
 
     def end_session_by_id(self, sess_id: str, reason=None, *, audit_reason="logout"):
         with self.sess_update_lock:
             sess, downloads = self._detach_session(sess_id)
         self._finish_session(sess, downloads, reason, audit_reason)
 
-    def _finish_session(self, sess, downloads, reason, audit_reason):
+    def _finish_session(self, sess, transfers, reason, audit_reason):
         if sess:
             record(
                 "admin.session.ended",
@@ -401,12 +429,12 @@ class SessionManager(CommandModule):
                 )
             except Exception as ex:
                 self.logger.error(f"failed to notify expired session {sess.sess_id}: {secure_format_exception(ex)}")
-        for tx_id, cancel_cb in downloads.items():
+        for tx_id, cancel_cb in transfers:
             try:
                 cancel_cb()
             except Exception as ex:
                 self.logger.error(
-                    f"failed to cancel download {tx_id} for session {getattr(sess, 'sess_id', None)}: {secure_format_exception(ex)}"
+                    f"failed to cancel transfer {tx_id} for session {getattr(sess, 'sess_id', None)}: {secure_format_exception(ex)}"
                 )
 
     def get_spec(self):

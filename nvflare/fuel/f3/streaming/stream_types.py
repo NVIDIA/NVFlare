@@ -27,6 +27,10 @@ class StreamError(Exception):
     pass
 
 
+class StreamSessionInactive(StreamError):
+    """The server rejected a stream because its admin session is inactive."""
+
+
 class StreamTargetUnreachable(StreamError):
     """A stream cannot be delivered because its target is no longer reachable."""
 

@@ -196,6 +196,7 @@ class InternalFLContextKey:
     CLIENT_REG_SESSION = "client_reg_session"
     VERIFIED_ADMIN_CERT = "verified_admin_cert"
     ADMIN_TRANSPORT_GRANT = "admin_transport_grant"
+    ADMIN_UPLOAD_OWNER = "admin_upload_owner"
 
 
 class ClientRegSession:

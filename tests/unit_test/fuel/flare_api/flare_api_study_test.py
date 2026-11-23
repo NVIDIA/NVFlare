@@ -19,10 +19,10 @@ import pytest
 
 from nvflare.apis.fl_constant import JOB_CLONE_DEPRECATION_MESSAGE
 from nvflare.apis.job_def import DEFAULT_STUDY
-from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, NoConnection, SessionClosed
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.fuel.hci.client.api import APIStatus, ResultKey
-from nvflare.fuel.hci.proto import MetaKey
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ReplyKeyword
 
 
 def _make_session_for_study(study):
@@ -45,6 +45,20 @@ def test_submit_job_relies_on_session_study():
         session.submit_job("/tmp/job")
 
     assert captured["props"] is None
+
+
+def test_inactive_command_status_takes_precedence_over_generic_meta_error():
+    session = _make_session_for_study(DEFAULT_STUDY)
+    session.api = SimpleNamespace(
+        closed=False,
+        do_command=lambda *args, **kwargs: {
+            ResultKey.STATUS: APIStatus.ERROR_INACTIVE_SESSION,
+            ResultKey.META: {MetaKey.STATUS: MetaStatusValue.ERROR, MetaKey.INFO: ReplyKeyword.SESSION_INACTIVE},
+        },
+    )
+
+    with pytest.raises(SessionClosed):
+        session._do_command("download_job_result job-1")
 
 
 def test_clone_job_warns_and_does_not_send_study_cmd_props():
