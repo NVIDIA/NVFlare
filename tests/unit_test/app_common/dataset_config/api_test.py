@@ -32,7 +32,7 @@ CONFIG = {
                 "omop": {
                     "type": "parquet",
                     "uri": "file:///data/oncology/omop",
-                    "usage": {"catalog": {"share": True, "exclude_tables": ["t"]}},
+                    "usage": {"training": {"shuffle": True}},
                 },
                 "ehr": {
                     "type": "sql",
@@ -63,7 +63,7 @@ class TestSnapshot:
         assert config.list_datasets() == ["omop", "ehr"]
         omop = config.get_dataset("omop")
         assert (omop.type, omop.uri, omop.path) == ("parquet", "file:///data/oncology/omop", "/data/oncology/omop")
-        assert omop.usage_rules("catalog")["share"] is True
+        assert omop.usage_rules("training")["shuffle"] is True
         assert omop.usage_rules("cohort") is None
         ehr = config.get_dataset("ehr")
         assert ehr.path is None and ehr.secret_keys == ("password",)
@@ -83,7 +83,7 @@ class TestSnapshot:
     def test_snapshot_is_read_only(self):
         omop = parse(CONFIG).get_dataset("omop")
         with pytest.raises(TypeError):
-            omop.usage["catalog"]["share"] = False
+            omop.usage["training"]["shuffle"] = False
         with pytest.raises(TypeError):
             omop.options["x"] = 1
 

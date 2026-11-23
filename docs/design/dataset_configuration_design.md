@@ -11,7 +11,7 @@ Goals:
 
 - One place where a site declares, per Study, which datasets exist, where a job finds them, how to connect to them, and how each component may use them.
 - One read-only API, bound to the job's Study, that every component uses. Components never learn the file's location or format.
-- Component-specific rules, such as a catalog's publication policy, live next to the dataset they govern but are interpreted only by their component.
+- Component-specific usage settings may live next to the dataset and are interpreted only by their component. The catalog reads every configured Study dataset; source administrators control metadata visibility through credentials and readable files.
 
 Non-goals:
 
@@ -47,31 +47,20 @@ studies:
         type: parquet             # source type; selects how the dataset is read
         uri: file:///data/oncology/omop   # required; where the container launcher mounts this dataset
                                           # (three slashes: empty host, then the path /data/oncology/omop)
-        usage:                    # how this dataset may be used, per FLARE component
-          catalog:                # rules for the federated data catalog
-            share: true           # publish this dataset's metadata
-            exclude_columns: {person: [person_source_value]}   # table person, column person_source_value
-
       registry:                   # dataset name; here the dataset is a whole SQLite database
         type: sql                 # SQLite is SQL; the file URI says it is a local database file
         uri: file:///srv/oncology/registry.sqlite    # explicit file URI: the path is /srv/oncology/registry.sqlite
-        usage:
-          catalog: {share: true}
-
       ehr:                        # dataset name; here part of a network database
         type: sql
         uri: postgresql+psycopg://ehr-db.oncology.example:5432/ehr   # network URL: no credentials in it
         options: {schema: public, tables: [visits, labs]}           # read only these tables; others are not read
         secrets: {username: EHR_DB_USER, password: EHR_DB_PASSWORD}  # environment variable names, not values
-        usage:
-          catalog: {share: true}
-
       warehouse:                  # dataset name; here a Unity Catalog schema
         type: unity-catalog
         uri: https://uc.oncology.example/api/2.1/unity-catalog       # network URL: the API root
         options: {catalog: main, schema: oncology}
         secrets: {token: UC_TOKEN}
-        # no usage.catalog: the catalog never publishes this dataset
+        # the source identity determines which metadata the catalog can discover
 
 usage:                            # site-wide settings, per FLARE component
   catalog:
@@ -87,7 +76,7 @@ usage:                            # site-wide settings, per FLARE component
 | `<dataset>.uri` | Required | Where the dataset is, as an absolute URI. There is no default. Section 2.3 gives the forms, the mount convention and the validation rules. |
 | `<dataset>.options` | Optional; `{}` | Non-secret, type-specific settings, such as a database schema or table list. |
 | `<dataset>.secrets` | Optional; `{}` | Maps a logical key to the **name** of an environment variable that holds the secret. Never a value. The variable reaches the job through the Study runtime `secret_env` (containers) or the site's process environment. |
-| `<dataset>.usage` | Optional; `{}` | How the dataset may be used, per FLARE component: maps a component name, such as `catalog`, to that component's rules for this dataset. It never lists tables; a source's tables are discovered when it is read. A component absent from the map has no rules, and each component decides what that means (the catalog does not share the dataset). |
+| `<dataset>.usage` | Optional; `{}` | How the dataset may be used, per FLARE component: maps a component name, such as `training`, to that component's settings for this dataset. It never lists tables; a source's tables are discovered when it is read. A component absent from the map has no rules, and each component decides what that means (the catalog requires no per-dataset usage settings). |
 | `usage` | Optional; `{}` | Site-wide settings per component, such as the catalog's read limits. |
 
 Unknown keys outside `usage` sections, wrong value types, a missing `type` or `uri`, a `uri` that breaks the rules of Section 2.3, and a secret value given where a variable name is expected are rejected; the whole file is then invalid. Contents of `usage` sections are not validated by the API: each component validates its own section and rejects what it does not understand.
@@ -155,7 +144,7 @@ How that splits for each kind of source:
 | Object storage, REST API | Deliver the Study's credentials (`secret_env`, `secret_mounts`) | `type`, address, `secrets` names, `usage` |
 
 - **Where the halves meet:** at the mount path for a volume, and at the environment variable holding the credential otherwise. A database needs no Study runtime `datasets` entry.
-- **`usage` rules are not access control.** `exclude_columns` keeps the catalog from publishing a column, but job code with the access can still read it. What a job can read at all is set by the access half.
+- **`usage` settings are not access control.** Source permissions and readable files determine what a job can read and what metadata its connectors can discover. The catalog applies no sharing or exclusion policy; qualify metadata visibility separately from row access.
 - **Unreachable sources** are reported by the component that tries to read them; the API does not check paths or connect to sources.
 
 | Concern | Owner |
@@ -206,20 +195,20 @@ studies:
 **2. They describe different things.**
 
 - Study runtime describes how data gets into the job's environment: "mount this volume read-only here".
-- The dataset configuration describes what the data is and how components may use it: "this is Parquet, publish its metadata to the catalog, hide column X".
+- The dataset configuration describes what the data is and how components may use it: "this is Parquet at this URI, with these component-specific settings".
 - Some datasets exist in only one of the two. A network database needs no mount, so it has no Study runtime entry, only secret variables. A process-launched site has no mounts at all. Study runtime in process mode allows only environment settings (`env` and `secret_env`), and its parser rejects a `datasets` section. So a process site couldn't describe its datasets in `study_runtime.yaml` at all.
 
 **3. Different validation and change rules.**
 
 - `study_runtime.yaml` is checked strictly for each launcher type. The same entry is valid for Kubernetes and rejected for Slurm.
 - The dataset configuration is the same for every launcher, and its `usage` sections are deliberately left unchecked by the API, because each component checks its own.
-- One file would tie both sets of rules and versions together. An invalid catalog rule would then fail every job launch for the Study, not just the catalog read.
+- One file would tie both sets of rules and versions together. An invalid catalog read-limit setting would then fail every job launch for the Study, not just the catalog read.
 - A YAML mistake while editing a dataset entry would make the whole file unreadable, so every job launch at the site would fail, not just the components that read datasets.
 
 **4. They're edited by different people, at different times.**
 
 - Infrastructure owners change mounts, images and secret sources.
-- Data stewards change which datasets exist and what may be shared.
+- Data stewards change which datasets exist; source administrators control credentials and metadata visibility.
 - Separate files keep those edits apart, which also helps file permissions and change review.
 
 The cost is two files to keep in step for mounted datasets. The design keeps that small: the dataset name is the only link between them, and a mounted dataset always lands at `/data/<study>/<dataset>`.
@@ -239,8 +228,6 @@ studies:
       patients:
         type: csv
         uri: file:///home/site-1/data/patients.csv
-        usage:
-          catalog: {share: true}
 ```
 
 **A Kubernetes site.** The site's two files work together and are linked by Study and dataset names. `study_runtime.yaml`, read by the launcher, mounts the data and delivers the secrets. `datasets.yaml` describes what the job finds. A network dataset has no Study runtime entry; only its secrets do.
@@ -266,14 +253,10 @@ studies:
       omop:
         type: parquet
         uri: file:///data/oncology/omop                # where study_runtime.yaml mounts dataset omop
-        usage:
-          catalog: {share: true}
       ehr:
         type: sql
         uri: postgresql+psycopg://ehr-db.oncology.example:5432/ehr   # not mounted: the job connects
         secrets: {username: EHR_DB_USER, password: EHR_DB_PASSWORD}  # variables set by secret_env
-        usage:
-          catalog: {share: true}
 ```
 
 **Several Studies at one site.** Each job sees only its own Study.
@@ -283,16 +266,16 @@ format_version: 1
 studies:
   oncology:
     datasets:
-      omop: {type: parquet, uri: file:///data/oncology/omop, usage: {catalog: {share: true}}}
+      omop: {type: parquet, uri: file:///data/oncology/omop}
   cardiology:
     datasets:
-      echo: {type: csv, uri: file:///data/cardiology/echo.csv}   # no usage.catalog: never published
+      echo: {type: csv, uri: file:///data/cardiology/echo.csv}   # configured only for the cardiology Study
 ```
 
 | Job's Study | `list_datasets()` | Notes |
 | --- | --- | --- |
 | `oncology` | `["omop"]` | `get_dataset("echo")` raises `UnknownDatasetError`. |
-| `cardiology` | `["echo"]` | `get_dataset("echo").usage_rules("catalog")` is `None`, so the catalog does not share it. |
+| `cardiology` | `["echo"]` | The catalog reads `echo` through its configured file access; oncology datasets are outside this Study. |
 | `default`, or any Study not in the file | `[]` | The site offers that Study no datasets. |
 
 A component reads the configuration the same way in every case:
@@ -301,9 +284,7 @@ A component reads the configuration the same way in every case:
 config = get_study_dataset_config(fl_ctx)          # the job's Study only
 for name in config.list_datasets():
     dataset = config.get_dataset(name)
-    rules = dataset.usage_rules("catalog")          # None: this component may not use the dataset
-    if rules and rules.get("share"):
-        read(dataset.type, dataset.path or dataset.uri, dataset.options)
+    read(dataset.type, dataset.path or dataset.uri, dataset.options)
 ```
 
 ## 3. API
@@ -337,7 +318,7 @@ class DatasetConfig:
                                             # {} when omitted
 
     def usage_rules(self, component: str) -> Mapping[str, Any] | None:
-        """This dataset's rules for one component, e.g. "catalog"; None when it has none."""
+        """This dataset's rules for one component, e.g. "training"; None when it has none."""
 
 
 class StudyDatasetConfig(ABC):
@@ -403,10 +384,8 @@ config = get_study_dataset_config(fl_ctx)              # the job's Study only
 limits = config.site_usage("catalog")                  # site-wide catalog settings, or None
 for name in config.list_datasets():
     dataset = config.get_dataset(name)
-    rules = dataset.usage_rules("catalog")             # None: the catalog does not share it
-    if rules is None:
-        continue
     ...                                                # dataset.type selects how to read it
+    # All configured datasets are eligible; source permissions determine metadata visibility.
 ```
 
 ### 3.2 Contract
