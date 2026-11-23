@@ -501,6 +501,75 @@ def test_script_arguments_do_not_relocate_resident_services(tmp_path):
     assert adapter.executor_spec["args"]["task_script_args"] == ["--metric_writer", "client_receiver"]
 
 
+def test_study_env_in_task_arguments_is_resolved_only_in_worker(tmp_path, monkeypatch):
+    from nvflare.apis.fl_component import FLComponent
+    from nvflare.app_common.executors.task_script_runner import TaskScriptRunner
+    from nvflare.private.fed.task_worker.config_vars import ENV_WORKER_CONFIG_VARS
+    from nvflare.private.fed.task_worker.worker import _build_executor
+
+    class SharedArgsObserver(FLComponent):
+        def __init__(self, task_script_args, **kwargs):
+            super().__init__()
+            self.script_args = task_script_args
+
+    monkeypatch.setattr(sys.modules[__name__], "SharedArgsObserver", SharedArgsObserver, raising=False)
+    config = _config(task_script_args="{train_args}", task_script_path="{$SCRIPT_PATH}")
+    executor = config["executors"][0]["executor"]
+    config["shared_args"] = executor["args"]
+    executor["args"] = "{shared_args}"
+    config["train_args"] = [
+        "--data",
+        "{$TRAINING-DIR}",
+        "--tag",
+        "job-{JOB_ID}-{$WORKER_TAG}",
+        "--token",
+        "${secret:API_TOKEN}",
+    ]
+    config["components"] = [
+        {
+            "id": "receiver",
+            "path": f"{__name__}.SharedArgsObserver",
+            "args": "{shared_args}",
+        }
+    ]
+    monkeypatch.setenv(ENV_WORKER_CONFIG_VARS, json.dumps(["SCRIPT_PATH", "TRAINING-DIR", "WORKER_TAG"]))
+    monkeypatch.setenv("TRAINING-DIR", "cj-directory")
+    monkeypatch.setenv("SCRIPT_PATH", "train.py")
+    monkeypatch.setenv("WORKER_TAG", "cj-tag")
+    monkeypatch.delenv("API_TOKEN", raising=False)
+
+    cj = _configure(tmp_path, config)
+    spec = cj.executors[0].executor.executor_spec
+    assert cj.components["receiver"].script_args[1] == "cj-directory"
+    assert spec["args"]["task_script_path"] == "train.py"
+    assert spec["args"]["task_script_args"] == [
+        "--data",
+        "{$TRAINING-DIR}",
+        "--tag",
+        "job-job-1-{$WORKER_TAG}",
+        "--token",
+        "${secret:API_TOKEN}",
+    ]
+
+    monkeypatch.setenv("TRAINING-DIR", "/data/study-a/training")
+    monkeypatch.setenv("SCRIPT_PATH", "unvetted.py")
+    monkeypatch.setenv("WORKER_TAG", "worker-tag")
+    monkeypatch.setenv("API_TOKEN", "dummy-${secret:WORKER_TAG}")
+    executor = _build_executor(spec)
+    assert executor._task_script_args == [
+        "--data",
+        "/data/study-a/training",
+        "--tag",
+        "job-job-1-worker-tag",
+        "--token",
+        "${secret:API_TOKEN}",
+    ]
+    (tmp_path / "train.py").touch()
+    runner = TaskScriptRunner(str(tmp_path), executor._task_script_path, executor._task_script_args)
+    assert runner.get_sys_argv()[-1] == "dummy-${secret:WORKER_TAG}"
+    assert "dummy-" not in json.dumps(spec)
+
+
 @pytest.mark.parametrize("kind", ["fifo", "symlink"])
 def test_worker_log_replay_rejects_special_files_without_blocking(tmp_path, kind):
     from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity

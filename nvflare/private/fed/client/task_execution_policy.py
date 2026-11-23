@@ -26,6 +26,7 @@ from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.task_execution import _timeout, reject_job_gpu_reservation, validate_task_resources
+from nvflare.private.fed.task_worker.config_vars import ENV_WORKER_CONFIG_VARS
 from nvflare.private.fed.task_worker.protocol import _require_payload_limit
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOptions
 
@@ -40,6 +41,7 @@ FORBIDDEN_ENVIRONMENT_NAMES = (
     | GPU_ENVIRONMENT_NAMES
     | {
         BOOTSTRAP_FILE_ENV_VAR,
+        ENV_WORKER_CONFIG_VARS,
         CLIENT_API_TYPE_KEY,
         "NVFLARE_CLIENT_API_CONFIG",
         "NVFLARE_CLIENT_API_CONFIG_PATH",

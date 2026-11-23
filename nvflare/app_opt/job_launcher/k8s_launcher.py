@@ -63,6 +63,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.task_execution import get_client_execution_lifetime, reject_job_gpu_reservation
+from nvflare.private.fed.task_worker.config_vars import ENV_WORKER_CONFIG_VARS
 from nvflare.private.fed.utils.job_cert_utils import job_startup_files, read_job_cert, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_cj_resource_spec,
@@ -301,13 +302,16 @@ def study_secret_volume_name(study: str, name: str) -> str:
     return site_name_to_rfc1123(f"secret-{study}-{name}", max_length=63)
 
 
-def study_pod_bindings(runtime):
+def study_pod_bindings(runtime, *, read_only_claims=False):
     """Return Kubernetes volume, mount, and Secret env entries for a resolved study."""
     volumes, mounts, secret_env = [], [], []
     if runtime is not None:
         for dataset in runtime.datasets:
             name = study_dataset_volume_name(dataset.study, dataset.dataset)
-            volumes.append({"name": name, "persistentVolumeClaim": {"claimName": dataset.source}})
+            claim = {"claimName": dataset.source}
+            if read_only_claims and dataset.read_only:
+                claim["readOnly"] = True
+            volumes.append({"name": name, "persistentVolumeClaim": claim})
             mounts.append({"name": name, "mountPath": dataset.mount_path, "readOnly": dataset.read_only})
         for secret in runtime.secret_mounts:
             name = study_secret_volume_name(secret.study, secret.name)
@@ -1458,7 +1462,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             return
         # A worker Pod cannot reach CJ's loopback. Kubernetes, rather than a
         # job/template environment value, supplies the advertised CJ address.
-        env = [item for item in container.get("env", []) if item["name"] != ENV_CJ_POD_IP]
+        env = [item for item in container.get("env", []) if item["name"] not in {ENV_CJ_POD_IP, ENV_WORKER_CONFIG_VARS}]
         env.append(
             {
                 "name": ENV_CJ_POD_IP,
@@ -1483,6 +1487,8 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             startup_secret_name=startup_secret_name,
             study_runtime=study_runtime,
         )
+        if backend.study_env_names:
+            container["env"].append({"name": ENV_WORKER_CONFIG_VARS, "value": backend.study_env_names})
         cell = fl_ctx.get_engine().cell
         return K8sTaskService.get_or_create(cell).add_job(backend, job_id, site_name, transfer_token)
 

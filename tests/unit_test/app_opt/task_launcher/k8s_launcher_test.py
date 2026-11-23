@@ -88,6 +88,24 @@ def test_manifest_identity_authority_storage_and_native_resources(setup):
     assert handle.poll().phase == TaskExecutionPhase.QUEUED
 
 
+def test_worker_creation_rejects_unknown_affinity_fields(setup):
+    launcher, api, request, _, _ = setup
+    launcher.worker_scheduling = {"affinity": {"node_affinity": {}}}
+    create = api.create_namespaced_pod
+
+    def validate_fields(*, body, **kwargs):
+        # Model the API's Strict and Warn handling of an unknown field.
+        if kwargs.get("field_validation") == "Strict" and "node_affinity" in body["spec"]["affinity"]:
+            raise ApiError(422)
+        return create(body=body, **kwargs)
+
+    api.create_namespaced_pod = validate_fields
+    with pytest.raises(TaskLaunchError, match="pod launch failed") as error:
+        launcher.launch_task(request)
+    assert error.value.handle.poll().settled
+    assert api.pod is None
+
+
 @pytest.mark.parametrize("gpu_count", [0, 1])
 @pytest.mark.parametrize("startup_failure", [False, True])
 def test_task_lifecycle_is_independent_of_job_handles(setup, monkeypatch, gpu_count, startup_failure):

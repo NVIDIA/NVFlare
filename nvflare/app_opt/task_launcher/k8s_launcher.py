@@ -58,6 +58,7 @@ from nvflare.app_opt.job_launcher.k8s_pod import (
 )
 from nvflare.job_config.task_execution import reject_job_gpu_reservation
 from nvflare.private.fed.client.task_execution_policy import FORBIDDEN_ENVIRONMENT_NAMES, GPU_ENVIRONMENT_NAMES
+from nvflare.private.fed.task_worker.config_vars import ENV_WORKER_CONFIG_VARS
 from nvflare.private.fed.task_worker.protocol import _open_directory, read_bootstrap
 from nvflare.utils.job_launcher_utils import (
     get_job_launcher_spec,
@@ -314,8 +315,11 @@ class K8sTaskBackend(_K8sTaskProfile):
     def __init__(self, *args, startup_secret_name, study_runtime=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.startup_secret_name = validate_startup_secret_name(startup_secret_name)
-        self.study_volumes, self.study_mounts, self.study_secret_env = study_pod_bindings(study_runtime)
+        self.study_volumes, self.study_mounts, self.study_secret_env = study_pod_bindings(
+            study_runtime, read_only_claims=True
+        )
         self.worker_scheduling = {}
+        self.study_env_names = ""
         if study_runtime is not None:
             if any(dataset.source == self.workspace_pvc for dataset in study_runtime.datasets):
                 raise ValueError("the jobs PVC may only be mounted through the assigned job subPath")
@@ -336,6 +340,9 @@ class K8sTaskBackend(_K8sTaskProfile):
             for name in secret_names:
                 self.environment.pop(name, None)
             self.worker_scheduling = copy.deepcopy(study_runtime.worker_scheduling)
+            if study_runtime.env:
+                # Prevent kubelet from expanding $(...) inside a variable name.
+                self.study_env_names = json.dumps(sorted(study_runtime.env)).replace("$", r"\u0024")
 
     def handle_event(self, event_type, fl_ctx):
         if event_type != EventType.START_RUN:
@@ -389,6 +396,8 @@ class K8sTaskBackend(_K8sTaskProfile):
         # The common command locates staged bootstrap. The Pod always uses the
         # site image/interpreter and native scope, without the CJ's local PID.
         environment = dict(self.environment)
+        if self.study_env_names:
+            environment[ENV_WORKER_CONFIG_VARS] = self.study_env_names
         if "nvidia.com/gpu" not in resources["limits"]:
             # CPU tasks can use the same GPU-capable image. Do not inherit an
             # image's NVIDIA_VISIBLE_DEVICES=all on a GPU-runtime node.
@@ -488,7 +497,10 @@ class K8sTaskBackend(_K8sTaskProfile):
         handle = K8sTaskHandle(self, request, name, owner)
         try:
             pod = api.create_namespaced_pod(
-                namespace=self.namespace, body=manifest, _request_timeout=self.request_timeout
+                namespace=self.namespace,
+                body=manifest,
+                field_validation="Strict",
+                _request_timeout=self.request_timeout,
             )
             handle._identify(pod)
             if SETTLEMENT_FINALIZER not in (pod.metadata.finalizers or []):

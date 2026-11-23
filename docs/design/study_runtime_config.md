@@ -84,8 +84,9 @@ The schema is common across launchers but values are launcher-specific (`source`
 `secret_env.*.source`: Secret name vs parent environment variable; `pod_template`: K8s-only; `slurm`: Slurm-only).
 A file is authored per deployment, not portable across launcher types.
 
-This inline `pod_template` places a job-mode training pod on H100 nodes. For task mode, put
-`nodeSelector` and `tolerations` under the study's `worker_scheduling` instead.
+This inline `pod_template` uses H100 as an example of a node label. Use the labels and taints
+for the node pool you want. For task mode, put `nodeSelector` and `tolerations` under the
+study's `worker_scheduling` instead.
 
 ```yaml
 format_version: 2

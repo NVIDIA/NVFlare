@@ -404,15 +404,24 @@ site's ``local/study_runtime.yaml``:
 
 In task mode the client parent resolves these settings when launching the job
 and applies them to each worker. Datasets mount at ``/data/<study>/<dataset>``
-with the configured ``ro`` or ``rw`` access. Secret mounts are read-only and
-``secret_env`` uses Kubernetes Secret key references. The claims and Secrets
+with the configured ``ro`` or ``rw`` access. A read-only dataset sets both
+the PVC source and the container mount to read-only. Secret mounts are
+read-only and ``secret_env`` uses Kubernetes Secret key references. The claims and Secrets
 must exist in the worker namespace. Dataset claims must be separate from the
 jobs PVC, and study mounts must be outside the workspace. For a private
 registry, set the pull Secret on the worker service account.
 
 Study image and environment entries override the defaults in
-``task_execution.launcher.args``. The optional ``worker_scheduling`` mapping
-accepts Kubernetes ``nodeSelector``, ``affinity``, and ``tolerations`` fields.
+``task_execution.launcher.args``. In compute constructor arguments such as
+``task_script_args``, a reference like ``{$TRAINING_DIR}`` to a study
+``env`` variable resolves on the worker. For a value supplied by
+``secret_env``, read it from the worker environment or use
+``${secret:NAME}`` in Client API script arguments to resolve it when the
+script starts. The script path and arguments used to configure shared
+components must still resolve on the CJ.
+The optional ``worker_scheduling`` mapping accepts Kubernetes ``nodeSelector``,
+``affinity``, and ``tolerations`` fields. Kubernetes rejects unknown fields
+when validating the worker Pod.
 The existing ``pod_template`` still configures the CJ independently. Put any
 environment variables needed only by the CJ in its Pod template. If a CJ template previously included training
 mounts or Secret references directly, remove those entries and configure them

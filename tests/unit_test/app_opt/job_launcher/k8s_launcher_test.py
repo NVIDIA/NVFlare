@@ -4013,6 +4013,7 @@ def test_cp_routes_study_runtime_to_the_pod_running_training(
 ):
     from nvflare.apis.task_launcher_spec import TaskLaunchRequest
     from nvflare.app_opt.task_launcher.k8s_launcher import SETTLEMENT_FINALIZER, WORKER_MODULE
+    from nvflare.private.fed.task_worker.config_vars import ENV_WORKER_CONFIG_VARS
     from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap, write_bootstrap
     from tests.k8s_task_test_utils import PodApi
 
@@ -4031,7 +4032,9 @@ studies:
     datasets:
       training: {source: training-pvc, mode: ro}
       output: {source: output-pvc, mode: rw}
-    env: {DATASET_DIR: /data/study-a/training}
+    env:
+      DATASET_DIR: /data/study-a/training
+      "LABEL$(DATASET_DIR)": custom-label
     secret_env:
       API_TOKEN: {source: study-auth, key: token}
     secret_mounts:
@@ -4066,7 +4069,11 @@ studies:
     if lifetime == "task":
         assert {v["name"] for v in cj_spec["volumes"]} == {"workspace-job", "startup-kit"}
         assert {m["name"] for m in cj["volumeMounts"]} == {"workspace-job", "startup-kit"}
-        assert {e["name"] for e in cj["env"]}.isdisjoint({"DATASET_DIR", "API_TOKEN"})
+        cj_env = {e["name"]: e for e in cj["env"]}
+        assert set(cj_env).isdisjoint({"DATASET_DIR", "API_TOKEN"})
+        deferred_names = cj_env[ENV_WORKER_CONFIG_VARS]["value"]
+        assert "$(" not in deferred_names
+        assert json.loads(deferred_names) == ["DATASET_DIR", "LABEL$(DATASET_DIR)"]
         backend = service.get_or_create.return_value.add_job.call_args.args[0]
         api = backend.core_v1 = PodApi()
         identity = TaskAttemptIdentity(_TASK_JOB_ID, _TASK_SITE, "task", "train", "attempt")
@@ -4094,6 +4101,7 @@ studies:
         workspace_mount = next(m for m in container["volumeMounts"] if m["mountPath"] == cwd)
         assert workspace_mount["subPath"] == job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
         assert container["image"] == "site/study-worker"
+        assert {"name": ENV_WORKER_CONFIG_VARS, "value": deferred_names} in container["env"]
         assert spec["nodeSelector"] == {"pool": "gpu"}
         preference = spec["affinity"]["nodeAffinity"]["preferredDuringSchedulingIgnoredDuringExecution"][0]
         assert preference["preference"]["matchExpressions"] == [
@@ -4109,7 +4117,10 @@ studies:
     for name, read_only in (("training", True), ("output", False)):
         mount = mounts[f"/data/study-a/{name}"]
         assert mount["readOnly"] is read_only
-        assert volumes[mount["name"]]["persistentVolumeClaim"] == {"claimName": f"{name}-pvc"}
+        claim = {"claimName": f"{name}-pvc"}
+        if lifetime == "task" and read_only:
+            claim["readOnly"] = True
+        assert volumes[mount["name"]]["persistentVolumeClaim"] == claim
     secret_mount = mounts["/run/study"]
     assert secret_mount["readOnly"] is True
     assert volumes[secret_mount["name"]]["secret"] == {
