@@ -368,3 +368,24 @@ def test_property_relationship_is_in_summary_and_detail():
     view = CatalogVisualization(doc)
     assert view.get_tables().iloc[0]["relationships"] == 1
     assert view.get_relationships().iloc[0]["references"] == "visits(id)"
+
+
+def test_nested_relationship_paths_in_overview_and_detail():
+    target = {"name": "id", "id": "identifier"}
+    previous = {"name": "previous", "relationships": [{"to": "/schema/t/properties/h/properties/identifier"}]}
+    history = {"name": "history", "id": "h", "logicalType": "object", "properties": [target, previous]}
+    array = {"name": "events", "logicalType": "array", "items": {"properties": [previous]}}
+    mapping = {"name": "lookup", "logicalType": "map", "map": {"key": {}, "value": {"properties": [previous]}}}
+    contract = {
+        "kind": "DataContract",
+        "apiVersion": "v3.2.0",
+        "version": "1",
+        "id": "a",
+        "schema": [{"name": "visits", "id": "t", "properties": [history, array, mapping]}],
+    }
+    entry = SiteEntry(SiteStatus.OK, catalogs=({"dataset": "visits", "contract": contract},))
+    view = CatalogVisualization(build_catalog_results("study", "job", "now", {"one": entry}))
+    assert view.get_tables().iloc[0]["relationships"] == 3
+    rows = view.get_relationships()
+    assert rows["columns"].tolist() == ["history.previous", "events[].previous", "lookup.value.previous"]
+    assert rows["references"].tolist() == ["visits(history.id)"] * 3

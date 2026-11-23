@@ -110,6 +110,31 @@ def _read_entries(results) -> list[_Entry]:
     return entries
 
 
+def _property_paths(element, path="", ref=""):
+    """Yield each ODCS property with its display path and optional contract-local ID path."""
+    for prop in element.get("properties", []):
+        name = f"{path}.{prop['name']}" if path else prop["name"]
+        prop_ref = f"{ref}/properties/{prop['id']}" if ref and prop.get("id") else ""
+        yield prop, name, prop_ref
+        yield from _property_paths(prop, name, prop_ref)
+    if "items" in element:
+        items = element["items"]
+        yield items, path + "[]", ""
+        yield from _property_paths(items, path + "[]", f"{ref}/items" if ref else "")
+    for key, prop in element.get("map", {}).items():
+        name = f"{path}.{key}"
+        yield prop, name, ""
+        yield from _property_paths(prop, name, f"{ref}/map/{key}" if ref else "")
+
+
+def _relationships(table):
+    for rel in table.get("relationships", []):
+        yield None, rel
+    for prop, name, _ in _property_paths(table):
+        for rel in prop.get("relationships", []):
+            yield name, rel
+
+
 class CatalogVisualization:
     """Reusable views over one catalog read's results.
 
@@ -241,8 +266,7 @@ class CatalogVisualization:
                         for p in sorted(table.get("properties", []), key=lambda prop: prop.get("primaryKeyPosition", 0))
                         if p.get("primaryKey")
                     ),
-                    "relationships": len(table.get("relationships", []))
-                    + sum(len(prop.get("relationships", [])) for prop in table.get("properties", [])),
+                    "relationships": sum(1 for _ in _relationships(table)),
                 }
                 for entry in self._select(site, dataset)
                 if entry.tables is not None
@@ -375,21 +399,26 @@ class CatalogVisualization:
         for entry in self._select(site, dataset):
             tables = entry.tables or []
             names = {
-                f"schema/{t.get('id')}/properties/{col.get('id')}": (t["name"], col["name"])
-                for t in tables
-                for col in t.get("properties", [])
-                if t.get("id") and col.get("id")
+                ref: (table["name"], path)
+                for table in tables
+                if table.get("id")
+                for _, path, ref in _property_paths(table, ref=f"schema/{table['id']}")
+                if ref
             }
 
             def references(value):
                 refs = value if isinstance(value, list) else [value]
-                return [names.get(ref.lstrip("/"), tuple(ref.rpartition(".")[::2])) for ref in refs]
+                resolved = []
+                for ref in refs:
+                    if ref.lstrip("/") in names:
+                        resolved.append(names[ref.lstrip("/")])
+                    else:
+                        table_name, sep, column = ref.partition(".")
+                        resolved.append((table_name, column) if sep else ("", ref))
+                return resolved
 
             for table in tables:
-                relations = list(table.get("relationships", []))
-                for prop in table.get("properties", []):
-                    relations.extend({**rel, "from": prop["name"]} for rel in prop.get("relationships", []))
-                for rel in relations:
+                for path, rel in _relationships(table):
                     targets = references(rel["to"])
                     target_tables = {name for name, _ in targets}
                     target = (
@@ -402,7 +431,9 @@ class CatalogVisualization:
                             "site": entry.site,
                             "dataset": entry.dataset,
                             "table": table["name"],
-                            "columns": ", ".join(col for _, col in references(rel["from"])),
+                            "columns": (
+                                path if path is not None else ", ".join(col for _, col in references(rel["from"]))
+                            ),
                             "references": target,
                         }
                     )
