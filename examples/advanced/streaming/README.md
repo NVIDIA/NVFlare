@@ -23,7 +23,7 @@ stream any implementations of ObjectSteamer
 
 The following implementations are included in NVFlare,
 
-* `ContainerStreamer`: This class is used to stream a container entry by entry. Currently, dict, list and set are supported
+* `ContainerStreamer` streams containers entry by entry. It supports `dict`, `list`, `set`, and `collections.OrderedDict`.
 * `FileStreamer`: This class is used to stream a file
 
 Note that the container streamer split the stream by the top level entries. All the sub entries of a top entry are expected to be

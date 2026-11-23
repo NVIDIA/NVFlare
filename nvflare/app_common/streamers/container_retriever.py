@@ -17,7 +17,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.streaming import StreamContext
 
-from .container_streamer import ContainerStreamer
+from .container_streamer import ContainerStreamer, _get_container_type
 from .object_retriever import ObjectRetriever
 
 
@@ -40,8 +40,9 @@ class ContainerRetriever(ObjectRetriever):
 
         Args:
             name: name for the container.
-            container: The container to be streamed
+            container: The dict, list, set, or collections.OrderedDict to be streamed
         """
+        _get_container_type(container)
         self.containers[name] = container
 
     def register_stream_processing(
