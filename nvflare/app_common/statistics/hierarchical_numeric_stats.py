@@ -43,7 +43,8 @@ def get_initial_structure(client_metrics: dict, ordered_metrics: dict) -> dict:
                     # features the other sites report.
                     stats[metric].setdefault(ds, {})
                     for feature in client_metrics[stat][site][ds]:
-                        stats[metric][ds][feature] = 0
+                        # min and max start unset: 0 is a valid min or max, so it cannot mean "no value yet".
+                        stats[metric][ds][feature] = None if metric in (StC.STATS_MIN, StC.STATS_MAX) else 0
     return stats
 
 
@@ -381,7 +382,7 @@ def get_hierarchical_mins_or_maxs(
         if isinstance(global_metrics, dict):
             for key, value in global_metrics.items():
                 if key == StC.GLOBAL and StC.NAME not in global_metrics:
-                    if global_metrics[StC.GLOBAL][metric][dataset][feature]:
+                    if global_metrics[StC.GLOBAL][metric][dataset][feature] is not None:
                         global_metrics[StC.GLOBAL][metric][dataset][feature] = op(
                             global_metrics[StC.GLOBAL][metric][dataset][feature], metrics[dataset][feature]
                         )
@@ -391,7 +392,7 @@ def get_hierarchical_mins_or_maxs(
                 if key == StC.NAME:
                     if org and value in org:
                         # The client belongs to this org so update current global metrics before sending it further
-                        if global_metrics[StC.GLOBAL][metric][dataset][feature]:
+                        if global_metrics[StC.GLOBAL][metric][dataset][feature] is not None:
                             global_metrics[StC.GLOBAL][metric][dataset][feature] = op(
                                 global_metrics[StC.GLOBAL][metric][dataset][feature], metrics[dataset][feature]
                             )

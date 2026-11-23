@@ -144,11 +144,11 @@ def required_acceptance_checks(manifest):
 def _ed25519():
     # Imported lazily: the delivered launcher verifies bundles without needing
     # the cryptography package on the runtime host.
-    from cryptography.exceptions import InvalidSignature
+    from cryptography import exceptions
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import ed25519
 
-    return InvalidSignature, serialization, ed25519
+    return exceptions, serialization, ed25519
 
 
 def key_id(public_key):
@@ -160,7 +160,7 @@ def key_id(public_key):
 
 def load_public_keys(values):
     """Load trusted acceptance authorities from PEM paths; keys already loaded pass through."""
-    _, serialization, ed25519 = _ed25519()
+    exceptions, serialization, ed25519 = _ed25519()
     keys = []
     for value in values:
         if isinstance(value, ed25519.Ed25519PublicKey):
@@ -168,7 +168,7 @@ def load_public_keys(values):
             continue
         try:
             key = serialization.load_pem_public_key(Path(value).read_bytes())
-        except (OSError, ValueError, TypeError):
+        except (OSError, ValueError, TypeError, exceptions.UnsupportedAlgorithm):
             require(False, "Cannot load an approval public key; supply Ed25519 PEM files")
         require(isinstance(key, ed25519.Ed25519PublicKey), "Approval signing keys must be Ed25519")
         keys.append(key)
@@ -177,10 +177,10 @@ def load_public_keys(values):
 
 
 def load_signing_key(path):
-    _, serialization, ed25519 = _ed25519()
+    exceptions, serialization, ed25519 = _ed25519()
     try:
         key = serialization.load_pem_private_key(Path(path).read_bytes(), password=None)
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, exceptions.UnsupportedAlgorithm):
         require(False, "Cannot load the approval signing key; supply an unencrypted Ed25519 PEM file")
     require(isinstance(key, ed25519.Ed25519PrivateKey), "Approval signing key must be Ed25519")
     return key
@@ -207,7 +207,7 @@ def sign_receipt(receipt, signing_key):
 
 def verify_receipt_signature(receipt, trusted_keys):
     """Require a signature by one of the trusted acceptance authorities."""
-    InvalidSignature, _, _ = _ed25519()
+    exceptions, _, _ = _ed25519()
     keys = load_public_keys(trusted_keys)
     signature = receipt.get("signature")
     require(
@@ -225,7 +225,7 @@ def verify_receipt_signature(receipt, trusted_keys):
     require(signer is not None, "Approval is not signed by a trusted acceptance authority")
     try:
         signer.verify(value, _signed_body(receipt))
-    except InvalidSignature:
+    except exceptions.InvalidSignature:
         require(False, "Approval signature does not match the receipt")
 
 

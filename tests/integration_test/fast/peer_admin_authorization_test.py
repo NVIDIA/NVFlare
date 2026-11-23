@@ -32,6 +32,7 @@ import pytest
 from nvflare.apis.fl_constant import AdminCommandNames, WorkspaceConstants
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.flare_api.flare_api import new_secure_session
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.lighter.constants import CtxKey
 from nvflare.lighter.impl.cert import CertBuilder
@@ -179,6 +180,57 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
                 records = [json.loads(line) for line in output.splitlines()]
                 assert records, (target, command, output)
                 assert all("event_id" in record and "timestamp" in record for record in records), output
+
+        def audit_records(name):
+            path = prod / name / WorkspaceConstants.AUDIT_LOG
+            records = [json.loads(line) for line in path.read_text().splitlines()]
+            for record in records:
+                assert set(record) <= {
+                    "event_id",
+                    "reference",
+                    "timestamp",
+                    "user",
+                    "action",
+                    "job",
+                    "scope",
+                    "message",
+                }
+                assert all(isinstance(value, str) for value in record.values())
+                # Filenames, shell arguments, reply contents and attacker-supplied
+                # identity/reference values must not leak into administrative records.
+                serialized = json.dumps(record)
+                for forbidden in (
+                    "peer-marker.txt",
+                    "private-job-error-marker",
+                    "forged-admin@test.org",
+                    "forged-reference-marker",
+                ):
+                    assert forbidden not in serialized, record
+            return records
+
+        server_audit = audit_records("localhost")
+        client_audit = audit_records("site-2")
+        assert any(r["action"] == "admin.login.succeeded" and r["user"] == "admin@test.org" for r in server_audit)
+        server_by_id = {r["event_id"]: r for r in server_audit}
+        receipts = [
+            r
+            for r in client_audit
+            if r["action"] == "client.command.received" and "command=sys.shell" in r.get("message", "")
+        ]
+        assert receipts, client_audit
+        for receipt in receipts:
+            assert receipt["user"] == "admin@test.org"
+            assert "identity_source=trusted_server" in receipt["message"]
+            request = server_by_id[receipt["reference"]]
+            assert request["action"] in ("cat", "head", "tail", "grep")
+            assert request["user"] == receipt["user"]
+            outcomes = [
+                r
+                for r in client_audit
+                if r.get("reference") == receipt["event_id"] and r["action"] == "client.command.handler_returned"
+            ]
+            assert len(outcomes) == 1, (receipt, client_audit)
+        rejection_count = sum(r["action"] == "client.origin.rejected" for r in client_audit)
         cases = [
             {"name": "omit_authorization"},
             {
@@ -186,7 +238,8 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
                 "headers": {
                     RequestHeader.ADMIN_COMMAND: "cat",
                     RequestHeader.REQUIRE_AUTHZ: "true",
-                    RequestHeader.USER_NAME: "admin@test.org",
+                    RequestHeader.USER_NAME: "forged-admin@test.org",
+                    ConnProps.EVENT_ID: "forged-reference-marker",
                     RequestHeader.USER_ROLE: "project_admin",
                     RequestHeader.USER_ORG: "test",
                 },
@@ -196,15 +249,15 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         if with_relay:
             cases.append({"name": "forge_server_origin", "forge_origin": True})
         boundary_log = tmp_path / ("relay-1.log" if with_relay else "localhost.log")
-        rejection = "rejected message: origin does not belong to sending peer"
-        before_initial_rejections = boundary_log.read_text().count(rejection)
+        origin_rejection_log = "rejected message: origin does not belong to sending peer"
+        before_initial_rejections = boundary_log.read_text().count(origin_rejection_log)
         _write_json(evidence["site-1"] / "request.json", cases)
         result_path = evidence["site-1"] / "results.json"
         wait_for(result_path.exists)
         results = json.loads(result_path.read_text())
         assert isinstance(results, list), results
         if with_relay:
-            assert boundary_log.read_text().count(rejection) >= before_initial_rejections + 1
+            assert boundary_log.read_text().count(origin_rejection_log) >= before_initial_rejections + 1
         destination_records = [
             json.loads(line) for line in (evidence["site-2"] / "received.jsonl").read_text().splitlines()
         ]
@@ -216,6 +269,14 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         assert len(peer_requests) == 2, destination_records
         assert all("server" in r["route"] for r in peer_requests)
         assert len([r for r in server_records if r["origin"] == peer_origin and r["type"] == "req"]) == 2
+        client_audit = audit_records("site-2")
+        rejections = [r for r in client_audit if r["action"] == "client.origin.rejected"]
+        assert len(rejections) - rejection_count == 2, rejections
+        for rejection in rejections:
+            assert rejection["user"] == "unknown"
+            assert "reference" not in rejection
+            assert "job" not in rejection
+            assert rejection["message"] == "reason=untrusted_origin"
         summary = {
             "marker": marker,
             "attacker_marker": own_marker,
@@ -265,7 +326,7 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         for case in job_cases:
             case.update(channel=CellChannel.CLIENT_COMMAND, topic=AdminCommandNames.SHOW_ERRORS, target=target)
         result_path.unlink()
-        before_rejections = boundary_log.read_text().count(rejection)
+        before_rejections = boundary_log.read_text().count(origin_rejection_log)
         _write_json(evidence["site-1"] / "request.json", job_cases)
         wait_for(result_path.exists)
         job_results = json.loads(result_path.read_text())
@@ -275,7 +336,7 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
             # CellNet can generate a protocol reply. Prove the production gate
             # rejected both attempts rather than accepting arbitrary timeouts.
             assert all(r["rc"] == ReturnCode.TIMEOUT for r in job_results[1:]), job_results
-            assert boundary_log.read_text().count(rejection) >= before_rejections + 2
+            assert boundary_log.read_text().count(origin_rejection_log) >= before_rejections + 2
         assert all("private-job-error-marker" not in json.dumps(r) for r in job_results)
         assert "private-job-error-marker" in json.dumps(admin.show_errors(job_id, "client", ["site-2"]))
         summary["job_commands"] = job_results
@@ -294,6 +355,14 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
                 for r in notifications
             )
         summary["own_child_status_notifications"] = "observed at both clients"
+        for name in ("site-1", "site-2"):
+            # These legitimate internal notifications must not create new
+            # administrator receipts, outcomes or falsely attributed actors.
+            assert not any(
+                r["action"] == "train.notify_job_status" or "command=train.notify_job_status" in r.get("message", "")
+                for r in audit_records(name)
+            )
+        summary["security_audit_records"] = "verified server/client actors, references, rejections and child silence"
         _write_json(tmp_path / "sanitized-results.json", summary)
         assert summary["job_status"] == "FINISHED:COMPLETED"
         assert all(marker not in (r["body"] or "") for r in results), results

@@ -12,18 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import errno
 import json
 import os
 import shlex
 import shutil
 import socket
-import ssl
 import subprocess
 import tempfile
+from pathlib import Path
 
 import grpc
 
+from nvflare.apis.fl_constant import ConnectionSecurity, SecureTrainConst
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.grpc.utils import get_grpc_client_credentials
+from nvflare.fuel.f3.drivers.net_utils import enhance_credential_info, get_ssl_context
 from nvflare.utils.process_utils import popen_in_new_session
+
+SUPPORTED_SCHEMES = ("grpc", "agrpc", "http", "https", "tcp", "stcp", "atcp", "satcp")
 
 
 class NVFlareConfig:
@@ -60,70 +67,60 @@ def try_bind_address(host: str, port: int):
     try:
         sock.bind((host, port))
     except OSError as e:
-        return e
+        if e.errno != errno.EADDRINUSE:
+            return e
+        try:
+            # BSD permits a reuse-enabled loopback bind over a live wildcard listener.
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.settimeout(1)
+                if probe.connect_ex((host, port)) != errno.ECONNREFUSED:
+                    return e
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((host, port))
+        except OSError as retry_error:
+            return retry_error
     finally:
         sock.close()
     return None
-
-
-def _get_ca_cert_file_name():
-    return "rootCA.pem"
-
-
-def _get_cert_file_name(role: str):
-    if role == NVFlareRole.SERVER:
-        return "server.crt"
-    return "client.crt"
-
-
-def _get_prv_key_file_name(role: str):
-    if role == NVFlareRole.SERVER:
-        return "server.key"
-    return "client.key"
 
 
 def split_by_len(item, max_len):
     return [item[ind : ind + max_len] for ind in range(0, len(item), max_len)]
 
 
-def _get_conn_sec(startup: str):
-    # get connection security
-    # first try to see whether this is a client config.
-    client_config = os.path.join(startup, "fed_client.json")
-    if os.path.exists(client_config):
-        with open(client_config, "r") as f:
-            config = json.load(f)
-            return config["client"].get("connection_security", "mtls")
-
-    # try admin config
-    admin_config = os.path.join(startup, "fed_admin.json")
-    if os.path.exists(admin_config):
-        with open(admin_config, "r") as f:
-            config = json.load(f)
-            return config["admin"].get("connection_security", "mtls")
-    return "mtls"
+def _client_probe_params(startup: str):
+    startup = Path(startup)
+    client_config = startup / NVFlareConfig.CLIENT
+    if client_config.is_file():
+        config = json.loads(client_config.read_text())["client"]
+        ca_field, cert_field, key_field = (
+            SecureTrainConst.SSL_ROOT_CERT,
+            SecureTrainConst.SSL_CERT,
+            SecureTrainConst.PRIVATE_KEY,
+        )
+    else:
+        admin_config = startup / NVFlareConfig.ADMIN
+        config = json.loads(admin_config.read_text())["admin"] if admin_config.is_file() else {}
+        ca_field, cert_field, key_field = DriverParams.CA_CERT, DriverParams.CLIENT_CERT, DriverParams.CLIENT_KEY
+    security = config.get("connection_security", ConnectionSecurity.MTLS)
+    params = {
+        DriverParams.CONNECTION_SECURITY: security,
+        DriverParams.SECURE: security != ConnectionSecurity.CLEAR,
+        DriverParams.CA_CERT: str(startup / config.get(ca_field, "rootCA.pem")),
+        DriverParams.CLIENT_CERT: str(startup / config.get(cert_field, "client.crt")),
+        DriverParams.CLIENT_KEY: str(startup / config.get(key_field, "client.key")),
+    }
+    enhance_credential_info(params)
+    return params
 
 
 def check_grpc_server_running(startup: str, host: str, port: int, token=None) -> bool:
-
-    conn_sec = _get_conn_sec(startup)
-    secure = True
-    if conn_sec == "clear":
-        secure = False
-
-    if secure:
-        with open(os.path.join(startup, _get_ca_cert_file_name()), "rb") as f:
-            trusted_certs = f.read()
-        with open(os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT)), "rb") as f:
-            private_key = f.read()
-        with open(os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT)), "rb") as f:
-            certificate_chain = f.read()
+    params = _client_probe_params(startup)
+    if params[DriverParams.SECURE]:
         call_credentials = grpc.metadata_call_credentials(
             lambda context, callback: callback((("x-custom-token", token),), None)
         )
-        credentials = grpc.ssl_channel_credentials(
-            certificate_chain=certificate_chain, private_key=private_key, root_certificates=trusted_certs
-        )
+        credentials = get_grpc_client_credentials(params)
         composite_credentials = grpc.composite_channel_credentials(credentials, call_credentials)
         channel = grpc.secure_channel(target=f"{host}:{port}", credentials=composite_credentials)
     else:
@@ -133,11 +130,13 @@ def check_grpc_server_running(startup: str, host: str, port: int, token=None) ->
         grpc.channel_ready_future(channel).result(timeout=10)
     except grpc.FutureTimeoutError:
         return False
+    finally:
+        channel.close()
     return True
 
 
-def check_socket_server_running(startup: str, host: str, port: int, scheme: str = "https") -> bool:
-    """Check if socket-based server (HTTP/HTTPS/TCP/STCP) is running and accessible.
+def check_socket_server_running(startup: str, host: str, port: int, scheme: str = "https", *, tcp_only=False) -> bool:
+    """Check if socket-based server is running and accessible.
 
     This function performs a socket connection test with optional SSL/TLS.
     It's used for HTTP/WebSocket and TCP-based FL servers.
@@ -146,54 +145,25 @@ def check_socket_server_running(startup: str, host: str, port: int, scheme: str 
         startup: Path to startup directory containing certificates
         host: Server hostname or IP address
         port: Server port number
-        scheme: URL scheme ("http", "https", "tcp", "stcp")
+        scheme: configured transport scheme
+        tcp_only: probe reachability without loading credentials
 
     Returns:
         True if server is accessible, False otherwise
     """
-    conn_sec = _get_conn_sec(startup)
-    secure = True
-    if conn_sec == "clear":
-        secure = False
-
-    # Determine if we need SSL based on scheme
-    use_ssl = secure and scheme in ["https", "stcp"]
-
-    # Try a socket connection to check if port is reachable
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(10)
-
+    context = None
     try:
-        if use_ssl:
-            # For secure connection, wrap socket with SSL and use client certificates
-            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-            ca_path = os.path.join(startup, _get_ca_cert_file_name())
-            cert_path = os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT))
-            prv_key_path = os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT))
-
-            context.load_verify_locations(ca_path)
-            context.load_cert_chain(cert_path, prv_key_path)
-            # Check hostname may fail for localhost, so disable it for preflight check
-            context.check_hostname = False
-
-            ssl_sock = context.wrap_socket(sock, server_hostname=host)
-            ssl_sock.connect((host, port))
-            ssl_sock.close()
-        else:
-            # For insecure connection, just check if we can connect
-            sock.connect((host, port))
-            sock.close()
-
+        if not tcp_only:
+            params = _client_probe_params(startup)
+            params[DriverParams.SCHEME] = scheme
+            context = get_ssl_context(params, ssl_server=False)
+        with socket.create_connection((host, port), timeout=10) as sock:
+            if context:
+                with context.wrap_socket(sock, server_hostname=host):
+                    pass
         return True
-    except (socket.timeout, socket.error, ssl.SSLError, OSError, ConnectionRefusedError):
-        # Connection failed - server is not accessible
+    except OSError:
         return False
-    finally:
-        try:
-            sock.close()
-        except Exception:
-            pass
 
 
 def run_command_in_subprocess(command):

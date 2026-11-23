@@ -45,6 +45,7 @@ import sys
 from typing import Any, Optional
 
 from nvflare.tool.cli_contract import SCHEMA_VERSION
+from nvflare.tool.cli_errors import get_error_entry
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +70,10 @@ _SENSITIVE_KEY_NAMES = {
     "private_key",
     "privatekey",
     "refresh_token",
+    "registration_token",
     "secret_key",
     "session_token",
+    "token",
 }
 _QUOTED_TEXT_VALUE_PATTERN = (
     r'"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|(?=[\r\n]|\Z))|' r"'(?:\\[^\r\n]|[^'\\\r\n])*(?:'|(?=[\r\n]|\Z))"
@@ -80,6 +83,7 @@ _SENSITIVE_ASSIGNMENT_PATTERN = re.compile(
     r"(?i)\b(?P<prefix>(?:"
     r"password|passwd|passphrase|credential|credentials|"
     r"access[-_ ]?token|refresh[-_ ]?token|id[-_ ]?token|session[-_ ]?token|auth[-_ ]?token|"
+    r"registration[-_ ]?token|(?<![\w-])token|"
     r"api[-_ ]?key|private[-_ ]?key|secret[-_ ]?key|client[-_ ]?secret"
     r")[\"']?\s*[:=]\s*)"
     rf"(?P<value>{_SENSITIVE_TEXT_VALUE_PATTERN})"
@@ -88,6 +92,7 @@ _SENSITIVE_CLI_OPTION_PATTERN = re.compile(
     r"(?i)(?P<prefix>--(?:"
     r"password|passwd|passphrase|credential|credentials|"
     r"access[-_]?token|refresh[-_]?token|id[-_]?token|session[-_]?token|auth[-_]?token|"
+    r"registration[-_]?token|token|"
     r"api[-_]?key|private[-_]?key|secret[-_]?key|client[-_]?secret"
     r")(?:\s+|=))"
     rf"(?P<value>{_SENSITIVE_TEXT_VALUE_PATTERN})"
@@ -219,7 +224,11 @@ def _sanitize_for_cli_output(value: Any, key: Any = None) -> Any:
         return _REDACTED
 
     if isinstance(value, dict):
-        return {k: _sanitize_for_cli_output(v, k) for k, v in value.items()}
+        # HCI replies carry the session credential in a token item's data field.
+        is_token_item = value.get("type") == "token"
+        return {
+            k: _REDACTED if is_token_item and k == "data" else _sanitize_for_cli_output(v, k) for k, v in value.items()
+        }
     if isinstance(value, list):
         return [_sanitize_for_cli_output(v) for v in value]
     if isinstance(value, tuple):
@@ -368,8 +377,6 @@ def output_error(
     **kwargs,
 ) -> None:
     """Print an error from ERROR_REGISTRY and exit. Never returns."""
-    from nvflare.tool.cli_errors import get_error_entry
-
     entry = get_error_entry(error_code) or {"message": error_code, "hint": ""}
     try:
         message = entry["message"].format_map(kwargs) if kwargs else entry["message"]

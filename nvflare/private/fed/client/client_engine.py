@@ -29,6 +29,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
+from nvflare.fuel.sec.admin_audit import record, snapshot
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, new_cell_message
@@ -45,6 +46,11 @@ from .client_executor import JobExecutor
 from .client_run_manager import ClientRunInfo
 from .client_status import ClientStatus
 from .fed_client import FederatedClient
+
+
+def _record_admin_control(action, *, reason):
+    if snapshot().command.rsplit(".", 1)[-1] in ("shutdown", "restart"):
+        record(action, reason=reason)
 
 
 def _remove_custom_path():
@@ -441,21 +447,32 @@ class ClientEngine(ClientEngineInternalSpec, StreamableEngine):
     def shutdown(self) -> str:
         self.logger.info("Client shutdown...")
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
-        self.fire_event(EventType.SYSTEM_END, self.new_context())
-
-        thread = threading.Thread(target=shutdown_client, args=(self.client, touch_file))
-        thread.start()
-
-        self.shutdown_streamer()
+        try:
+            self.fire_event(EventType.SYSTEM_END, self.new_context())
+            thread = threading.Thread(target=shutdown_client, args=(self.client, touch_file))
+            thread.start()
+        except Exception:
+            _record_admin_control("client.shutdown.error", reason="scheduling_failed")
+            raise
+        _record_admin_control("client.shutdown.scheduled", reason="thread_started")
+        try:
+            self.shutdown_streamer()
+        except Exception:
+            _record_admin_control("client.shutdown.cleanup_error", reason="streamer_cleanup_failed")
+            raise
         return "Shutdown the client..."
 
     def restart(self) -> str:
         self.logger.info("Client shutdown...")
         touch_file = os.path.join(self.args.workspace, "restart.fl")
-        self.fire_event(EventType.SYSTEM_END, self.new_context())
-        thread = threading.Thread(target=shutdown_client, args=(self.client, touch_file))
-        thread.start()
-
+        try:
+            self.fire_event(EventType.SYSTEM_END, self.new_context())
+            thread = threading.Thread(target=shutdown_client, args=(self.client, touch_file))
+            thread.start()
+        except Exception:
+            _record_admin_control("client.restart.error", reason="scheduling_failed")
+            raise
+        _record_admin_control("client.restart.scheduled", reason="thread_started")
         return "Restart the client..."
 
     def deploy_app(self, app_name: str, job_id: str, job_meta: dict, client_name: str, app_data) -> str:

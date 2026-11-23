@@ -45,6 +45,7 @@ The problems that may be reported:
     :header: Checks,Problems,How to fix
     :widths: 15, 20, 25
 
+    Check endpoint credentials,Endpoint certificate or key failed validation,Check the reported file and its project CA chain.
     Check FL port binding,Can't bind to address ({host}:{port}): {e},Please check the DNS and port.
     Check admin port binding,Can't bind to address ({host}:{port}): {e},Please check the DNS and port.
     Check snapshot storage writable,Can't write to {snapshot_storage_root}: {e}.,Please check the user permission.
@@ -56,6 +57,8 @@ Preflight check on client sites
 -------------------------------
 
 Before you check the clients, make sure the server is running.
+For socket transports, preflight checks reachability and completes the client side of any TLS handshake.
+The running client verifies that the server accepts its identity during registration.
 
 If the client package is in "/path_to_NVFlare/NVFlare/workspace/example_project/prod_00" and it is called "site-1"
 So on the client site, a user will run: 
@@ -70,6 +73,7 @@ The problems that may be reported:
     :header: Checks,Problems,How to fix
     :widths: 15, 20, 25
 
+    Check endpoint credentials,Site certificate or key failed validation,Check the reported file and its project CA chain.
     Check server available,Can't connect to {scheme} server ({host}:{port}),Please check if server is up.
     Check dry run,Can't start successfully: {error},Please check the error message of dry run.
 

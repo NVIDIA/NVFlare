@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 TESTS = (
+    "tests/integration_test/fast/admin_download_audit_test.py",
     "tests/integration_test/fast/autofl_process_lifecycle_test.py",
     "tests/integration_test/fast/cell_reconnect_test.py",
     "tests/integration_test/fast/cell_session_mtls_test.py",
@@ -40,6 +41,7 @@ TESTS = (
     "tests/integration_test/fast/openshift_scripts_test.py",
     "tests/integration_test/fast/harness_process_cleanup_test.py",
     "tests/integration_test/fast/peer_admin_authorization_test.py",
+    "tests/integration_test/fast/preflight_transport_test.py",
     "tests/integration_test/fast/process_launcher_lifecycle_test.py",
     "tests/integration_test/fast/recipe_log_config_test.py",
     "tests/integration_test/fast/resource_stats_cpu_process_test.py",
