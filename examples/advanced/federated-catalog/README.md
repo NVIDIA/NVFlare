@@ -20,7 +20,7 @@ Site-1 additionally shares two header-bearing CSV datasets, checked into
 Site-1 therefore publishes three dataset catalogs; site-2 and site-3 publish one
 each.
 
-The catalog reads the `lab_results` CSV header, publishing only column names in their original order. For `visits`, the steward provides an [ODCS contract](data/site-1/visits.odcs.yaml) using the dataset’s `usage.catalog.contract_uri`. Its description is preserved. Other jobs can still use the underlying CSV.
+On each catalog read the site generates one ODCS document per CSV dataset from its header. For both `lab_results` and `visits`, it publishes the column names in their original order.
 
 For a deployment with Unity Catalog and PostgreSQL servers running in Docker, see
 the [catalog services example](../federated-catalog-services). It runs a real
@@ -124,9 +124,6 @@ studies:
       visits:
         type: csv
         uri: file://${SITE_DATA}/visits.csv
-        usage:
-          catalog:
-            contract_uri: file://${SITE_DATA}/visits.odcs.yaml
 ```
 
 [config/site-2/datasets.yaml](config/site-2/datasets.yaml) has one `clinical_records`

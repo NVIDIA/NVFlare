@@ -10,7 +10,7 @@ column names, types, keys and relationships). You read the catalog with one Pyth
 and get every site's answer back as one result. Catalog visibility never grants access to
 the records themselves.
 
-A catalog read is an ordinary FLARE job. The site publishes generated schema metadata or the complete steward-approved contract. Each successful dataset contributes one ODCS v3.2.0 contract. CSV discovery publishes header names only. Its result is
+A catalog read is an ordinary FLARE job. Each site reads schema metadata directly from its configured sources. Each successful dataset contributes one ODCS v3.2.0 contract. CSV discovery publishes header names only. Its result is
 saved with the job in the job store and downloaded to you; the server keeps no other copy.
 
 ****************
@@ -163,16 +163,7 @@ Each site describes its datasets per Study in one file, its dataset configuratio
            uri: file:///data/oncology/clinical_records     # where the dataset is
 
 The site installs ``nvflare[catalog]``. Supported source types are ``csv``, ``parquet``, ``sql``,
-``duckdb`` and ``unity-catalog``. To supply an approved contract for a dataset, add the following
-inside its entry beside ``type`` and ``uri``:
-
-.. code-block:: yaml
-
-   usage:
-     catalog:
-       contract_uri: file:///data/oncology/contracts/clinical_records.odcs.yaml
-
-This file takes precedence for catalog reads. A missing or invalid contract marks that dataset unavailable.
+``duckdb`` and ``unity-catalog``. On the first and each subsequent read, the site generates an ODCS document from the configured source.
 
 Every dataset configured for the job's Study is eligible for cataloging, optionally narrowed by the request's
 dataset selection. The catalog does not apply sharing flags or table, column, resource or metadata exclusions.
@@ -217,8 +208,6 @@ Limits
   reported as ``NO_RESULT`` in that read; nothing from an earlier read is carried over. Without
   ``sites``, a read covers the sites that are online when it starts.
 * Each read adds one job to the server's job store.
-* Generated contracts carry structural fields reported by the source. A supplied contract preserves
-  descriptions and other declarations. Stewards must review the complete file for sample values and
-  private connection details before publishing it to the Study.
+* Contracts contain structural fields from the source metadata.
 * The catalog is for discovery. Using a dataset still goes through the Study's normal
   authorization.

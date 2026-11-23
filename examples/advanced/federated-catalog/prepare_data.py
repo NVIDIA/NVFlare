@@ -154,10 +154,6 @@ def install_config(config_file, site_root):
         uri = dataset["uri"]
         if uri.startswith(PLACEHOLDER):
             dataset["uri"] = (site_root / "data" / uri.removeprefix(PLACEHOLDER)).as_uri()
-        catalog = dataset.get("usage", {}).get("catalog", {})
-        if "contract_uri" in catalog:
-            filename = catalog["contract_uri"].removeprefix(PLACEHOLDER)
-            catalog["contract_uri"] = (site_root / "data" / filename).as_uri()
     target = site_root / "local" / "datasets.yaml"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(yaml.safe_dump(config, sort_keys=False))
@@ -208,9 +204,6 @@ def prepare_data(data_root, force=False):
         else:
             raise ValueError(f"Synthetic data preparation does not support {clinical_records['type']!r}")
         for name, dataset in datasets.items():
-            contract_uri = dataset.get("usage", {}).get("catalog", {}).get("contract_uri")
-            if contract_uri:
-                shutil.copyfile(example_root / "data" / site / f"{name}.odcs.yaml", local_path(contract_uri))
             if dataset["type"] == "csv":
                 shutil.copyfile(example_root / "data" / site / f"{name}.csv", local_path(dataset["uri"]))
         print(f"{site}: " + ", ".join(f"{name} ({dataset['type']})" for name, dataset in datasets.items()))

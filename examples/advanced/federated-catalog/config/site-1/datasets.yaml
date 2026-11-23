@@ -13,6 +13,3 @@ studies:
       visits:
         type: csv
         uri: file://${SITE_DATA}/visits.csv
-        usage:
-          catalog:
-            contract_uri: file://${SITE_DATA}/visits.odcs.yaml

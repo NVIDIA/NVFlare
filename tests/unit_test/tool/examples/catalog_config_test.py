@@ -46,11 +46,7 @@ def test_example_site_configurations_are_valid_without_publication_rules(example
     config = _site_config(example, site)
     assert {name: config.get_dataset(name).type for name in config.list_datasets()} == datasets
     for name in datasets:
-        rules = config.get_dataset(name).usage_rules("catalog")
-        if name == "visits":
-            assert rules == {"contract_uri": "file:///prepared/site/data/visits.odcs.yaml"}
-        else:
-            assert rules is None
+        assert config.get_dataset(name).usage_rules("catalog") is None
     assert parse_settings(config.site_usage("catalog")).limits.max_records > 0
 
 
