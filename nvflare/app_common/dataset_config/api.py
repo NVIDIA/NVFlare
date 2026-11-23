@@ -133,7 +133,7 @@ def _check_odbc_connect(value: str, label: str, source: str):
         position = match.end()
 
 
-def _check_uri(uri, label: str, source: str, dataset_type: str) -> str | None:
+def _check_uri(uri, label: str, source: str) -> str | None:
     """Validate a dataset URI; return the decoded local path of a file URI, else None."""
     if not isinstance(uri, str) or not uri:
         raise _error(source, f"{label}.uri is required")
@@ -161,9 +161,8 @@ def _check_uri(uri, label: str, source: str, dataset_type: str) -> str | None:
             _ = parts.port
         except ValueError:
             raise _error(source, f"{label}.uri has an invalid authority") from None
-    # A raw delimiter in SQL user:password terminates urlsplit's authority.
-    # SQLAlchemy still consumes the password up to @, including for socket URLs.
-    if (dataset_type == "sql" or sql_dialect) and ":" in parts.netloc and not parts.netloc.startswith("["):
+    # A raw /, ? or # in a password can move the closing @ outside urlsplit's authority.
+    if parts.scheme != "file" and ":" in parts.netloc and not parts.netloc.startswith("["):
         if "@" not in parts.netloc and any("@" in field for field in (parts.path, parts.query, parts.fragment)):
             raise _error(source, f"{label}.uri has ambiguous user information")
     if parts.password is not None:
@@ -201,7 +200,7 @@ def _dataset(study: str, name, entry, source: str) -> tuple[DatasetConfig, dict]
     dataset_type = entry.get("type")
     if not isinstance(dataset_type, str) or not dataset_type:
         raise _error(source, f"{label}.type is required")
-    path = _check_uri(entry.get("uri"), label, source, dataset_type)
+    path = _check_uri(entry.get("uri"), label, source)
     options = _mapping(entry.get("options"), f"{label}.options", source)
     secrets = _mapping(entry.get("secrets"), f"{label}.secrets", source)
     for key, variable in secrets.items():

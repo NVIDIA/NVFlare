@@ -115,7 +115,7 @@ time an ODBC-aware consumer can resolve these through `get_secret(dataset, key)`
 A credential-free `odbc_connect` string also works for driver-managed authentication, such as an integrated
 connection. Embedded password attributes (including `PWD` and `Password`) are rejected.
 
-Single-host SQL and HTTP addresses are checked for malformed ports. Other drivers can use host lists, such as a MongoDB replica set. Ambiguous embedded passwords are rejected for both network and Unix-socket SQL addresses. Percent-encode a literal `@` in a database path or query. The credential check is best-effort: it cannot recognize a token used as a user name (`https://TOKEN@host`) or one hidden in a path. Sites must still keep credentials out of `uri`. Error messages name the offending parameter, never its value.
+Single-host SQL and HTTP addresses are checked for malformed ports. Other drivers can use host lists, such as a MongoDB replica set. For any non-file scheme, a raw `/`, `?` or `#` in a password can split the credentials across URI components. The parser rejects such ambiguous addresses. Percent-encode a literal `@` as `%40` in a path, query or fragment when it could be mistaken for the end of credentials. The credential check is best-effort: it cannot recognize a token used as a user name (`https://TOKEN@host`) or one hidden in a path. Sites must still keep credentials out of `uri`. Error messages name the offending parameter, never its value.
 
 The API does not check that a `file` path exists or that a network address answers; the component that reads the dataset reports that. Percent-encoding follows RFC 3986, so a space in a path is written `%20`. `DatasetConfig.path` returns the decoded local path of a `file` URI.
 

@@ -212,6 +212,14 @@ class TestValidation:
             parse(with_dataset(type="sql", uri=f"postgresql://reader:{prefix}{separator}private@{host}/study"))
         assert "private" not in str(error.value)
 
+    @pytest.mark.parametrize("scheme", ["mongodb", "s3", "databricks"])
+    @pytest.mark.parametrize("separator", ["/", "?", "#"])
+    def test_non_sql_uri_rejects_ambiguous_password(self, scheme, separator):
+        uri = f"{scheme}://reader:Ab{separator}9x@host/study"
+        with pytest.raises(DatasetConfigError, match="ambiguous user information") as error:
+            parse(with_dataset(type=scheme, uri=uri))
+        assert "Ab" not in str(error.value) and "9x" not in str(error.value)
+
     def test_replica_set_in_another_study_does_not_block_loading(self):
         uri = "mongodb://db1:27017,db2:27017/study"
         data = with_dataset(type="mongodb", uri=uri)
