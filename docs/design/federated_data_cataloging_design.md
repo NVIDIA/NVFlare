@@ -6,12 +6,17 @@ A researcher calls `get_catalog(env)` to discover the datasets available to a St
 
 For each selected dataset, `CatalogExecutor` calls `read_odcs(dataset, secret, budget, *, site)`. On the first request and each subsequent request, the reader discovers the current source metadata and generates an ODCS document in memory.
 
-| Site input | What `read_odcs` does |
-| --- | --- |
-| File | For CSV, pass a header-only projection to the importer. For Parquet or a local database, import the footer metadata or table definitions. |
-| Live source | Connect to a running database, warehouse or catalog service using the site’s configured identity. Publish the structural fields from the returned ODCS document. |
+The site administrator configures the source address in `datasets.yaml`. FLARE translates that address and the dataset options into arguments for the pinned Data Contract CLI importer. The importer returns metadata in memory. FLARE selects the structural fields, builds the ODCS document and validates it before sending it to the server. [Upstream Python entry point](https://github.com/datacontract/datacontract-cli/blob/fc6452e457fc449c4bbd948db15d9cd4eccb73f2/datacontract/data_contract.py#L402)
 
-Generated contracts come from the pinned Data Contract CLI importers. PostgreSQL uses the live `postgres` importer. Unity Catalog uses the `unity` importer with fully qualified table names; the Databricks SDK lists names in the configured catalog and schema when the site omits a table list. For a partitioned Parquet table, the reader compares all native footer schemas before passing one representative file to the `parquet` importer. Published decimal types include precision and scale. For local SQLite and DuckDB files the site extracts table DDL through a read-only connection and passes it to the upstream `sql` importer. The current live SQL path supports PostgreSQL. MySQL and Snowflake would require separate integration and qualification. [Upstream Python entry point](https://github.com/datacontract/datacontract-cli/blob/fc6452e457fc449c4bbd948db15d9cd4eccb73f2/datacontract/data_contract.py#L402)
+| Configured source | How the site obtains metadata |
+| --- | --- |
+| PostgreSQL | FLARE parses the PostgreSQL URI and calls `DataContract.import_from_source(format="postgres", ...)` with the hostname, port, database, schema, optional table selection and resolved credentials. The upstream importer connects to PostgreSQL and queries `information_schema` and `pg_catalog`. |
+| Unity Catalog | FLARE takes the service host from the HTTPS URI. When the site omits a table list, FLARE calls the Databricks SDK to list tables in the configured catalog and schema. It calls the upstream `unity` importer for each fully qualified table name. The importer retrieves the table metadata with `tables.get()`. |
+| SQLite or DuckDB | FLARE opens the database file read-only, extracts table definitions and passes them to the upstream `sql` importer as DDL. |
+| Parquet | FLARE compares the footer schemas of partition files and passes one representative file per table to the `parquet` importer. Published decimal types include precision and scale. |
+| CSV | FLARE reads the header and passes only temporary column identifiers to the CSV importer. It publishes the original header names in order. |
+
+The live SQL implementation supports PostgreSQL. MySQL and Snowflake would require separate integration and qualification.
 
 At the per-dataset call site, the executor supplies the authenticated site name for generated contract IDs and a secret lookup scoped to that dataset. All datasets in the task share one deadline, call allowance and published-record allowance. The site runs each read in a local child process. At the deadline it can stop a blocked source read, import or validation and return the contracts already completed. The sender reserves space for status entries within a 16 MiB site reply. The controller enforces the same reply limit. The reader chooses the source from site configuration.
 
@@ -54,7 +59,7 @@ The job reads the SQLite table definitions for `registry`, the CSV header for `v
 
 ## What gets published
 
-The site validates each document against ODCS v3.2.0. An unsupported version makes that dataset unavailable.
+FLARE validates the generated document against the bundled ODCS v3.2.0 schema. A validation failure marks that dataset unavailable.
 
 Qualify the importer for the actual backend and input form. Pass source options explicitly and resolve credentials through the per-dataset secret callback only when connecting. Keep site settings out of the returned document. Construct the public document from ODCS fields for object and property names, reported types, nullability, keys and relationships where the source supports them. Apply this projection recursively, including nested properties. Copying an importer’s entire `schema` subtree can carry examples, observed ranges, free text or local paths into the result. This fixed behavior belongs in the reader and requires no site-authored exclusion rules.
 
