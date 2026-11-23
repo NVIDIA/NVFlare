@@ -1,7 +1,8 @@
 # Federated Data Cataloging Design
 
-**Status:** Proposed implementation design
-**Date:** November 9, 2026
+**Proposed design.** Publish one Open Data Contract Standard (ODCS) document per dataset. The catalog job uses the existing Study dataset configuration to collect steward-provided contracts or generate structural metadata at the site. CSV publishes header names only. The server records site status and stores the documents with the job. [ODCS read flow, configuration, results and migration](federated_data_cataloging_odcs.md)
+
+**Implementation baseline (November 9, 2026).** Sections 1–9 and their figures describe the FLARE-specific payload currently proposed in [the core implementation PR](https://github.com/NVIDIA/NVFlare/pull/5738). They provide the reference for migrating the readers, wire format and example consumers to ODCS. The ODCS proposal above governs the target behavior where the two differ.
 
 ## 1. Purpose and assumptions
 
@@ -167,7 +168,7 @@ class CatalogInfo:
     observed_at: str | None              # source observation, RFC 3339 UTC; None means unknown
 ```
 
-#### Metadata format (normative)
+#### Baseline metadata format
 
 `format_version: 1` selects this schema. Every field is present; unknown values are JSON `null` and lists may be empty. Unknown fields are rejected. Identity is the enclosing `dataset` plus the authenticated Study and client.
 

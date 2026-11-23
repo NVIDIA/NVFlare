@@ -1,9 +1,9 @@
 # Federated Data Cataloging: Metadata Schema Details
 
-**Status:** Companion to the [federated data cataloging design](federated_data_cataloging_design.md)
+**Scope:** FLARE-specific payload used by the [implementation baseline](federated_data_cataloging_design.md). The proposed ODCS payload and its validation are defined in the [ODCS catalog design](federated_data_cataloging_odcs.md).
 **Date:** November 9, 2026
 
-This page explains the catalog metadata model and the checks that enforce it. The format itself is normative in Section 3.4 of the main design. The code is `nvflare/app_common/fdn/catalog/common/schema.py`, which has no FLARE or I/O imports. Its error messages name fields, never values from the source.
+This page explains the catalog metadata model and the checks that enforce it. Section 3.4 of the baseline describes this format. The code is `nvflare/app_common/fdn/catalog/common/schema.py`, which has no FLARE or I/O imports. Its error messages name fields, never values from the source.
 
 ## 1. The model
 
