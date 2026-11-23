@@ -183,6 +183,19 @@ class TestGetCatalogResults:
         assert [p.name for p in job.iterdir()] == ["catalog"]
         assert read_index(job / "catalog/index.json") == doc
 
+    def test_exports_into_a_folder_removed_by_download_cleanup(self, tmp_path):
+        job = tmp_path / "job-1"
+        doc = write_results(job / "workspace")
+        reports = job / "workspace/reports"
+        reports.mkdir()
+        (reports / "old.log").touch()
+        out = reports / "snapshot.json"
+
+        assert CatalogRecipe().get_catalog_results(FakeRun(str(job)), output_path=str(out)) == doc
+        assert json.loads(out.read_text()) == doc
+        assert read_index(job / "catalog/index.json") == doc
+        assert not (reports / "old.log").exists()
+
     def test_a_simulation_keeps_its_live_workspace(self, tmp_path):
         job = tmp_path / "simulate_job"
         doc = write_results(job / "server" / "simulate_job")

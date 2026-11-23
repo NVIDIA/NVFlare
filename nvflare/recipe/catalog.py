@@ -120,7 +120,7 @@ class CatalogRecipe(Recipe):
 
         Args:
             run: the Run returned by ``execute``.
-            output_path: write the assembled ODCS snapshot here.
+            output_path: write the assembled ODCS snapshot here, creating parent directories as needed.
             timeout: seconds to wait for the job after submission; 0 waits without limit.
 
         Raises:
@@ -147,6 +147,7 @@ class CatalogRecipe(Recipe):
         if not simulation:
             _keep_only_the_result(Path(result_dir), found[0])
         if target is not None:
+            target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(json.dumps(results, indent=2, allow_nan=False), encoding="utf-8")
         return results
 
