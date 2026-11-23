@@ -118,7 +118,7 @@ with the Study and dataset names filled in, for example `file:///data/oncology/o
 
 For ODBC authentication using a database account, declare a DSN such as `mssql+pyodbc://study_dsn`
 and map `secrets.username` and `secrets.password` to the site's environment variable names. At connection
-time the SQL connector resolves these through `get_secret(dataset, key)` and passes them to the driver.
+time an ODBC-aware consumer can resolve these through `get_secret(dataset, key)` and pass them to its driver. The federated catalog’s live SQL importer currently supports PostgreSQL.
 A credential-free `odbc_connect` string also works for driver-managed authentication, such as an integrated
 connection. Embedded password attributes (including `PWD` and `Password`) are rejected.
 
