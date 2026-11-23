@@ -141,8 +141,8 @@ studies:
 | Dataset in `datasets.yaml` | How the catalog job uses the runtime configuration |
 | --- | --- |
 | `registry` | The launcher mounts the registry volume read-only at `/data/oncology/registry`. The executor reads the SQLite table definitions from `registry.sqlite` in that directory. |
-| `clinical_records` | The executor resolves the dataset's `username` and `password` bindings from `EHR_DB_USER` and `EHR_DB_PASSWORD`. The PostgreSQL importer connects to the `clinical_warehouse` database and publishes metadata for `person` and `visit_occurrence` in schema `omop`. |
-| `warehouse` | The executor resolves the dataset's `token` binding from `UC_TOKEN`. It lists tables in Unity Catalog's `main.oncology` schema and uses the Unity importer to generate the ODCS contract. |
+| `clinical_records` | The executor resolves the dataset's `username` and `password` bindings from `EHR_DB_USER` and `EHR_DB_PASSWORD`. The upstream PostgreSQL importer connects to `clinical_warehouse` and reads catalog metadata for `omop.person` and `omop.visit_occurrence`. FLARE builds and publishes the ODCS document. |
+| `warehouse` | The executor resolves the dataset's `token` binding from `UC_TOKEN`. FLARE lists tables in `main.oncology` with the Databricks SDK. The upstream Unity importer retrieves each table’s metadata, which FLARE uses to build the published ODCS document. |
 
 The site controls disclosure through dataset selection, source permissions and the configured metadata scope. For live services, the job also needs network access to the configured endpoint.
 
