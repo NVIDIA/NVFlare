@@ -25,7 +25,8 @@ from nvflare.app_common.fdn.catalog.common.odcs import MAX_CONTRACT_BYTES
 from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
 
 
-def discover(dataset, secret, budget, site):
+def run_catalog_discovery(dataset, secret, budget, *, site):
+    """Run discovery for one dataset in a child process bounded by the remaining site deadline."""
     uri = dataset.uri
     env = os.environ.copy()
     keys = ()
@@ -97,13 +98,13 @@ def main():
         from nvflare.apis.dataset_config_spec import DatasetConfig
         from nvflare.app_common.fdn.catalog.common.limits import ReadLimits
         from nvflare.app_opt.fdn.catalog._metadata import ReadBudget
-        from nvflare.app_opt.fdn.catalog.odcs import _read_contract
+        from nvflare.app_opt.fdn.catalog.odcs_contract_builder import build_odcs_contract
 
         request = json.load(sys.stdin.buffer)
         budget = ReadBudget(ReadLimits(0, request["calls"], request["records"]))
         budget.deadline = request["deadline"]
         try:
-            contract = _read_contract(
+            contract = build_odcs_contract(
                 DatasetConfig(**request["dataset"]), request["secrets"].__getitem__, budget, site=request["site"]
             )
             reply = {"contract": contract}

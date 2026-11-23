@@ -19,7 +19,7 @@ import pytest
 from nvflare.apis.dataset_config_spec import DatasetConfig
 from nvflare.app_common.fdn.catalog.common.limits import ReadLimits
 from nvflare.app_opt.fdn.catalog._metadata import ReadBudget
-from nvflare.app_opt.fdn.catalog.odcs import read_odcs
+from nvflare.app_opt.fdn.catalog.catalog_discovery_worker import run_catalog_discovery
 
 
 def test_csv_worker_preserves_wide_headers_and_charges_each_batch(tmp_path):
@@ -29,7 +29,7 @@ def test_csv_worker_preserves_wide_headers_and_charges_each_batch(tmp_path):
     path.write_text(",".join(names) + "\n" + ",".join(["private"] * len(names)))
     dataset = DatasetConfig("study", "visits", "csv", path.as_uri(), str(path))
     budget = ReadBudget(ReadLimits(120, 4, 200))
-    contract = read_odcs(dataset, None, budget, site="one")
+    contract = run_catalog_discovery(dataset, None, budget, site="one")
     assert contract["schema"] == [{"name": "visits", "properties": [{"name": name} for name in names]}]
     assert budget.calls_left == 1
 
@@ -46,7 +46,7 @@ def test_sqlite_worker_discovers_current_schema_on_each_read(tmp_path):
     ]:
         with sqlite3.connect(path) as db:
             db.execute(ddl)
-        contract = read_odcs(dataset, None, ReadBudget(ReadLimits(60, 10, 100)), site="one")
+        contract = run_catalog_discovery(dataset, None, ReadBudget(ReadLimits(60, 10, 100)), site="one")
         assert contract["name"] == "registry"
         (table,) = contract["schema"]
         assert table["name"] == "visits"

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 
-"""Site-side reader for native Open Data Contract Standard documents."""
+"""Generate and validate an ODCS contract from the metadata of one site dataset."""
 
 import csv
 import json
@@ -26,7 +26,6 @@ from uuid import NAMESPACE_URL, uuid5
 from nvflare.app_common.fdn.catalog.common.odcs import ODCS_VERSION, check_contract
 from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
 from nvflare.app_opt.fdn.catalog._metadata import local_path, selection
-from nvflare.app_opt.fdn.catalog._read_worker import discover
 from nvflare.app_opt.fdn.catalog.source_import import import_schema
 
 
@@ -79,7 +78,7 @@ def _csv_schema(dataset, budget):
     return [{"name": dataset.name, "properties": [{"name": name} for name in names]}]
 
 
-def _read_contract(dataset, secret, budget, *, site):
+def build_odcs_contract(dataset, secret, budget, *, site):
     """Generate an ODCS contract from the configured source metadata."""
     if dataset.type == "csv":
         objects = _csv_schema(dataset, budget)
@@ -99,8 +98,3 @@ def _read_contract(dataset, secret, budget, *, site):
     _validator().validate(contract)
     budget.remaining()
     return contract
-
-
-def read_odcs(dataset, secret, budget, *, site):
-    """Collect one dataset within the remaining site deadline."""
-    return discover(dataset, secret, budget, site)

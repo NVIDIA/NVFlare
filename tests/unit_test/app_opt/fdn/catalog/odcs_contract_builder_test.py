@@ -19,7 +19,7 @@ import pytest
 
 from nvflare.app_common.fdn.catalog.common.limits import DEFAULT_LIMITS, ReadLimits
 from nvflare.app_opt.fdn.catalog._metadata import ReadBudget
-from nvflare.app_opt.fdn.catalog.odcs import _read_contract as read_odcs
+from nvflare.app_opt.fdn.catalog.odcs_contract_builder import build_odcs_contract
 from tests.unit_test.app_opt.fdn.catalog.datasets import dataset_config
 
 LIMITS = ReadLimits(**DEFAULT_LIMITS)
@@ -33,13 +33,13 @@ def test_csv_projects_only_original_header_names(tmp_path):
     docs = []
     for suffix in ("", "private-marker,99,x,y\n", "0,1,2,3\n"):
         path.write_text(prefix + suffix, encoding="utf-8")
-        docs.append(read_odcs(dataset, secret, ReadBudget(LIMITS), site="site-1"))
+        docs.append(build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="site-1"))
     assert docs[0] == docs[1] == docs[2]
     assert docs[0]["schema"] == [
         {"name": "ds", "properties": [{"name": name} for name in ("First, Name", 'a"b', "Case", "case")]}
     ]
     assert "private" not in json.dumps(docs[0])
-    assert docs[0]["id"] != read_odcs(dataset, secret, ReadBudget(LIMITS), site="site-2")["id"]
+    assert docs[0]["id"] != build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="site-2")["id"]
 
 
 @pytest.mark.parametrize("newline", ["\r", "\r\n", "\n"])
@@ -48,7 +48,7 @@ def test_csv_header_preserves_quoted_line_endings_and_ignores_row_encoding(tmp_p
     path = tmp_path / "visits.csv"
     path.write_bytes(f'id,"visit{newline}date"{newline}'.encode() + b"1,\xff")
     dataset, secret = dataset_config(path=path, type_="csv")
-    contract = read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
+    contract = build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="one")
     assert contract["schema"][0]["properties"] == [{"name": "id"}, {"name": f"visit{newline}date"}]
 
 
@@ -63,7 +63,7 @@ def test_invalid_csv_header_is_refused(tmp_path, content):
     path.write_text(content)
     dataset, secret = dataset_config(path=path, type_="csv")
     with pytest.raises((CatalogSourceError, csv.Error)):
-        read_odcs(dataset, secret, ReadBudget(LIMITS), site="site")
+        build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="site")
 
 
 def test_sqlite_selection_imports_ddl_without_disclosing_external_foreign_keys(tmp_path):
@@ -75,7 +75,7 @@ def test_sqlite_selection_imports_ddl_without_disclosing_external_foreign_keys(t
         db.execute("CREATE TABLE private_target (id INTEGER PRIMARY KEY)")
         db.execute("CREATE TABLE visits (id INTEGER PRIMARY KEY, subject INTEGER REFERENCES private_target(id))")
     dataset, secret = dataset_config(type_="sql", path=path, options={"tables": ["visits"]})
-    contract = read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
+    contract = build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="one")
     assert [table["name"] for table in contract["schema"]] == ["visits"]
     assert [col["name"] for col in contract["schema"][0]["properties"]] == ["id", "subject"]
     assert "private_target" not in json.dumps(contract)
@@ -98,7 +98,7 @@ def test_postgres_import_connects_with_the_dataset_credential(monkeypatch):
         secrets={"username": "SITE_DB_USER", "password": "SITE_DB_PASSWORD"},
     )
     with pytest.raises(RuntimeError, match="test connection reached"):
-        read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
+        build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="one")
     connect.assert_called_once_with(
         host="study.example", port=5544, dbname="clinical", user="study_reader", password="test-password"
     )
@@ -116,7 +116,7 @@ def test_partition_parts_must_have_matching_imported_schemas(tmp_path):
     parquet.write_table(arrow.table({"id": ["private"]}), parts / "b.parquet")
     dataset, secret = dataset_config(path=tmp_path)
     with pytest.raises(CatalogSourceError, match="inconsistent"):
-        read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
+        build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="one")
 
 
 def test_partition_decimal_precision_and_scale_survive_publication(tmp_path):
@@ -132,11 +132,11 @@ def test_partition_decimal_precision_and_scale_survive_publication(tmp_path):
         parquet.write_table(
             arrow.table({"price": arrow.array([], type=arrow.decimal128(10, 2))}), parts / f"{name}.parquet"
         )
-    doc = read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
+    doc = build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="one")
     assert doc["schema"][0]["properties"][0]["physicalType"] == "DECIMAL(10,2)"
     parquet.write_table(arrow.table({"price": arrow.array([], type=arrow.decimal128(18, 6))}), parts / "b.parquet")
     with pytest.raises(CatalogSourceError, match="inconsistent"):
-        read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
+        build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="one")
 
 
 @pytest.mark.parametrize("ddl", ["CREATE TABLE a(x INT, y, z TEXT)", "CREATE TABLE a AS SELECT 1 AS x, 'a' AS y"])
@@ -151,7 +151,7 @@ def test_sqlite_rejects_partial_imports(tmp_path, ddl):
         db.execute(ddl)
     dataset, secret = dataset_config(path=path, type_="sql")
     with pytest.raises(CatalogSourceError):
-        read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
+        build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="one")
 
 
 def test_sqlite_unselected_virtual_table_needs_no_extension(tmp_path):
@@ -170,7 +170,7 @@ def test_sqlite_unselected_virtual_table_needs_no_extension(tmp_path):
     with sqlite3.connect(path) as db, pytest.raises(sqlite3.OperationalError, match="no such module"):
         db.execute("SELECT * FROM pragma_table_xinfo('spatial')").fetchall()
     ds, secret = dataset_config(path=path, type_="sql", options={"tables": ["visits"]})
-    tables = read_odcs(ds, secret, ReadBudget(LIMITS), site="one")["schema"]
+    tables = build_odcs_contract(ds, secret, ReadBudget(LIMITS), site="one")["schema"]
     assert [(t["name"], [p["name"] for p in t["properties"]]) for t in tables] == [("visits", ["id"])]
 
 
@@ -185,10 +185,10 @@ def test_duckdb_distinguishes_empty_and_missing_schema(tmp_path):
         dataset, secret = dataset_config(path=path, type_="duckdb", options={"schema": schema})
         if schema == "empty_schema":
             pytest.importorskip("jsonschema")
-            assert read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")["schema"] == []
+            assert build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="one")["schema"] == []
         else:
             with pytest.raises(CatalogSourceError, match="schema unavailable"):
-                read_odcs(dataset, secret, ReadBudget(LIMITS), site="one")
+                build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="one")
 
 
 def test_read_deadline_reaps_postgres_worker(monkeypatch):
@@ -197,7 +197,7 @@ def test_read_deadline_reaps_postgres_worker(monkeypatch):
     from unittest.mock import MagicMock
 
     from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
-    from nvflare.app_opt.fdn.catalog import _read_worker, odcs
+    from nvflare.app_opt.fdn.catalog import catalog_discovery_worker
 
     monkeypatch.setenv("PGSSLMODE", "require")
     proc = MagicMock()
@@ -205,10 +205,10 @@ def test_read_deadline_reaps_postgres_worker(monkeypatch):
     proc.communicate.side_effect = subprocess.TimeoutExpired(["python"], 3)
     proc.poll.return_value = None
     start = MagicMock(return_value=proc)
-    monkeypatch.setattr(_read_worker.subprocess, "Popen", start)
+    monkeypatch.setattr(catalog_discovery_worker.subprocess, "Popen", start)
     ds, _ = dataset_config(type_="sql", uri="postgresql://host/study?sslmode=verify-full")
     with pytest.raises(CatalogSourceError) as err:
-        odcs.read_odcs(ds, lambda key: "local-value", ReadBudget(LIMITS), site="one")
+        catalog_discovery_worker.run_catalog_discovery(ds, lambda key: "local-value", ReadBudget(LIMITS), site="one")
     assert err.value.budget
     assert start.call_args.kwargs["env"]["PGSSLMODE"] == "verify-full"
     assert os.environ["PGSSLMODE"] == "require"

@@ -38,7 +38,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
 from nvflare.app_common.fdn.catalog.site.settings import CATALOG_COMPONENT, SettingsError, parse_settings
 from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
 from nvflare.app_opt.fdn.catalog._metadata import ReadBudget
-from nvflare.app_opt.fdn.catalog.odcs import read_odcs
+from nvflare.app_opt.fdn.catalog.catalog_discovery_worker import run_catalog_discovery
 
 
 class CatalogExecutor(Executor):
@@ -104,7 +104,7 @@ class CatalogExecutor(Executor):
             dataset = config.get_dataset(name)
             try:
                 budget.remaining()
-                contract = read_odcs(
+                contract = run_catalog_discovery(
                     dataset, lambda key, n=name: config.get_secret(n, key), budget, site=fl_ctx.get_identity_name()
                 )
                 records = check_contract(contract)

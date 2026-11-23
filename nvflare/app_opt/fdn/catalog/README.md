@@ -1,6 +1,6 @@
 # Site catalog reader
 
-Install `nvflare[catalog]` at sites running the federated catalog job. The site configures datasets in its Study’s `local/datasets.yaml`. The executor calls `read_odcs` once per selected dataset.
+Install `nvflare[catalog]` at sites running the federated catalog job. The site configures datasets in its Study’s `local/datasets.yaml`. The executor calls `run_catalog_discovery` once per selected dataset.
 
 | Site configuration | Metadata published |
 | --- | --- |

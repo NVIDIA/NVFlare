@@ -108,7 +108,7 @@ def result(reply):
 @pytest.fixture(autouse=True)
 def reader(monkeypatch):
     fake = FakeReader()
-    monkeypatch.setattr(executor_module, "read_odcs", fake)
+    monkeypatch.setattr(executor_module, "run_catalog_discovery", fake)
     return fake
 
 
@@ -200,7 +200,7 @@ class TestFailures:
         def denied(*args, **kwargs):
             raise CatalogSourceError("source unavailable")
 
-        monkeypatch.setattr(executor_module, "read_odcs", denied)
+        monkeypatch.setattr(executor_module, "run_catalog_discovery", denied)
         latest = result(run(doc))
         assert latest.catalogs == () and latest.unavailable == ("good",)
 
@@ -246,7 +246,7 @@ class TestDeadline:
                 clock.advance(9)
             return reader(dataset, secret, budget, site=site)
 
-        monkeypatch.setattr(executor_module, "read_odcs", read)
+        monkeypatch.setattr(executor_module, "run_catalog_discovery", read)
         parsed = result(run(config_doc({"good": dataset(), "good-b": dataset()}), time_budget_s=8))
         assert [c["dataset"] for c in parsed.catalogs] == ["good"] and parsed.skipped == ("good-b",)
 
