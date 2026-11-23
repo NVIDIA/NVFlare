@@ -84,6 +84,7 @@ setup(
         "": ["*.yml", "*.yaml", "*.tpl", "*.html", "*.js", "poc.zip", "*.config"],
         "nvflare.dashboard.application": extra_files,
         "nvflare.tool.deploy": deploy_templates,
+        "nvflare.app_opt.fdn.catalog": ["odcs-json-schema-v3.2.0.json"],
         "nvflare.tool.examples": ["catalog.json"],
         "nvflare.tool.recipe": ["recipe_catalog.json"],
     },

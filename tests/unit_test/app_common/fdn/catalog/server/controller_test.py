@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import threading
 import time
 from types import SimpleNamespace
@@ -28,6 +27,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
+from nvflare.app_common.fdn.catalog.common.artifacts import read_index
 from nvflare.app_common.fdn.catalog.common.payload import (
     CATALOG_JOB_META,
     CATALOG_READ_KEY,
@@ -36,18 +36,17 @@ from nvflare.app_common.fdn.catalog.common.payload import (
     ResultStatus,
     SiteStatus,
     build_result,
-    check_catalog_results,
 )
 from nvflare.app_common.fdn.catalog.server import controller as controller_module
 from nvflare.app_common.fdn.catalog.server.controller import CatalogController
-from tests.unit_test.app_common.fdn.catalog.helpers import make_catalog
+from tests.unit_test.app_common.fdn.catalog.helpers import contract_entry
 
 
 def make_controller(tmp_path, clients=("site-a", "site-b"), **kw):
     controller = CatalogController(**kw)
     controller._job_id, controller._study = "job-1", "oncology"
     controller._clients = list(clients)
-    controller._results_path = str(tmp_path / "catalog_results.json")
+    controller._results_path = str(tmp_path / "catalog/index.json")
     return controller
 
 
@@ -63,13 +62,13 @@ def reply(rc, payload=None):
 
 
 def written(tmp_path):
-    return check_catalog_results(json.loads((tmp_path / "catalog_results.json").read_text()))
+    return read_index(tmp_path / "catalog/index.json")
 
 
 class TestResults:
     def test_results_file(self, tmp_path):
         controller = make_controller(tmp_path)
-        ok = build_result(ResultStatus.OK, [make_catalog(dataset="omop")], unavailable=["registry"], skipped=["big"])
+        ok = build_result(ResultStatus.OK, [contract_entry(dataset="omop")], unavailable=["registry"], skipped=["big"])
         controller._record(client_task("site-a", reply(ReturnCode.OK, ok)), None)
         controller._write_results()
 
@@ -83,12 +82,12 @@ class TestResults:
         }
         assert doc["sites"]["site-b"]["status"] == "NO_RESULT"
         assert [(d["site"], d["dataset"]) for d in doc["datasets"]] == [("site-a", "omop")]
-        assert [p.name for p in tmp_path.iterdir()] == ["catalog_results.json"]
+        assert [p.name for p in tmp_path.iterdir()] == ["catalog"]
 
     def test_a_requested_site_that_never_joined_is_no_result(self, tmp_path):
         # site-b was requested but excluded before the job started (offline, or no resources)
         controller = make_controller(tmp_path, clients=("site-a",), sites=["site-a", "site-b"])
-        ok = build_result(ResultStatus.OK, [make_catalog(dataset="omop")])
+        ok = build_result(ResultStatus.OK, [contract_entry(dataset="omop")])
         controller._record(client_task("site-a", reply(ReturnCode.OK, ok)), None)
         controller._write_results()
 
@@ -110,9 +109,9 @@ class TestResults:
 
     def test_bad_entry_is_unavailable_and_other_entries_count(self, tmp_path):
         controller = make_controller(tmp_path)
-        bad = make_catalog(dataset="bad").to_wire()
-        bad["metadata"]["display_name"] = float("nan")
-        ok = build_result(ResultStatus.OK, [make_catalog(dataset="good")])
+        bad = contract_entry(dataset="bad")
+        bad["contract"]["version"] = float("nan")
+        ok = build_result(ResultStatus.OK, [contract_entry(dataset="good")])
         ok["catalogs"].append(bad)
         controller._record(client_task("site-a", reply(ReturnCode.OK, ok)), None)
         controller._write_results()
@@ -122,14 +121,14 @@ class TestResults:
 
     def test_names_outside_the_site_selection_are_dropped(self, tmp_path):
         controller = make_controller(tmp_path, datasets={"site-a": ["good"]})
-        ok = build_result(ResultStatus.OK, [make_catalog(dataset="good"), make_catalog(dataset="other")])
+        ok = build_result(ResultStatus.OK, [contract_entry(dataset="good"), contract_entry(dataset="other")])
         controller._record(client_task("site-a", reply(ReturnCode.OK, ok)), None)
-        assert [c.dataset for c in controller._entries["site-a"].catalogs] == ["good"]
+        assert [c["dataset"] for c in controller._entries["site-a"].catalogs] == ["good"]
 
     @pytest.mark.parametrize("rc", [ReturnCode.EXECUTION_EXCEPTION, ReturnCode.TASK_UNSUPPORTED, None, 5])
     def test_no_ok_reply_is_no_result(self, tmp_path, rc):
         controller = make_controller(tmp_path)
-        result = reply(ReturnCode.OK, build_result(ResultStatus.OK, [make_catalog()]))
+        result = reply(ReturnCode.OK, build_result(ResultStatus.OK, [contract_entry()]))
         result.set_return_code(rc)
         controller._record(client_task("site-a", result), None)
         assert controller._entries["site-a"].status == SiteStatus.NO_RESULT
@@ -163,7 +162,7 @@ class TestControlFlow:
         abort_signal = Signal()
         abort_signal.trigger(True)
         controller.control_flow(abort_signal, FLContext())
-        assert len(cancels) == 1 and (tmp_path / "catalog_results.json").exists()
+        assert len(cancels) == 1 and (tmp_path / "catalog/index.json").exists()
 
     def test_each_site_gets_its_own_selection(self, tmp_path, monkeypatch):
         controller = make_controller(tmp_path, datasets={"site-a": ["omop"]})
@@ -250,7 +249,8 @@ class TestStart:
     def test_a_file_shipped_with_the_job_is_removed(self, tmp_path):
         controller = CatalogController()
         controller._engine = self.engine(tmp_path)
-        shipped = tmp_path / "catalog_results.json"
+        shipped = tmp_path / "catalog/index.json"
+        shipped.parent.mkdir()
         shipped.write_text("shipped with the job")
         controller.start_controller(self.ctx(controller._engine, {CATALOG_JOB_META: True, "study": "oncology"}))
         assert not shipped.exists() and controller._study == "oncology" and controller._clients == ["site-a"]
@@ -261,7 +261,7 @@ class TestStart:
         with pytest.raises(RuntimeError):
             controller.start_controller(self.ctx(controller._engine, {}))
         controller.stop_controller(None)
-        assert not (tmp_path / "catalog_results.json").exists()
+        assert not (tmp_path / "catalog/index.json").exists()
 
 
 class TestArguments:

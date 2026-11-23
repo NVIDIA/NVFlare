@@ -30,59 +30,34 @@ from nvflare.app_common.fdn.catalog.common.payload import (
     build_task_payload,
     parse_result,
 )
-from nvflare.app_common.fdn.catalog.common.schema import ColumnInfo, Lineage, TableInfo
-from nvflare.app_common.fdn.catalog.site.connector import CatalogConnector, ConnectorError
+from nvflare.app_common.fdn.catalog.site import executor as executor_module
+from nvflare.app_common.fdn.catalog.site.connector import ConnectorError
 from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor
-from tests.unit_test.app_common.fdn.catalog.helpers import LIMITS, make_catalog
-
-MODULE = "tests.unit_test.app_common.fdn.catalog.site.executor_test"
+from tests.unit_test.app_common.fdn.catalog.helpers import LIMITS, contract_entry
 
 
-class FakeConnector(CatalogConnector):
-    """Behavior is chosen by the dataset name."""
+class FakeReader:
+    def __init__(self):
+        self.secrets = []
+        self.durations = []
 
-    source = "fake"
-    closed = 0
-    secrets = []
-    durations = []
-
-    def __init__(self, **args):
-        self.args = args
-
-    def read_catalog(self, dataset, secret, limits):
-        FakeConnector.durations.append(limits.max_duration_s)
+    def __call__(self, dataset, secret, limits, *, site):
+        self.durations.append(limits.max_duration_s)
         name = dataset.name
-        if name.startswith("corrupt"):
+        if name.startswith("corrupt") or dataset.type != "fake":
             raise ConnectorError("unreadable")
         if name.startswith("budget"):
             raise ConnectorError("too big", budget=True)
         if name.startswith("boom"):
             raise RuntimeError("secret path /x/y")
-        if name.startswith("swapped"):
-            return make_catalog(dataset="other-name")
         if name.startswith("invalid"):
-            t = TableInfo("t", (ColumnInfo("a", "int"),))
-            return make_catalog(dataset=name, tables=(t, t))
+            return {}
         if name.startswith("secret"):
-            FakeConnector.secrets.append(secret("password"))
-        return make_catalog(
-            dataset=name,
-            operations=("cohort.count", "cohort.sum"),
-            lineage=(Lineage("good", None), Lineage("private", None)),
-        )
-
-    def close(self):
-        FakeConnector.closed += 1
+            self.secrets.append(secret("password"))
+        return contract_entry(name)["contract"]
 
 
-class BrokenConnector(CatalogConnector):
-    source = "broken"
-
-    def __init__(self, **args):
-        raise RuntimeError("secret")
-
-
-SETTINGS = {"connectors": {"fake": {"class": f"{MODULE}.FakeConnector"}}, "installed_operations": ["cohort.count"]}
+SETTINGS = {}
 
 
 def dataset(type_="fake", rules=None, **extra):
@@ -130,10 +105,10 @@ def result(reply):
 
 
 @pytest.fixture(autouse=True)
-def reset():
-    FakeConnector.closed = 0
-    FakeConnector.secrets = []
-    FakeConnector.durations = []
+def reader(monkeypatch):
+    fake = FakeReader()
+    monkeypatch.setattr(executor_module, "read_odcs", fake)
+    return fake
 
 
 class TestAdmission:
@@ -167,7 +142,7 @@ class TestConfiguration:
             {"exclude_columns": {"secret_table": ["secret_column"]}},
             {"connector": "fake"},
             {"operations": ["cohort.count"]},
-            {},
+            {"contract_uri": "file:///a", "share": True},
         ],
     )
     @pytest.mark.parametrize("selection", [None, ["good"]])
@@ -176,7 +151,7 @@ class TestConfiguration:
         parsed = result(reply)
         assert parsed.status == ResultStatus.FAILED and parsed.reason_code == ReasonCode.CONFIG_UNAVAILABLE
         assert parsed.catalogs == parsed.unavailable == parsed.skipped == ()
-        assert "no longer supported" in caplog.text
+        assert "obsolete" in caplog.text
         for private in ("private", "secret_table", "secret_column"):
             assert private not in caplog.text and private not in str(reply[CATALOG_READ_KEY])
 
@@ -188,29 +163,12 @@ class TestConfiguration:
 class TestSourceMetadata:
     def test_all_study_datasets_are_read_without_publication_rules(self):
         doc = config_doc({"good": dataset(), "other": dataset()})
-        assert [c.dataset for c in result(run(doc)).catalogs] == ["good", "other"]
-
-    def test_reported_structure_and_lineage_are_preserved(self):
-        catalog = result(run(config_doc({"good": dataset()}))).catalogs[0]
-        source = make_catalog(
-            dataset="good",
-            operations=("cohort.count", "cohort.sum"),
-            lineage=(Lineage("good", None), Lineage("private", None)),
-        )
-        assert catalog.tables == source.tables
-        assert catalog.lineage == source.lineage
-        assert catalog.description == source.description
-
-    def test_advertised_operations_are_limited_to_installed_capabilities(self):
-        catalog = result(run(config_doc({"good": dataset()}))).catalogs[0]
-        assert catalog.operations == ("cohort.count",)
-        settings = {**SETTINGS, "installed_operations": []}
-        assert result(run(config_doc({"good": dataset()}, settings=settings))).catalogs[0].operations == ()
+        assert [c["dataset"] for c in result(run(doc)).catalogs] == ["good", "other"]
 
     def test_selection_reads_only_requested_study_datasets(self):
         doc = config_doc({"good": dataset(), "good-b": dataset()})
         parsed = result(run(doc, datasets=["good-b", "unknown"]))
-        assert [c.dataset for c in parsed.catalogs] == ["good-b"]
+        assert [c["dataset"] for c in parsed.catalogs] == ["good-b"]
         assert parsed.unavailable == () and parsed.skipped == ()
 
 
@@ -221,80 +179,68 @@ class TestFailures:
                 "good": dataset(),
                 "corrupt-b": dataset(),
                 "boom-c": dataset(),
-                "swapped-d": dataset(),
                 "invalid-e": dataset(),
             }
         )
         parsed = result(run(doc))
-        assert [c.dataset for c in parsed.catalogs] == ["good"]
-        assert set(parsed.unavailable) == {"corrupt-b", "boom-c", "swapped-d", "invalid-e"}
+        assert [c["dataset"] for c in parsed.catalogs] == ["good"]
+        assert set(parsed.unavailable) == {"corrupt-b", "boom-c", "invalid-e"}
 
     def test_revoked_source_access_does_not_reuse_a_previous_schema(self, monkeypatch):
         doc = config_doc({"good": dataset()})
         assert result(run(doc)).catalogs
 
-        def denied(*args):
+        def denied(*args, **kwargs):
             raise ConnectorError("source unavailable")
 
-        monkeypatch.setattr(FakeConnector, "read_catalog", denied)
+        monkeypatch.setattr(executor_module, "read_odcs", denied)
         latest = result(run(doc))
         assert latest.catalogs == () and latest.unavailable == ("good",)
 
     def test_budget_stop_is_skipped(self):
         parsed = result(run(config_doc({"budget-a": dataset(), "good": dataset()})))
-        assert parsed.skipped == ("budget-a",) and [c.dataset for c in parsed.catalogs] == ["good"]
+        assert parsed.skipped == ("budget-a",) and [c["dataset"] for c in parsed.catalogs] == ["good"]
 
     def test_exhausted_record_budget_skips_the_rest(self):
-        settings = {**SETTINGS, "limits": {"max_records": 12}}
+        settings = {**SETTINGS, "limits": {"max_records": 3}}
         parsed = result(run(config_doc({"good": dataset(), "good-b": dataset()}, settings=settings)))
-        assert [c.dataset for c in parsed.catalogs] == ["good"] and parsed.skipped == ("good-b",)
-
-    def test_connectors_are_closed(self):
-        result(run(config_doc({"good": dataset(), "good-b": dataset()})))
-        assert FakeConnector.closed == 1
+        assert [c["dataset"] for c in parsed.catalogs] == ["good"] and parsed.skipped == ("good-b",)
 
 
 class TestDeadline:
-    def test_the_task_time_budget_bounds_every_read(self):
+    def test_the_task_time_budget_bounds_every_read(self, reader):
         result(run(config_doc({"good": dataset(), "good-b": dataset()}), time_budget_s=5))
-        assert FakeConnector.durations and all(d <= 5 for d in FakeConnector.durations)
+        assert reader.durations and all(d <= 5 for d in reader.durations)
 
-    def test_without_a_budget_the_site_limit_applies(self):
+    def test_without_a_budget_the_site_limit_applies(self, reader):
         result(run(config_doc({"good": dataset()})))
-        assert 5 < FakeConnector.durations[0] <= 60
+        assert 5 < reader.durations[0] <= 60
 
-    def test_the_shorter_site_limit_wins(self):
+    def test_the_shorter_site_limit_wins(self, reader):
         settings = {**SETTINGS, "limits": {"max_duration_s": 3}}
         result(run(config_doc({"good": dataset()}, settings=settings), time_budget_s=30))
-        assert FakeConnector.durations[0] <= 3
+        assert reader.durations[0] <= 3
 
     def test_an_exhausted_budget_skips_and_keeps_completed_catalogs(self, monkeypatch):
         from nvflare.app_common.fdn.catalog.site import executor as executor_module
 
         clock = iter([0.0, 0.0, 0.0, 0.0, 0.0, 9.0, 9.0, 9.0, 9.0])
-        monkeypatch.setattr(executor_module.time, "monotonic", lambda: next(clock, 9.0))
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(executor_module, "time", SimpleNamespace(monotonic=lambda: next(clock, 9.0)))
         parsed = result(run(config_doc({"good": dataset(), "good-b": dataset()}), time_budget_s=8))
-        assert [c.dataset for c in parsed.catalogs] == ["good"] and parsed.skipped == ("good-b",)
+        assert [c["dataset"] for c in parsed.catalogs] == ["good"] and parsed.skipped == ("good-b",)
 
 
 class TestConnectorSelection:
     def test_type_without_a_connector_is_unavailable(self):
         assert result(run(config_doc({"x": dataset(type_="no-such-type")}))).unavailable == ("x",)
 
-    def test_the_dataset_type_selects_a_site_declared_connector(self):
-        settings = {"connectors": {"site-alias": {"class": f"{MODULE}.FakeConnector"}}}
-        doc = config_doc({"x": dataset(type_="site-alias")}, settings=settings)
-        assert [c.dataset for c in result(run(doc)).catalogs] == ["x"]
-
-    def test_connector_that_cannot_be_built_is_unavailable(self):
-        settings = {"connectors": {"fake": {"class": f"{MODULE}.BrokenConnector"}}}
-        assert result(run(config_doc({"x": dataset()}, settings=settings))).unavailable == ("x",)
-
-    def test_secrets_are_read_through_the_dataset(self, monkeypatch):
+    def test_secrets_are_read_through_the_dataset(self, monkeypatch, reader):
         monkeypatch.setenv("PW", "s3cret")
         doc = config_doc({"secret-a": dataset(secrets={"password": "PW"})})
-        assert [c.dataset for c in result(run(doc)).catalogs] == ["secret-a"]
-        assert FakeConnector.secrets == ["s3cret"]
+        assert [c["dataset"] for c in result(run(doc)).catalogs] == ["secret-a"]
+        assert reader.secrets == ["s3cret"]
 
     def test_unset_secret_makes_the_dataset_unavailable(self, monkeypatch):
         monkeypatch.delenv("PW", raising=False)

@@ -20,14 +20,6 @@ from collections.abc import Callable
 from nvflare.apis.dataset_config_spec import DatasetConfig
 from nvflare.app_common.fdn.catalog.common.schema import CatalogInfo, ReadLimits
 
-# the connector selected by the dataset's site-configured `type`
-BUILTIN_CONNECTORS = {
-    "parquet": "nvflare.app_opt.fdn.catalog.parquet_connector.ParquetConnector",
-    "csv": "nvflare.app_opt.fdn.catalog.csv_connector.CSVConnector",
-    "sql": "nvflare.app_opt.fdn.catalog.sql_connector.SQLConnector",
-    "unity-catalog": "nvflare.app_opt.fdn.catalog.unity_catalog_connector.UnityCatalogConnector",
-}
-
 
 class ConnectorError(Exception):
     """A safe, dataset-scoped failure. The message must contain no paths and no source text."""

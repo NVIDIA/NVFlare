@@ -21,6 +21,7 @@ import yaml
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.job_def import RunStatus
+from nvflare.app_common.fdn.catalog.common.artifacts import read_index, write_index
 from nvflare.app_common.fdn.catalog.common.payload import (
     CATALOG_JOB_META,
     TASK_NAME,
@@ -31,7 +32,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
 from nvflare.recipe import catalog as catalog_module
 from nvflare.recipe.catalog import DEFAULT_TASK_REQUEST_INTERVAL_S, CatalogReadError, CatalogRecipe, get_catalog
 from nvflare.recipe.sim_env import SimEnv
-from tests.unit_test.app_common.fdn.catalog.helpers import make_catalog
+from tests.unit_test.app_common.fdn.catalog.helpers import contract_entry
 
 
 def export(tmp_path, **kw):
@@ -158,9 +159,9 @@ class FakeRun:
 def write_results(directory):
     directory.mkdir(parents=True, exist_ok=True)
     doc = build_catalog_results(
-        "default", "job-1", "2026-11-09T00:00:00Z", {"site-1": SiteEntry(SiteStatus.OK, None, (make_catalog(),))}
+        "default", "job-1", "2026-11-09T00:00:00Z", {"site-1": SiteEntry(SiteStatus.OK, None, (contract_entry(),))}
     )
-    (directory / "catalog_results.json").write_text(json.dumps(doc))
+    write_index(directory / "catalog/index.json", doc)
     return doc
 
 
@@ -175,16 +176,16 @@ class TestGetCatalogResults:
 
     def test_a_completed_read_keeps_only_the_result(self, tmp_path):
         job = tmp_path / "job-1"
-        doc = write_results(job / "workspace" / "app_server")
+        doc = write_results(job / "workspace")
         (job / "workspace" / "log.txt").write_text("log")
         (job / "meta.json").write_text("{}")
         CatalogRecipe().get_catalog_results(FakeRun(str(job)))
-        assert [p.name for p in job.iterdir()] == ["catalog_results.json"]
-        assert json.loads((job / "catalog_results.json").read_text()) == doc
+        assert [p.name for p in job.iterdir()] == ["catalog"]
+        assert read_index(job / "catalog/index.json") == doc
 
     def test_a_simulation_keeps_its_live_workspace(self, tmp_path):
         job = tmp_path / "simulate_job"
-        doc = write_results(job / "server" / "simulate_job" / "app_server")
+        doc = write_results(job / "server" / "simulate_job")
         site_local = job / "site-1" / "local"
         site_local.mkdir(parents=True)
         (site_local / "datasets.yaml").write_text("format_version: 1\n")  # reused by later simulation runs
@@ -209,7 +210,7 @@ class TestGetCatalogResults:
 
     def test_saving_to_the_kept_result_itself_does_not_raise(self, tmp_path):
         job = tmp_path / "job-1"
-        doc = write_results(job / "workspace" / "app_server")
+        doc = write_results(job / "workspace")
 
         results = CatalogRecipe().get_catalog_results(FakeRun(str(job)), output_path=str(job / "catalog_results.json"))
 
@@ -236,7 +237,8 @@ class TestGetCatalogResults:
             CatalogRecipe().get_catalog_results(FakeRun(None))
 
     def test_an_unreadable_result_raises(self, tmp_path):
-        (tmp_path / "catalog_results.json").write_text("{not json")
+        (tmp_path / "catalog").mkdir()
+        (tmp_path / "catalog/index.json").write_text("{not json")
         with pytest.raises(CatalogReadError):
             CatalogRecipe().get_catalog_results(FakeRun(str(tmp_path)))
 
@@ -270,3 +272,25 @@ def test_get_catalog_is_the_recipe_in_one_call(tmp_path, monkeypatch):
         (tmp_path / "exported" / "get_catalog" / "app" / "config" / "config_fed_server.json").read_text()
     )
     assert server["server"] == {"task_request_interval": 2}
+
+
+@pytest.mark.parametrize("changed", ["path", "digest", "symlink"])
+def test_corrupt_contract_download_preserves_workspace(tmp_path, changed):
+    root = tmp_path / "workspace"
+    write_results(root)
+    index = root / "catalog/index.json"
+    doc = json.loads(index.read_text())
+    entry = doc["datasets"][0]
+    file = index.parent / entry["file"]
+    if changed == "path":
+        entry["file"] = "../other"
+        index.write_text(json.dumps(doc))
+    elif changed == "digest":
+        file.write_text("{}")
+    else:
+        copy = tmp_path / "outside"
+        file.rename(copy)
+        file.symlink_to(copy)
+    with pytest.raises(CatalogReadError):
+        CatalogRecipe().get_catalog_results(FakeRun(str(tmp_path)))
+    assert index.exists()

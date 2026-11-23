@@ -32,104 +32,107 @@ class ParquetConnector(CatalogConnector):
     source = "parquet"
 
     def read_catalog(self, dataset: DatasetConfig, secret, limits: ReadLimits) -> CatalogInfo:
-        selection(dataset.options, ())
-        import pyarrow.parquet as pq
+        return build_catalog(dataset.name, self.source, read_tables(dataset, secret, limits), limits)
 
-        root = local_path(dataset)
-        if not root.exists():
-            raise ConnectorError("dataset files are missing")
-        deadline = time.monotonic() + limits.max_duration_s
-        calls = 0
 
-        def spend():
-            """One call of the budget, shared by listing a part file and reading a footer."""
-            nonlocal calls
-            calls += 1
-            if calls > limits.max_calls or time.monotonic() >= deadline:
-                raise ConnectorError("read budget exceeded", budget=True)
+def read_tables(dataset, secret, limits):
+    selection(dataset.options, ())
+    import pyarrow.parquet as pq
 
-        def read_schema(path: Path):
-            spend()
-            try:
-                return pq.read_schema(path)
-            except Exception:
-                raise ConnectorError("parquet metadata is unreadable") from None
+    root = local_path(dataset)
+    if not root.exists():
+        raise ConnectorError("dataset files are missing")
+    deadline = time.monotonic() + limits.max_duration_s
+    calls = 0
 
-        tables = []
-        for name, parts in self._table_files(root, deadline, spend):
-            schema = read_schema(parts[0])
-            for part in parts[1:]:
-                if read_schema(part) != schema:
-                    raise ConnectorError("part files have inconsistent schemas")
-            tables.append(
-                {
-                    "name": name,
-                    "columns": [{"name": f.name, "type": str(f.type), "nullable": f.nullable} for f in schema],
-                    "primary_key": [],
-                    "relationships": [],
-                }
-            )
-            if len(tables) + sum(len(t["columns"]) for t in tables) > limits.max_records:
-                raise ConnectorError("record budget exceeded", budget=True)
+    def spend():
+        """One call of the budget, shared by listing a part file and reading a footer."""
+        nonlocal calls
+        calls += 1
+        if calls > limits.max_calls or time.monotonic() >= deadline:
+            raise ConnectorError("read budget exceeded", budget=True)
 
-        catalog = build_catalog(dataset.name, self.source, tables, limits)
+    def read_schema(path: Path):
+        spend()
+        try:
+            return pq.read_schema(path)
+        except Exception:
+            raise ConnectorError("parquet metadata is unreadable") from None
+
+    tables = []
+    for name, parts in _table_files(root, deadline, spend):
+        schema = read_schema(parts[0])
+        for part in parts[1:]:
+            if read_schema(part) != schema:
+                raise ConnectorError("part files have inconsistent schemas")
+        tables.append(
+            {
+                "name": name,
+                "columns": [{"name": f.name, "type": str(f.type), "nullable": f.nullable} for f in schema],
+                "primary_key": [],
+                "relationships": [],
+            }
+        )
+        if len(tables) + sum(len(t["columns"]) for t in tables) > limits.max_records:
+            raise ConnectorError("record budget exceeded", budget=True)
+
+    if time.monotonic() >= deadline:
+        raise ConnectorError("read budget exceeded", budget=True)
+    return tables
+
+
+def _table_files(root: Path, deadline: float, spend) -> list[tuple[str, list[Path]]]:
+    """(table name, part files) in name order. The mount's listing order is not stable, so sort. Each part file
+    listed costs one call of the read budget (``spend``), which its footer read then costs again, so the walk of
+    a partitioned table stops at the budget and a deep tree cannot take long to list."""
+
+    def check():
         if time.monotonic() >= deadline:
             raise ConnectorError("read budget exceeded", budget=True)
-        return catalog
 
-    @staticmethod
-    def _table_files(root: Path, deadline: float, spend) -> list[tuple[str, list[Path]]]:
-        """(table name, part files) in name order. The mount's listing order is not stable, so sort. Each part file
-        listed costs one call of the read budget (``spend``), which its footer read then costs again, so the walk of
-        a partitioned table stops at the budget and a deep tree cannot take long to list."""
-
-        def check():
-            if time.monotonic() >= deadline:
-                raise ConnectorError("read budget exceeded", budget=True)
-
-        def children(directory):
-            check()
-            try:
-                for path in directory.iterdir():
-                    check()
-                    # Hidden and underscore-prefixed entries are not data: Delta Lake's _delta_log, Spark's
-                    # _temporary and _SUCCESS, Hive's .hive-staging, and editor or OS files.
-                    if path.name.startswith((".", "_")):
-                        continue
-                    yield path
-            except OSError:
-                # unreadable, or removed during the walk; never the raw error, which names a local path
-                raise ConnectorError("dataset directory is unreadable") from None
-            check()
-
+    def children(directory):
         check()
-        if root.is_file():
-            return [(root.stem, [root])]
-        tables = []
-
-        def add(parts, path):
-            spend()
-            parts.append(path)
-
-        for child in children(root):
-            if child.is_file() and child.suffix == ".parquet":
-                parts = []
-                add(parts, child)
-                tables.append((child.stem, parts))
-            elif child.is_dir() and not child.is_symlink():
-                parts, pending = [], [child]
-                while pending:
-                    for part in children(pending.pop()):
-                        if part.is_dir() and not part.is_symlink():
-                            pending.append(part)
-                        elif part.suffix == ".parquet" and part.is_file():
-                            add(parts, part)
-                parts.sort()
-                if parts:
-                    tables.append((child.name, parts))
+        try:
+            for path in directory.iterdir():
+                check()
+                # Hidden and underscore-prefixed entries are not data: Delta Lake's _delta_log, Spark's
+                # _temporary and _SUCCESS, Hive's .hive-staging, and editor or OS files.
+                if path.name.startswith((".", "_")):
+                    continue
+                yield path
+        except OSError:
+            # unreadable, or removed during the walk; never the raw error, which names a local path
+            raise ConnectorError("dataset directory is unreadable") from None
         check()
-        names = [name for name, _ in tables]
-        if len(set(names)) != len(names):
-            # e.g. a.parquet beside a partitioned a/; publishing either would hide the other
-            raise ConnectorError("a file and a directory in the dataset map to the same table name")
-        return sorted(tables)
+
+    check()
+    if root.is_file():
+        return [(root.stem, [root])]
+    tables = []
+
+    def add(parts, path):
+        spend()
+        parts.append(path)
+
+    for child in children(root):
+        if child.is_file() and child.suffix == ".parquet":
+            parts = []
+            add(parts, child)
+            tables.append((child.stem, parts))
+        elif child.is_dir() and not child.is_symlink():
+            parts, pending = [], [child]
+            while pending:
+                for part in children(pending.pop()):
+                    if part.is_dir() and not part.is_symlink():
+                        pending.append(part)
+                    elif part.suffix == ".parquet" and part.is_file():
+                        add(parts, part)
+            parts.sort()
+            if parts:
+                tables.append((child.name, parts))
+    check()
+    names = [name for name, _ in tables]
+    if len(set(names)) != len(names):
+        # e.g. a.parquet beside a partitioned a/; publishing either would hide the other
+        raise ConnectorError("a file and a directory in the dataset map to the same table name")
+    return sorted(tables)

@@ -22,20 +22,14 @@ class TestParseSettings:
     def test_none_is_all_defaults(self):
         settings = parse_settings(None)
         assert settings.limits == ReadLimits(**DEFAULT_LIMITS)
-        assert settings.connectors == {} and settings.installed_operations == frozenset()
 
     def test_valid_settings(self):
         settings = parse_settings(
             {
                 "limits": {"max_records": 50},
-                "connectors": {"duckdb": {"class": "pkg.DuckDBConnector", "args": {"x": 1}}},
-                "installed_operations": ["cohort.count"],
             }
         )
         assert settings.limits.max_records == 50 and settings.limits.max_calls == DEFAULT_LIMITS["max_calls"]
-        assert settings.connectors["duckdb"].path == "pkg.DuckDBConnector"
-        assert settings.connectors["duckdb"].args == {"x": 1}
-        assert settings.installed_operations == frozenset({"cohort.count"})
 
     @pytest.mark.parametrize(
         "value",

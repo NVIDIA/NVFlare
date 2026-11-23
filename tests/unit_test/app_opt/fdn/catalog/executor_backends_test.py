@@ -41,6 +41,7 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
     import sqlite3
 
     arrow = pytest.importorskip("pyarrow")
+    pytest.importorskip("datacontract")
     parquet = pytest.importorskip("pyarrow.parquet")
     pytest.importorskip("sqlalchemy")
     from nvflare.app_opt.fdn.catalog import unity_catalog_connector as uc_module
@@ -127,15 +128,11 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
     result = CatalogExecutor().execute(TASK_NAME, data, ctx, Signal())
     parsed = parse_result(result[CATALOG_READ_KEY], None, ReadLimits(**DEFAULT_LIMITS))
     assert parsed.status == ResultStatus.OK and not parsed.unavailable and not parsed.skipped
-    assert {c.dataset: c.provenance.source for c in parsed.catalogs} == {
-        "parquet": "parquet",
-        "csv": "csv",
-        "sql": "sql",
-        "catalog": "unity-catalog",
-    }
-    assert all(
-        [column.name for table in c.tables for column in table.columns] == ["id", "secret"] for c in parsed.catalogs
-    )
+    assert {c["dataset"] for c in parsed.catalogs} == {"parquet", "csv", "sql", "catalog"}
+    for entry in parsed.catalogs:
+        assert [p["name"] for t in entry["contract"]["schema"] for p in t["properties"]] == ["id", "secret"]
+        if entry["dataset"] == "csv":
+            assert entry["contract"]["schema"][0]["properties"] == [{"name": "id"}, {"name": "secret"}]
     assert len(calls) == 1 and calls[0][0] == endpoint + "/api/2.1/unity-catalog/tables"
     assert (calls[0][1]["headers"].get("Authorization") == "Bearer site-only-token") is managed
     assert "private-row" not in json.dumps(result) and "site-only-token" not in json.dumps(result)

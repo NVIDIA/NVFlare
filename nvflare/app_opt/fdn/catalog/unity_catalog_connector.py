@@ -49,124 +49,128 @@ class UnityCatalogConnector(CatalogConnector):
         self.request_timeout_s = request_timeout_s
 
     def read_catalog(self, dataset, secret, limits):
-        options = selection(dataset.options, {"catalog", "schema", "tables"}, required={"catalog", "schema"})
-        budget = ReadBudget(limits)
-        url = dataset.uri.rstrip("/")
-        try:
-            parsed = urlsplit(url)
-        except ValueError:
-            raise ConnectorError("Unity Catalog endpoint is invalid") from None
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ConnectorError("Unity Catalog endpoint is not configured")
-        headers = {"Accept": "application/json"}
-        if "token" in dataset.secret_keys:
-            if parsed.scheme != "https":
-                try:
-                    loopback = ip_address(parsed.hostname).is_loopback
-                except ValueError:
-                    loopback = parsed.hostname.lower().rstrip(".") == "localhost"
-                if not loopback:
-                    raise ConnectorError("Unity Catalog bearer-token authentication requires HTTPS")
+        return build_catalog(
+            dataset.name, self.source, read_tables(dataset, secret, limits, self.request_timeout_s), limits
+        )
+
+
+def read_tables(dataset, secret, limits, request_timeout_s=10.0):
+    options = selection(dataset.options, {"catalog", "schema", "tables"}, required={"catalog", "schema"})
+    budget = ReadBudget(limits)
+    url = dataset.uri.rstrip("/")
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        raise ConnectorError("Unity Catalog endpoint is invalid") from None
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ConnectorError("Unity Catalog endpoint is not configured")
+    headers = {"Accept": "application/json"}
+    if "token" in dataset.secret_keys:
+        if parsed.scheme != "https":
             try:
-                token = secret("token")
-            except Exception:
-                raise ConnectorError("Unity Catalog credentials are not configured") from None
-            if not token:
-                raise ConnectorError("Unity Catalog credentials are not configured")
-            headers["Authorization"] = f"Bearer {token}"
-
+                loopback = ip_address(parsed.hostname).is_loopback
+            except ValueError:
+                loopback = parsed.hostname.lower().rstrip(".") == "localhost"
+            if not loopback:
+                raise ConnectorError("Unity Catalog bearer-token authentication requires HTTPS")
         try:
-            with requests.Session() as session:
-                session.auth = _keep_request_headers
-                if parsed.scheme == "http":
-                    # Plain HTTP is allowed only to the local host. Ignore proxy settings from the environment, or a
-                    # bearer token would be sent in cleartext to an HTTP proxy.
-                    session.trust_env = False
-
-                def get(path, params=None):
-                    budget.request()
-                    timeout = min(self.request_timeout_s, budget.remaining())
-                    with session.get(
-                        f"{url}/{path}", headers=headers, params=params, timeout=timeout, allow_redirects=False
-                    ) as response:
-                        if response.status_code != 200:
-                            raise ConnectorError("Unity Catalog metadata is unavailable")
-                        data = response.json()
-                    budget.remaining()
-                    if not isinstance(data, dict):
-                        raise ConnectorError("Unity Catalog metadata is invalid")
-                    return data
-
-                tables = []
-                names = set()
-                records = 1
-
-                def add(table, expected_name=None):
-                    nonlocal records
-                    if (
-                        not isinstance(table, dict)
-                        or table.get("catalog_name") != options["catalog"]
-                        or table.get("schema_name") != options["schema"]
-                    ):
-                        raise ConnectorError("Unity Catalog table scope is invalid")
-                    name = table["name"]
-                    if name in names or (expected_name is not None and name != expected_name):
-                        raise ConnectorError("Unity Catalog table inventory is inconsistent")
-                    # Some compatible list APIs omit column details. Fetch them
-                    # explicitly rather than publishing an incomplete schema.
-                    if "columns" not in table:
-                        if expected_name is not None:
-                            raise ConnectorError("Unity Catalog column inventory is missing")
-                        full_name = ".".join((options["catalog"], options["schema"], name))
-                        return add(get(f"tables/{quote(full_name, safe='')}"), expected_name=name)
-                    columns = [
-                        {"name": column["name"], "type": column["type_text"], "nullable": column.get("nullable")}
-                        for column in table["columns"]
-                    ]
-                    records += 1 + len(columns)
-                    budget.records(records)
-                    names.add(name)
-                    # UC OSS does not expose PK/FK constraints in TableInfo.
-                    # Do not infer them from names, rows, or arbitrary properties.
-                    tables.append({"name": name, "columns": columns, "primary_key": [], "relationships": []})
-
-                if "tables" in options:
-                    budget.records(1 + len(options["tables"]))
-                    for name in sorted(options["tables"]):
-                        full_name = ".".join((options["catalog"], options["schema"], name))
-                        add(get(f"tables/{quote(full_name, safe='')}"), expected_name=name)
-                else:
-                    params = {"catalog_name": options["catalog"], "schema_name": options["schema"], "max_results": 50}
-                    seen_tokens = set()
-                    while True:
-                        page = get("tables", params)
-                        listed = page.get("tables", [])
-                        if not isinstance(listed, list):
-                            raise ConnectorError("Unity Catalog table inventory is invalid")
-                        for table in listed:
-                            add(table)
-                        token = page.get("next_page_token")
-                        if token is None or token == "":
-                            break
-                        if not isinstance(token, str) or token in seen_tokens:
-                            raise ConnectorError("Unity Catalog pagination is inconsistent")
-                        seen_tokens.add(token)
-                        params = {**params, "page_token": token}
-                catalog = build_catalog(
-                    dataset.name, self.source, sorted(tables, key=lambda table: table["name"]), limits
-                )
-                budget.remaining()
-                return catalog
-        except ConnectorError:
-            raise
-        except requests.Timeout:
-            raise ConnectorError("Unity Catalog metadata request timed out", budget=True) from None
+            token = secret("token")
         except Exception:
-            # HTTP errors can contain endpoints, server bodies, or credentials.
-            raise ConnectorError("Unity Catalog metadata is unavailable") from None
+            raise ConnectorError("Unity Catalog credentials are not configured") from None
+        if not token:
+            raise ConnectorError("Unity Catalog credentials are not configured")
+        headers["Authorization"] = f"Bearer {token}"
+
+    try:
+        with requests.Session() as session:
+            session.auth = _keep_request_headers
+            if parsed.scheme == "http":
+                # Plain HTTP is allowed only to the local host. Ignore proxy settings from the environment, or a
+                # bearer token would be sent in cleartext to an HTTP proxy.
+                session.trust_env = False
+
+            def get(path, params=None):
+                budget.request()
+                timeout = min(request_timeout_s, budget.remaining())
+                with session.get(
+                    f"{url}/{path}", headers=headers, params=params, timeout=timeout, allow_redirects=False
+                ) as response:
+                    if response.status_code != 200:
+                        raise ConnectorError("Unity Catalog metadata is unavailable")
+                    data = response.json()
+                budget.remaining()
+                if not isinstance(data, dict):
+                    raise ConnectorError("Unity Catalog metadata is invalid")
+                return data
+
+            tables = []
+            names = set()
+            records = 1
+
+            def add(table, expected_name=None):
+                nonlocal records
+                if (
+                    not isinstance(table, dict)
+                    or table.get("catalog_name") != options["catalog"]
+                    or table.get("schema_name") != options["schema"]
+                ):
+                    raise ConnectorError("Unity Catalog table scope is invalid")
+                name = table["name"]
+                if name in names or (expected_name is not None and name != expected_name):
+                    raise ConnectorError("Unity Catalog table inventory is inconsistent")
+                # Some compatible list APIs omit column details. Fetch them
+                # explicitly rather than publishing an incomplete schema.
+                if "columns" not in table:
+                    if expected_name is not None:
+                        raise ConnectorError("Unity Catalog column inventory is missing")
+                    full_name = ".".join((options["catalog"], options["schema"], name))
+                    return add(get(f"tables/{quote(full_name, safe='')}"), expected_name=name)
+                columns = [
+                    {"name": column["name"], "type": column["type_text"], "nullable": column.get("nullable")}
+                    for column in table["columns"]
+                ]
+                records += 1 + len(columns)
+                budget.records(records)
+                names.add(name)
+                # UC OSS does not expose PK/FK constraints in TableInfo.
+                # Do not infer them from names, rows, or arbitrary properties.
+                tables.append({"name": name, "columns": columns, "primary_key": [], "relationships": []})
+
+            if "tables" in options:
+                budget.records(1 + len(options["tables"]))
+                for name in sorted(options["tables"]):
+                    full_name = ".".join((options["catalog"], options["schema"], name))
+                    add(get(f"tables/{quote(full_name, safe='')}"), expected_name=name)
+            else:
+                params = {"catalog_name": options["catalog"], "schema_name": options["schema"], "max_results": 50}
+                seen_tokens = set()
+                while True:
+                    page = get("tables", params)
+                    listed = page.get("tables", [])
+                    if not isinstance(listed, list):
+                        raise ConnectorError("Unity Catalog table inventory is invalid")
+                    for table in listed:
+                        add(table)
+                    token = page.get("next_page_token")
+                    if token is None or token == "":
+                        break
+                    if not isinstance(token, str) or token in seen_tokens:
+                        raise ConnectorError("Unity Catalog pagination is inconsistent")
+                    seen_tokens.add(token)
+                    params = {**params, "page_token": token}
+            tables = sorted(tables, key=lambda table: table["name"])
+            budget.remaining()
+            return tables
+    except ConnectorError:
+        raise
+    except requests.Timeout:
+        raise ConnectorError("Unity Catalog metadata request timed out", budget=True) from None
+    except Exception:
+        # HTTP errors can contain endpoints, server bodies, or credentials.
+        raise ConnectorError("Unity Catalog metadata is unavailable") from None

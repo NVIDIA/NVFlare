@@ -12,32 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The catalog_read task payload, a site's result, and the catalog_results.json file the controller writes.
+"""The catalog_read task payload, a site's result, and the assembled researcher snapshot.
 
 This module has no FLARE or I/O imports.
 """
 
-import re
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from enum import Enum
 
-from nvflare.app_common.fdn.catalog.common.schema import (
-    MAX_TEXT_LEN,
-    CatalogInfo,
-    ReadLimits,
-    ValidationError,
-    validate,
-)
+from nvflare.app_common.fdn.catalog.common.odcs import check_contract
+from nvflare.app_common.fdn.catalog.common.schema import MAX_TEXT_LEN, ReadLimits
 
 CATALOG_READ_KEY = "catalog_read"  # the Shareable key of the task payload and the site result
 TASK_NAME = "catalog_read"
-RESULTS_FILE = "catalog_results.json"  # in the job's server workspace, saved with the job in the job store
+RESULTS_FILE = "catalog/index.json"  # in the job's server workspace, saved with the job in the job store
 CATALOG_JOB_META = "fdn_catalog_read"  # a job meta property; a site executes the task only for a job that has it
-FORMAT_VERSION = 1
-OBSERVATION_SKEW = timedelta(seconds=300)
-_RFC3339_UTC = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
+FORMAT_VERSION = 2
 
 
 class ResultStatus(str, Enum):
@@ -85,7 +76,7 @@ def task_time_budget(task_timeout_s: float, elapsed_s: float = 0.0) -> float:
 class ParsedResult:
     status: ResultStatus = ResultStatus.FAILED
     reason_code: ReasonCode | None = None
-    catalogs: tuple[CatalogInfo, ...] = ()
+    catalogs: tuple[dict, ...] = ()
     unavailable: tuple[str, ...] = ()
     skipped: tuple[str, ...] = ()
     unsupported: bool = False
@@ -136,7 +127,7 @@ def build_result(
     result = {
         "format_version": FORMAT_VERSION,
         "status": ResultStatus(status).value,
-        "catalogs": [c.to_wire() for c in catalogs],
+        "catalogs": list(catalogs),
         "unavailable": list(unavailable),
         "skipped": list(skipped),
     }
@@ -166,7 +157,7 @@ def _enum_or_none(enum_cls, value):
 def parse_result(d: dict, wanted: tuple[str, ...] | None, limits: ReadLimits) -> ParsedResult:
     """Parse and validate one site's result with the server's own limits.
 
-    Names outside the site's selection are dropped. A catalog entry that fails ``from_wire`` or ``validate``, or a
+    Names outside the site's selection are dropped. A catalog entry that fails the ODCS envelope or budget checks, or a
     dataset name that appears in more than one entry, is rejected and its dataset is reported unavailable, so the
     site's other entries still count. The three lists are made disjoint. Catalogs count only for an OK result.
     """
@@ -181,6 +172,7 @@ def parse_result(d: dict, wanted: tuple[str, ...] | None, limits: ReadLimits) ->
         entries = entries if isinstance(entries, list) else []
         names = [e.get("dataset") if isinstance(e, dict) else None for e in entries]
         counts = Counter(n for n in names if _is_name(n))
+        remaining = limits.max_records
         for entry, name in zip(entries, names):
             if not (_is_name(name) and (wanted is None or name in wanted)):
                 continue
@@ -188,11 +180,13 @@ def parse_result(d: dict, wanted: tuple[str, ...] | None, limits: ReadLimits) ->
                 continue
             try:
                 if counts[name] > 1:
-                    raise ValidationError("dataset appears more than once")
-                catalog = CatalogInfo.from_wire(entry)
-                validate(catalog, limits)
-                catalogs.append(catalog)
-            except ValidationError:
+                    raise ValueError("dataset appears more than once")
+                records = check_contract(entry["contract"])
+                if records > remaining:
+                    raise ValueError("site record budget exceeded")
+                remaining -= records
+                catalogs.append({"dataset": name, "contract": entry["contract"]})
+            except (ValueError, KeyError, TypeError, AttributeError, RecursionError):
                 if name not in unavailable:
                     unavailable.append(name)
     return ParsedResult(
@@ -204,28 +198,11 @@ def parse_result(d: dict, wanted: tuple[str, ...] | None, limits: ReadLimits) ->
     )
 
 
-def _parse_time(value) -> datetime | None:
-    if not isinstance(value, str) or not _RFC3339_UTC.match(value):
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
-def valid_observation(value: str | None, completed_at: str) -> str | None:
-    """The source observation if it is RFC 3339 UTC and not more than 300 s after completed_at, else None."""
-    observed, current = _parse_time(value), _parse_time(completed_at)
-    if observed is None or current is None or observed > current + OBSERVATION_SKEW:
-        return None
-    return value
-
-
 @dataclass(frozen=True)
 class SiteEntry:
     status: SiteStatus
     reason_code: ReasonCode | None = None
-    catalogs: tuple[CatalogInfo, ...] = ()
+    catalogs: tuple[dict, ...] = ()
     unavailable: tuple[str, ...] = ()
     skipped: tuple[str, ...] = ()
 
@@ -235,9 +212,7 @@ def build_catalog_results(study: str, job_id: str, completed_at: str, sites: dic
     datasets = []
     for site in sorted(sites):
         for catalog in sites[site].catalogs:
-            wire = catalog.to_wire()
-            wire["observed_at"] = valid_observation(catalog.observed_at, completed_at)
-            datasets.append({"site": site, **wire})
+            datasets.append({"site": site, **catalog})
     return {
         "format_version": FORMAT_VERSION,
         "study": study,

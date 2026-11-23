@@ -78,80 +78,83 @@ class SQLConnector(CatalogConnector):
         return url
 
     def read_catalog(self, dataset, secret, limits):
-        from sqlalchemy import create_engine, event, inspect
-        from sqlalchemy.pool import NullPool
+        return build_catalog(dataset.name, self.source, read_tables(dataset, secret, limits), limits)
 
-        options = selection(dataset.options, {"schema", "tables", "connect_args"})
-        connect_args = options.get("connect_args", {})
-        if not isinstance(connect_args, Mapping):
-            raise ConnectorError("connect_args must be a mapping")
-        budget = ReadBudget(limits)
-        engine = None
-        try:
-            url = self._url(dataset, secret)
+
+def read_tables(dataset, secret, limits):
+    from sqlalchemy import create_engine, event, inspect
+    from sqlalchemy.pool import NullPool
+
+    options = selection(dataset.options, {"schema", "tables", "connect_args"})
+    connect_args = options.get("connect_args", {})
+    if not isinstance(connect_args, Mapping):
+        raise ConnectorError("connect_args must be a mapping")
+    budget = ReadBudget(limits)
+    engine = None
+    try:
+        url = SQLConnector._url(dataset, secret)
+        budget.remaining()
+        engine = create_engine(url, connect_args=dict(connect_args), poolclass=NullPool, hide_parameters=True)
+        # Count actual reflection statements, including additional statements
+        # emitted internally by an Inspector method. No global event handler.
+        event.listen(engine, "before_cursor_execute", lambda *args: budget.request())
+        with engine.connect() as connection:
             budget.remaining()
-            engine = create_engine(url, connect_args=dict(connect_args), poolclass=NullPool, hide_parameters=True)
-            # Count actual reflection statements, including additional statements
-            # emitted internally by an Inspector method. No global event handler.
-            event.listen(engine, "before_cursor_execute", lambda *args: budget.request())
-            with engine.connect() as connection:
+            inspector = inspect(connection)
+            schema = options.get("schema")
+            if schema is not None and not inspector.has_schema(schema):
+                raise ConnectorError("database schema is unavailable")
+            names = options.get("tables")
+            if names is None:
+                names = inspector.get_table_names(schema=schema)
+            budget.records(1 + len(names))
+            tables = []
+            records = 1
+            effective_schema = schema or inspector.default_schema_name
+            for name in sorted(names):
                 budget.remaining()
-                inspector = inspect(connection)
-                schema = options.get("schema")
-                if schema is not None and not inspector.has_schema(schema):
-                    raise ConnectorError("database schema is unavailable")
-                names = options.get("tables")
-                if names is None:
-                    names = inspector.get_table_names(schema=schema)
-                budget.records(1 + len(names))
-                tables = []
-                records = 1
-                effective_schema = schema or inspector.default_schema_name
-                for name in sorted(names):
-                    budget.remaining()
-                    columns = inspector.get_columns(name, schema=schema)
-                    budget.records(records + 1 + len(columns))
-                    primary_key = inspector.get_pk_constraint(name, schema=schema).get("constrained_columns", [])
-                    relationships = []
-                    for foreign_key in inspector.get_foreign_keys(name, schema=schema):
-                        # The model only represents relationships within this
-                        # dataset; do not name an unselected or external table.
-                        if foreign_key["referred_schema"] not in (None, effective_schema):
-                            continue
-                        if foreign_key["referred_table"] not in names:
-                            continue
-                        relationships.append(
-                            {
-                                "columns": foreign_key["constrained_columns"],
-                                "target_table": foreign_key["referred_table"],
-                                "target_columns": foreign_key["referred_columns"],
-                            }
-                        )
-                    tables.append(
+                columns = inspector.get_columns(name, schema=schema)
+                budget.records(records + 1 + len(columns))
+                primary_key = inspector.get_pk_constraint(name, schema=schema).get("constrained_columns", [])
+                relationships = []
+                for foreign_key in inspector.get_foreign_keys(name, schema=schema):
+                    # The model only represents relationships within this
+                    # dataset; do not name an unselected or external table.
+                    if foreign_key["referred_schema"] not in (None, effective_schema):
+                        continue
+                    if foreign_key["referred_table"] not in names:
+                        continue
+                    relationships.append(
                         {
-                            "name": name,
-                            "columns": [
-                                {
-                                    "name": column["name"],
-                                    "type": _type_name(column["type"], engine.dialect),
-                                    "nullable": column.get("nullable"),
-                                }
-                                for column in columns
-                            ],
-                            "primary_key": primary_key,
-                            "relationships": relationships,
+                            "columns": foreign_key["constrained_columns"],
+                            "target_table": foreign_key["referred_table"],
+                            "target_columns": foreign_key["referred_columns"],
                         }
                     )
-                    records += 1 + len(columns) + len(relationships)
-                    budget.records(records)
-            catalog = build_catalog(dataset.name, self.source, tables, limits)
+                tables.append(
+                    {
+                        "name": name,
+                        "columns": [
+                            {
+                                "name": column["name"],
+                                "type": _type_name(column["type"], engine.dialect),
+                                "nullable": column.get("nullable"),
+                            }
+                            for column in columns
+                        ],
+                        "primary_key": primary_key,
+                        "relationships": relationships,
+                    }
+                )
+                records += 1 + len(columns) + len(relationships)
+                budget.records(records)
             budget.remaining()
-            return catalog
-        except ConnectorError:
-            raise
-        except Exception:
-            # Database exceptions may contain URLs, credentials and SQL text.
-            raise ConnectorError("database metadata is unavailable") from None
-        finally:
-            if engine is not None:
-                engine.dispose()
+        return tables
+    except ConnectorError:
+        raise
+    except Exception:
+        # Database exceptions may contain URLs, credentials and SQL text.
+        raise ConnectorError("database metadata is unavailable") from None
+    finally:
+        if engine is not None:
+            engine.dispose()

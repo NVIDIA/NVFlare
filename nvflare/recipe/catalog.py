@@ -18,13 +18,8 @@ import shutil
 from pathlib import Path
 
 from nvflare.apis.job_def import RunStatus
-from nvflare.app_common.fdn.catalog.common.payload import (
-    CATALOG_JOB_META,
-    RESULTS_FILE,
-    TASK_NAME,
-    PayloadError,
-    check_catalog_results,
-)
+from nvflare.app_common.fdn.catalog.common.artifacts import read_index
+from nvflare.app_common.fdn.catalog.common.payload import CATALOG_JOB_META, RESULTS_FILE, TASK_NAME, PayloadError
 from nvflare.app_common.fdn.catalog.server.controller import CatalogController
 from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor
 from nvflare.job_config.api import FedJob
@@ -51,7 +46,7 @@ class CatalogRecipe(Recipe):
 
     The Study is the one of the execution environment (for example ``ProdEnv(study=...)``). Each site reads the
     datasets declared for that Study using the site-configured source access. The controller writes the
-    result to ``catalog_results.json`` in the job workspace; ``get_catalog_results`` downloads and loads it.
+    index and standalone contracts under ``catalog/`` in the job workspace; ``get_catalog_results`` downloads and loads it.
 
     Args:
         name: the job name.
@@ -119,13 +114,13 @@ class CatalogRecipe(Recipe):
     def get_catalog_results(self, run, output_path: str | None = None, timeout: float = 0.0) -> dict:
         """Wait for the job, download its result and return the parsed catalog_results.json.
 
-        When the read completes, a downloaded job workspace is reduced to its catalog_results.json; a failed
+        When the read completes, a downloaded job workspace retains its catalog directory; a failed
         job's workspace is kept whole for diagnosis. SimEnv returns its live simulation workspace, whose site
         configuration and inputs later runs reuse, so that workspace is left unchanged.
 
         Args:
             run: the Run returned by ``execute``.
-            output_path: also copy catalog_results.json here.
+            output_path: write the assembled ODCS snapshot here.
             timeout: seconds to wait for the job after submission; 0 waits without limit.
 
         Raises:
@@ -139,15 +134,20 @@ class CatalogRecipe(Recipe):
         if len(found) != 1:
             raise CatalogReadError(f"catalog read job {run.job_id} has no single {RESULTS_FILE}", run.job_id, status)
         try:
-            results = check_catalog_results(json.loads(found[0].read_text(encoding="utf-8")))
-        except (OSError, ValueError, PayloadError) as e:
+            results = read_index(found[0])
+        except (OSError, ValueError, KeyError, TypeError, PayloadError) as e:
             raise CatalogReadError(f"catalog results are unreadable: {type(e).__name__}", run.job_id, status) from None
-        if isinstance(getattr(run, "exec_env", None), _sim_env_class()):
-            kept = found[0]  # the live simulation workspace, not a downloaded copy: nothing to remove
-        else:
-            kept = _keep_only_the_result(Path(result_dir), found[0])
-        if output_path is not None and not _same_file(kept, output_path):
-            shutil.copyfile(kept, output_path)
+        simulation = isinstance(getattr(run, "exec_env", None), _sim_env_class())
+        kept_dir = found[0].parent if simulation else Path(result_dir) / "catalog"
+        target = Path(output_path) if output_path is not None else None
+        if target is not None and any(
+            target.resolve().is_relative_to(folder.resolve()) for folder in (found[0].parent, kept_dir)
+        ):
+            raise CatalogReadError("snapshot output must be outside the catalog artifact directory", run.job_id, status)
+        if not simulation:
+            _keep_only_the_result(Path(result_dir), found[0])
+        if target is not None:
+            target.write_text(json.dumps(results, indent=2, allow_nan=False), encoding="utf-8")
         return results
 
 
@@ -158,41 +158,31 @@ def _sim_env_class():
 
 
 def _find_results(result_dir, simulation: bool) -> list[Path]:
-    """The catalog_results.json files of a result directory, looked up where the controller's file lands first.
+    """The catalog index in a result directory, looked up where the controller's file lands first.
 
     The controller writes it in the server's run folder: in a SimEnv workspace that is server/<simulator job>/; in a
     download, workspace/ (or, after a completed read, the directory itself). A known location wins, so a copy saved
-    elsewhere in the directory cannot make a later read ambiguous; otherwise the directory is searched.
+    elsewhere in the directory cannot make a later read ambiguous; only controller output locations are accepted.
     """
     if not result_dir or not os.path.isdir(result_dir):
         return []
     root = Path(result_dir)
     if simulation:
-        known = [root / "server" / SimulatorConstants.JOB_NAME / RESULTS_FILE]
+        server = root / "server" / SimulatorConstants.JOB_NAME
+        known = [server / RESULTS_FILE, server / "app_server" / RESULTS_FILE]
     else:
-        known = [root / RESULTS_FILE, root / "workspace" / RESULTS_FILE]
+        known = [root / "workspace" / RESULTS_FILE, root / "workspace/app_server" / RESULTS_FILE, root / RESULTS_FILE]
     for path in known:
-        if path.is_file():
+        if path.is_file() and not any(part.is_symlink() for part in path.parents if part.is_relative_to(root)):
             return [path]
-    return sorted(root.rglob(RESULTS_FILE))
+    return []
 
 
-def _same_file(path: Path, other: str) -> bool:
-    try:
-        return os.path.samefile(path, other)
-    except OSError:
-        return False  # e.g. other does not exist yet
-
-
-def _keep_only_the_result(result_dir: Path, results_file: Path) -> Path:
-    """Reduce a completed job's downloaded workspace to its catalog_results.json; return the kept file.
-
-    The download holds the whole job workspace (configuration, logs, other artifacts). A completed read needs only
-    the result; a failed one is left whole for diagnosis.
-    """
-    kept = result_dir / RESULTS_FILE
-    if results_file != kept:
-        os.replace(results_file, kept)
+def _keep_only_the_result(result_dir: Path, results_file: Path):
+    """Keep the catalog index and its standalone contracts in a successful download."""
+    kept = result_dir / "catalog"
+    if results_file.parent != kept:
+        os.replace(results_file.parent, kept)
     for entry in result_dir.iterdir():
         if entry == kept:
             continue
@@ -200,7 +190,6 @@ def _keep_only_the_result(result_dir: Path, results_file: Path) -> Path:
             shutil.rmtree(entry)
         else:
             entry.unlink()
-    return kept
 
 
 def get_catalog(

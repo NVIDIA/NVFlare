@@ -58,3 +58,14 @@ def make_large_catalog(dataset="wide-catalog") -> CatalogInfo:
     """Valid metadata over the former 1 MB response cap, within the record and field limits."""
     columns = tuple(ColumnInfo(f"column-{i:04d}-" + "x" * 160, "string") for i in range(6000))
     return make_catalog(dataset=dataset, tables=(TableInfo("records", columns),), resources=(), lineage=())
+
+
+def contract_entry(dataset="omop"):
+    contract = {
+        "apiVersion": "v3.2.0",
+        "kind": "DataContract",
+        "version": "1",
+        "id": "test",
+        "schema": [{"name": "visits", "properties": [{"name": "id"}]}],
+    }
+    return {"dataset": dataset, "contract": contract}

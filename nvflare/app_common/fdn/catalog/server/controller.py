@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The server side of a catalog read job: one catalog_read task per site, then catalog_results.json.
+"""The server side of a catalog read job: one catalog_read task per site, then a catalog index and ODCS files.
 
 The file is written in the job's server workspace, so the job runner saves it to the job store with the job and the
 submitter downloads it with the job result. The server keeps no other copy.
 """
 
-import json
 import os
+import shutil
 import threading
 import time
 from datetime import datetime, timezone
@@ -31,6 +31,7 @@ from nvflare.apis.impl.controller import Controller
 from nvflare.apis.job_def import get_job_meta_study
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.app_common.fdn.catalog.common.artifacts import write_index
 from nvflare.app_common.fdn.catalog.common.payload import (
     CATALOG_JOB_META,
     CATALOG_READ_KEY,
@@ -108,11 +109,13 @@ class CatalogController(Controller):
         self._job_id = fl_ctx.get_job_id()
         self._study = get_job_meta_study(meta)
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(self._job_id)
+        # Reserve a fresh directory for controller-produced artifacts, including after a restart.
+        catalog_dir = os.path.join(run_dir, "catalog")
+        if os.path.islink(catalog_dir) or os.path.isfile(catalog_dir):
+            os.unlink(catalog_dir)
+        elif os.path.isdir(catalog_dir):
+            shutil.rmtree(catalog_dir)
         self._results_path = os.path.join(run_dir, RESULTS_FILE)
-        try:  # a file shipped with the job is never a result
-            os.remove(self._results_path)
-        except FileNotFoundError:
-            pass
         self._clients = sorted(c.name for c in self._engine.get_clients())
         missing = sorted(set(self.sites or ()) - set(self._clients))
         if missing:
@@ -224,10 +227,7 @@ class CatalogController(Controller):
                 names = sorted(set(self._clients) | set(self.sites or ()))
                 entries = {name: self._entries.get(name, _NO_RESULT) for name in names}
             document = build_catalog_results(self._study, self._job_id, _now(), entries)
-            temporary = f"{self._results_path}.tmp"
-            with open(temporary, "w", encoding="utf-8") as f:
-                json.dump(document, f, indent=2, allow_nan=False)
-            os.replace(temporary, self._results_path)
+            write_index(self._results_path, document)
 
     def stop_controller(self, fl_ctx: FLContext):
         if self._results_path is not None and not os.path.exists(self._results_path):
