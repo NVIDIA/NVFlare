@@ -180,11 +180,11 @@ def test_services_sample_contains_the_complete_source_schemas():
     types = {
         "site-1": {"int": "integer", "date": "date", "datetime": "timestamp", "str": "string", "float": "double"},
         "site-2": {
-            "int": "INTEGER",
-            "date": "DATE",
-            "datetime": "TIMESTAMP WITHOUT TIME ZONE",
-            "str": "VARCHAR(50)",
-            "float": "DOUBLE PRECISION",
+            "int": "integer",
+            "date": "date",
+            "datetime": "timestamp without time zone",
+            "str": "character varying(50)",
+            "float": "double precision",
         },
     }
     assert {entry["site"] for entry in sample["datasets"]} == set(types)

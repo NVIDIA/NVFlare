@@ -182,7 +182,7 @@ schemas even when the identity cannot read data. For files, control which paths 
 
 When upgrading an existing Study, review every dataset in its ``datasets.yaml``. Earlier catalog reads omitted
 datasets without ``usage.catalog``. The new catalog includes them. Remove datasets the Study should not discover,
-or expose approved metadata through a database view. For the SQL connector, explicitly select that view with
+or expose approved metadata through a database view. For the live PostgreSQL importer, explicitly select that view with
 ``options: {tables: [approved_view]}`` in the dataset entry. Without a table list it discovers base tables.
 Remove obsolete per-dataset sharing and exclusion rules. If any remain, the site reports
 ``CONFIG_UNAVAILABLE`` for the Study without naming datasets. Site-wide ``usage.catalog.limits``

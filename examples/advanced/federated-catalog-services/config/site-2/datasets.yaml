@@ -6,8 +6,7 @@ studies:
     datasets:
       omop:                       # the omop schema of the site's PostgreSQL database
         type: sql
-        uri: postgresql+pg8000://postgres:5432/omop             # no credentials in the uri
+        uri: postgresql://postgres:5432/omop             # no credentials in the uri
         options:
           schema: omop
-          connect_args: {timeout: 5}                           # pg8000's socket timeout, in seconds
         secrets: {username: CATALOG_DB_USER, password: CATALOG_DB_PASSWORD}   # environment variable names

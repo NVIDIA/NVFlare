@@ -188,6 +188,9 @@ def prepare_postgres(site):
                 connection.execute(text("CREATE ROLE catalog_reader LOGIN PASSWORD 'local-demo-reader'"))
             connection.execute(text("GRANT CONNECT ON DATABASE omop TO catalog_reader"))
             connection.execute(text("GRANT USAGE ON SCHEMA omop TO catalog_reader"))
+            # information_schema exposes these tables to the importer without granting row access.
+            for table in data:
+                connection.execute(text(f"GRANT REFERENCES ON TABLE omop.{table} TO catalog_reader"))
     finally:
         engine.dispose()
 

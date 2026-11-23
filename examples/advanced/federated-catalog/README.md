@@ -142,34 +142,29 @@ All three sites publish these `person` columns:
 
 | Column | site-1: Parquet | site-2: SQLite | site-3: DuckDB |
 | --- | --- | --- | --- |
-| `person_id` | `int64` | `INTEGER` | `INTEGER` |
-| `gender_concept_id` | `int64` | `INTEGER` | `INTEGER` |
-| `year_of_birth` | `int64` | `INTEGER` | `INTEGER` |
-| `person_source_value` | `string` | `TEXT` | `VARCHAR` |
+| `person_id` | `INT64` | `INTEGER` | `INT` |
+| `gender_concept_id` | `INT64` | `INTEGER` | `INT` |
+| `year_of_birth` | `INT64` | `INTEGER` | `INT` |
+| `person_source_value` | `STRING` | `TEXT` | `TEXT` |
 
 The `condition_occurrence` schemas overlap but each site has one column of its own:
 
 | Column | site-1: Parquet | site-2: SQLite | site-3: DuckDB |
 | --- | --- | --- | --- |
-| `condition_occurrence_id` | `int64` | `INTEGER` | `INTEGER` |
-| `person_id` | `int64` | `INTEGER` | `INTEGER` |
-| `condition_concept_id` | `int64` | `INTEGER` | `INTEGER` |
-| `condition_start_date` | `date32[day]` | `TEXT` | `DATE` |
-| `condition_type_concept_id` | `int64` | `INTEGER` | `INTEGER` |
-| `condition_source_value` | `string` | `TEXT` | `VARCHAR` |
-| `condition_end_date` | `date32[day]` | absent | absent |
+| `condition_occurrence_id` | `INT64` | `INTEGER` | `INT` |
+| `person_id` | `INT64` | `INTEGER` | `INT` |
+| `condition_concept_id` | `INT64` | `INTEGER` | `INT` |
+| `condition_start_date` | `DATE` | `TEXT` | `DATE` |
+| `condition_type_concept_id` | `INT64` | `INTEGER` | `INT` |
+| `condition_source_value` | `STRING` | `TEXT` | `TEXT` |
+| `condition_end_date` | `DATE` | absent | absent |
 | `condition_status_concept_id` | absent | `INTEGER` | absent |
-| `stop_reason` | absent | absent | `VARCHAR` |
+| `stop_reason` | absent | absent | `TEXT` |
 
 The SQLite and DuckDB tables declare `person_id` and `condition_occurrence_id`
 as primary keys and `condition_occurrence.person_id` as a foreign key to
 `person`; their readers report these constraints. Parquet footers carry no
-keys, so site-1 publishes none. The Parquet reader observes schemas from
-footers; the SQL and DuckDB readers open their databases read-only and inspect
-schema metadata and constraints. None of them
-selects source rows. Published physical types retain their source
-representation; the catalog does not infer clinical equivalence or perform
-conversions.
+keys, so site-1 publishes none. Data Contract CLI imports Parquet footers and the DDL extracted from read-only SQLite and DuckDB files. The displayed type spellings are those produced by the upstream importers.
 
 ## Inspect results
 

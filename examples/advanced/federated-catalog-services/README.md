@@ -77,8 +77,8 @@ read job to both sites, waits for it, prints a summary and saves the result:
 Catalog of Study default, job 3f1c...
   site-1: OK
   site-2: OK
-  site-1 / omop [ODCS]: condition_occurrence (15 columns), drug_exposure (22 columns), ...
-  site-2 / omop [ODCS]: condition_occurrence (15 columns), drug_exposure (22 columns), ...
+  site-1 / omop [ODCS]: condition_occurrence (16 columns), drug_exposure (23 columns), ...
+  site-2 / omop [ODCS]: condition_occurrence (16 columns), drug_exposure (23 columns), ...
 Full metadata: catalog_results.json
 ```
 
@@ -108,7 +108,7 @@ show the fresh results from your run.
 
 [catalog_explorer.ipynb](catalog_explorer.ipynb) follows the federated statistics visualization pattern: load a
 result, create `CatalogVisualization`, and call its display functions. It runs offline with the checked-in
-[sample result](demo/catalog_results.json), from a read of this synthetic two-site example. No startup kit, login or
+[sample result](demo/catalog_results.json), captured from the upstream Unity and PostgreSQL importers in this two-site federation (6 tables / 102 columns and 5 tables / 79 columns respectively). No startup kit, login or
 running Docker services are needed. It can be opened independently for an existing result; the runner supplies
 `CATALOG_FILE` when invoking it with `%run -i`.
 
@@ -209,20 +209,16 @@ studies:
         options: {catalog: flare_demo, schema: omop}
 ```
 
-site-2's dataset has `type: sql`, `uri: postgresql+pg8000://postgres:5432/omop`, the options `schema: omop` and
-`connect_args: {timeout: 5}`, and `secrets: {username: CATALOG_DB_USER, password: CATALOG_DB_PASSWORD}`.
+site-2's dataset has `type: sql`, `uri: postgresql://postgres:5432/omop`, the option `schema: omop`, and `secrets: {username: CATALOG_DB_USER, password: CATALOG_DB_PASSWORD}`.
 
 The dataset is named `omop` in the `default` Study at both sites; the same name at two sites identifies two separate
-site catalogs. Unity Catalog returns REST metadata and SQLAlchemy reflects the database's metadata. The job reads no
+site catalogs. Data Contract CLI imports the Unity Catalog tables through the Databricks SDK and the PostgreSQL schema through psycopg. The job reads no
 business rows, and Spark is not required. There is no catalog publication policy; source identities and metadata permissions control visibility. An invalid configuration fails that site's read with `CONFIG_UNAVAILABLE`; a missing one means the site offers the Study no datasets. Jobs supply neither the
 configuration nor credentials.
 
 ### Source credentials and assumptions
 
-- site-2's connector completes its database URL with the `CATALOG_DB_USER` and `CATALOG_DB_PASSWORD` variables, set
-  only on the site-2 container to the demo reader `catalog_reader` / `local-demo-reader`. The reader has schema
-  visibility without table `SELECT` permission. The connector uses the BSD-licensed `pg8000` driver through
-  SQLAlchemy (`postgresql+pg8000://`) with a five-second socket timeout. `POSTGRES_PASSWORD` is the separate bootstrap
+- The upstream PostgreSQL importer receives site-2’s `CATALOG_DB_USER` and `CATALOG_DB_PASSWORD`. The seeder grants the reader `USAGE` on the schema and `REFERENCES` on the demo tables so they appear in `information_schema`. The reader has no table `SELECT` privilege. The seeder uses pg8000. `POSTGRES_PASSWORD` is the separate bootstrap
   password used by PostgreSQL and demo seeding; override it in the shell or `.env`. Set it before the first start:
   PostgreSQL initializes credentials only for an empty volume.
 - site-1's Unity Catalog server has authorization disabled in this local demo, so its dataset has no secrets. A
@@ -265,7 +261,7 @@ seeding hook against the production workspace. Grant the token identity permissi
 and verify that its metadata visibility is appropriate for the Study. The catalog does not redact columns. `job.py` and the recipe stay the same. Secrets belong at the site,
 never in the job or the published catalog.
 
-The connector uses the [Unity Catalog tables REST API](https://docs.databricks.com/api/uc-tables/v1/list-tables) for
+The upstream Unity importer uses the Databricks SDK and the [Unity Catalog tables REST API](https://docs.databricks.com/api/uc-tables/v1/list-tables) for
 table names, columns and types, with pagination. It does not collect Databricks lineage or table constraints. The
 tests exercise the API contract with controlled responses; this example runs Unity Catalog OSS, not a live Databricks
 workspace. No Spark server or client is needed for this metadata-only path.
@@ -284,6 +280,5 @@ workspace. No Spark server or client is needed for this metadata-only path.
 | Start over with fresh demo data | `docker compose down --volumes --remove-orphans`, then `docker compose up -d --build --wait`. This deletes this project's current demo data and job results. |
 | PostgreSQL is unhealthy, or site-2's preparation hook fails | Check `docker compose logs postgres`. Existing volumes retain their initialized database and password; changing `POSTGRES_DB` or `POSTGRES_PASSWORD` does not update them. For disposable demo data, use the clean reset above. |
 
-The site images install the optional `nvflare[catalog]` dependencies (datacontract-cli, PyArrow, SQLAlchemy and DuckDB); network
-databases also require their SQLAlchemy driver. Their license and notice files are included from the repository's
+The site images install the optional `nvflare[catalog]` dependencies (datacontract-cli, PyArrow, DuckDB, psycopg and the Databricks SDK). Their license and notice files are included from the repository's
 `3rdParty` directory.
