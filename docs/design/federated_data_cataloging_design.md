@@ -44,7 +44,7 @@ studies:
         uri: file:///data/oncology/visits.csv
       measurements:
         type: sql
-        uri: postgresql+psycopg://measurements.example/study
+        uri: postgresql://measurements.example/clinical_warehouse
         options: {schema: approved}
         secrets: {username: STUDY_DB_USER, password: STUDY_DB_PASSWORD}
 ```
