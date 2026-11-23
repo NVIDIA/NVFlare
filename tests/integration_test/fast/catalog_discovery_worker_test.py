@@ -51,3 +51,77 @@ def test_sqlite_worker_discovers_current_schema_on_each_read(tmp_path):
         (table,) = contract["schema"]
         assert table["name"] == "visits"
         assert [p["name"] for p in table["properties"]] == names
+
+
+def test_executor_reads_configured_upstream_importer_from_site_yaml(tmp_path, monkeypatch):
+    import json
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+    from types import SimpleNamespace
+
+    import yaml
+
+    pytest.importorskip("datacontract.imports.odata_importer")
+    from nvflare.apis.fl_constant import FLContextKey, ReservedKey
+    from nvflare.apis.fl_context import FLContext
+    from nvflare.apis.shareable import Shareable
+    from nvflare.apis.signal import Signal
+    from nvflare.app_common.fdn.catalog.common.payload import (
+        CATALOG_JOB_META,
+        CATALOG_READ_KEY,
+        TASK_NAME,
+        build_task_payload,
+    )
+    from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor
+
+    requests = []
+
+    class Service(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requests.append((self.path, self.headers.get("X-API-Key")))
+            if self.path != "/service/$metadata":
+                self.send_error(403)
+                return
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(
+                b"""<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+                <edmx:DataServices><Schema Namespace="Site" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+                <EntityType Name="Visit"><Key><PropertyRef Name="id"/></Key>
+                <Property Name="id" Type="Edm.Int64" Nullable="false"/></EntityType>
+                <EntityContainer Name="Catalog"><EntitySet Name="Visits" EntityType="Site.Visit"/></EntityContainer>
+                </Schema></edmx:DataServices></edmx:Edmx>"""
+            )
+
+    monkeypatch.setenv("SITE_CATALOG_KEY", "test-site-key")
+    with ThreadingHTTPServer(("127.0.0.1", 0), Service) as server:
+        dataset = {
+            "type": "odata",
+            "uri": f"http://127.0.0.1:{server.server_port}/service/",
+            "options": {"metadata_source": "uri", "odata_entity_set": ["Visits"], "config": {}},
+            "secrets": {"DATACONTRACT_API_HEADER_X_API_KEY": "SITE_CATALOG_KEY"},
+        }
+        (tmp_path / "local").mkdir()
+        (tmp_path / "local/datasets.yaml").write_text(
+            yaml.safe_dump({"format_version": 1, "studies": {"study": {"datasets": {"visits": dataset}}}})
+        )
+        ctx = FLContext()
+        engine = SimpleNamespace(get_workspace=lambda: SimpleNamespace(get_root_dir=lambda: str(tmp_path)))
+        ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
+        ctx.set_prop(FLContextKey.JOB_META, {"study": "study", CATALOG_JOB_META: True}, private=True, sticky=False)
+        task = Shareable()
+        task[CATALOG_READ_KEY] = build_task_payload(None)
+        listener = Thread(target=server.serve_forever)
+        listener.start()
+        try:
+            result = CatalogExecutor().execute(TASK_NAME, task, ctx, Signal())[CATALOG_READ_KEY]
+        finally:
+            server.shutdown()
+            listener.join()
+    assert requests == [("/service/$metadata", "test-site-key")]
+    assert not result["unavailable"] and not result["skipped"]
+    (entry,) = result["catalogs"]
+    assert entry["dataset"] == "visits"
+    (table,) = entry["contract"]["schema"]
+    assert [prop["name"] for prop in table["properties"]] == ["id"]
+    assert "test-site-key" not in json.dumps(result)

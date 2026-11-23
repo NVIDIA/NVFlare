@@ -15,6 +15,7 @@
 """Adapt site-owned source settings to Data Contract CLI's ODCS importers."""
 
 import sqlite3
+from collections.abc import Mapping
 from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -51,7 +52,7 @@ def _structure(element):
     return result
 
 
-def _import_objects(budget, source_format, source=None, **kwargs):
+def _import_objects(budget, source_format, source=None, /, **kwargs):
     from datacontract.data_contract import DataContract
 
     budget.request()
@@ -256,4 +257,20 @@ def import_schema(dataset, secret, budget):
         return _database_file(dataset, budget)
     if dataset.type == "sql":
         return _postgres(dataset, secret, budget)
-    raise CatalogSourceError("unsupported catalog source")
+    # An explicit site setting selects a metadata importer from the upstream registry.
+    # Other dataset types in this shared Study configuration need not support discovery.
+    args = dict(dataset.options)
+    source_form = args.pop("metadata_source", None)
+    url = urlsplit(dataset.uri)
+    if source_form not in ("host", "uri") or dataset.path is not None or not url.hostname or url.username is not None:
+        raise CatalogSourceError("expected a configured network metadata importer")
+    if source_form == "host" and (url.path not in ("", "/") or url.port is not None or url.query or url.fragment):
+        raise CatalogSourceError("host metadata sources take a bare host; put other importer arguments in options")
+    if {"format", "source"} & args.keys():
+        raise CatalogSourceError("reserved metadata importer argument")
+    settings = args.pop("config", {})
+    if not isinstance(settings, Mapping) or set(settings).intersection(dataset.secret_keys):
+        raise CatalogSourceError("invalid or duplicate importer settings")
+    config = {**settings, **{key: secret(key) for key in dataset.secret_keys}}
+    source = url.hostname if source_form == "host" else dataset.uri
+    return _import_objects(budget, dataset.type, source, config=config, **args)

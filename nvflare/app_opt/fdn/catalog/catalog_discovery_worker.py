@@ -19,6 +19,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from urllib.parse import parse_qsl, urlsplit
 
 from nvflare.app_common.fdn.catalog.common.odcs import MAX_CONTRACT_BYTES
@@ -42,6 +43,8 @@ def run_catalog_discovery(dataset, secret, budget, *, site):
             uri = url._replace(query="").geturl()
     elif dataset.type == "unity-catalog" and "token" in dataset.secret_keys:
         keys = ("token",)
+    elif dataset.options.get("metadata_source") in ("host", "uri"):
+        keys = dataset.secret_keys
 
     budget.remaining()
     request = {
@@ -60,7 +63,15 @@ def run_catalog_discovery(dataset, secret, budget, *, site):
         "records": budget.records_left,
         "deadline": budget.deadline,
     }
-    data = json.dumps(request).encode()
+
+    # DatasetConfig freezes nested mappings. Restore JSON objects (e.g. importer
+    # settings) for the worker while retaining the encoder's checks on other types.
+    def encode_mapping(value):
+        if isinstance(value, Mapping):
+            return dict(value)
+        raise TypeError("catalog options must contain JSON values")
+
+    data = json.dumps(request, default=encode_mapping).encode()
     # Parent owns temporary CSV/DDL files even when a blocking SDK call is killed.
     with tempfile.TemporaryDirectory() as temp:
         env.update(TMPDIR=temp, TEMP=temp, TMP=temp)

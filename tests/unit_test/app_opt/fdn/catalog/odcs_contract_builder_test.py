@@ -25,6 +25,49 @@ from tests.unit_test.app_opt.fdn.catalog.datasets import dataset_config
 LIMITS = ReadLimits(**DEFAULT_LIMITS)
 
 
+def test_configured_snowflake_import_uses_the_upstream_registry(monkeypatch):
+    pytest.importorskip("datacontract")
+    from datacontract.imports import snowflake_importer
+    from datacontract.imports.odcs_helper import create_odcs
+    from open_data_contract_standard.model import SchemaObject, SchemaProperty
+
+    monkeypatch.setenv("SITE_READER_PASSWORD", "secret-value")
+    dataset, secret = dataset_config(
+        type_="snowflake",
+        uri="snowflake://acme-west",
+        options={
+            "metadata_source": "host",
+            "database": "clinical",
+            "schema": "ehr",
+            "config": {"DATACONTRACT_SNOWFLAKE_WAREHOUSE": "discovery"},
+        },
+        secrets={"DATACONTRACT_SNOWFLAKE_PASSWORD": "SITE_READER_PASSWORD"},
+    )
+
+    def read_metadata(account, database, schema, config):
+        assert (account, database, schema) == ("acme-west", "clinical", "ehr")
+        assert config.get_snowflake_warehouse() == "discovery"
+        assert config.get_snowflake_password() == "secret-value"
+        doc = create_odcs()
+        doc.schema_ = [SchemaObject(name="visits", description="site-only", properties=[SchemaProperty(name="id")])]
+        return doc
+
+    monkeypatch.setattr(snowflake_importer, "import_snowflake_from_connector", read_metadata)
+    doc = build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="one")
+    assert doc["schema"] == [{"name": "visits", "properties": [{"name": "id"}]}]
+
+
+@pytest.mark.parametrize("override", ["source", "format"])
+def test_configured_import_rejects_reserved_arguments(override):
+    from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
+
+    dataset, secret = dataset_config(
+        type_="snowflake", uri="snowflake://account", options={"metadata_source": "host", override: "other"}
+    )
+    with pytest.raises(CatalogSourceError, match="reserved"):
+        build_odcs_contract(dataset, secret, ReadBudget(LIMITS), site="one")
+
+
 def test_csv_projects_only_original_header_names(tmp_path):
     pytest.importorskip("datacontract")
     path = tmp_path / "site's private-file.csv"
