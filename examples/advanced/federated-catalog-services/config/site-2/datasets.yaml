@@ -11,10 +11,3 @@ studies:
           schema: omop
           connect_args: {timeout: 5}                           # pg8000's socket timeout, in seconds
         secrets: {username: CATALOG_DB_USER, password: CATALOG_DB_PASSWORD}   # environment variable names
-        usage:
-          catalog:
-            share: true
-            exclude_columns:
-              person: [person_source_value]
-              condition_occurrence: [condition_source_value]
-              drug_exposure: [drug_source_value]

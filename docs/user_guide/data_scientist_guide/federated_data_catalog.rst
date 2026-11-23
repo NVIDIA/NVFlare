@@ -22,12 +22,12 @@ The workflow
    site operator                          you (a Study member)
    -------------                          --------------------
    1. describe the datasets and their     2. get_catalog(env)
-      catalog rules in datasets.yaml      3. explore catalog_results.json
+      source identity in datasets.yaml      3. explore catalog_results.json
 
 1. A site operator describes, in the site's dataset configuration, where each dataset is,
    how to read it, and what may leave the site.
 2. You run a catalog read. Every site of the Study reads its own sources and returns only
-   what its rules allow.
+   the metadata its source identity can discover.
 3. You explore the result, offline if you like.
 
 Each read returns the complete answer; the latest read is the current catalog. To keep it
@@ -161,11 +161,6 @@ Each site describes its datasets per Study in one file, its dataset configuratio
          omop:
            type: parquet                       # selects the connector
            uri: file:///data/oncology/omop     # where the dataset is
-           usage:
-             catalog:                          # the catalog's rules for this dataset
-               share: true
-               exclude_columns: {person: [person_source_value]}
-
 The dataset's ``type`` selects the connector. ``parquet``, ``csv``, ``sql`` and
 ``unity-catalog`` are built in; a site declares others, such as DuckDB, by class:
 
@@ -176,11 +171,20 @@ The dataset's ``type`` selects the connector. ``parquet``, ``csv``, ``sql`` and
        connectors:
          duckdb: {class: nvflare.app_opt.fdn.catalog.duckdb_connector.DuckDBConnector}
 
-A dataset without ``usage.catalog`` rules, or with ``share: false``, is not published.
-Excluded tables and columns, and any keys and relationships that depend on them, are
-removed before anything leaves the site. An exclusion that matches nothing is only logged as
-a warning at the site, so check its spelling. Network sources name credentials as secrets:
-environment variable names, never values.
+Every dataset configured for the job's Study is eligible for cataloging, optionally narrowed by the request's
+dataset selection. The catalog does not apply sharing flags or table, column, resource or metadata exclusions.
+The database administrator controls metadata visibility through scoped credentials and source namespaces or
+selected projections. Verify metadata visibility separately from row access: database system catalogs may expose
+schemas even when the identity cannot read data. For files, control which paths the job can read.
+
+When upgrading an existing Study, review every dataset in its ``datasets.yaml``. Earlier catalog reads omitted
+datasets without ``usage.catalog``. The new catalog includes them. Remove datasets the Study should not discover,
+or configure a source view that exposes only approved metadata. Then remove per-dataset ``usage.catalog`` entries.
+If any dataset retains an entry, the site reports ``CONFIG_UNAVAILABLE`` for the Study without naming datasets. Site-wide
+``usage.catalog`` remains for read limits, connector declarations and ``installed_operations``. Advertised
+operations are limited to installed capabilities and grant no execution rights. Network credentials are secret
+environment variable names, never values in the configuration or result. Source changes affect the next read;
+previously downloaded snapshots are not retracted.
 
 **********
 Try it

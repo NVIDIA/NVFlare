@@ -95,6 +95,11 @@
                 "nullable": true
               },
               {
+                "name": "condition_source_value",
+                "type": "string",
+                "nullable": true
+              },
+              {
                 "name": "condition_source_concept_id",
                 "type": "integer",
                 "nullable": true
@@ -207,6 +212,11 @@
                 "nullable": true
               },
               {
+                "name": "drug_source_value",
+                "type": "string",
+                "nullable": true
+              },
+              {
                 "name": "drug_source_concept_id",
                 "type": "integer",
                 "nullable": true
@@ -306,6 +316,11 @@
               {
                 "name": "visit_detail_id",
                 "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "measurement_source_value",
+                "type": "string",
                 "nullable": true
               },
               {
@@ -430,6 +445,11 @@
               {
                 "name": "care_site_id",
                 "type": "integer",
+                "nullable": true
+              },
+              {
+                "name": "person_source_value",
+                "type": "string",
                 "nullable": true
               },
               {
@@ -659,6 +679,11 @@
                 "nullable": true
               },
               {
+                "name": "condition_source_value",
+                "type": "TEXT",
+                "nullable": true
+              },
+              {
                 "name": "condition_source_concept_id",
                 "type": "INTEGER",
                 "nullable": true
@@ -789,6 +814,11 @@
               {
                 "name": "visit_detail_id",
                 "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "drug_source_value",
+                "type": "TEXT",
                 "nullable": true
               },
               {
@@ -931,6 +961,11 @@
               {
                 "name": "care_site_id",
                 "type": "INTEGER",
+                "nullable": true
+              },
+              {
+                "name": "person_source_value",
+                "type": "TEXT",
                 "nullable": true
               },
               {

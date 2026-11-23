@@ -129,22 +129,12 @@ studies:
       omop:                       # Parquet directory: one table per .parquet file
         type: parquet
         uri: file://${SITE_DATA}/omop
-        usage:
-          catalog:
-            share: true
-            exclude_columns:
-              person: [person_source_value]
-              condition_occurrence: [condition_source_value]
       lab_results:                # one CSV file
         type: csv
         uri: file://${SITE_DATA}/lab_results.csv
-        usage:
-          catalog: {share: true}
       visits:
         type: csv
         uri: file://${SITE_DATA}/visits.csv
-        usage:
-          catalog: {share: true}
 ```
 
 [config/site-2/datasets.yaml](config/site-2/datasets.yaml) has one `omop`
@@ -160,8 +150,7 @@ usage:
       duckdb: {class: nvflare.app_opt.fdn.catalog.duckdb_connector.DuckDBConnector}
 ```
 
-Each dataset's `usage.catalog` rules share it and exclude `person_source_value`
-and `condition_source_value` from published schemas. Source rows stay local.
+Every dataset configured for the Study is read. The source identity and readable files determine metadata visibility; the catalog does not exclude columns.
 
 ## What schemas are published?
 
@@ -222,20 +211,15 @@ Each read returns the complete answer; the latest read is the current catalog.
 After a completed read, only `catalog_results.json` is kept in the simulation workspace. When a read fails, the
 whole workspace is kept, with the simulator logs under `/tmp/nvflare/federated-catalog/simulation/get_catalog/`.
 
-## Change what a site shares
+## Control source metadata visibility
 
-Edit the installed site-2 configuration at
-`/tmp/nvflare/federated-catalog/data/site-2/local/datasets.yaml` and set the
-dataset's rule to `share: false`:
+The catalog has no publication policy. Each configured Study dataset is read using the site's source identity and
+file access. Use a database namespace or selected table projection whose metadata may be published; verify the
+provider's metadata permissions independently of row access. For these local file examples, expose only suitable
+files/directories to the job. Remove a dataset's binding from the Study to stop cataloging that source on later jobs.
 
-```yaml
-        usage:
-          catalog: {share: false}
-```
-
-Run `python job.py` again. The result now contains only the datasets of site-1
-and site-3, and does not name site-2's `omop`. Running preparation again
-restores the checked-in configuration.
+Run `python job.py` again after changing the source or configuration. Each result is a new snapshot; previously
+saved results are not retracted. Running preparation again restores the checked-in configuration.
 
 ## Custom paths and limits
 

@@ -7,12 +7,6 @@ studies:
       omop:                       # a DuckDB database file
         type: duckdb
         uri: file://${SITE_DATA}/omop.duckdb
-        usage:
-          catalog:
-            share: true
-            exclude_columns:
-              person: [person_source_value]
-              condition_occurrence: [condition_source_value]
 usage:
   catalog:
     connectors:                   # DuckDB is not built in, so the site declares its connector class

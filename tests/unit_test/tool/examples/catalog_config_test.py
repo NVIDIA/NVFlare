@@ -21,7 +21,7 @@ import pytest
 import yaml
 
 from nvflare.app_common.dataset_config.api import parse_study_config
-from nvflare.app_common.fdn.catalog.site.rules import parse_rule, parse_settings
+from nvflare.app_common.fdn.catalog.site.settings import parse_settings
 
 EXAMPLES = Path(__file__).resolve().parents[4] / "examples/advanced"
 
@@ -30,12 +30,6 @@ def _site_config(example, site, site_data="/prepared/site/data"):
     """The site's checked-in datasets.yaml, loaded through the dataset configuration API."""
     text = (EXAMPLES / example / "config" / site / "datasets.yaml").read_text().replace("${SITE_DATA}", site_data)
     return parse_study_config(yaml.safe_load(text), "default", f"{example}/{site}")
-
-
-def _exclusions(example, site):
-    rule = parse_rule(_site_config(example, site).get_dataset("omop").usage_rules("catalog"))
-    assert rule.share
-    return rule.exclude_columns
 
 
 @pytest.mark.parametrize(
@@ -48,11 +42,11 @@ def _exclusions(example, site):
         ("federated-catalog-services", "site-2", {"omop": "sql"}),
     ],
 )
-def test_example_site_configurations_are_valid_and_share_every_dataset(example, site, datasets):
+def test_example_site_configurations_are_valid_without_publication_rules(example, site, datasets):
     config = _site_config(example, site)
     assert {name: config.get_dataset(name).type for name in config.list_datasets()} == datasets
     for name in datasets:
-        assert parse_rule(config.get_dataset(name).usage_rules("catalog")).share
+        assert config.get_dataset(name).usage_rules("catalog") is None
     settings = parse_settings(config.site_usage("catalog"))
     if datasets.get("omop") == "duckdb":
         # DuckDB is not built in, so the site declares the connector class.
@@ -112,15 +106,6 @@ def test_the_simulation_example_generates_linked_tables_that_match_their_keys():
     # every site has exactly one condition_occurrence column that no other site has
     common = set.intersection(*condition_columns)
     assert [len(columns - common) for columns in condition_columns] == [1, 1, 1]
-
-
-def test_the_simulation_example_rules_exclude_columns_its_sites_publish():
-    # an exclusion that matches nothing only logs a warning, so a typo would publish the column unnoticed
-    prepare = _load("federated-catalog", "prepare_data")
-    for index, site in enumerate(prepare.SITES, start=1):
-        columns = {t: set(c) for t, c in prepare.make_tables(index, prepare.PEOPLE[site], site).items()}
-        for table, excluded in _exclusions("federated-catalog", site).items():
-            assert table in columns and set(excluded) <= columns[table], (site, table)
 
 
 def test_preparation_installs_the_configuration_with_absolute_file_uris(tmp_path, monkeypatch):
@@ -189,12 +174,16 @@ def test_preparation_refuses_a_site_folder_it_did_not_create(tmp_path, monkeypat
     assert (other / "site-1" / "local" / "datasets.yaml").is_file()
 
 
-def test_services_rule_exclusions_name_columns_the_site_publishes():
+def test_services_sample_contains_the_complete_source_schemas():
     omop = _load("federated-catalog-services", "omop_data")
-    for site in ("site-1", "site-2"):
-        columns = {t: {c for c, _k, _r in cols} for t, cols in omop.schema(site).items()}
-        for table, excluded in _exclusions("federated-catalog-services", site).items():
-            assert table in columns and set(excluded) <= columns[table], (site, table)
+    sample = json.loads((EXAMPLES / "federated-catalog-services/demo/catalog_results.json").read_text())
+    for entry in sample["datasets"]:
+        source = omop.schema(entry["site"])
+        assert {table["name"] for table in entry["metadata"]["tables"]} == set(source)
+        for table in entry["metadata"]["tables"]:
+            assert [column["name"] for column in table["columns"]] == [
+                name for name, _kind, _required in source[table["name"]]
+            ]
 
 
 def test_example_loader_preserves_existing_sibling_modules(monkeypatch):

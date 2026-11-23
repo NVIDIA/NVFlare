@@ -308,7 +308,7 @@ class CatalogVisualization:
             self.get_table_comparison(site, dataset),
             "Table comparison across sites and datasets",
             "Numbers are published column counts. Red: table not published; gray: dataset not read (unavailable or skipped). "
-            "Site policy may omit tables.",
+            "Source permissions and configuration determine visibility.",
         )
 
     def show_column_comparison(self, table, site=None, dataset=None, field="type"):

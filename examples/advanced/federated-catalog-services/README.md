@@ -3,8 +3,8 @@
 Read site-approved metadata from two containerized sites. This example uses Docker to simulate a production
 deployment: each site's data lives in its own server, a Unity Catalog server at site-1 and a PostgreSQL database at
 site-2, which the site reaches over the network. Both hold synthetic patients in the shape of the OMOP Common Data
-Model. Source rows stay at those sites. Each site publishes the schema of its `omop` tables, excluding the
-source-value columns that could identify a patient, as its dataset configuration's catalog rules say. A
+Model. Source rows stay at those sites. Each site publishes the schema of its `omop` tables as visible to its configured source identity, including the
+source-value column names in this synthetic example. The catalog publishes no row values. A
 [notebook](catalog_explorer.ipynb) shows the schemas as pandas DataFrames.
 
 The [first example](../federated-catalog) needs none of this. It runs on the host in a simulation, with Parquet, CSV,
@@ -154,7 +154,7 @@ you also want fresh demo data.
 | Configuration | Supplied by | Purpose |
 | --- | --- | --- |
 | [project.yml](project.yml) | `nvflare provision` | Defines participants, endpoints, certificate host names and startup kits. |
-| Each site's dataset configuration | `example_setup.py` copies `config/<site>/datasets.yaml` into the site's startup kit as `local/datasets.yaml` | Declares the site's datasets for each Study: where each one is, how to connect, and the catalog rules that decide what is published. |
+| Each site's dataset configuration | `example_setup.py` copies `config/<site>/datasets.yaml` into the site's startup kit as `local/datasets.yaml` | Declares the site's datasets for each Study: where each one is, how to connect, and the source identity used to read metadata. |
 | site-2's `CATALOG_DB_USER` and `CATALOG_DB_PASSWORD` | Compose environment | The database credentials its dataset configuration names as secrets. |
 
 That is where a deployed site keeps it, and on a deployed site an edit applies from the next job. In this example each site container copies its read-only kit into a temporary workspace when it starts, so after editing a `config/<site>/datasets.yaml`, rerun `python example_setup.py` and restart the site (`docker compose up -d --force-recreate nvflare-<site>`); the next catalog read uses it.
@@ -183,7 +183,7 @@ provisioned resources paths, so completed jobs and their results remain availabl
 
 A catalog read is an ordinary job. `CatalogController` runs in the job on the server and sends each site one task.
 `CatalogExecutor` runs at each site, reads the site's dataset configuration, reads each shared dataset's metadata
-through its connector, applies the catalog rules, and returns the result. The controller validates every entry and
+through its connector and returns the source-visible metadata. The controller validates every entry and
 writes `catalog_results.json` in the job workspace, which is saved to the job store with the job; `get_catalog`
 downloads it. The server keeps no catalog of its own.
 
@@ -207,14 +207,6 @@ studies:
         type: unity-catalog
         uri: http://unity-catalog:8080/api/2.1/unity-catalog   # API root; authorization is off in this demo
         options: {catalog: flare_demo, schema: omop}
-        usage:
-          catalog:
-            share: true
-            exclude_columns:
-              person: [person_source_value]
-              condition_occurrence: [condition_source_value]
-              drug_exposure: [drug_source_value]
-              measurement: [measurement_source_value]
 ```
 
 site-2's dataset has `type: sql`, `uri: postgresql+pg8000://postgres:5432/omop`, the options `schema: omop` and
@@ -222,8 +214,7 @@ site-2's dataset has `type: sql`, `uri: postgresql+pg8000://postgres:5432/omop`,
 
 The dataset is named `omop` in the `default` Study at both sites; the same name at two sites identifies two separate
 site catalogs. Unity Catalog returns REST metadata and SQLAlchemy reflects the database's metadata. The job reads no
-business rows, and Spark is not required. Each dataset's catalog rules share it while excluding the source-value
-columns. An invalid configuration fails that site's read with `CONFIG_UNAVAILABLE`; a missing one means the site offers the Study no datasets. Jobs supply neither the
+business rows, and Spark is not required. There is no catalog publication policy; source identities and metadata permissions control visibility. An invalid configuration fails that site's read with `CONFIG_UNAVAILABLE`; a missing one means the site offers the Study no datasets. Jobs supply neither the
 configuration nor credentials.
 
 ### Source credentials and assumptions
@@ -267,13 +258,11 @@ dataset to:
         uri: https://<workspace>/api/2.1/unity-catalog
         options: {catalog: your_catalog, schema: your_schema}
         secrets: {token: DATABRICKS_TOKEN}
-        usage:
-          catalog: {share: true}
 ```
 
 Supply `DATABRICKS_TOKEN` only to that site's container through its secret configuration. Do not run the demo's
 seeding hook against the production workspace. Grant the token identity permission to discover the intended tables
-and adapt the catalog rules to their columns. `job.py` and the recipe stay the same. Secrets belong at the site,
+and verify that its metadata visibility is appropriate for the Study. The catalog does not redact columns. `job.py` and the recipe stay the same. Secrets belong at the site,
 never in the job or the published catalog.
 
 The connector uses the [Unity Catalog tables REST API](https://docs.databricks.com/api/uc-tables/v1/list-tables) for

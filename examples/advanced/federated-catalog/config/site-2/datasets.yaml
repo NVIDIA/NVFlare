@@ -7,9 +7,3 @@ studies:
       omop:                       # a SQLite database file, read with the built-in sql connector
         type: sql
         uri: file://${SITE_DATA}/omop.sqlite
-        usage:
-          catalog:
-            share: true
-            exclude_columns:
-              person: [person_source_value]
-              condition_occurrence: [condition_source_value]
