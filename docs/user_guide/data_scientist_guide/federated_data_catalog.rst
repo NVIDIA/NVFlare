@@ -164,8 +164,25 @@ Each site describes its datasets per Study in one file, its dataset configuratio
            type: parquet                       # selects the source reader
            uri: file:///data/oncology/clinical_records     # where the dataset is
 
-The site installs ``nvflare[catalog]``. Supported source types are ``csv``, ``parquet``, ``sql``,
-``duckdb`` and ``unity-catalog``. On the first and each subsequent read, the site generates an ODCS document from the configured source.
+The site installs ``nvflare[catalog]``. The examples use ``csv``, ``parquet``, ``sql``, ``duckdb`` and
+``unity-catalog``. For another network source, use the name of an installed Data Contract CLI metadata
+importer as the dataset type. For example, a site with ``datacontract-cli[snowflake]==1.2.11`` can add:
+
+.. code-block:: yaml
+
+   clinical_records:
+     type: snowflake
+     uri: snowflake://acme-west
+     options: {metadata_source: host, database: CLINICAL_WAREHOUSE, schema: EHR}
+     secrets:
+       DATACONTRACT_SNOWFLAKE_USERNAME: SITE_DB_USER
+       DATACONTRACT_SNOWFLAKE_PASSWORD: SITE_DB_PASSWORD
+
+Use ``metadata_source: host`` for an importer that expects a bare host or account and ``metadata_source: uri``
+for one that expects a network URI. Other options use the upstream importer's argument names.
+Use ``options.config`` for nonsecret upstream settings and ``secrets`` for credential bindings.
+The site verifies that the importer and service identity only read metadata. The researcher calls the same
+``get_catalog()`` for the first read and each refresh.
 
 Every dataset configured for the job's Study is eligible for cataloging, optionally narrowed by the request's
 dataset selection. The catalog does not apply sharing flags or table, column, resource or metadata exclusions.
