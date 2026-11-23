@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import io
+import ntpath
 import os
 import stat
 from pathlib import Path
@@ -140,12 +141,16 @@ def ls_zip_from_bytes(zip_data: bytes):
         return z.infolist()
 
 
-def _validate_zip_entry_name(name: str, real_out: str) -> None:
-    """Reject a zip entry name with an absolute path or ".." component."""
-    if os.path.isabs(name) or name.startswith("/") or name.startswith("\\"):
+def validate_zip_member_name(name: str) -> None:
+    """Reject rooted paths and parent components in member names on any platform."""
+    if os.path.isabs(name) or name.startswith("/") or name.startswith("\\") or ntpath.splitdrive(name)[0]:
         raise ValueError(f"unsafe absolute path in zip entry: {name!r}")
     if ".." in name.replace("\\", "/").split("/"):
         raise ValueError(f"unsafe '..' component in zip entry: {name!r}")
+
+
+def _validate_zip_entry_name(name: str, real_out: str) -> None:
+    validate_zip_member_name(name)
     resolved = os.path.realpath(os.path.join(real_out, name))
     if resolved != real_out and not resolved.startswith(real_out + os.sep):
         raise ValueError(f"zip entry escapes output dir: {name!r}")

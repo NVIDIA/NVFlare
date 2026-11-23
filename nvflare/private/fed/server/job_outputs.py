@@ -196,7 +196,8 @@ class SplitWorkspace:
                         relative = os.path.join(relative_root, name)
                         if relative in linked:
                             seen.add(relative)
-                            if _identity(info) != linked[relative]:
+                            current = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+                            if not stat.S_ISREG(current.st_mode) or _identity(current) != linked[relative]:
                                 raise OSError(f"output {relative} changed after it was stored")
                             continue  # stored in the outputs archive
                         if relative in stored:

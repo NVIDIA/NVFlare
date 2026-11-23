@@ -170,6 +170,24 @@ class TestSplitJobOutputs:
         assert first.output_dirs == second.output_dirs
         assert _files(second.output_dirs[0]) == ["app_server/FL_global_model.pt"]
 
+    def test_model_updated_after_directory_scan_invalidates_split(self, tmp_path, monkeypatch):
+        from nvflare.private.fed.server import job_outputs
+
+        run_dir = _run_folder(tmp_path / "run", {"model.pt": b"old", "metrics/result.json": b"{}"})
+        split = link_job_outputs([str(run_dir)])
+        original = job_outputs.walk_archive_directory
+
+        def walk_then_update(*args, **kwargs):
+            for dir_fd, relative, dirs, files in original(*args, **kwargs):
+                if not relative:
+                    assert files["model.pt"].st_size == 3
+                    (run_dir / "model.pt").write_bytes(b"updated model")
+                yield dir_fd, relative, dirs, files
+
+        monkeypatch.setattr(job_outputs, "walk_archive_directory", walk_then_update)
+        with pytest.raises(OSError, match="changed after it was stored"):
+            split.link_rest()
+
     def test_a_source_replaced_right_after_its_link_was_made_rejects_the_split(self, tmp_path, monkeypatch):
         import nvflare.private.fed.server.job_outputs as job_outputs_module
 

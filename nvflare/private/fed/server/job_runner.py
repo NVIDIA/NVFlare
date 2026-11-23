@@ -45,6 +45,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import get_cert_common_name_from_file
+from nvflare.fuel.utils.archive_source import ArchivePlatformUnsupported
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
@@ -683,6 +684,12 @@ class JobRunner(FLComponent):
                                     finished_state.resource_stats_finalized = True
                                 try:
                                     self._save_workspace(completion_ctx, finished_state, job.job_id)
+                                except ArchivePlatformUnsupported as e:
+                                    self.log_error(
+                                        completion_ctx,
+                                        f"Cannot archive workspace for finished job ({job.job_id}) on this platform. "
+                                        f"Workspace sources were retained. {secure_format_exception(e)}",
+                                    )
                                 except Exception as e:
                                     now = time.monotonic()
                                     if finished_state.workspace_save_started_at is None:

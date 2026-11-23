@@ -428,6 +428,9 @@ Known limitations:
 - The server stages regular files from the job's workspace folders. The filesystem
   store omits symlinks and special files from both output and workspace archives,
   including when the workspace is archived whole.
+- The filesystem store requires descriptor-relative, no-follow filesystem
+  operations for workspace archives. When the platform lacks them, the server
+  logs the unsupported-platform error and retains the workspace sources.
 - The job's credentials (`job_cert/`) are removed before archiving, as today,
   and are never treated as outputs.
 - The admin client unzips a downloaded archive only into a plain folder name

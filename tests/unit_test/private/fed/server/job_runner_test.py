@@ -32,6 +32,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.utils.archive_source import ArchivePlatformUnsupported
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.zip_utils import get_all_file_paths, zip_directory_to_file
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
@@ -763,6 +764,47 @@ def test_save_workspace_destroys_job_credential_before_archiving(tmp_path):
 
     assert archived["job-1"] == [os.path.join("app_server", "result.txt")]
     assert not run_dir.exists()
+
+
+def test_save_workspace_leaves_credentials_outside_a_symlink_untouched(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    other_run = tmp_path / "other"
+    write_job_cert(str(other_run), b"other-cert", b"other-key")
+    (run_dir / "job_cert").symlink_to(other_run / "job_cert", target_is_directory=True)
+    runner, fl_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+    job_manager.save_workspace.return_value = "/store/job-1/workspace"
+
+    runner._save_workspace(fl_ctx)
+
+    assert (other_run / "job_cert" / "job.crt").read_bytes() == b"other-cert"
+    assert (other_run / "job_cert" / "job.key").read_bytes() == b"other-key"
+    assert not run_dir.exists()
+
+
+def test_job_completion_reports_unsupported_archiving_without_retrying(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    runner, ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
+    runner.fire_event = MagicMock()
+    runner.log_error = MagicMock()
+    runner.log_exception = MagicMock()
+    engine = ctx.get_engine.return_value
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    engine.new_context.side_effect = lambda: nullcontext(ctx)
+    job = MagicMock(job_id="job-1", run_aborted=True)
+    runner.running_jobs = {"job-1": job}
+    runner._save_workspace = MagicMock(side_effect=ArchivePlatformUnsupported("no-follow operations unavailable"))
+    runner.ask_to_stop = False
+    with _patch_job_runner_sleep(lambda _: setattr(runner, "ask_to_stop", True)):
+        runner._job_complete_process(engine)
+
+    runner._save_workspace.assert_called_once()
+    runner.log_exception.assert_not_called()
+    assert "Workspace sources were retained" in runner.log_error.call_args.args[1]
+    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, ctx)
+    assert run_dir.is_dir()
 
 
 def test_save_workspace_tolerates_source_disappearing_during_cleanup(tmp_path):

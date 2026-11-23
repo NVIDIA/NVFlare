@@ -16,12 +16,21 @@
 
 import os
 import stat
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _DIRECTORY = getattr(os, "O_DIRECTORY", 0)
 _NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 _OPEN_FLAGS = os.O_RDONLY | _NOFOLLOW | _NONBLOCK
+_DESCRIPTOR_SUPPORT = (
+    {os.open, os.stat}.issubset(os.supports_dir_fd)
+    and os.stat in os.supports_follow_symlinks
+    and os.scandir in os.supports_fd
+)
+
+
+class ArchivePlatformUnsupported(OSError):
+    """The platform cannot safely open workspace archive sources."""
 
 
 @contextmanager
@@ -31,8 +40,10 @@ def open_archive_entry(path: str, *, dir_fd=None, directory=False):
     Absolute source paths come from the caller's trusted parent directories.
     Descendants are opened by name relative to a held directory descriptor.
     """
-    if not (_NOFOLLOW and _DIRECTORY and _NONBLOCK):
-        raise OSError("workspace archives require no-follow filesystem operations")
+    if not (_NOFOLLOW and _DIRECTORY and _NONBLOCK and _DESCRIPTOR_SUPPORT):
+        raise ArchivePlatformUnsupported(
+            "workspace archiving requires descriptor-relative, no-follow filesystem operations"
+        )
     flags = _OPEN_FLAGS | _DIRECTORY if directory else _OPEN_FLAGS
     fd = os.open(path, flags, dir_fd=dir_fd)
     try:
@@ -74,20 +85,23 @@ def walk_archive_directory(root_fd: int, *, skip_unreadable_children=False):
     pending = [""]
     while pending:
         relative = pending.pop()
-        try:
-            with _open_relative_directory(root_fd, relative) as dir_fd:
-                dirs = {}
-                files = {}
-                with os.scandir(dir_fd) as entries:
-                    for entry in entries:
-                        info = entry.stat(follow_symlinks=False)
-                        if stat.S_ISDIR(info.st_mode):
-                            dirs[entry.name] = info
-                        elif stat.S_ISREG(info.st_mode):
-                            files[entry.name] = info
-                yield dir_fd, relative, dirs, files
-        except PermissionError:
-            if not relative or not skip_unreadable_children:
-                raise
-            continue
+        with ExitStack() as stack:
+            try:
+                dir_fd = stack.enter_context(_open_relative_directory(root_fd, relative))
+                with os.scandir(dir_fd) as scan:
+                    entries = list(scan)
+            except PermissionError:
+                if not relative or not skip_unreadable_children:
+                    raise
+                continue
+
+            dirs = {}
+            files = {}
+            for entry in entries:
+                info = entry.stat(follow_symlinks=False)
+                if stat.S_ISDIR(info.st_mode):
+                    dirs[entry.name] = info
+                elif stat.S_ISREG(info.st_mode):
+                    files[entry.name] = info
+            yield dir_fd, relative, dirs, files
         pending.extend(os.path.join(relative, name) for name in reversed(dirs))

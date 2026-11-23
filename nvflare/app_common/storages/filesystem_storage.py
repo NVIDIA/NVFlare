@@ -26,7 +26,8 @@ from zipfile import ZipFile, ZipInfo
 
 from nvflare.apis.storage import DATA, META, StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
-from nvflare.fuel.utils.archive_source import open_archive_entry, walk_archive_directory
+from nvflare.fuel.utils.archive_source import ArchivePlatformUnsupported, open_archive_entry, walk_archive_directory
+from nvflare.fuel.utils.zip_utils import validate_zip_member_name
 from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
@@ -75,6 +76,8 @@ def _write(path: str, content, mv_file=True):
     except Exception as e:
         if os.path.isfile(tmp_path):
             os.remove(tmp_path)
+        if isinstance(e, ArchivePlatformUnsupported):
+            raise
         raise StorageException(f"failed to write content: {secure_format_exception(e)}")
 
 
@@ -107,6 +110,7 @@ def _write_multi(output_zip_file_name: str, content: List[str]):
 
 def _zip_entry(name: str, info: os.stat_result) -> ZipInfo:
     entry = ZipInfo(name, time.localtime(info.st_mtime)[:6])
+    validate_zip_member_name(entry.filename)
     entry.external_attr = (info.st_mode & 0xFFFF) << 16
     return entry
 
