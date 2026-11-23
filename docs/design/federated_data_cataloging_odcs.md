@@ -13,6 +13,15 @@ Today `CatalogExecutor` selects a `CatalogConnector`, calls `read_catalog(datase
 
 PostgreSQL, Snowflake and Databricks Unity Catalog illustrate the live path. For PostgreSQL the importer inspects database catalog metadata. For Snowflake it connects to the configured account, database and schema. For Databricks it can look up the configured tables through the Unity Catalog API. All three yield ODCS documents. These upstream importers are candidates for FLARE integration; each still needs verification against the site's selection and credential requirements. [PostgreSQL importer](https://github.com/datacontract/datacontract-cli/blob/75160dcce44e4ffe3c0be1ca2a9093dd4a194705/datacontract/imports/postgres_importer.py) · [Snowflake importer](https://github.com/datacontract/datacontract-cli/blob/75160dcce44e4ffe3c0be1ca2a9093dd4a194705/datacontract/imports/snowflake_importer.py) · [Unity Catalog importer](https://github.com/datacontract/datacontract-cli/blob/75160dcce44e4ffe3c0be1ca2a9093dd4a194705/datacontract/imports/unity_importer.py)
 
+At the per-dataset call site, the executor supplies the authenticated site name for generated contract IDs and a secret lookup scoped to that dataset. The reader chooses the source from site configuration.
+
+```python
+contract = read_odcs(dataset, secret, remaining_limits, site=site_name)
+catalogs.append({"dataset": dataset.name, "contract": contract})
+```
+
+A configured contract file takes precedence. CSV imports use only a bounded header projection. For SQL, DuckDB, Parquet and Unity Catalog, the reader can retain the existing bounded metadata queries and footer reads to generate native ODCS. A new warehouse driver needs verification against its actual deployment before it is listed as supported. The Python importer and schema ship in the optional `nvflare[catalog]` extra.
+
 The executor continues to obtain the job’s Study configuration and handle request selection, cancellation, read budgets and per-dataset outcomes. The reader owns source access and ODCS production. The server handles results from authenticated sites. A reader failure marks that dataset unavailable and allows the site to return its other documents. A budget stop retains the existing `skipped` outcome. [Existing executor call site](https://github.com/NVIDIA/NVFlare/blob/d03b6658ff7553b223da3c87a41d4c248125acf6/nvflare/app_common/fdn/catalog/site/executor.py) · [Upstream import API](https://github.com/datacontract/datacontract-cli/blob/75160dcce44e4ffe3c0be1ca2a9093dd4a194705/datacontract/data_contract.py)
 
 ## How the site chooses the source
@@ -42,7 +51,7 @@ studies:
 
 For this configuration, the job reads the registry contract without contacting PostgreSQL, imports the visits CSV and applies the header-name filter, and asks the PostgreSQL importer for the measurements schema. An unreadable or invalid registry contract produces an unavailable result for that dataset. It never triggers live discovery. A deployed site makes the contract file available to its job through the same workspace or read-only Study mounts used for other file inputs.
 
-The core PR currently rejects every per-dataset `usage.catalog` entry. The ODCS implementation must accept exactly the new contract reference there and continue to reject obsolete sharing and exclusion rules, including a mixture of old and new keys. When the reference is absent, the configured source determines whether the reader opens a file or connects to a service. Publication boundaries remain the steward-approved file or the site’s configured source access. No catalog policy file is needed.
+The executor accepts exactly the new contract reference there and rejects obsolete sharing and exclusion rules, including a mixture of old and new keys. When the reference is absent, the configured source determines whether the reader opens a file or connects to a service. Publication boundaries remain the steward-approved file or the site’s configured source access. No catalog policy file is needed.
 
 ## What gets published
 
@@ -74,7 +83,7 @@ schema:
 
 Preserve the `get_catalog(env, sites=..., datasets=..., output_path=...)` entry point. The job stores each ODCS document as a standalone file, along with a small FLARE index recording the Study, job, site outcomes and which file belongs to each successful `(site, dataset)`. The controller assigns file paths under the job output directory from trusted identities or opaque IDs. Sites never supply output paths. Sites can publish the same dataset name or even the same contract ID without overwriting each other.
 
-A downloaded job output can contain `catalog/index.json` and `catalog/contracts/0001.odcs.yaml`. Standard ODCS tooling can consume the contract files directly. The Python helper reads the index and files and returns a dict with `sites` and `datasets`; each successful entry has `site`, `dataset` and `contract`. If requested, `output_path` saves that assembled snapshot. Give the new index and snapshot a FLARE `format_version` of 2 to distinguish them from saved version 1 results. The controller isolates malformed documents or replies and records failures without discarding other sites’ results. It does not perform catalog-specific interpretation of ODCS fields.
+A downloaded job output can contain `catalog/index.json` and `catalog/contracts/<digest>.odcs.json`. Standard ODCS tooling can consume the contract files directly. The Python helper reads the index and files and returns a dict with `sites` and `datasets`; each successful entry has `site`, `dataset` and `contract`. If requested, `output_path` saves that assembled snapshot. Give the new index and snapshot a FLARE `format_version` of 2 to distinguish them from saved version 1 results. The controller isolates malformed documents or replies and records failures without discarding other sites’ results. It does not perform catalog-specific interpretation of ODCS fields.
 
 ```python
 from nvflare.recipe.catalog import get_catalog
@@ -90,7 +99,7 @@ Keep the cross-site comparison in FLARE. Read ODCS object and property names dir
 
 ## Adoption in the implementation and examples
 
-The existing [core implementation](https://github.com/NVIDIA/NVFlare/pull/5738) and [examples](https://github.com/NVIDIA/NVFlare/pull/5740) implement the FLARE-specific baseline. Switching the reader and switching its consumers must ship together. Adding the ODCS license to the core PR only records the standard’s license.
+The existing [core implementation](https://github.com/NVIDIA/NVFlare/pull/5738) and [examples](https://github.com/NVIDIA/NVFlare/pull/5740) must be deployed together for the version 2 wire format.
 
 1. Exercise both file formats through the same reader. A supplied contract retains its approved descriptions. For CSV, check that files with identical headers and different row values publish identical schema sections, including the header-only file case. Assert that column properties have exactly the key `name` and that the serialized contract contains neither a distinctive sample value nor the local path. A missing supplied file must never open a live source.
 2. Compare each proposed upstream importer with the sources the existing examples exercise. Single-file and directory Parquet are distinct cases. Live SQLite, DuckDB, PostgreSQL with selected views, and paginated Unity Catalog each need a check for selection scope, reported types and keys, site credentials, and bounded work. A generic SQL DDL importer does not establish live database support. Where upstream cannot meet a required case, use a focused source reader that emits ODCS directly or a steward-provided contract. Retire each baseline connector once its supported inputs have a verified replacement.
