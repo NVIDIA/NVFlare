@@ -75,17 +75,17 @@ def _csv_schema(dataset, limits):
     path = local_path(dataset)
     if not path.is_file():
         raise ConnectorError("CSV file unavailable")
-    with path.open("rb") as stream:
+    # newline="" lets csv.reader handle CR, LF and CRLF, including quoted multiline names.
+    # Decode strictly only for header lines consumed by the parser, regardless of buffered row bytes.
+    with path.open("r", encoding="utf-8-sig", errors="surrogateescape", newline="") as stream:
 
         def header_lines():
             remaining = 1024 * 1024
-            encoding = "utf-8-sig"
             while line := stream.readline(remaining + 1):
-                remaining -= len(line)
+                remaining -= len(line.encode("utf-8"))
                 if remaining < 0:
                     raise ConnectorError("CSV header exceeds the read budget", budget=True)
-                yield line.decode(encoding)
-                encoding = "utf-8"
+                yield line
 
         names = next(csv.reader(header_lines(), strict=True), [])
     if not names or any(not name.strip() for name in names) or len(set(names)) != len(names):

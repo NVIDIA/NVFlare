@@ -42,6 +42,16 @@ def test_csv_projects_only_original_header_names(tmp_path):
     assert docs[0]["id"] != read_odcs(dataset, secret, LIMITS, site="site-2")["id"]
 
 
+@pytest.mark.parametrize("newline", ["\r", "\r\n", "\n"])
+def test_csv_header_preserves_quoted_line_endings_and_ignores_row_encoding(tmp_path, newline):
+    pytest.importorskip("datacontract")
+    path = tmp_path / "visits.csv"
+    path.write_bytes(f'id,"visit{newline}date"{newline}'.encode() + b"1,\xff")
+    dataset, secret = dataset_config(path=path, type_="csv")
+    contract = read_odcs(dataset, secret, LIMITS, site="one")
+    assert contract["schema"][0]["properties"] == [{"name": "id"}, {"name": f"visit{newline}date"}]
+
+
 @pytest.mark.parametrize("content", ["", "id,id\n", 'a,""\n', '"unterminated\n'])
 def test_invalid_csv_header_is_refused(tmp_path, content):
     import csv

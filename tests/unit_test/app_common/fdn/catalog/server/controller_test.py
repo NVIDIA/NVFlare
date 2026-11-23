@@ -266,7 +266,21 @@ class TestStart:
 
 class TestArguments:
     @pytest.mark.parametrize(
-        "datasets", [{}, [], ["omop"], "omop", {"a": []}, {"a": [1]}, {"a": [""]}, {"": ["x"]}, {"a": "x"}]
+        "datasets",
+        [
+            {},
+            [],
+            ["omop"],
+            "omop",
+            {"a": []},
+            {"a": [1]},
+            {"a": [""]},
+            {"": ["x"]},
+            {"a": "x"},
+            {"a": ["x", "x"]},
+            {"a": ["x" * 257]},
+            {"a": None},
+        ],
     )
     def test_bad_datasets(self, datasets):
         with pytest.raises(PayloadError):

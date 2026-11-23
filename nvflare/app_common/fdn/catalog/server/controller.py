@@ -35,6 +35,7 @@ from nvflare.app_common.fdn.catalog.common.artifacts import write_index
 from nvflare.app_common.fdn.catalog.common.payload import (
     CATALOG_JOB_META,
     CATALOG_READ_KEY,
+    FORMAT_VERSION,
     RESULTS_FILE,
     TASK_NAME,
     PayloadError,
@@ -45,6 +46,7 @@ from nvflare.app_common.fdn.catalog.common.payload import (
     build_catalog_results,
     build_task_payload,
     parse_result,
+    parse_task_payload,
     task_time_budget,
 )
 from nvflare.app_common.fdn.catalog.common.schema import DEFAULT_LIMITS, ReadLimits
@@ -71,18 +73,12 @@ class CatalogController(Controller):
         among the job's clients (offline, or not scheduled) is recorded as NO_RESULT instead of being left out."""
         super().__init__()
         if datasets is not None and not (
-            isinstance(datasets, dict)
-            and datasets
-            and all(
-                isinstance(site, str)
-                and site
-                and isinstance(names, list)
-                and names
-                and all(isinstance(n, str) and n for n in names)
-                for site, names in datasets.items()
-            )
+            isinstance(datasets, dict) and datasets and all(isinstance(site, str) and site for site in datasets)
         ):
             raise PayloadError("datasets must map each site to a non-empty list of names")
+        for names in (datasets or {}).values():
+            # Reject invalid selections at submission using the same rules as the recipient.
+            parse_task_payload({"format_version": FORMAT_VERSION, "datasets": names})
         if type(task_timeout_s) is not int or task_timeout_s <= 0:
             raise PayloadError("task_timeout_s must be a positive integer")
         if sites is not None and not (
