@@ -1,16 +1,18 @@
 # Federated data catalog
 
-A researcher calls `get_catalog(env)` to discover the datasets available to a Study. Each site reads its Study configuration and returns one Open Data Contract Standard (ODCS) document for each dataset it can publish. The server collects the documents and reports the outcome for each site. [ODCS v3.2.0](https://github.com/bitol-io/open-data-contract-standard/releases/tag/v3.2.0)
+Every `get_catalog(env)` request reads current metadata directly from the datasets configured for the Study. For the first request, the site needs only its source configuration in `local/datasets.yaml` and access to the source. The dataset URI points to the database, catalog service or data file itself. No pre-existing catalog document is required.
+
+The site generates one Open Data Contract Standard (ODCS) document in memory for each dataset it successfully reads. The server saves those documents as job output and reports each site's outcome. A later request reads the sources again so it can discover schema changes. [ODCS v3.2.0](https://github.com/bitol-io/open-data-contract-standard/releases/tag/v3.2.0)
 
 ## Site execution
 
-For each selected dataset, `CatalogExecutor` calls `read_odcs(dataset, secret, budget, *, site)`. On the first request and each subsequent request, the reader discovers the current source metadata and generates an ODCS document in memory.
+For each selected dataset, `CatalogExecutor` calls `read_odcs(dataset, secret, budget, *, site)`.
 
 The site administrator configures the source address in `datasets.yaml`. FLARE translates that address and the dataset options into arguments for the pinned Data Contract CLI importer. The importer returns metadata in memory. FLARE selects the structural fields, builds the ODCS document and validates it before sending it to the server. [Upstream Python entry point](https://github.com/datacontract/datacontract-cli/blob/fc6452e457fc449c4bbd948db15d9cd4eccb73f2/datacontract/data_contract.py#L402)
 
 | Configured source | How the site obtains metadata |
 | --- | --- |
-| PostgreSQL | FLARE parses the PostgreSQL URI and calls `DataContract.import_from_source(format="postgres", ...)` with the hostname, port, database, schema, optional table selection and resolved credentials. The upstream importer connects to PostgreSQL and queries `information_schema` and `pg_catalog`. |
+| PostgreSQL | FLARE parses the PostgreSQL URI and calls `DataContract.import_from_source(format="postgres", ...)` with the hostname, port, database, schema, optional table selection and resolved credentials. The upstream importer queries `information_schema` and `pg_catalog` for the configured schema, then applies the table selection to the returned metadata. |
 | Unity Catalog | FLARE takes the service host from the HTTPS URI. When the site omits a table list, FLARE calls the Databricks SDK to list tables in the configured catalog and schema. It calls the upstream `unity` importer for each fully qualified table name. The importer retrieves the table metadata with `tables.get()`. |
 | SQLite or DuckDB | FLARE opens the database file read-only, extracts table definitions and passes them to the upstream `sql` importer as DDL. |
 | Parquet | FLARE compares the footer schemas of partition files and passes one representative file per table to the `parquet` importer. Published decimal types include precision and scale. |
@@ -55,7 +57,7 @@ usage:
     limits: {max_duration_s: 60, max_calls: 1000, max_records: 10000}
 ```
 
-The job reads the SQLite table definitions for `registry`, the CSV header for `visits`, and PostgreSQL metadata for the two selected tables in the `omop` schema of `clinical_warehouse`. The file URIs refer to source files accessible to the site job. Site-wide catalog limits apply across the selected datasets.
+For `registry`, the job opens the SQLite database and reads its table definitions. For `visits`, it opens the CSV data file and reads its header. For `clinical_records`, it queries metadata for the `omop` schema in `clinical_warehouse` and publishes the two selected tables. Site-wide catalog limits apply across the selected datasets.
 
 ## What gets published
 
@@ -83,7 +85,7 @@ schema:
 
 ## How a researcher gets and compares the results
 
-Researchers call `get_catalog(env, sites=..., datasets=..., output_path=...)`. The job stores each ODCS document as a standalone file, along with a small FLARE index recording the Study, job, site outcomes and which file belongs to each successful `(site, dataset)`. The controller assigns file paths under the job output directory from trusted identities or opaque IDs. Sites never supply output paths. Sites can publish the same dataset name or even the same contract ID without overwriting each other.
+Researchers call `get_catalog(env, sites=..., datasets=..., output_path=...)`. The server stores each generated ODCS document as a standalone output file, along with a small FLARE index recording the Study, job, site outcomes and which file belongs to each successful `(site, dataset)`. The controller assigns file paths under the job output directory from trusted identities or opaque IDs. Sites never supply output paths. Sites can publish the same dataset name or even the same contract ID without overwriting each other.
 
 A downloaded job output can contain `catalog/index.json` and `catalog/contracts/<digest>.odcs.json`. Standard ODCS tooling can consume the contract files directly. The Python helper reads the index and files and returns a dict with `sites` and `datasets`; each successful entry has `site`, `dataset` and `contract`. If requested, `output_path` saves that assembled snapshot. Both the index and snapshot use FLARE `format_version: 2`. The controller isolates malformed documents or replies and records failures without discarding other sites’ results. It does not perform catalog-specific interpretation of ODCS fields.
 
