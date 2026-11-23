@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 import os
 import queue
 import socket
@@ -82,6 +81,20 @@ class _FakeFlare:
         self._current = None
 
 
+def _round_weights(round_idx):
+    return {
+        "fc.weight": torch.tensor([[float(round_idx), 0.0], [0.0, -float(round_idx)]]),
+        "fc.bias": torch.tensor([0.5, -0.5]),
+    }
+
+
+def _val_loss_over_all_samples(round_idx, num_samples):
+    weights = _round_weights(round_idx)
+    inputs = torch.arange(num_samples, dtype=torch.float32).unsqueeze(1).repeat(1, 2)
+    logits = inputs @ weights["fc.weight"].T + weights["fc.bias"]
+    return torch.nn.functional.cross_entropy(logits, torch.arange(num_samples) % 2).item()
+
+
 def _worker(rank, port, result_queue, accelerator, num_samples, train_with_evaluation=False):
     import torch.nn.functional as F
     from pytorch_lightning.plugins.environments import LightningEnvironment
@@ -118,7 +131,7 @@ def _worker(rank, port, result_queue, accelerator, num_samples, train_with_evalu
         os.environ.update(
             MASTER_ADDR="127.0.0.1", MASTER_PORT=str(port), WORLD_SIZE="2", NODE_RANK="0", LOCAL_RANK=str(rank)
         )
-        weights = [{"fc.weight": torch.full((2, 2), float(r)), "fc.bias": torch.zeros(2)} for r in range(3)]
+        weights = [_round_weights(r) for r in range(3)]
         tasks = [("train", FLModel(params=weights[r], current_round=r)) for r in range(2)]
         tasks += [("evaluate", FLModel(params=weights[2])), ("submit_model", FLModel(params={}))]
         fake = _FakeFlare(tasks if rank == 0 else [], rank)
@@ -235,7 +248,8 @@ def test_step_sync_under_ddp_validates_each_global_model_on_all_ranks(accelerato
 
     assert rank0["global_step"] == rank1["global_step"] == 4
     assert rank0["sent_steps"] == [2, 2, "metrics"]
-    assert [metrics["val_loss"] for metrics in rank0["sent_metrics"]] == pytest.approx([math.log(2)] * 2)
+    expected = [_val_loss_over_all_samples(round_idx, num_samples=8) for round_idx in range(2)]
+    assert [metrics["val_loss"] for metrics in rank0["sent_metrics"]] == pytest.approx(expected)
     assert rank0["validated"] == rank1["validated"] == 5
     assert rank0["seen"] == rank1["seen"]
     assert [rank0["seen"][0][1], rank0["seen"][2][1]] == [0.0, 1.0]

@@ -190,17 +190,19 @@ The two kinds of validation differ:
   scores the global model received for the round. In step mode, set ``train_with_evaluation`` in the job
   config instead (see below).
 * **Local validation**: validation that Lightning runs inside ``fit()`` (``val_check_interval``, epoch
-  end) scores the site's own weights, not the new global model, in both modes. In step mode it is the only
-  validation during training. Its metrics, and ``ModelCheckpoint`` or ``EarlyStopping`` callbacks that
+  end) scores the site's own weights, not the new global model, in both modes. In step mode without
+  ``train_with_evaluation`` it is the only validation during training. Its metrics, and ``ModelCheckpoint`` or ``EarlyStopping`` callbacks that
   monitor them, describe the local model.
 
 With ``train_with_evaluation``, step mode validates each received global model right after loading it,
 on every rank, before training on it. It runs the same validation loop and dataloader as in-fit
 validation, and sends the metrics with that round's result, so the server can select the best global
 model by metric (for example with ``IntimeModelSelector``). This costs one validation pass per sync. The
-trainer needs validation batches (``val_dataloaders`` and ``limit_val_batches`` above 0), or ``fit()``
-raises at the first sync. That run is kept out of loggers, the progress-bar metrics, ``ModelCheckpoint``
-and ``EarlyStopping``, but other callbacks' validation hooks (``on_validation_end``, for example) see it.
+trainer needs validation batches (``val_dataloaders`` and ``limit_val_batches`` above 0) and
+``validation_step`` must log at least one metric with ``on_epoch=True``, or ``fit()`` raises at the first
+sync. The loggers and the progress-bar metrics receive nothing from that run, and ``ModelCheckpoint``,
+``EarlyStopping`` and ``WeightAveraging`` callbacks are left out of it, so it scores the received weights
+rather than an average. Other callbacks' validation hooks (``on_validation_end``, for example) see it.
 Under DDP, log validation metrics with ``sync_dist=True`` so the metrics sent by rank 0 cover the whole
 validation set.
 
