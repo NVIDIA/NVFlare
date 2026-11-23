@@ -368,8 +368,8 @@ and `finalizers <https://kubernetes.io/docs/concepts/overview/working-with-objec
 Per-study worker settings
 -------------------------
 
-Configure study datasets, secrets, environment, image, and scheduling in the
-site's ``local/study_runtime.yaml``:
+Configure study datasets, secrets, environment, image, and worker Pod settings
+in the site's ``local/study_runtime.yaml``:
 
 .. code-block:: yaml
 
@@ -393,14 +393,20 @@ site's ``local/study_runtime.yaml``:
            source: study-trust
            mount_path: /var/run/study-trust
        pod_template: pod_specs/cpu-cj.yaml
-       worker_scheduling:
-         nodeSelector:
-           pool: gpu
-         tolerations:
-           - key: dedicated
-             operator: Equal
-             value: gpu
-             effect: NoSchedule
+       worker_pod_template:
+         apiVersion: v1
+         kind: Pod
+         metadata:
+           labels:
+             workload: training
+         spec:
+           nodeSelector:
+             pool: gpu
+           tolerations:
+             - key: dedicated
+               operator: Equal
+               value: gpu
+               effect: NoSchedule
 
 In task mode the client parent resolves these settings when launching the job
 and applies them to each worker. Datasets mount at ``/data/<study>/<dataset>``
@@ -409,7 +415,8 @@ the PVC source and the container mount to read-only. Secret mounts are
 read-only and ``secret_env`` uses Kubernetes Secret key references. The claims and Secrets
 must exist in the worker namespace. Dataset claims must be separate from the
 jobs PVC, and study mounts must be outside the workspace. For a private
-registry, set the pull Secret on the worker service account.
+registry, configure ``spec.imagePullSecrets`` in the worker template or set the
+pull Secret on the worker service account.
 
 Study image and environment entries override the defaults in
 ``task_execution.launcher.args``. In compute constructor arguments such as
@@ -419,14 +426,27 @@ Study image and environment entries override the defaults in
 ``${secret:NAME}`` in Client API script arguments to resolve it when the
 script starts. The script path and arguments used to configure shared
 components must still resolve on the CJ.
-The optional ``worker_scheduling`` mapping accepts Kubernetes ``nodeSelector``,
-``affinity``, and ``tolerations`` fields. Kubernetes rejects unknown fields
-when validating the worker Pod.
-The existing ``pod_template`` still configures the CJ independently. Put any
-environment variables needed only by the CJ in its Pod template. If a CJ template previously included training
-mounts or Secret references directly, remove those entries and configure them
-in ``datasets``, ``secret_mounts``, or ``secret_env`` instead. Job-mode pods use
-their existing study settings and ignore ``worker_scheduling``.
+
+``worker_pod_template`` accepts an inline Pod manifest or a YAML file path
+relative to ``local/``. Use it to set Pod labels and annotations, placement
+options such as ``nodeSelector``, ``affinity``, ``tolerations``, and
+``topologySpreadConstraints``, or settings such as ``priorityClassName`` and
+``imagePullSecrets``. Kubernetes validates the resulting Pod with strict field
+validation.
+
+The launcher supplies the worker's name, namespace, identity labels and
+annotations, finalizer, service account, security settings, command, image,
+resources, and restart policy. It rejects sidecars, init and ephemeral
+containers, shared and host namespaces, host ports, direct node assignment,
+probes, lifecycle hooks, and legacy security annotations. Configure mounts, environment, and Secret references
+through the study runtime fields above. The launcher adds the job workspace
+mounts and rejects volumes, mounts, and environment entries in the template.
+
+The existing ``pod_template`` configures the CJ independently. Put environment
+variables needed only by the CJ in that template. If it previously included
+worker training mounts or Secret references directly, move them into
+``datasets``, ``secret_mounts``, or ``secret_env``. Job-mode pods continue
+to use the existing ``pod_template``.
 
 The worker always starts with the site's
 ``task_execution.launcher.args.python_path`` (default ``/usr/local/bin/python``).
@@ -464,11 +484,10 @@ the participant being checked. Use the intended Kubernetes context throughout.
    requested ``nvidia.com/gpu`` capacity. Driver visibility on the host does
    not establish device-plugin registration or CUDA access inside a Pod.
 
-2. **Verify the runtime used by the generated worker.** This adapter does not
-   set ``runtimeClassName``. GPU support must therefore work with the Pod's
-   actual admitted runtime, including any site admission changes. A smoke Pod
-   that explicitly sets ``runtimeClassName: nvidia`` does not test an unmodified
-   task Pod that omits it.
+2. **Verify the runtime used by the generated worker.** The worker uses the
+   cluster default unless the template or site admission sets
+   ``runtimeClassName``. Qualify GPU access with the runtime class the worker
+   actually receives.
 
    In a K3s environment using the NVIDIA container runtime, the operator can
    configure the relevant GPU nodes' default runtime using ``default-runtime:
@@ -482,8 +501,8 @@ the participant being checked. Use the intended Kubernetes context throughout.
    GPU-capable image.
 
 3. **Prove image pulls through the Kubernetes runtime.** The shared manifest
-   builder sets ``imagePullPolicy: Always`` for generated task Pods and default
-   CJ/SJ Pods. Building an image with Docker or importing it into containerd
+   builder defaults to ``imagePullPolicy: Always`` for worker, CJ, and SJ Pods
+   unless their template sets a pull policy. Building an image with Docker or importing it into containerd
    does not establish that a fresh generated Pod can pull it. Pin the registry
    digest in the job and site worker configuration; verify the exact reference
    from every eligible node, then launch a fresh smoke Pod using ``Always``.

@@ -100,7 +100,7 @@ class _JobTransferRecord:
 def _safe_rel_path(path: str) -> str | None:
     if not isinstance(path, str) or not path:
         return None
-    normalized = posixpath.normpath(path.replace("\\", "/").replace(os.sep, "/"))
+    normalized = posixpath.normpath(path.replace(os.sep, "/"))
     if normalized in ("", "."):
         return None
     rel_path = PurePosixPath(normalized)
@@ -128,12 +128,12 @@ def _add_study_runtime_excludes(excluded_paths: set[str], workspace_root: str) -
     for study_config in studies.values():
         if not isinstance(study_config, dict):
             continue
-        pod_template = study_config.get("pod_template")
-        if not isinstance(pod_template, str) or not pod_template:
-            continue
-        pod_template_rel_path = _safe_rel_path(posixpath.join("local", pod_template))
-        if pod_template_rel_path:
-            excluded_paths.add(pod_template_rel_path)
+        for field in ("pod_template", "worker_pod_template"):
+            pod_template = study_config.get(field)
+            if isinstance(pod_template, str) and pod_template:
+                path = _safe_rel_path(pod_template)
+                if path:
+                    excluded_paths.add(posixpath.join("local", path))
 
 
 def _workspace_download_excludes(workspace_root: str) -> frozenset[str]:

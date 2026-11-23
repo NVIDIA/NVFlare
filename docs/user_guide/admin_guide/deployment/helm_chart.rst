@@ -514,7 +514,7 @@ code mounts the dataset at ``/data/<study>/<dataset>``, for example
 a job's study mean no study-data PVCs are mounted for that job. The same file
 also configures per-study env vars, secret-backed env vars and mounts, and Pod
 templates; the launcher re-reads it on every job launch. Any template files
-referenced by ``pod_template`` must be staged with ``local/``.
+referenced by ``pod_template`` or ``worker_pod_template`` must be staged with ``local/``.
 
 The v1 ``local/study_data.yaml`` format and the launcher's
 ``study_data_pvc_file_path`` argument were removed in 2.10. A launcher refuses to
@@ -524,8 +524,8 @@ and delete ``study_data.yaml``.
 When a study's ``local/study_runtime.yaml`` entry sets ``pod_template``,
 matching jobs use the study-specific CJ Pod template. In job mode, ``datasets``
 entries from the same study are added to that Pod as PVC volume mounts. In task
-mode, the worker gets those mounts and can be scheduled independently. See
-:ref:`kubernetes_task_study_runtime`. The launcher owns the ``workspace-job``
+mode, workers get those mounts and can use a separate ``worker_pod_template``.
+See :ref:`kubernetes_task_study_runtime`. The launcher owns the ``workspace-job``
 and ``startup-kit`` volumes and container mounts. The workspace uses an
 ``emptyDir`` by default and the assigned jobs PVC subPath for persistent CJs.
 

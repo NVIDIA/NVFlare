@@ -90,7 +90,7 @@ def test_manifest_identity_authority_storage_and_native_resources(setup):
 
 def test_worker_creation_rejects_unknown_affinity_fields(setup):
     launcher, api, request, _, _ = setup
-    launcher.worker_scheduling = {"affinity": {"node_affinity": {}}}
+    launcher.pod_template = {"spec": {"affinity": {"node_affinity": {}}}}
     create = api.create_namespaced_pod
 
     def validate_fields(*, body, **kwargs):

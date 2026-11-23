@@ -46,6 +46,7 @@ from nvflare.app_opt.job_launcher.k8s_pod import (
     get_container_waiting_failure,
     normalize_image_pull_secrets,
     pod_shutdown_confirmed,
+    validate_isolated_pod,
 )
 from nvflare.app_opt.job_launcher.study_runtime import (
     load_study_runtime_file,
@@ -1407,13 +1408,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             return
 
         spec = manifest["spec"]
-        if (
-            len(spec["containers"]) != 1
-            or spec.get("initContainers")
-            or spec.get("ephemeralContainers")
-            or any(spec.get(name) for name in ("hostPID", "hostIPC", "hostNetwork"))
-        ):
-            raise ValueError("the persistent Kubernetes CJ profile requires one isolated container")
+        validate_isolated_pod(spec, "persistent Kubernetes CJ")
         volumes = [volume for volume in spec["volumes"] if volume["name"] == "workspace-job"]
         if len(volumes) != 1:
             raise ValueError("persistent CJ requires the resident workspace-job volume")

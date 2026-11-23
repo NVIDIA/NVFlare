@@ -14,7 +14,6 @@
 
 """Site-owned Kubernetes task execution with native CPU/GPU admission."""
 
-import copy
 import hashlib
 import ipaddress
 import json
@@ -53,8 +52,11 @@ from nvflare.app_opt.job_launcher.k8s_launcher import (
 )
 from nvflare.app_opt.job_launcher.k8s_pod import (
     build_pod_manifest,
+    ensure_manifest_mapping,
     get_container_waiting_failure,
     pod_shutdown_confirmed,
+    prepare_pod_manifest_template,
+    validate_isolated_pod,
 )
 from nvflare.job_config.task_execution import reject_job_gpu_reservation
 from nvflare.private.fed.client.task_execution_policy import FORBIDDEN_ENVIRONMENT_NAMES, GPU_ENVIRONMENT_NAMES
@@ -309,6 +311,61 @@ class _K8sTaskProfile(TaskLauncherSpec):
             raise ValueError("Kubernetes CP/CJ/task numeric UID/GID must match")
 
 
+def _prepare_worker_pod_template(template):
+    if template is None:
+        return None
+    manifest = prepare_pod_manifest_template(template)
+    spec = manifest["spec"]
+    validate_isolated_pod(spec, "Kubernetes task worker")
+    if manifest["apiVersion"] != "v1" or "status" in manifest:
+        raise ValueError("worker_pod_template must be a v1 Pod without status")
+
+    # Keep storage and execution under the launcher. A template can configure
+    # placement, image pulls, and other Pod settings without adding a second
+    # execution path or replacing the job's mounts.
+    container = spec["containers"][0]
+    forbidden = [f"spec.{key}" for key in ("nodeName", "resources", "shareProcessNamespace") if spec.get(key)]
+    forbidden.extend(f"spec.{key}" for key in ("volumes", "resourceClaims") if spec.get(key) not in (None, []))
+    forbidden.extend(
+        f"spec.containers[0].{key}"
+        for key in ("env", "envFrom", "volumeMounts", "volumeDevices", "restartPolicyRules")
+        if container.get(key) not in (None, [])
+    )
+    forbidden.extend(
+        f"spec.containers[0].{key}"
+        for key in ("lifecycle", "startupProbe", "livenessProbe", "readinessProbe", "restartPolicy")
+        if container.get(key)
+    )
+    if forbidden:
+        raise ValueError(f"worker_pod_template cannot configure {', '.join(forbidden)}")
+    ports = container.get("ports")
+    if isinstance(ports, list) and any(
+        isinstance(port, dict) and (port.get("hostPort") or port.get("hostIP")) for port in ports
+    ):
+        raise ValueError("worker_pod_template cannot publish ports on the host")
+
+    # serviceAccount is the deprecated alias. The launcher sets the canonical field.
+    spec.pop("serviceAccount", None)
+    container.pop("name", None)
+    metadata = manifest["metadata"]
+    manifest["metadata"] = {
+        key: ensure_manifest_mapping(metadata, key, f"worker_pod_template metadata.{key}")
+        for key in ("labels", "annotations")
+        if key in metadata
+    }
+    # Some Kubernetes versions still interpret legacy security annotations.
+    legacy_security = (
+        "container.apparmor.security.beta.kubernetes.io/",
+        "container.seccomp.security.alpha.kubernetes.io/",
+        "seccomp.security.alpha.kubernetes.io/",
+    )
+    if any(
+        isinstance(key, str) and key.startswith(legacy_security) for key in manifest["metadata"].get("annotations", {})
+    ):
+        raise ValueError("worker_pod_template cannot configure legacy security annotations")
+    return manifest
+
+
 class K8sTaskBackend(_K8sTaskProfile):
     """CP-only Kubernetes authority. Never construct this from a CJ request."""
 
@@ -318,7 +375,9 @@ class K8sTaskBackend(_K8sTaskProfile):
         self.study_volumes, self.study_mounts, self.study_secret_env = study_pod_bindings(
             study_runtime, read_only_claims=True
         )
-        self.worker_scheduling = {}
+        self.pod_template = _prepare_worker_pod_template(
+            study_runtime.worker_pod_template if study_runtime is not None else None
+        )
         self.study_env_names = ""
         if study_runtime is not None:
             if any(dataset.source == self.workspace_pvc for dataset in study_runtime.datasets):
@@ -339,7 +398,6 @@ class K8sTaskBackend(_K8sTaskProfile):
             self.environment.update(study_runtime.env)
             for name in secret_names:
                 self.environment.pop(name, None)
-            self.worker_scheduling = copy.deepcopy(study_runtime.worker_scheduling)
             if study_runtime.env:
                 # Prevent kubelet from expanding $(...) inside a variable name.
                 self.study_env_names = json.dumps(sorted(study_runtime.env)).replace("$", r"\u0024")
@@ -420,14 +478,6 @@ class K8sTaskBackend(_K8sTaskProfile):
         identity = bootstrap.identity
         if request.identity != (identity.job_id, identity.site_name, identity.task_id, identity.attempt_id):
             raise ValueError("request and bootstrap identities differ")
-        with self._lock:
-            if not self._storage_checked:
-                check_posix_storage(self.storage_root)
-                self._storage_checked = True
-            if request.identity in self._identities:
-                raise TaskLauncherError("task attempt already owned; resubmit its saved result")
-            self._identities.add(request.identity)
-            api = self._api()
         owner = uuid.uuid4().hex
         digest = hashlib.sha256(json.dumps(request.identity).encode()).hexdigest()[:20]
         name = f"nvft-{digest}-{owner[:16]}"
@@ -449,40 +499,50 @@ class K8sTaskBackend(_K8sTaskProfile):
                     },
                 ]
                 + self.study_volumes,
-                "volume_mount_list": [
-                    {
-                        "name": "workspace",
-                        "mountPath": self.workspace_root,
-                        "subPath": job_workspace_subpath(request.job_id, request.site_name),
-                    },
-                    {
-                        "name": "startup-kit",
-                        "mountPath": os.path.join(self.workspace_root, "startup"),
-                        "readOnly": True,
-                    },
-                    {
-                        "name": "workspace",
-                        "mountPath": os.path.join(self.workspace_root, "local"),
-                        "readOnly": True,
-                        "subPath": job_workspace_subpath(request.job_id, request.site_name) + "/local",
-                    },
-                ]
-                + self.study_mounts,
             },
             python_path=self.python_path,
+            pod_manifest_template=self.pod_template,
             preserve_empty_env=True,
         )
-        manifest["spec"]["containers"][0]["workingDir"] = request.cwd
-        manifest["metadata"].update(
+        worker_container = manifest["spec"]["containers"][0]
+        worker_container["workingDir"] = request.cwd
+        # Mounts stay launcher-owned, including both mount points for the workspace volume.
+        workspace_subpath = job_workspace_subpath(request.job_id, request.site_name)
+        worker_container["volumeMounts"] = [
+            {
+                "name": "workspace",
+                "mountPath": self.workspace_root,
+                "subPath": workspace_subpath,
+            },
+            {
+                "name": "startup-kit",
+                "mountPath": os.path.join(self.workspace_root, "startup"),
+                "readOnly": True,
+            },
+            {
+                "name": "workspace",
+                "mountPath": os.path.join(self.workspace_root, "local"),
+                "readOnly": True,
+                "subPath": workspace_subpath + "/local",
+            },
+        ] + [mount.copy() for mount in self.study_mounts]
+        metadata = manifest["metadata"]
+        metadata.update(
             namespace=self.namespace,
             finalizers=[SETTLEMENT_FINALIZER],
             labels={
-                _LABEL_PREFIX + key: site_name_to_rfc1123(value, max_length=63)
-                for key, value in zip(("job", "site", "task", "attempt"), request.identity)
+                **metadata.get("labels", {}),
+                **{
+                    _LABEL_PREFIX + key: site_name_to_rfc1123(value, max_length=63)
+                    for key, value in zip(("job", "site", "task", "attempt"), request.identity)
+                },
             },
-            annotations={_OWNER_ANNOTATION: owner, _IDENTITY_ANNOTATION: json.dumps(request.identity)},
+            annotations={
+                **metadata.get("annotations", {}),
+                _OWNER_ANNOTATION: owner,
+                _IDENTITY_ANNOTATION: json.dumps(request.identity),
+            },
         )
-        manifest["spec"].update(copy.deepcopy(self.worker_scheduling))
         manifest["spec"].update(
             automountServiceAccountToken=False,
             serviceAccountName=self.worker_service_account,
@@ -490,10 +550,18 @@ class K8sTaskBackend(_K8sTaskProfile):
             enableServiceLinks=False,
             securityContext=self.security_context,
         )
-        manifest["spec"]["containers"][0]["securityContext"] = {
+        worker_container["securityContext"] = {
             "allowPrivilegeEscalation": False,
             "capabilities": {"drop": ["ALL"]},
         }
+        with self._lock:
+            if not self._storage_checked:
+                check_posix_storage(self.storage_root)
+                self._storage_checked = True
+            if request.identity in self._identities:
+                raise TaskLauncherError("task attempt already owned; resubmit its saved result")
+            api = self._api()
+            self._identities.add(request.identity)
         handle = K8sTaskHandle(self, request, name, owner)
         try:
             pod = api.create_namespaced_pod(

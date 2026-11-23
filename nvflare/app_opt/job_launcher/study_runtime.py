@@ -42,7 +42,7 @@ _RESERVED_DATASET_TYPES = {"databricks"}
 _STUDY_KEYS = {
     "container",
     "pod_template",
-    "worker_scheduling",
+    "worker_pod_template",
     "docker_kwargs",
     "datasets",
     "env",
@@ -150,7 +150,7 @@ class StudyRuntime:
     secret_mounts: list = field(default_factory=list)  # list[SecretMount]
     container_image: Optional[str] = None
     pod_template: Optional[dict] = None
-    worker_scheduling: dict = field(default_factory=dict)
+    worker_pod_template: Optional[dict] = None
     docker_kwargs: dict = field(default_factory=dict)
     slurm: dict = field(default_factory=dict)
 
@@ -243,17 +243,17 @@ def _safe_relative_path(value: str, label: str, file_path: str) -> str:
     return normalized
 
 
-def _load_pod_template_file(template_path: str, file_path: str) -> dict:
+def _load_pod_template_file(template_path: str, file_path: str, field_name: str) -> dict:
     try:
         with open(template_path, "rt") as f:
             pod_template = yaml.safe_load(f)
     except FileNotFoundError as e:
-        raise _error(file_path, f"pod_template file '{template_path}' was not found.") from e
+        raise _error(file_path, f"{field_name} file '{template_path}' was not found.") from e
     except OSError as e:
-        raise _error(file_path, f"could not read pod_template file '{template_path}': {e}") from e
+        raise _error(file_path, f"could not read {field_name} file '{template_path}': {e}") from e
     except yaml.YAMLError as e:
-        raise _error(file_path, f"could not parse pod_template file '{template_path}': {e}") from e
-    return _validate_pod_template(pod_template, f"pod_template file '{template_path}'", file_path)
+        raise _error(file_path, f"could not parse {field_name} file '{template_path}': {e}") from e
+    return _validate_pod_template(pod_template, f"{field_name} file '{template_path}'", file_path)
 
 
 def _validate_pod_template(pod_template, label: str, file_path: str) -> dict:
@@ -264,14 +264,14 @@ def _validate_pod_template(pod_template, label: str, file_path: str) -> dict:
     return pod_template
 
 
-def _parse_pod_template(value, file_path: str, launcher_mode: str) -> dict:
+def _parse_pod_template(value, file_path: str, launcher_mode: str, field_name: str = "pod_template") -> dict:
     if launcher_mode != "k8s":
-        raise _error(file_path, "pod_template is Kubernetes-only and is not supported by this launcher.")
+        raise _error(file_path, f"{field_name} is Kubernetes-only and is not supported by this launcher.")
     if isinstance(value, str):
-        rel_path = _safe_relative_path(_require_str(value, "pod_template", file_path), "pod_template", file_path)
+        rel_path = _safe_relative_path(_require_str(value, field_name, file_path), field_name, file_path)
         template_path = os.path.join(os.path.dirname(file_path), *rel_path.split("/"))
-        return _load_pod_template_file(template_path, file_path)
-    return _validate_pod_template(value, "inline pod_template", file_path)
+        return _load_pod_template_file(template_path, file_path, field_name)
+    return _validate_pod_template(value, f"inline {field_name}", file_path)
 
 
 def _parse_docker_kwargs(study: str, entry, file_path: str, launcher_mode: str) -> dict:
@@ -449,25 +449,6 @@ def _parse_slurm(study: str, entry, file_path: str) -> dict:
     return result
 
 
-def _parse_worker_scheduling(study: str, entry, file_path: str, launcher_mode: str) -> dict:
-    label = f"studies.{study}.worker_scheduling"
-    if launcher_mode != "k8s":
-        raise _error(file_path, f"{label} is Kubernetes-only.")
-    entry = _require_dict(entry, label, file_path)
-    _require_known_keys(entry, {"nodeSelector", "affinity", "tolerations"}, label, file_path)
-    if "nodeSelector" in entry:
-        selector = _require_dict(entry["nodeSelector"], f"{label}.nodeSelector", file_path)
-        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in selector.items()):
-            raise _error(file_path, f"{label}.nodeSelector keys and values must be strings.")
-    if "affinity" in entry:
-        _require_dict(entry["affinity"], f"{label}.affinity", file_path)
-    if "tolerations" in entry and (
-        not isinstance(entry["tolerations"], list) or any(not isinstance(t, dict) for t in entry["tolerations"])
-    ):
-        raise _error(file_path, f"{label}.tolerations must be a list of mappings.")
-    return entry
-
-
 def _parse_study(
     study: str,
     entry,
@@ -489,9 +470,9 @@ def _parse_study(
         runtime.container_image = _parse_container(study, entry["container"], file_path, launcher_mode)
     if "pod_template" in entry:
         runtime.pod_template = _parse_pod_template(entry["pod_template"], file_path, launcher_mode)
-    if "worker_scheduling" in entry:
-        runtime.worker_scheduling = _parse_worker_scheduling(
-            study, entry["worker_scheduling"], file_path, launcher_mode
+    if "worker_pod_template" in entry:
+        runtime.worker_pod_template = _parse_pod_template(
+            entry["worker_pod_template"], file_path, launcher_mode, "worker_pod_template"
         )
     if "docker_kwargs" in entry:
         runtime.docker_kwargs = _parse_docker_kwargs(study, entry["docker_kwargs"], file_path, launcher_mode)

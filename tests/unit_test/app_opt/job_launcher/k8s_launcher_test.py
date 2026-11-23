@@ -4046,15 +4046,42 @@ studies:
       spec:
         nodeSelector: {pool: coordinators}
         containers: [{name: nvflare_job}]
-    worker_scheduling:
-      nodeSelector: {pool: gpu}
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 1
-              preference:
-                matchExpressions: [{key: capacity, operator: In, values: [spot]}]
-      tolerations: [{key: gpu, operator: Exists, effect: NoSchedule}]
+    worker_pod_template: worker.yaml
+"""
+    )
+    (tmp_path / "local" / "worker.yaml").write_text(
+        """
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unused-name
+  namespace: wrong-namespace
+  finalizers: [example.com/template-finalizer]
+  labels: {workload: training, nvflare.nvidia.com/attempt: unused-attempt}
+  annotations:
+    example.com/monitor: "true"
+    nvflare.nvidia.com/task-identity: unused-identity
+spec:
+  nodeSelector: {pool: gpu}
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 1
+          preference:
+            matchExpressions: [{key: capacity, operator: In, values: [spot]}]
+  tolerations: [{key: gpu, operator: Exists, effect: NoSchedule}]
+  priorityClassName: training
+  imagePullSecrets: [{name: training-registry}]
+  restartPolicy: Always
+  automountServiceAccountToken: true
+  serviceAccountName: unused-account
+  containers:
+    - name: template
+      image: unused-image
+      command: [unused-command]
+      workingDir: /unused-directory
+      ports: [{name: metrics, containerPort: 9090}]
+      securityContext: {privileged: true}
 """
     )
     with caplog.at_level("INFO", logger=launcher.logger.name):
@@ -4063,6 +4090,7 @@ studies:
     cj = cj_spec["containers"][0]
     assert cj_spec["nodeSelector"] == {"pool": "coordinators"}
     assert "affinity" not in cj_spec and "tolerations" not in cj_spec
+    assert "workload" not in handle.pod_manifest["metadata"].get("labels", {})
     assert cj["image"] == ("site/image" if cj_image_override else "site/study-worker")
     assert ("Using study image site/study-worker for the task-mode CJ" in caplog.text) == (not cj_image_override)
 
@@ -4097,9 +4125,25 @@ studies:
         assert spec["restartPolicy"] == "Never"
         assert spec["automountServiceAccountToken"] is False
         assert spec["serviceAccountName"] == "task-no-api"
-        assert api.manifest["metadata"]["finalizers"] == [SETTLEMENT_FINALIZER]
-        workspace_mount = next(m for m in container["volumeMounts"] if m["mountPath"] == cwd)
-        assert workspace_mount["subPath"] == job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+        metadata = api.manifest["metadata"]
+        assert metadata["name"].startswith("nvft-")
+        assert metadata["namespace"] == "site"
+        assert metadata["finalizers"] == [SETTLEMENT_FINALIZER]
+        assert metadata["labels"]["workload"] == "training"
+        assert metadata["labels"]["nvflare.nvidia.com/attempt"] != "unused-attempt"
+        assert metadata["annotations"]["example.com/monitor"] == "true"
+        assert json.loads(metadata["annotations"]["nvflare.nvidia.com/task-identity"]) == list(request.identity)
+        assert container["command"] == ["/usr/local/bin/python"]
+        assert container["workingDir"] == cwd
+        assert container["ports"] == [{"name": "metrics", "containerPort": 9090}]
+        assert not container["securityContext"].get("privileged")
+        assert spec["priorityClassName"] == "training"
+        assert spec["imagePullSecrets"] == [{"name": "training-registry"}]
+        subpath = job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+        assert {m["mountPath"]: m["subPath"] for m in container["volumeMounts"] if m["name"] == "workspace"} == {
+            cwd: subpath,
+            cwd + "/local": subpath + "/local",
+        }
         assert container["image"] == "site/study-worker"
         assert {"name": ENV_WORKER_CONFIG_VARS, "value": deferred_names} in container["env"]
         assert spec["nodeSelector"] == {"pool": "gpu"}
@@ -4142,7 +4186,26 @@ studies:
             "overlaps the worker workspace",
         ),
         ("secret_env: {NVIDIA_VISIBLE_DEVICES: {source: config, key: gpu}}", "reserved names"),
-        ("worker_scheduling: {hostNetwork: true}", "unknown key"),
+        ("worker_pod_template: {spec: {hostNetwork: true}}", "one isolated container"),
+        ("worker_pod_template: {spec: {containers: [{}, {}]}}", "one isolated container"),
+        ("worker_pod_template: {spec: {containers: [{env: {}}]}}", "cannot configure spec.containers[0].env"),
+        (
+            "worker_pod_template: {metadata: {annotations: "
+            "{container.apparmor.security.beta.kubernetes.io/nvflare-task: unconfined}}}",
+            "cannot configure legacy security annotations",
+        ),
+        (
+            "worker_pod_template: {spec: {containers: [{ports: [{containerPort: 9090, hostPort: 9090}]}]}}",
+            "cannot publish ports on the host",
+        ),
+        (
+            "worker_pod_template: {spec: {volumes: [{name: extra, persistentVolumeClaim: {claimName: existing-pvc}}]}}",
+            "cannot configure spec.volumes",
+        ),
+        (
+            "worker_pod_template: {spec: {containers: [{volumeMounts: [{name: workspace, mountPath: /elsewhere}]}]}}",
+            "cannot configure spec.containers[0].volumeMounts",
+        ),
     ],
 )
 def test_invalid_study_worker_settings_prevent_cj_submission(tmp_path, monkeypatch, caplog, study_config, error):
@@ -4152,15 +4215,11 @@ def test_invalid_study_worker_settings_prevent_cj_submission(tmp_path, monkeypat
         f"format_version: 2\nstudies:\n  study-a:\n    {study_config}\n"
     )
 
-    if error == "unknown key":
-        with pytest.raises(ValueError, match=error):
-            launcher.launch_job(meta, fl_ctx)
-    else:
-        handle, service, _ = _launch_cp_job(launcher, meta, fl_ctx)
-        assert handle.terminal_return_code == JobReturnCode.EXCEPTION
-        assert error in caplog.text
-        launcher.core_v1.delete_namespaced_secret.assert_called_once_with(name="cj-credentials", namespace="site")
-        service.get_or_create.assert_not_called()
+    handle, service, _ = _launch_cp_job(launcher, meta, fl_ctx)
+    assert handle.terminal_return_code == JobReturnCode.EXCEPTION
+    assert error in caplog.text
+    launcher.core_v1.delete_namespaced_secret.assert_called_once_with(name="cj-credentials", namespace="site")
+    service.get_or_create.assert_not_called()
     launcher.core_v1.create_namespaced_pod.assert_not_called()
     assert not (pvc_root / job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)).exists()
 
