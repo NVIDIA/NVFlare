@@ -200,6 +200,13 @@ class TestValidation:
         config = parse(with_dataset(type="sql", uri="postgresql://db/x?sslmode=require&application_name=flare"))
         assert config.get_dataset("d").path is None
 
+    @pytest.mark.parametrize("separator", ["/", "?", "#"])
+    @pytest.mark.parametrize("prefix", ["pw", "123"])
+    def test_unescaped_password_delimiter_is_rejected_without_echoing_it(self, separator, prefix):
+        with pytest.raises(DatasetConfigError) as error:
+            parse(with_dataset(type="sql", uri=f"postgresql://reader:{prefix}{separator}private@db/study"))
+        assert "private" not in str(error.value)
+
     def test_username_without_password_is_allowed(self):
         config = parse(with_dataset(type="sql", uri="postgresql://reader@host/db"))
         assert config.get_dataset("d").path is None

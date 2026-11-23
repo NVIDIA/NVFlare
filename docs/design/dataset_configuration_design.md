@@ -122,7 +122,7 @@ time an ODBC-aware consumer can resolve these through `get_secret(dataset, key)`
 A credential-free `odbc_connect` string also works for driver-managed authentication, such as an integrated
 connection. Embedded password attributes (including `PWD` and `Password`) are rejected.
 
-The credential check is best-effort: it cannot recognize a token used as a user name (`https://TOKEN@host`) or one hidden in a path. Sites must still keep credentials out of `uri`. Error messages name the offending parameter, never its value.
+A malformed port and an ambiguous database authority such as `reader:123/secret@host` are rejected before the URI is stored. Percent-encode a literal `@` in a database path or query. The credential check is best-effort: it cannot recognize a token used as a user name (`https://TOKEN@host`) or one hidden in a path. Sites must still keep credentials out of `uri`. Error messages name the offending parameter, never its value.
 
 The API does not check that a `file` path exists or that a network address answers; the component that reads the dataset reports that. Percent-encoding follows RFC 3986, so a space in a path is written `%20`. `DatasetConfig.path` returns the decoded local path of a `file` URI.
 

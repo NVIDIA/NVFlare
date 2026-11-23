@@ -133,7 +133,7 @@ def _check_odbc_connect(value: str, label: str, source: str):
         position = match.end()
 
 
-def _check_uri(uri, label: str, source: str) -> str | None:
+def _check_uri(uri, label: str, source: str, dataset_type: str) -> str | None:
     """Validate a dataset URI; return the decoded local path of a file URI, else None."""
     if not isinstance(uri, str) or not uri:
         raise _error(source, f"{label}.uri is required")
@@ -144,6 +144,33 @@ def _check_uri(uri, label: str, source: str) -> str | None:
         raise _error(source, f"{label}.uri is not a valid URI") from None
     if not parts.scheme or not _SCHEME.match(parts.scheme):
         raise _error(source, f"{label}.uri must be an absolute URI with a scheme")
+    # A raw /, ? or # inside user:password terminates the authority early.
+    # Force parsing the port so a truncated user:password prefix cannot pass as a host.
+    try:
+        _ = parts.port
+    except ValueError:
+        raise _error(source, f"{label}.uri has an invalid authority") from None
+    # SQLAlchemy-style database URLs accept raw delimiters in userinfo up to @.
+    # A numeric password prefix can otherwise masquerade as a valid port.
+    sql_dialect = parts.scheme.lower().split("+", 1)[0] in {
+        "postgres",
+        "postgresql",
+        "mysql",
+        "mariadb",
+        "mssql",
+        "oracle",
+        "snowflake",
+        "redshift",
+    }
+    if (
+        (dataset_type == "sql" or sql_dialect)
+        and ":" in parts.netloc
+        and "@" not in parts.netloc
+        and not parts.netloc.startswith("[")
+    ):
+        suffix = uri.partition("://")[2][len(parts.netloc) :]
+        if re.search(r"@[^/?#]+(?:[/?#]|$)", suffix):
+            raise _error(source, f"{label}.uri has ambiguous user information")
     if parts.password is not None:
         raise _error(source, f"{label}.uri must not contain a password; put credentials in secrets")
     for key, value in parse_qsl(parts.query, keep_blank_values=True):
@@ -179,7 +206,7 @@ def _dataset(study: str, name, entry, source: str) -> tuple[DatasetConfig, dict]
     dataset_type = entry.get("type")
     if not isinstance(dataset_type, str) or not dataset_type:
         raise _error(source, f"{label}.type is required")
-    path = _check_uri(entry.get("uri"), label, source)
+    path = _check_uri(entry.get("uri"), label, source, dataset_type)
     options = _mapping(entry.get("options"), f"{label}.options", source)
     secrets = _mapping(entry.get("secrets"), f"{label}.secrets", source)
     for key, variable in secrets.items():
