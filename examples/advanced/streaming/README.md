@@ -31,7 +31,8 @@ The top-level container type must exactly match one of the four supported types.
 raises `ValueError`. Use `dict(value)` to stream the entries and reconstruct any specialized behavior locally.
 The four supported types keep their wire names during a rolling upgrade. Update every server or client
 that receives container streams. A patched retriever reports `UNSUPPORTED_CONTAINER_TYPE` if an older
-sender streams an unsupported type.
+sender streams an unsupported type. A custom streaming engine can enable this response by
+implementing `StreamableEngine.get_stream_peer_origin()` with the authenticated endpoint for the retrieval.
 
 Note that the container streamer split the stream by the top level entries. All the sub entries of a top entry are expected to be
 sent as a whole, therefore the memory is determined by the largest entry at top level.

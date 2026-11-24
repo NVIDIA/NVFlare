@@ -20,7 +20,7 @@ from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model import ModelLearnableKey
+from nvflare.app_common.abstract.model import ModelLearnableKey, make_model_learnable
 
 
 class TestJoblibModelParamPersistorInit:
@@ -94,11 +94,38 @@ def test_pickle_checkpoint_load_requires_trusted_job_context(tmp_path, checkpoin
     fl_ctx.set_prop(FLContextKey.APP_ROOT, str(tmp_path))
     persistor.handle_event(EventType.START_RUN, fl_ctx)
 
-    if checkpoint_source == "implicit":
-        assert persistor.load_model(fl_ctx)[ModelLearnableKey.WEIGHTS] == params
-    else:
-        with pytest.raises(PermissionError, match="requires BYOC authorization"):
-            persistor.load_model(fl_ctx)
+    with pytest.raises(PermissionError, match="requires BYOC authorization"):
+        persistor.load_model(fl_ctx)
 
     fl_ctx.set_prop(FLContextKey.JOB_META, {AppValidationKey.BYOC: True})
     assert persistor.load_model(fl_ctx)[ModelLearnableKey.WEIGHTS] == {"checkpoint": True}
+
+
+def test_non_byoc_job_can_create_but_cannot_replace_checkpoint(tmp_path):
+    from joblib import load
+
+    from nvflare.app_opt.sklearn.joblib_model_param_persistor import JoblibModelParamPersistor
+
+    persistor = JoblibModelParamPersistor(initial_params={"n_clusters": 3})
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(FLContextKey.APP_ROOT, str(tmp_path))
+    persistor.handle_event(EventType.START_RUN, fl_ctx)
+
+    assert persistor.load_model(fl_ctx)[ModelLearnableKey.WEIGHTS] == {"n_clusters": 3}
+    original = make_model_learnable(weights={"n_clusters": 4}, meta_props={})
+    persistor.save_model(original, fl_ctx)
+    path = tmp_path / "model_param.joblib"
+    saved_bytes = path.read_bytes()
+    assert load(path) == {"n_clusters": 4}
+
+    with pytest.raises(PermissionError, match="Loading an existing Joblib checkpoint"):
+        persistor.load_model(fl_ctx)
+    replacement = make_model_learnable(weights={"n_clusters": 5}, meta_props={})
+    with pytest.raises(PermissionError, match="Replacing an existing Joblib checkpoint"):
+        persistor.save_model(replacement, fl_ctx)
+    assert path.read_bytes() == saved_bytes
+    assert list(tmp_path.iterdir()) == [path]
+
+    fl_ctx.set_prop(FLContextKey.JOB_META, {AppValidationKey.BYOC: True})
+    persistor.save_model(replacement, fl_ctx)
+    assert load(path) == {"n_clusters": 5}

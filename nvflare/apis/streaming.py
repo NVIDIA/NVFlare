@@ -167,6 +167,15 @@ def stream_done_cb_signature(stream_ctx: StreamContext, fl_ctx: FLContext, **kwa
 class StreamableEngine(ABC):
     """This class defines requirements for streaming capable engines."""
 
+    def get_stream_peer_origin(self, site_name: str, fl_ctx: FLContext) -> str | None:
+        """Return the expected authenticated origin of a retrieval from this site.
+
+        The origin must identify the actual remote endpoint selected by this
+        engine for the retrieval request. Return None when the engine cannot
+        supply an origin. Retrieval can still use normal stream completion.
+        """
+        return None
+
     @abstractmethod
     def stream_objects(
         self,

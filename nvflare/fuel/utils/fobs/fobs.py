@@ -147,16 +147,19 @@ class Packer:
                     return obj
                 decomposer = EnumTypeDecomposer(obj_type)
             else:
-                if callable(obj) or not hasattr(obj, "__dict__"):
-                    raise TypeError(f"{type(obj)} can't be serialized by FOBS without a decomposer")
-                if not _data_auto_registration:
-                    return obj
-                # The encoder and a fresh receiver use the same codec for built-ins.
+                # Built-in codecs also handle types without instance attributes.
                 expected_name = BUILTIN_TYPE_DECOMPOSERS.get(type_name)
-                if expected_name is None:
-                    decomposer = DataClassDecomposer(obj_type)
-                else:
+                if expected_name is None and type_name in _type_name_whitelist:
+                    expected_name = OPTIONAL_TYPE_DECOMPOSERS.get(type_name)
+
+                if expected_name is not None:
                     decomposer = _make_builtin_decomposer(type_name, expected_name)
+                else:
+                    if callable(obj) or not hasattr(obj, "__dict__"):
+                        raise TypeError(f"{type(obj)} can't be serialized by FOBS without a decomposer")
+                    if not _data_auto_registration:
+                        return obj
+                    decomposer = DataClassDecomposer(obj_type)
 
             # Auto-registered types remain session-only.
             register(decomposer)

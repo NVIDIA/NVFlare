@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+from tempfile import TemporaryDirectory
 from typing import Any, Dict, Optional
 
 from joblib import dump, load
@@ -58,7 +59,9 @@ class JoblibModelParamPersistor(ModelPersistor):
         It only stores and transmits parameter values (e.g., hyperparameters, weights).
         The sklearn model class is instantiated on the client side using these params.
         Loading a Joblib checkpoint requires a locally authorized BYOC job or a local
-        simulation because Joblib uses pickle. Other jobs initialize from initial_params.
+        simulation because Joblib uses pickle. Other jobs initialize from initial_params
+        and can create a checkpoint at a new path. An existing checkpoint requires
+        authorization to load or replace.
 
         Args:
             initial_params: Initial parameters dict (e.g., {"n_clusters": 3, "kernel": "rbf"}).
@@ -85,6 +88,13 @@ class JoblibModelParamPersistor(ModelPersistor):
             os.makedirs(self.log_dir)
         fl_ctx.sync_sticky()
 
+    @staticmethod
+    def _can_access_checkpoint(fl_ctx: FLContext) -> bool:
+        job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+        return fl_ctx.get_prop(FLContextKey.SIMULATE_MODE) is True or (
+            isinstance(job_meta, dict) and job_meta.get(AppValidationKey.BYOC) is True
+        )
+
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         """Initialize and load the Model.
 
@@ -96,10 +106,7 @@ class JoblibModelParamPersistor(ModelPersistor):
         """
         model = None
         initial_params = self.initial_params if isinstance(self.initial_params, dict) else {}
-        job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-        can_load_checkpoint = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE) is True or (
-            isinstance(job_meta, dict) and job_meta.get(AppValidationKey.BYOC) is True
-        )
+        can_load_checkpoint = self._can_access_checkpoint(fl_ctx)
 
         # Priority 1: Load from explicit model_path argument, or from initial_params (backward compat)
         path = self.model_path or initial_params.get(MODEL_PATH_KEY)
@@ -114,7 +121,11 @@ class JoblibModelParamPersistor(ModelPersistor):
             model = load(path)
 
         # Priority 2: Load from previously saved model
-        if model is None and can_load_checkpoint and os.path.exists(self.save_path):
+        if model is None and os.path.exists(self.save_path):
+            if not can_load_checkpoint:
+                raise PermissionError(
+                    "Loading an existing Joblib checkpoint requires BYOC authorization or local simulation"
+                )
             self.logger.info("Loading server model")
             model = load(self.save_path)
 
@@ -154,4 +165,21 @@ class JoblibModelParamPersistor(ModelPersistor):
                 self.logger.info(f"Saving received model to {os.path.abspath(self.save_path)}")
                 # save 'weights' which contains model parameters
                 model = model_learnable[ModelLearnableKey.WEIGHTS]
-                dump(model, self.save_path, compress=1)
+                if self._can_access_checkpoint(fl_ctx):
+                    dump(model, self.save_path, compress=1)
+                else:
+                    self._save_new_checkpoint(model)
+
+    def _save_new_checkpoint(self, model):
+        # Publish the completed checkpoint atomically without replacing a file
+        # that already exists, including one created during serialization.
+        destination_dir = os.path.dirname(os.path.abspath(self.save_path))
+        with TemporaryDirectory(dir=destination_dir) as staging_dir:
+            staged_path = os.path.join(staging_dir, "checkpoint.joblib")
+            dump(model, staged_path, compress=1)
+            try:
+                os.link(staged_path, self.save_path)
+            except FileExistsError as ex:
+                raise PermissionError(
+                    "Replacing an existing Joblib checkpoint requires BYOC authorization or local simulation"
+                ) from ex

@@ -22,7 +22,6 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import StreamContext
-from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.security.logging import secure_format_exception
 
 RETRIEVER_TX_ID = "_rtr_tx_id_"
@@ -171,10 +170,14 @@ class ObjectRetriever(FLComponent, ABC):
         self.log_debug(fl_ctx, f"set waiter for Rtr {tx_id}")
 
         try:
-            get_target = getattr(engine, "_get_aux_msg_target", None)
-            target = get_target(from_site) if get_target else None
-            if isinstance(target, AuxMsgTarget):
-                waiter.expected_origin = AuxRunner._get_target_fqcn(target, fl_ctx)
+            get_origin = getattr(engine, "get_stream_peer_origin", None)
+            if callable(get_origin):
+                try:
+                    waiter.expected_origin = get_origin(from_site, fl_ctx)
+                except Exception as ex:
+                    self.log_debug(
+                        fl_ctx, f"Could not resolve stream origin for {from_site}: {secure_format_exception(ex)}"
+                    )
 
             request = Shareable({RETRIEVER_TX_ID: tx_id})
             if obj_attrs:

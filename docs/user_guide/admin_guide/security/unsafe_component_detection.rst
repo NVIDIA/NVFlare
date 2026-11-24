@@ -97,7 +97,8 @@ For non-BYOC jobs, also allow the individual class paths configured in a
 ``DecomposerRegister`` widget and the model class paths loaded by the PyTorch and TensorFlow model persistors,
 the edge global evaluator, and the ExecuTorch shareable generator.
 Joblib checkpoint reads require BYOC authorization or a local simulation because Joblib uses pickle.
-Non-BYOC deployed jobs can use declarative ``initial_params`` to initialize the Joblib persistor.
+Non-BYOC deployed jobs can use declarative ``initial_params`` to initialize the Joblib persistor and
+save a checkpoint at a new path. An existing checkpoint requires authorization to load or replace.
 
 When BYOC is enabled for the job, this built-in class allow-list check is skipped because BYOC authorization already permits
 loading job-provided custom code.

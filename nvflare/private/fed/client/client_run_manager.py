@@ -241,6 +241,10 @@ class ClientRunManager(ClientEngineExecutorSpec, StreamableEngine):
         else:
             return {}
 
+    def get_stream_peer_origin(self, site_name: str, fl_ctx: FLContext) -> str | None:
+        target = self._get_aux_msg_target(site_name)
+        return AuxRunner._get_target_fqcn(target, fl_ctx) if target is not None else None
+
     def _get_aux_msg_target(self, name: str):
         if name.lower() == SiteType.SERVER_PARENT:
             return AuxMsgTarget.server_parent_target()

@@ -21,7 +21,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ProcessType, ReservedKey
 from nvflare.apis.fl_context import FLContextManager
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
-from nvflare.apis.streaming import StreamableEngine
+from nvflare.apis.streaming import StreamableEngine, StreamContextKey
 from nvflare.app_common.streamers.container_retriever import ContainerRetriever
 from nvflare.app_common.streamers.container_streamer import ContainerStreamer
 from nvflare.app_common.streamers.object_retriever import RETRIEVER_TX_ID
@@ -30,6 +30,7 @@ from nvflare.fuel.f3.message import Message
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.client.command_agent import CommandAgent
+from nvflare.private.fed.task_worker.runtime import TaskRuntime
 from nvflare.private.stream_runner import TOPIC_STREAM_ABORT, TOPIC_STREAM_REQUEST, HeaderKey, ObjectStreamer
 
 
@@ -121,14 +122,31 @@ def test_retriever_rejects_unsupported_container_at_registration():
     assert retriever.containers["model"] is container
 
 
-def test_legacy_container_rejection_completes_only_its_retrieval_from_the_expected_peer():
+@pytest.mark.parametrize(
+    "process_type, custom_route, expected_origin",
+    [
+        (ProcessType.CLIENT_JOB, False, "relay.source.job"),
+        (ProcessType.SERVER_PARENT, False, "relay.source"),
+        (ProcessType.SERVER_PARENT, True, "relay.source.job"),
+    ],
+)
+def test_legacy_container_rejection_completes_only_its_retrieval_from_the_expected_peer(
+    process_type, custom_route, expected_origin
+):
     engine = Mock(spec=ClientRunManager)
-    engine._get_aux_msg_target.return_value = AuxMsgTarget("source", "relay.source")
+    if custom_route:
+        del engine._get_aux_msg_target
+        engine.get_stream_peer_origin.return_value = expected_origin
+    else:
+        engine._get_aux_msg_target.return_value = AuxMsgTarget("source", "relay.source")
+        engine.get_stream_peer_origin.side_effect = lambda site, ctx: ClientRunManager.get_stream_peer_origin(
+            engine, site, ctx
+        )
     context_manager = FLContextManager(
         engine=engine,
         identity_name="receiver",
         job_id="job",
-        private_stickers={FLContextKey.PROCESS_TYPE: ProcessType.CLIENT_JOB},
+        private_stickers={FLContextKey.PROCESS_TYPE: process_type},
     )
     engine.new_context.side_effect = context_manager.new_context
     aux = AuxRunner(engine)
@@ -170,10 +188,12 @@ def test_legacy_container_rejection_completes_only_its_retrieval_from_the_expect
         assert targets == ["source"]
         retrieval_id = request[RETRIEVER_TX_ID]
         waiter = retriever.tx_table[retrieval_id]
+        wrong_origin = "relay.source" if expected_origin.endswith(".job") else "relay.source.job"
         for origin, stream_id, claimed_retrieval in (
-            ("relay.source.job", "wrong-request", "different-retrieval"),
+            (expected_origin, "wrong-request", "different-retrieval"),
             ("relay.other.job", "wrong-peer", retrieval_id),
-            ("relay.source.job", "matching", retrieval_id),
+            (wrong_origin, "wrong-process-scope", retrieval_id),
+            (expected_origin, "matching", retrieval_id),
         ):
             send_legacy_container(origin, stream_id, claimed_retrieval)
             waiter_ready.append(waiter.is_set())
@@ -184,9 +204,45 @@ def test_legacy_container_rejection_completes_only_its_retrieval_from_the_expect
         retriever.handle_event(EventType.START_RUN, fl_ctx)
         result = retriever.retrieve_container("source", fl_ctx, timeout=0.5, name="model")
         assert result == (ReturnCode.UNSUPPORTED_CONTAINER_TYPE, None)
-        assert waiter_ready == [False, False, True]
-        assert stream_replies == [ReturnCode.EXECUTION_EXCEPTION] * 3
+        assert waiter_ready == [False, False, False, True]
+        assert stream_replies == [ReturnCode.EXECUTION_EXCEPTION] * 4
         assert not retriever.tx_table
         assert not streamer.tx_table
     finally:
         streamer.shutdown()
+
+
+@pytest.mark.parametrize("route_resolution_fails", [False, True])
+def test_container_retrieval_can_complete_without_origin_resolution(route_resolution_fails):
+    methods = ["send_aux_request", "fire_event"]
+    if route_resolution_fails:
+        methods.append("get_stream_peer_origin")
+    engine = Mock(spec=methods)
+    if route_resolution_fails:
+        engine.get_stream_peer_origin.side_effect = RuntimeError("origin unavailable")
+    fl_ctx = FLContextManager(engine=engine, job_id="job").new_context()
+    retriever = ContainerRetriever()
+
+    def send(*, request, **kwargs):
+        stream_ctx = {
+            RETRIEVER_TX_ID: request[RETRIEVER_TX_ID],
+            StreamContextKey.RC: ReturnCode.OK,
+            "ContainerStreamer.result": {"key": 1},
+        }
+        retriever._handle_stream_done(stream_ctx, fl_ctx)
+        return {"source": make_reply(ReturnCode.OK)}
+
+    engine.send_aux_request.side_effect = send
+    assert retriever.retrieve_container("source", fl_ctx, timeout=0.5, name="model") == (ReturnCode.OK, {"key": 1})
+    engine.send_aux_request.assert_called_once()
+
+
+def test_container_retrieval_uses_task_workers_existing_service_rejection(caplog):
+    runtime = TaskRuntime(None, "receiver", "job")
+    retriever = ContainerRetriever()
+
+    rc, data = retriever.retrieve_container("source", runtime.new_context(), timeout=0.5, name="model")
+
+    assert (rc, data) == (ReturnCode.EXECUTION_EXCEPTION, None)
+    assert "auxiliary federation requests" in caplog.text
+    assert not retriever.tx_table

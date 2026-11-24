@@ -17,12 +17,15 @@ from datetime import datetime
 from typing import Any
 
 import msgpack
+import numpy as np
 import pytest
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind, from_bytes, from_file
 from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
-from nvflare.app_common.abstract.statistics_spec import HistogramType
+from nvflare.app_common.abstract.statistics_spec import DataType, Feature, HistogramType
+from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
+from nvflare.app_common.statistics.statisitcs_objects_decomposer import FeatureDecomposer
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.buffer_list import ConsumableBufferList
@@ -141,6 +144,25 @@ class TestFobs:
         assert restored.data_kind == DataKind.WEIGHTS
         assert restored.data == {"w": 1.0}
         fobs.reset()
+
+    def test_reserialize_lazily_decoded_builtin_values(self, isolated_fobs):
+        fobs.reset()
+        fobs.register(NumpyArrayDecomposer)
+        fobs.register(FeatureDecomposer)
+        original = DXO(DataKind.WEIGHTS, {"weights": np.arange(3), "feature": Feature("age", DataType.INT)})
+        encoded = original.to_bytes()
+
+        fobs.reset()
+        decoded = from_bytes(encoded)
+        assert get_class_name(np.ndarray) not in fobs_impl._decomposers
+        assert get_class_name(Feature) not in fobs_impl._decomposers
+
+        encoded_again = decoded.to_bytes()
+        fobs.reset()
+        restored = from_bytes(encoded_again)
+        np.testing.assert_array_equal(restored.data["weights"], original.data["weights"])
+        assert type(restored.data["feature"]) is Feature
+        assert restored.data["feature"] == original.data["feature"]
 
     @pytest.mark.parametrize("register_receiver", [False, True])
     def test_legacy_dxo_bytes_and_file(self, isolated_fobs, tmp_path, register_receiver):

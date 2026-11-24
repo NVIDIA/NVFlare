@@ -64,7 +64,7 @@ from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
-from nvflare.private.aux_runner import AuxMsgTarget
+from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
 from nvflare.private.defs import (
     AUTH_CLIENT_NAME_FOR_SJ,
     CellChannel,
@@ -824,6 +824,10 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
             optional=optional,
             secure=secure,
         )
+
+    def get_stream_peer_origin(self, site_name: str, fl_ctx: FLContext) -> str | None:
+        target = self._get_aux_msg_target(site_name)
+        return AuxRunner._get_target_fqcn(target, fl_ctx) if target is not None else None
 
     def _get_aux_msg_target(self, name: str):
         if name.lower() == SiteType.SERVER_PARENT:
