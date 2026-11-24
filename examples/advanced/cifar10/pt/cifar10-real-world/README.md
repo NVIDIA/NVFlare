@@ -83,23 +83,19 @@ Using the Recipe API, you can add experiment tracking with just one line using `
 
 #### Example: Using MLFlow
 
-First, let's start an MLFlow server in a separate terminal:
-
-```bash
-mlflow server --host 0.0.0.0 --port 5000
-```
-
-In our [job.py](./cifar10_fedavg_mlflow/job.py), all we need to do is add the MLFlow tracking with the corresponding URI (here `http://localhost:5000`):
+Enable tracking in [job.py](./cifar10_fedavg_mlflow/job.py). The receiving site
+selects the study endpoint. When none is configured, the receiver uses
+job-local SQLite.
 
 ```python
 from nvflare.recipe import add_experiment_tracking
 
-add_experiment_tracking(recipe, tracking_type="mlflow", tracking_config={"tracking_uri": mlflow_tracking_uri})
+add_experiment_tracking(recipe, tracking_type="mlflow")
 ```
 
 For an example using FedAvg and metric streaming during training, run:
 ```
-python cifar10_fedavg_mlflow/job.py --n_clients 8 --num_rounds 50 --alpha 1.0 --tracking_uri http://localhost:5000
+python cifar10_fedavg_mlflow/job.py --n_clients 8 --num_rounds 50 --alpha 1.0
 ```
 
 > **_NOTE:_** You can use `tracking_type="tensorboard"` or `tracking_type="wandb"` to stream metrics to TensorBoard or Weights & Biases instead. 

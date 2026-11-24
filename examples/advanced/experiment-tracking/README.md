@@ -247,11 +247,11 @@ Visit your W&B dashboard at https://wandb.ai
 
 ## Adding Tracking to Your Own Recipe
 
-MLflow receivers use a job-local SQLite store by default. A remote tracking URI
-or a path outside the job result directory requires an exact entry in the
-receiving site's `mlflow_tracking_uris` list in `local/resources.json` (or its
-`.default` fallback). See the [tracking configuration guide](../../../docs/programming_guide/experiment_tracking/experiment_tracking_apis.rst)
-for the operator configuration and upgrade requirements.
+The receiving site sets one external MLflow endpoint per study in
+`mlflow_study_tracking_uris` in `local/resources.json`. The receiver uses that
+endpoint automatically and otherwise writes to job-local SQLite. See the
+[tracking configuration guide](../../../docs/programming_guide/experiment_tracking/experiment_tracking_apis.rst)
+for deployment and upgrade details.
 
 ### Server-Side Tracking (Centralized)
 
@@ -260,7 +260,6 @@ from nvflare.recipe.utils import add_experiment_tracking
 
 # After creating your recipe
 add_experiment_tracking(recipe, "mlflow", tracking_config={
-    "tracking_uri": None,
     "kw_args": {
         "experiment_name": "my-experiment",
         "run_name": "my-run",
@@ -272,20 +271,18 @@ add_experiment_tracking(recipe, "mlflow", tracking_config={
 
 ```python
 # Add the receiver to every client, with no server-side receiver.
-# tracking_uri=None creates a local MLflow store in each site's job workspace.
 add_experiment_tracking(
     recipe,
     "mlflow",
     tracking_config={
-        "tracking_uri": None,
-        "kw_args": {"experiment_name": "local-client-experiment"},
+            "kw_args": {"experiment_name": "local-client-experiment"},
     },
     client_side=True,
     server_side=False,
 )
 ```
 
-If sites need different tracking URIs, credentials, or experiment names, call
+If sites need different experiment names, call
 `set_per_site_config(recipe, {"site-1": {}, "site-2": {}})` immediately
 after recipe construction to create per-site client apps, then call
 `add_experiment_tracking()` once per configuration with `clients=[site_name]`.

@@ -24,7 +24,7 @@ import pytest
 
 import nvflare.app_opt.tracking.mlflow.mlflow_receiver as receiver_module
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType, LogWriterName
-from nvflare.apis.fl_constant import ProcessType
+from nvflare.apis.fl_constant import ProcessType, ReservedKey
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.tracking.mlflow.mlflow_receiver import MLflowReceiver
 from nvflare.fuel.utils.config_service import ConfigService
@@ -34,6 +34,7 @@ def test_default_tracking_uri_uses_local_sqlite(tmp_path):
     result_root = tmp_path / "simulate_job"
     workspace = MagicMock()
     workspace.get_result_root.return_value = str(result_root)
+    workspace.get_resources_file_path.return_value = None
     fl_ctx = MagicMock()
     fl_ctx.get_workspace.return_value = workspace
     fl_ctx.get_job_id.return_value = "simulate_job"
@@ -65,9 +66,14 @@ def tracking_context(tmp_path, monkeypatch):
     return fl_ctx
 
 
-def _set_site_uris(fl_ctx, uris):
+def _set_job_study(fl_ctx, study, scope=None):
+    meta = {"study": study, "scope": scope}
+    fl_ctx.get_prop.side_effect = lambda key, default=None: meta if key == ReservedKey.JOB_META else default
+
+
+def _set_study_uris(fl_ctx, uris):
     path = Path(fl_ctx.get_workspace().get_site_config_dir()) / "resources.json"
-    path.write_text(json.dumps({"mlflow_tracking_uris": uris}))
+    path.write_text(json.dumps({"mlflow_study_tracking_uris": uris}))
 
 
 @pytest.mark.parametrize("process_type", [ProcessType.SERVER_JOB, ProcessType.CLIENT_JOB])
@@ -97,7 +103,7 @@ def test_unapproved_endpoint_cannot_receive_process_token(tracking_context, monk
     receiver = MLflowReceiver(tracking_uri=uri)
 
     with patch.object(receiver_module, "MlflowClient") as client, patch("requests.sessions.Session.send") as send:
-        with pytest.raises(ValueError, match="site mlflow_tracking_uris"):
+        with pytest.raises(ValueError, match="tracking_uri"):
             receiver.initialize(tracking_context)
         client.assert_not_called()
         send.assert_not_called()
@@ -137,31 +143,39 @@ def test_encoded_file_uri_escape_is_rejected(tracking_context):
         MLflowReceiver(tracking_uri=f"file://{root}/%2e%2e/outside")._get_tracking_uri(tracking_context)
 
 
-@pytest.mark.parametrize("uri", ["https://tracking.example.invalid", "sqlite:////operator/tracking.db"])
-def test_exact_site_approval_allows_external_backend(tracking_context, uri):
-    _set_site_uris(tracking_context, [uri])
+@pytest.mark.parametrize("encoded_escape", ["%2e%2e/outside.db", "%2e%2e%2foutside.db"])
+def test_encoded_sqlite_escape_is_rejected_before_driver_opens_the_path(tracking_context, encoded_escape):
+    root = Path(tracking_context.get_workspace().get_result_root("job"))
+    receiver = MLflowReceiver(tracking_uri=f"sqlite:///{root}/{encoded_escape}")
+    with pytest.raises(ValueError, match="must stay inside"):
+        receiver_module.MlflowClient(tracking_uri=receiver._get_tracking_uri(tracking_context)).search_experiments()
+    assert not (root.parent / "outside.db").exists()
 
-    assert MLflowReceiver(tracking_uri=uri)._get_tracking_uri(tracking_context) == uri
-    with pytest.raises(ValueError, match="tracking_uri"):
-        MLflowReceiver(tracking_uri=uri + "/other")._get_tracking_uri(tracking_context)
+
+def test_sqlite_driver_opens_the_canonical_path_with_percent_characters(tracking_context):
+    root = Path(tracking_context.get_workspace().get_result_root("job"))
+    receiver = MLflowReceiver(tracking_uri=f"sqlite:///{root}/metrics%252e.db")
+    receiver_module.MlflowClient(tracking_uri=receiver._get_tracking_uri(tracking_context)).search_experiments()
+    assert (root / "metrics%2e.db").is_file()
+    assert not (root / "metrics..db").exists()
 
 
-@pytest.mark.parametrize("uris", ["*", ["*"], [None], {"uri": "https://tracking.example.invalid"}])
+@pytest.mark.parametrize("uris", ["*", ["*"], {"study-a": None}, {"study-a": "*"}])
 def test_site_policy_does_not_allow_wildcards_or_malformed_entries(tracking_context, uris):
-    _set_site_uris(tracking_context, uris)
-
-    with pytest.raises(ValueError, match="mlflow_tracking_uris"):
-        MLflowReceiver(tracking_uri="https://tracking.example.invalid")._get_tracking_uri(tracking_context)
+    _set_study_uris(tracking_context, uris)
+    with pytest.raises(ValueError, match="mlflow_study_tracking_uris"):
+        MLflowReceiver()._get_tracking_uri(tracking_context)
 
 
 def test_job_config_cannot_approve_its_own_backend(tracking_context):
     uri = "https://tracking.example.invalid"
+    _set_job_study(tracking_context, "study-a")
     app_config = Path(tracking_context.get_workspace().get_app_config_dir("job"))
     app_config.mkdir(parents=True)
-    (app_config / "resources.json").write_text(json.dumps({"mlflow_tracking_uris": [uri]}))
+    (app_config / "resources.json").write_text(json.dumps({"mlflow_study_tracking_uris": {"study-a": uri}}))
     # Even process-global application/resources sections are not the authority.
-    with patch.object(ConfigService, "get_section", return_value={"mlflow_tracking_uris": [uri]}):
-        with pytest.raises(ValueError, match="mlflow_tracking_uris"):
+    with patch.object(ConfigService, "get_section", return_value={"mlflow_study_tracking_uris": {"study-a": uri}}):
+        with pytest.raises(ValueError, match="tracking_uri"):
             MLflowReceiver(tracking_uri=uri)._get_tracking_uri(tracking_context)
 
 
@@ -182,17 +196,26 @@ def test_artifact_directory_symlink_escape_is_rejected(tracking_context, tmp_pat
 
 
 @pytest.mark.parametrize("process_type", [ProcessType.SERVER_JOB, ProcessType.CLIENT_JOB])
-def test_approved_client_uri_is_explicit_without_changing_global_uri(tracking_context, process_type):
-    uri = "https://tracking.example.invalid"
-    _set_site_uris(tracking_context, [uri])
-    receiver = MLflowReceiver()
-    receiver.tracking_uri = uri
+@pytest.mark.parametrize("study", ["study-a", "study-b"])
+def test_study_routes_to_its_endpoint_without_a_job_uri(tracking_context, process_type, study):
+    endpoints = {"study-a": "https://tracking-a.example", "study-b": "https://tracking-b.example"}
+    _set_study_uris(tracking_context, endpoints)
+    _set_job_study(tracking_context, study, scope="study-b" if study == "study-a" else "study-a")
     tracking_context.get_process_type.return_value = process_type
     tracking_context.get_engine().get_clients.return_value = [SimpleNamespace(name="site-1")]
+    receiver = MLflowReceiver()
     with patch.object(receiver_module, "MlflowClient") as client, patch("mlflow.set_tracking_uri") as set_global:
         receiver.initialize(tracking_context)
-        client.assert_called_once_with(tracking_uri=uri)
+        client.assert_called_once_with(tracking_uri=endpoints[study])
         set_global.assert_not_called()
+
+    other_study = "study-b" if study == "study-a" else "study-a"
+    with pytest.raises(ValueError, match="conflicts"):
+        MLflowReceiver(tracking_uri=endpoints[other_study])._get_tracking_uri(tracking_context)
+    assert MLflowReceiver(tracking_uri=endpoints[study])._get_tracking_uri(tracking_context) == endpoints[study]
+
+    _set_job_study(tracking_context, "unconfigured")
+    assert MLflowReceiver()._get_tracking_uri(tracking_context).endswith("/job/mlflow.db")
 
 
 def test_default_sqlite_backend_records_metrics_without_http(tracking_context, monkeypatch):
@@ -260,10 +283,11 @@ def test_text_upload_rechecks_run_artifact_destination(tracking_context, tmp_pat
 
 def test_site_resource_override_does_not_inherit_default_approvals(tracking_context):
     uri = "https://tracking.example.invalid"
+    _set_job_study(tracking_context, "study-a")
     local = Path(tracking_context.get_workspace().get_site_config_dir())
-    (local / "resources.json.default").write_text(json.dumps({"mlflow_tracking_uris": [uri]}))
+    (local / "resources.json.default").write_text(json.dumps({"mlflow_study_tracking_uris": {"study-a": uri}}))
     assert MLflowReceiver(tracking_uri=uri)._get_tracking_uri(tracking_context) == uri
     (local / "resources.json").write_text("{}")
 
-    with pytest.raises(ValueError, match="mlflow_tracking_uris"):
+    with pytest.raises(ValueError, match="tracking_uri"):
         MLflowReceiver(tracking_uri=uri)._get_tracking_uri(tracking_context)

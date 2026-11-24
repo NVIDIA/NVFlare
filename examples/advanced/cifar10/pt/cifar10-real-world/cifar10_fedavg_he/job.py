@@ -49,8 +49,6 @@ def define_parser():
     )
     parser.add_argument("--name", type=str, default=None, help="Custom name for the recipe (overrides default naming)")
 
-    parser.add_argument("--tracking_uri", type=str, default="http://localhost:5000", help="MLFlow tracking URI")
-
     return parser.parse_args()
 
 
@@ -87,7 +85,7 @@ def main():
         train_args=f"--train_idx_root {train_idx_root} --num_workers {num_workers} --lr {lr} --batch_size {batch_size} --aggregation_epochs {aggregation_epochs}",
         aggregator_data_kind=DataKind.WEIGHT_DIFF,
     )
-    add_experiment_tracking(recipe, tracking_type="mlflow", tracking_config={"tracking_uri": args.tracking_uri})
+    add_experiment_tracking(recipe, tracking_type="mlflow")
 
     # Optionally export the job configuration for debugging
     # recipe.export(job_dir=f"./exported_jobs")

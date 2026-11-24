@@ -241,18 +241,14 @@ add_experiment_tracking(
 
 ### Remote MLflow Server
 
+Set the study's endpoint in `mlflow_study_tracking_uris` in each receiving site's
+`local/resources.json`, then enable client-side tracking in the recipe.
+
 ```python
-add_experiment_tracking(
-    recipe,
-    "mlflow",
-    tracking_config={"tracking_uri": "http://mlflow-server.local:5000"},
-    client_side=True,
-    server_side=False,
-)
+add_experiment_tracking(recipe, "mlflow", client_side=True, server_side=False)
 ```
 
-If each site uses a different server or credentials, use the per-site pattern
-above and pass the appropriate configuration with `clients=[site]`.
+Each client uses its own site configuration and MLflow credentials.
 
 ---
 

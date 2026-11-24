@@ -18,7 +18,7 @@ import pathlib
 import time
 import timeit
 from typing import Dict, List, Optional
-from urllib.parse import urlsplit
+from urllib.parse import quote, unquote, urlsplit
 from urllib.request import url2pathname
 
 from mlflow.entities import Metric, Param, RunTag
@@ -28,7 +28,7 @@ from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsData, AnalyticsD
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_constant import ProcessType, ReservedKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import JobMetaKey, get_job_meta_study
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
@@ -67,10 +67,9 @@ class MLflowReceiver(AnalyticsReceiver):
 
         Args:
             tracking_uri (Optional[str], optional): MLflow tracking server URI. When this is not specified, metrics
-                are written to a local SQLite database in the job result directory. If the tracking URI is specified,
-                local file and SQLite stores must stay inside the job result directory. Other URIs require
-                an exact entry in the site's resources.json ``mlflow_tracking_uris`` list. Remote tracking
-                servers must be started before running the job. Defaults to None.
+                go to the study's site-configured endpoint or to a local SQLite database in the job result directory.
+                An explicit URI must match the configured study endpoint, or identify a job-local store when a study
+                endpoint is absent. Remote tracking servers must be started before running the job. Defaults to None.
             kw_args (Optional[dict], optional): keyword arguments:
                 "experiment_name" (str): Specifies the experiment name. If not specified, the default name of "FLARE FL Experiment" will be used.
                 "run_name" (str): Specifies the run name
@@ -112,12 +111,37 @@ class MLflowReceiver(AnalyticsReceiver):
         workspace = fl_ctx.get_workspace()
         job_id = fl_ctx.get_job_id()
         result_root = os.path.realpath(workspace.get_result_root(job_id))
+        site_uri = self._get_study_tracking_uri(fl_ctx, workspace)
+        if site_uri is not None:
+            if self.tracking_uri is not None and self.tracking_uri != site_uri:
+                raise ValueError("tracking_uri conflicts with the site's MLflow endpoint for this study")
+            self._site_approved_tracking_uri = True
+            return site_uri
+
         if not self.tracking_uri:
             mlflow_db = resolve_path_under_root(result_root, "mlflow.db", "MLflow database")
-            return f"sqlite:///{mlflow_db}"
+            return f"sqlite:///{quote(mlflow_db, safe='/:')}"
 
-        # Read only the canonical site file. Job config and ConfigService search
-        # paths must not grant authority to choose a credential-bearing backend.
+        uri = urlsplit(self.tracking_uri)
+        if uri.query or uri.fragment or uri.netloc:
+            raise ValueError("tracking_uri must be a job-local store or configured for the study")
+        if self.tracking_uri.startswith("sqlite:///"):
+            path = unquote(self.tracking_uri[len("sqlite:///") :], errors="strict")
+            if path in ("", ":memory:"):
+                raise ValueError("tracking_uri must specify a job-local database path")
+        elif uri.scheme == "file":
+            path = url2pathname(uri.path)
+        else:
+            raise ValueError("tracking_uri must be a job-local store or configured for the study")
+
+        # SQLAlchemy decodes SQLite URL paths. Check that destination and encode
+        # the canonical path once so the driver opens the exact path we checked.
+        relative_path = os.path.relpath(os.path.abspath(path), result_root)
+        path = resolve_path_under_root(result_root, relative_path, "tracking_uri")
+        return f"sqlite:///{quote(path, safe='/:')}" if uri.scheme == "sqlite" else pathlib.Path(path).as_uri()
+
+    @staticmethod
+    def _get_study_tracking_uri(fl_ctx: FLContext, workspace):
         resources_file = workspace.get_resources_file_path()
         resources = {}
         if resources_file and os.path.isfile(resources_file):
@@ -125,28 +149,15 @@ class MLflowReceiver(AnalyticsReceiver):
                 resources = json.load(f)
         if not isinstance(resources, dict):
             raise ValueError("site resources must be a JSON object")
-        allowed_uris = resources.get("mlflow_tracking_uris", [])
-        if not isinstance(allowed_uris, list) or any(not isinstance(uri, str) or not uri for uri in allowed_uris):
-            raise ValueError("site mlflow_tracking_uris must be a list of nonempty strings")
-        if self.tracking_uri in allowed_uris:
-            self._site_approved_tracking_uri = True
-            return self.tracking_uri
-
-        uri = urlsplit(self.tracking_uri)
-        if uri.query or uri.fragment or uri.netloc:
-            raise ValueError("tracking_uri requires approval in site mlflow_tracking_uris")
-        if self.tracking_uri.startswith("sqlite:///"):
-            path = self.tracking_uri[len("sqlite:///") :]
-        elif uri.scheme == "file":
-            path = url2pathname(uri.path)
-        else:
-            raise ValueError("tracking_uri requires approval in site mlflow_tracking_uris")
-
-        # Canonicalize once and pass that same destination to MLflow. This also
-        # checks existing leaf/parent symlinks before opening a local backend.
-        relative_path = os.path.relpath(os.path.abspath(path), result_root)
-        path = resolve_path_under_root(result_root, relative_path, "tracking_uri")
-        return f"sqlite:///{path}" if uri.scheme == "sqlite" else pathlib.Path(path).as_uri()
+        endpoints = resources.get("mlflow_study_tracking_uris", {})
+        if not isinstance(endpoints, dict) or any(
+            not study or not isinstance(uri, str) or not uri.strip() or uri == "*" for study, uri in endpoints.items()
+        ):
+            raise ValueError("site mlflow_study_tracking_uris must map study names to nonempty tracking URIs")
+        # The server assigns the study during submission. Privacy scope is
+        # separate job-supplied metadata and cannot select a tracking backend.
+        study = get_job_meta_study(fl_ctx.get_prop(ReservedKey.JOB_META))
+        return endpoints.get(study)
 
     def initialize(self, fl_ctx: FLContext):
         """Initializes MlflowClient for each site.

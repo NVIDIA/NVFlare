@@ -1,6 +1,6 @@
 # Track experiments with MLflow
 
-`client.py` uses `MLflowWriter`; `job.py` stores the server-received analytics in this directory's `mlflow.db`. The default run uses **20 federated rounds**, producing 20 points per metric per site (steps 0–19).
+`client.py` uses `MLflowWriter`; `job.py` stores the server-received analytics in the server job's `mlflow.db` under `simulation/`. The default run uses **20 federated rounds**, producing 20 points per metric per site (steps 0–19).
 
 Complete the course [setup](../../../01.1_running_federated_learning_job/setup.ipynb), then run from this `code` directory:
 

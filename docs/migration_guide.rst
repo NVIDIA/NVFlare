@@ -27,20 +27,31 @@ Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
 endpoint attachment and cannot replace a 2.10 connection. This procedure
 includes a server outage and does not resume running jobs across the upgrade.
 
-MLflow Tracking Backend Approval
+MLflow Tracking Backend by Study
 --------------------------------
 
-``MLflowReceiver`` now requires site approval for remote tracking URIs and local
-stores outside the current job's result directory. Add each exact URI to
-``mlflow_tracking_uris`` in the receiving site's ``local/resources.json`` (or its
-``.default`` fallback). This policy must be configured by the site operator;
-job configuration cannot grant approval. Jobs using ``tracking_uri=None`` keep
-their job-local SQLite backend without additional settings. Custom
-``artifact_location`` paths must stay within the job run directory.
+In 2.9 a job might use ``add_experiment_tracking(recipe, "mlflow",
+{"tracking_uri": "https://mlflow.example.com"})``. To migrate that job to 2.10,
+the site administrator adds one endpoint for the job's study in the receiving
+site's ``local/resources.json`` or its ``resources.json.default`` fallback.
 
-See :doc:`programming_guide/experiment_tracking/experiment_tracking_apis` for the
-configuration example. If a URI is not permitted, the receiver logs an
-initialization error and does not create an MLflow client.
+.. code-block:: json
+
+   {
+     "mlflow_study_tracking_uris": {
+       "cardiology": "https://mlflow.example.com"
+     }
+   }
+
+The job author enables tracking with ``add_experiment_tracking(recipe, "mlflow")``
+and submits the job under the ``cardiology`` study. The receiver automatically
+uses the endpoint for that study. An older job that still supplies the exact
+configured URI works as before. A conflicting URI produces an initialization
+error before the receiver opens an MLflow client. A study without an endpoint
+uses job-local SQLite by default.
+
+See :doc:`programming_guide/experiment_tracking/experiment_tracking_apis` for
+operator configuration and job-local storage rules.
 
 Study Data File Removed
 -----------------------
