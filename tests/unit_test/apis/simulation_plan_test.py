@@ -57,6 +57,7 @@ def test_plan_runtime_requires_claim_and_finalizes_once(tmp_path):
     runtime.finalize()
     runtime.finalize()
     assert len((tmp_path / "run.jsonl").read_text().splitlines()) == 1
+    assert json.loads((tmp_path / "run.jsonl").read_text())["logical_trace_verified"] is None
 
 
 @pytest.mark.parametrize("change", [None, "missing", "extra", "record", "plan"])
@@ -115,4 +116,36 @@ def test_seeded_virtual_events_and_horizon_are_deterministic():
         validate_simulation_plan(plan)
     plan["async_execution"]["timing"]["profiles"]["b"]["train"] = {"distribution": ["constant"], "value": 1}
     with pytest.raises(ValueError, match="unsupported delay"):
+        validate_simulation_plan(plan)
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        ("phase", "unexpected phase"),
+        ("start", "ordered starts must reserve sequential assignment IDs"),
+        ("horizon", "at most one final phase at or beyond the horizon"),
+    ],
+)
+def test_ordered_plan_rejects_invalid_event_sequences(change, error):
+    events = [
+        {"virtual_time": 0, "assignment_id": 0, "phase": "start"},
+        {"virtual_time": 0, "assignment_id": 1, "phase": "start"},
+        {"virtual_time": 1, "assignment_id": 0, "phase": "download"},
+        {"virtual_time": 1, "assignment_id": 0, "phase": "train"},
+        {"virtual_time": 2, "assignment_id": 0, "phase": "upload"},
+        {"virtual_time": 3, "assignment_id": 1, "phase": "download"},
+    ]
+    plan = {
+        "format_version": 1,
+        ASYNC_EXECUTION: {"logical_sequence": ["a", "b"], "timing": {"events": events, "horizon": 3}},
+    }
+    assert validate_simulation_plan(plan)[ASYNC_EXECUTION]["timing"]["events"][-1] == events[-1]
+    if change == "phase":
+        events[2]["phase"] = "train"
+    elif change == "start":
+        events[0]["assignment_id"] = 1
+    else:
+        events.append({"virtual_time": 3, "assignment_id": 1, "phase": "train"})
+    with pytest.raises(ValueError, match=error):
         validate_simulation_plan(plan)

@@ -357,9 +357,10 @@ class PlannedAsyncExecution:
                 return
             if inflight.pop(site, None) != identity:
                 raise ValueError("physical result identity mismatch")
+            # Without preflight, no safe acceptance set exists; require every call.
             required = self._planned_acceptances is None or identity in self._planned_acceptances
             if error is not None or result is None:
-                if not ordered or required:
+                if required:
                     raise RuntimeError(f"assignment {identity} failed: {error or 'no result'}")
                 logging.getLogger(__name__).warning(
                     "Discarding failed assignment %s outside the planned acceptances: %s",

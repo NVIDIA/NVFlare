@@ -39,9 +39,9 @@ The [README](README.md) covers data preparation, CLI options, and experiment art
 
 The shared feature objective groups each layer's mean and variance losses before
 summing. In one ResNet CPU comparison, the scalar changed from 299.679016 to
-299.679047 with identical input gradients. Ordered replay fails if a planned
-acceptance has a physical call error. Errors outside the planned acceptances
-are logged whether they arrive during replay or drain.
+299.679047 with identical input gradients. Timed replay with preflight fails if a
+planned acceptance has a physical call error. Errors outside the planned
+acceptances are logged whether they arrive during replay or drain.
 The simulator reclaims temporary uploads and bases after their last consumer
 finishes. The run retains the plan, verified traces, metrics, and final model.
 

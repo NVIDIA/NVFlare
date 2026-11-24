@@ -142,9 +142,11 @@ same reservation and acceptance rules using placeholder uploads and a version
 counter. Invalid capacity, client eligibility, and base-version expectations
 fail before any client trains. Actual logical events are checked against the
 preflight during execution. Physical dispatch order can vary with the worker pool.
-In ordered replay, a failed call aborts the run if preflight requires its
-upload for acceptance. Other call failures are logged and their uploads
-discarded, regardless of when they arrive.
+For timed plans with preflight, a failed call aborts the run if its upload is
+required for acceptance. Other call failures are logged and discarded,
+including failures that arrive after the horizon. For timed plans without
+preflight, the runner cannot determine which calls are unneeded, so a failed
+call aborts.
 
 The reusable input is saved at ``<workspace>/<job>/server/local/simulation_plan.json``.
 The run directory ``<workspace>/<job>/server/simulate_job/simulation/`` contains
@@ -155,7 +157,9 @@ to check completeness and order against the preflight derived from the input
 plan. It also checks that the server's saved copy of the input plan still matches
 what was loaded at launch. A mismatch fails the run. ``run.jsonl`` records
 ``logical_trace_verified``, the normalized input's ``plan_sha256``, wall seconds,
-and virtual time. By default, ``models/`` and ``results/`` retain intermediate payloads.
+and virtual time. Verification is ``true`` when it passes, ``false`` when it
+was attempted and failed, and ``null`` when final verification did not run.
+By default, ``models/`` and ``results/`` retain intermediate payloads.
 Set ``async_execution.retain_artifacts`` to false to keep the traces and reclaim
 temporary payloads after use. With preflight, the runner saves uploads only for
 planned acceptances and reuses each version's base until its last planned
