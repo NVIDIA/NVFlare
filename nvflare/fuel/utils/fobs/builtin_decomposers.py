@@ -12,59 +12,63 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Wire type names with a dedicated lazy decomposer. The receiver owns each pairing.
-_BUILTIN_DECOMPOSER_MODULE = "nvflare.fuel.utils.fobs.decomposer"
-_FLARE_DECOMPOSERS = "nvflare.apis.utils.decomposers.flare_decomposers"
-_NUMPY_DECOMPOSERS = "nvflare.app_common.decomposers.numpy_decomposers"
-_STATISTICS_TYPES = "nvflare.app_common.abstract.statistics_spec"
-_STATISTICS_DECOMPOSERS = "nvflare.app_common.statistics.statisitcs_objects_decomposer"
-
-BUILTIN_TYPE_DECOMPOSERS: dict[str, str] = {
-    "nvflare.apis.dxo.DXO": f"{_FLARE_DECOMPOSERS}.DXODecomposer",
-    "nvflare.apis.fl_context.FLContext": f"{_FLARE_DECOMPOSERS}.ContextDecomposer",
-    "nvflare.apis.workspace.Workspace": f"{_FLARE_DECOMPOSERS}.WorkspaceDecomposer",
-    "nvflare.app_common.abstract.fl_model.FLModel": "nvflare.app_common.decomposers.common_decomposers.FLModelDecomposer",
-    "numpy.ndarray": f"{_NUMPY_DECOMPOSERS}.NumpyArrayDecomposer",
-    "numpy.float32": f"{_NUMPY_DECOMPOSERS}.Float32ScalarDecomposer",
-    "numpy.float64": f"{_NUMPY_DECOMPOSERS}.Float64ScalarDecomposer",
-    "numpy.int32": f"{_NUMPY_DECOMPOSERS}.Int32ScalarDecomposer",
-    "numpy.int64": f"{_NUMPY_DECOMPOSERS}.Int64ScalarDecomposer",
-    f"{_STATISTICS_TYPES}.Bin": f"{_STATISTICS_DECOMPOSERS}.BinDecomposer",
-    f"{_STATISTICS_TYPES}.BinRange": f"{_STATISTICS_DECOMPOSERS}.BinRangeDecomposer",
-    f"{_STATISTICS_TYPES}.DataType": f"{_STATISTICS_DECOMPOSERS}.DataTypeDecomposer",
-    f"{_STATISTICS_TYPES}.Feature": f"{_STATISTICS_DECOMPOSERS}.FeatureDecomposer",
-    f"{_STATISTICS_TYPES}.Histogram": f"{_STATISTICS_DECOMPOSERS}.HistogramDecomposer",
-    f"{_STATISTICS_TYPES}.HistogramType": f"{_STATISTICS_DECOMPOSERS}.HistogramTypeDecomposer",
-    f"{_STATISTICS_TYPES}.StatisticConfig": f"{_STATISTICS_DECOMPOSERS}.StatisticConfigDecomposer",
-    "nvflare.apis.shareable.Shareable": f"{_BUILTIN_DECOMPOSER_MODULE}.DictDecomposer",
-    "nvflare.app_common.abstract.learnable.Learnable": f"{_BUILTIN_DECOMPOSER_MODULE}.DictDecomposer",
-    "nvflare.app_common.abstract.model.ModelLearnable": f"{_BUILTIN_DECOMPOSER_MODULE}.DictDecomposer",
-    "tenseal.CKKSVector": "nvflare.app_opt.he.decomposers.CKKSVectorDecomposer",
+# This set holds the names of all the built-in decomposers
+BUILTIN_DECOMPOSERS: set[str] = {
+    "cma_decomposer.CMADataLoggerDecomposer",
+    "cma_decomposer.CMAOptionsDecomposer",
+    "cma_decomposer.GaussFullSamplerDecomposer",
+    "nvflare.apis.utils.decomposers.flare_decomposers.ContextDecomposer",
+    "nvflare.apis.utils.decomposers.flare_decomposers.DXODecomposer",
+    "nvflare.apis.utils.decomposers.flare_decomposers.WorkspaceDecomposer",
+    "nvflare.app_common.decomposers.common_decomposers.FLModelDecomposer",
+    "nvflare.app_common.decomposers.numpy_decomposers.Float32ScalarDecomposer",
+    "nvflare.app_common.decomposers.numpy_decomposers.Float64ScalarDecomposer",
+    "nvflare.app_common.decomposers.numpy_decomposers.Int32ScalarDecomposer",
+    "nvflare.app_common.decomposers.numpy_decomposers.Int64ScalarDecomposer",
+    "nvflare.app_common.decomposers.numpy_decomposers.NumpyArrayDecomposer",
+    "nvflare.app_common.statistics.statisitcs_objects_decomposer.BinDecomposer",
+    "nvflare.app_common.statistics.statisitcs_objects_decomposer.BinRangeDecomposer",
+    "nvflare.app_common.statistics.statisitcs_objects_decomposer.DataTypeDecomposer",
+    "nvflare.app_common.statistics.statisitcs_objects_decomposer.FeatureDecomposer",
+    "nvflare.app_common.statistics.statisitcs_objects_decomposer.HistogramDecomposer",
+    "nvflare.app_common.statistics.statisitcs_objects_decomposer.HistogramTypeDecomposer",
+    "nvflare.app_common.statistics.statisitcs_objects_decomposer.StatisticConfigDecomposer",
+    "nvflare.app_opt.he.decomposers.CKKSVectorDecomposer",
+    "nvflare.fuel.utils.fobs.decomposer.DataClassDecomposer",
+    "nvflare.fuel.utils.fobs.decomposer.DictDecomposer",
+    "nvflare.fuel.utils.fobs.decomposer.EnumTypeDecomposer",
+    "nvflare.fuel.utils.fobs.decomposers.core_decomposers.DatetimeDecomposer",
+    "nvflare.fuel.utils.fobs.decomposers.core_decomposers.OrderedDictDecomposer",
+    "nvflare.fuel.utils.fobs.decomposers.core_decomposers.SetDecomposer",
+    "nvflare.fuel.utils.fobs.decomposers.core_decomposers.TupleDecomposer",
 }
 
-# Older wire names understood by the corresponding receiver-owned built-in decoder.
-BUILTIN_LEGACY_DECOMPOSER_NAMES = {
-    "nvflare.apis.dxo.DXO": (f"{_BUILTIN_DECOMPOSER_MODULE}.DataClassDecomposer",),
-}
-
-# These enums have a dedicated decoder when the statistics codecs are registered
-# and otherwise use the generic enum format, including older untagged payloads.
-BUILTIN_ENUM_TYPES = {
-    f"{_STATISTICS_TYPES}.DataType",
-    f"{_STATISTICS_TYPES}.HistogramType",
-}
-
-# Optional codecs require an explicit type allowlist entry or local registration.
-OPTIONAL_TYPE_DECOMPOSERS: dict[str, str] = {
-    "cma.logger.CMADataLogger": "cma_decomposer.CMADataLoggerDecomposer",
-    "cma.options_parameters.CMAOptions": "cma_decomposer.CMAOptionsDecomposer",
-    "cma.sampler.GaussFullSampler": "cma_decomposer.GaussFullSamplerDecomposer",
-    "tenseal.tensors.ckksvector.CKKSVector": "nvflare.app_opt.he.decomposers.CKKSVectorDecomposer",
-}
-
-# Other built-in wire types use the enum or data-class decomposer, according to the local type.
+# This set holds the fully-qualified names of all built-in types that are allowed
+# to be deserialized via generic decomposers (DataClassDecomposer / EnumTypeDecomposer)
+# even before an explicit register_data_classes() / register_enum_types() call.
+# It pre-populates the type_name whitelist in fobs.py and acts as a static allowlist
+# to prevent arbitrary class loading (RCE via deserialization).
 BUILTIN_TYPES: set[str] = {
-    *BUILTIN_TYPE_DECOMPOSERS,
+    # --- Types handled by custom built-in decomposers ---
+    "nvflare.apis.dxo.DXO",
+    "nvflare.apis.fl_context.FLContext",
+    "nvflare.apis.workspace.Workspace",
+    "nvflare.app_common.abstract.fl_model.FLModel",
+    "numpy.ndarray",
+    "numpy.float32",
+    "numpy.float64",
+    "numpy.int32",
+    "numpy.int64",
+    "nvflare.app_common.abstract.statistics_spec.Bin",
+    "nvflare.app_common.abstract.statistics_spec.BinRange",
+    "nvflare.app_common.abstract.statistics_spec.DataType",
+    "nvflare.app_common.abstract.statistics_spec.Feature",
+    "nvflare.app_common.abstract.statistics_spec.Histogram",
+    "nvflare.app_common.abstract.statistics_spec.HistogramType",
+    "nvflare.app_common.abstract.statistics_spec.StatisticConfig",
+    "nvflare.apis.shareable.Shareable",
+    "nvflare.app_common.abstract.learnable.Learnable",
+    "nvflare.app_common.abstract.model.ModelLearnable",
     # --- Data classes registered in flare_decomposers.py ---
     "nvflare.apis.client.Client",
     "nvflare.apis.fl_snapshot.RunSnapshot",
@@ -80,6 +84,11 @@ BUILTIN_TYPES: set[str] = {
     "nvflare.app_common.widgets.event_recorder._CtxPropReq",
     "nvflare.app_common.widgets.event_recorder._EventReq",
     "nvflare.app_common.widgets.event_recorder._EventStats",
+    # --- Optional HE type handled by CKKSVectorDecomposer (tenseal integration) ---
+    # tenseal is an optional dependency; this entry ensures reset() → deserialize works
+    # for HE payloads when CKKSVectorDecomposer has not been explicitly re-registered.
+    # If tenseal is not installed, fobs.unpack() will still fail at load_class() with ImportError.
+    "tenseal.CKKSVector",
     # --- Enum types auto-registered when core FL objects are serialized ---
     # DataKind is embedded in every DXO (str,Enum — triggers auto-registration)
     "nvflare.apis.dxo.DataKind",

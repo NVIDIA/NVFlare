@@ -11,8 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import importlib
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -25,10 +26,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnableKey
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.validation_utils import check_positive_int
-from nvflare.private.fed.utils.fed_utils import authorize_job_component_paths
-from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.widget import Widget
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -91,15 +89,53 @@ class GlobalEvaluator(Widget):
         self.register_event_handler(AppEventType.GLOBAL_WEIGHTS_UPDATED, self.evaluate)
         self.register_event_handler(EventType.END_RUN, self._handle_end_run)
 
-    def _instantiate_model(self, fl_ctx: FLContext) -> nn.Module:
+    def _load_model_class(self, class_path: str, fl_ctx: FLContext) -> Any:
+        """Load model class from class path.
+
+        Args:
+            class_path (str): model class path in format "module.submodule.ClassName"
+            fl_ctx (FLContext): FL context
+
+        Returns:
+            model class (not instance)
+        """
+        try:
+            self.logger.info(f"Loading model class from path: {class_path}")
+            module_path, class_name = class_path.rsplit(".", 1)
+            module = importlib.import_module(module_path)
+            model_class = getattr(module, class_name)
+            return model_class
+        except Exception as e:
+            self.system_panic(
+                reason=f"Failed to load model class from '{class_path}': {str(e)}",
+                fl_ctx=fl_ctx,
+            )
+            return None
+
+    def _instantiate_model(self, fl_ctx: FLContext) -> Optional[nn.Module]:
+        """Instantiate model from model_path config.
+
+        Args:
+            fl_ctx (FLContext): FL context
+
+        Returns:
+            nn.Module instance or None on failure
+        """
         if isinstance(self.model_path, dict):
+            # Dict config: {"path": "module.ClassName", "args": {...}}
             class_path = self.model_path["path"]
             model_args = self.model_path.get("args", {})
+            model_class = self._load_model_class(class_path, fl_ctx)
+            if model_class is None:
+                return None
+            self.logger.info(f"Instantiating model with args: {model_args}")
+            return model_class(**model_args)
         else:
-            class_path = self.model_path
-            model_args = {}
-        authorize_job_component_paths(fl_ctx, class_path)
-        return instantiate_class(class_path, model_args)
+            # String class path (no args)
+            model_class = self._load_model_class(self.model_path, fl_ctx)
+            if model_class is None:
+                return None
+            return model_class()
 
     def _create_data_loader(self):
         if self.torchvision_dataset is not None:
@@ -211,15 +247,13 @@ class GlobalEvaluator(Widget):
             self.model = self.model_path
         elif isinstance(self.model_path, (str, dict)):
             # String class path or dict config
-            try:
-                model = self._instantiate_model(fl_ctx)
-            except Exception as e:
-                self.system_panic(reason=f"Failed to instantiate model: {secure_format_exception(e)}", fl_ctx=fl_ctx)
+            self.model = self._instantiate_model(fl_ctx)
+            if self.model is None:
+                self.system_panic(
+                    reason="Failed to instantiate model during initialization",
+                    fl_ctx=fl_ctx,
+                )
                 return
-            if not isinstance(model, nn.Module):
-                self.system_panic(reason="Expected an nn.Module from model_path", fl_ctx=fl_ctx)
-                return
-            self.model = model
         else:
             self.system_panic(
                 reason=f"Invalid model_path type: {type(self.model_path)}",

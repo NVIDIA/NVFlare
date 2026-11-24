@@ -23,18 +23,11 @@ from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
 import msgpack
 
 from nvflare.fuel.utils.class_loader import get_class_name, load_class
-from nvflare.fuel.utils.fobs.builtin_decomposers import (
-    BUILTIN_ENUM_TYPES,
-    BUILTIN_LEGACY_DECOMPOSER_NAMES,
-    BUILTIN_TYPE_DECOMPOSERS,
-    BUILTIN_TYPES,
-    OPTIONAL_TYPE_DECOMPOSERS,
-)
+from nvflare.fuel.utils.fobs.builtin_decomposers import BUILTIN_DECOMPOSERS, BUILTIN_TYPES
 from nvflare.fuel.utils.fobs.datum import DatumManager
 from nvflare.fuel.utils.fobs.decomposer import (
     DataClassDecomposer,
     Decomposer,
-    DictDecomposer,
     EnumTypeDecomposer,
     Externalizer,
     Internalizer,
@@ -89,16 +82,16 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
     global _dot_handlers
 
     if inspect.isclass(decomposer):
-        if not issubclass(decomposer, Decomposer):
-            raise TypeError(f"{decomposer} is not a Decomposer")
         instance = decomposer()
-    elif isinstance(decomposer, Decomposer):
-        instance = decomposer
     else:
-        raise TypeError(f"{type(decomposer)} is not a Decomposer")
+        instance = decomposer
 
     name = get_class_name(instance.supported_type())
     if name in _decomposers:
+        return
+
+    if not isinstance(instance, Decomposer):
+        log.error(f"Class {instance.__class__} is not a decomposer")
         return
 
     _decomposers[name] = instance
@@ -132,38 +125,36 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
 class Packer:
     def __init__(self, manager: DatumManager):
         self.manager = manager
+        self.enum_decomposer_name = get_class_name(EnumTypeDecomposer)
+        self.data_decomposer_name = get_class_name(DataClassDecomposer)
 
     def pack(self, obj: Any) -> dict:
 
         if type(obj) in MSGPACK_TYPES:
             return obj
 
-        obj_type = type(obj)
-        type_name = get_class_name(obj_type)
-        decomposer = _decomposers.get(type_name)
-        if decomposer is None:
+        type_name = get_class_name(obj.__class__)
+        if type_name not in _decomposers:
+            registered = False
             if isinstance(obj, Enum):
-                if not _enum_auto_registration:
-                    return obj
-                decomposer = EnumTypeDecomposer(obj_type)
+                if _enum_auto_registration:
+                    # Use register() directly to avoid adding to _type_name_whitelist;
+                    # auto-registered types are session-only and should not survive reset().
+                    register(EnumTypeDecomposer(type(obj)))
+                    registered = True
             else:
-                # Built-in codecs also handle types without instance attributes.
-                expected_name = BUILTIN_TYPE_DECOMPOSERS.get(type_name)
-                if expected_name is None and type_name in _type_name_whitelist:
-                    expected_name = OPTIONAL_TYPE_DECOMPOSERS.get(type_name)
+                if callable(obj) or (not hasattr(obj, "__dict__")):
+                    raise TypeError(f"{type(obj)} can't be serialized by FOBS without a decomposer")
+                if _data_auto_registration:
+                    # Use register() directly to avoid adding to _type_name_whitelist;
+                    # auto-registered types are session-only and should not survive reset().
+                    register(DataClassDecomposer(type(obj)))
+                    registered = True
 
-                if expected_name is not None:
-                    decomposer = _make_builtin_decomposer(type_name, expected_name)
-                else:
-                    if callable(obj) or not hasattr(obj, "__dict__"):
-                        raise TypeError(f"{type(obj)} can't be serialized by FOBS without a decomposer")
-                    if not _data_auto_registration:
-                        return obj
-                    decomposer = DataClassDecomposer(obj_type)
+            if not registered:
+                return obj
 
-            # Auto-registered types remain session-only.
-            register(decomposer)
-            decomposer = _decomposers[type_name]
+        decomposer = _decomposers[type_name]
 
         decomposed = decomposer.decompose(obj, self.manager)
         if self.manager:
@@ -182,61 +173,54 @@ class Packer:
             return obj
 
         type_name = obj[FOBS_TYPE]
-        if not isinstance(type_name, str):
-            raise ValueError("FOBS type name must be a string")
+        # Security boundary: types already present in _decomposers are implicitly trusted and
+        # bypass the whitelist and BUILTIN_DECOMPOSERS checks below. This is intentional — only
+        # explicitly registered decomposers are allowed, and registration is the trust grant.
+        # The whitelist only gates the first deserialization of a type (before it is registered).
+        if type_name not in _decomposers:
+            registered = False
+            decomposer_name = obj.get(FOBS_DECOMPOSER)
 
-        # Local registrations, including aliases, are authoritative. A lazy decoder
-        # is used only for this value and never changes the process-wide registry.
-        decomposer = _decomposers.get(type_name)
-        if decomposer is None:
-            decomposer = _get_lazy_decomposer(type_name, obj.get(FOBS_DECOMPOSER))
+            # For security reason, only builtin decomposers are allowed without registration
+            if decomposer_name and decomposer_name not in BUILTIN_DECOMPOSERS:
+                raise ValueError(f"Decomposer {decomposer_name} must be registered")
+
+            # Validate type_name against whitelist to prevent arbitrary class loading (RCE)
+            if type_name not in _type_name_whitelist:
+                raise ValueError(
+                    f"Type '{type_name}' is not allowed. "
+                    f"Use fobs.register_data_classes(), fobs.register_enum_types(), "
+                    f"or fobs.add_type_name_whitelist() to allow this type."
+                )
+
+            cls = load_class(type_name)
+            if not decomposer_name:
+                # Maintaining backward compatibility with auto enum registration
+                if _enum_auto_registration:
+                    if issubclass(cls, Enum):
+                        register(EnumTypeDecomposer(cls))
+                        registered = True
+            else:
+                decomposer_class = load_class(decomposer_name)
+                if decomposer_name == self.enum_decomposer_name or decomposer_name == self.data_decomposer_name:
+                    # Generic decomposer's __init__ takes the target class as argument
+                    decomposer = decomposer_class(cls)
+                else:
+                    decomposer = decomposer_class()
+
+                register(decomposer)
+                registered = True
+
+            if not registered:
+                raise TypeError(f"Type {type_name} has no decomposer registered")
 
         data = obj[FOBS_DATA]
         if self.manager:
             internalizer = Internalizer(self.manager)
             data = internalizer.internalize(data)
 
+        decomposer = _decomposers[type_name]
         return decomposer.recompose(data, self.manager)
-
-
-def _get_lazy_decomposer(type_name: str, decomposer_name: str | None) -> Decomposer:
-    if type_name not in _type_name_whitelist:
-        raise ValueError(
-            f"Type '{type_name}' is not allowed. "
-            f"Use fobs.register_data_classes(), fobs.register_enum_types(), "
-            f"or fobs.add_type_name_whitelist() to allow this type."
-        )
-
-    expected_name = BUILTIN_TYPE_DECOMPOSERS.get(type_name) or OPTIONAL_TYPE_DECOMPOSERS.get(type_name)
-    if expected_name is not None and (decomposer_name == expected_name or type_name not in BUILTIN_ENUM_TYPES):
-        _check_decomposer_name(type_name, decomposer_name, expected_name)
-        return _make_builtin_decomposer(type_name, expected_name)
-
-    cls = load_class(type_name)
-    if issubclass(cls, Enum):
-        if decomposer_name in (None, "") and _enum_auto_registration:
-            # Older encoders did not send a decomposer name for enums.
-            return EnumTypeDecomposer(cls)
-        generic_decoder = EnumTypeDecomposer
-    else:
-        generic_decoder = DataClassDecomposer
-    _check_decomposer_name(type_name, decomposer_name, get_class_name(generic_decoder))
-    return generic_decoder(cls)
-
-
-def _check_decomposer_name(type_name: str, decomposer_name: str | None, expected_name: str) -> None:
-    if decomposer_name != expected_name and decomposer_name not in BUILTIN_LEGACY_DECOMPOSER_NAMES.get(type_name, ()):
-        raise ValueError(f"Type '{type_name}' requires decomposer '{expected_name}'")
-
-
-def _make_builtin_decomposer(type_name: str, expected_name: str) -> Decomposer:
-    if expected_name == get_class_name(DictDecomposer):
-        return DictDecomposer(load_class(type_name))
-
-    decomposer = load_class(expected_name)()
-    if get_class_name(decomposer.supported_type()) != type_name:
-        raise ValueError(f"Decomposer '{expected_name}' does not support type '{type_name}'")
-    return decomposer
 
 
 def add_type_name_whitelist(*type_names: str) -> None:

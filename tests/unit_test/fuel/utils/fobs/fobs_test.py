@@ -16,24 +16,16 @@ import queue
 from datetime import datetime
 from typing import Any
 
-import msgpack
-import numpy as np
 import pytest
 
-from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.dxo import DXO, DataKind, from_bytes, from_file
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.utils.decomposers.flare_decomposers import DXODecomposer
-from nvflare.app_common.abstract.statistics_spec import DataType, Feature, HistogramType
-from nvflare.app_common.decomposers.numpy_decomposers import NumpyArrayDecomposer
-from nvflare.app_common.statistics.statisitcs_objects_decomposer import FeatureDecomposer
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.buffer_list import ConsumableBufferList
-from nvflare.fuel.utils.class_loader import get_class_name
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs import fobs as fobs_impl
 from nvflare.fuel.utils.fobs.datum import DatumManager
-from nvflare.fuel.utils.fobs.decomposer import DataClassDecomposer, EnumTypeDecomposer
 
 
 class TestFobs:
@@ -129,74 +121,20 @@ class TestFobs:
         new_class = fobs.loads(buf)
         assert new_class.name == TestFobs.NAME
 
-    @pytest.mark.parametrize("register_sender", [False, True])
-    def test_builtin_custom_decomposer_type_allowed_after_reset(self, isolated_fobs, register_sender):
-        if register_sender:
-            fobs.register(DXODecomposer)
+    def test_builtin_custom_decomposer_type_allowed_after_reset(self):
+        fobs.reset()
+        fobs.register(DXODecomposer)
         dxo = DXO(data_kind=DataKind.WEIGHTS, data={"w": 1.0})
         buf = fobs.dumps(dxo)
 
         # After reset, DXODecomposer will not be in _decomposers. The type name must still
-        # pass the whitelist gate so the receiver can select its built-in decomposer.
+        # pass the whitelist gate so the builtin decomposer can be re-registered during unpack.
         fobs.reset()
         restored = fobs.loads(buf)
         assert isinstance(restored, DXO)
         assert restored.data_kind == DataKind.WEIGHTS
         assert restored.data == {"w": 1.0}
         fobs.reset()
-
-    def test_reserialize_lazily_decoded_builtin_values(self, isolated_fobs):
-        fobs.reset()
-        fobs.register(NumpyArrayDecomposer)
-        fobs.register(FeatureDecomposer)
-        original = DXO(DataKind.WEIGHTS, {"weights": np.arange(3), "feature": Feature("age", DataType.INT)})
-        encoded = original.to_bytes()
-
-        fobs.reset()
-        decoded = from_bytes(encoded)
-        assert get_class_name(np.ndarray) not in fobs_impl._decomposers
-        assert get_class_name(Feature) not in fobs_impl._decomposers
-
-        encoded_again = decoded.to_bytes()
-        fobs.reset()
-        restored = from_bytes(encoded_again)
-        np.testing.assert_array_equal(restored.data["weights"], original.data["weights"])
-        assert type(restored.data["feature"]) is Feature
-        assert restored.data["feature"] == original.data["feature"]
-
-    @pytest.mark.parametrize("register_receiver", [False, True])
-    def test_legacy_dxo_bytes_and_file(self, isolated_fobs, tmp_path, register_receiver):
-        fobs.reset()
-        # Standalone senders previously used this codec when DXO was unregistered.
-        fobs.register_data_classes(DXO)
-        original = DXO(DataKind.COLLECTION, {"weights": DXO(DataKind.WEIGHTS, {"w": 1.0})}, {"round": 1})
-        encoded = original.to_bytes()
-        path = str(tmp_path / "legacy.dxo")
-        original.to_file(path)
-
-        fobs.reset()
-        if register_receiver:
-            fobs.register(DXODecomposer)
-        type_name = get_class_name(DXO)
-        registered = fobs_impl._decomposers.get(type_name)
-
-        for restored in (from_bytes(encoded), from_file(path)):
-            assert type(restored) is DXO
-            assert restored.data_kind is DataKind.COLLECTION
-            assert restored.meta == original.meta
-            assert restored.data["weights"].to_dict() == original.data["weights"].to_dict()
-        assert fobs_impl._decomposers.get(type_name) is registered
-
-    def test_legacy_dxo_still_validates_fields(self, isolated_fobs):
-        fobs.reset()
-        fobs.register_data_classes(DXO)
-        dxo = DXO(DataKind.WEIGHTS, {})
-        dxo.data = "invalid weights"
-        encoded = dxo.to_bytes()
-
-        fobs.reset()
-        with pytest.raises(ValueError, match="invalid DXO: invalid data"):
-            from_bytes(encoded)
 
     def test_connector_params_enum_allowed_on_receiver(self):
         fobs.reset()
@@ -211,43 +149,6 @@ class TestFobs:
             assert all(isinstance(key, DriverParams) for key in restored["params"])
         finally:
             fobs.reset()
-
-    @pytest.mark.parametrize("enum_type", [AnalyticsDataType, HistogramType])
-    def test_lazy_decode_keeps_process_registry_unchanged(self, isolated_fobs, enum_type):
-        value = next(iter(enum_type))
-        type_name = get_class_name(enum_type)
-        frame = {
-            fobs_impl.FOBS_TYPE: type_name,
-            fobs_impl.FOBS_DECOMPOSER: get_class_name(DataClassDecomposer),
-            fobs_impl.FOBS_DATA: {},
-        }
-
-        def decode():
-            return fobs_impl.deserialize(msgpack.packb(frame), manager=DatumManager())
-
-        with pytest.raises(ValueError, match="requires decomposer"):
-            decode()
-        assert type_name not in fobs_impl._decomposers
-
-        frame[fobs_impl.FOBS_DECOMPOSER] = get_class_name(EnumTypeDecomposer)
-        frame[fobs_impl.FOBS_DATA] = "unknown member"
-        with pytest.raises(KeyError):
-            decode()
-        assert type_name not in fobs_impl._decomposers
-
-        frame[fobs_impl.FOBS_DATA] = value.name
-        assert decode() is value
-        del frame[fobs_impl.FOBS_DECOMPOSER]
-        assert decode() is value
-        assert type_name not in fobs_impl._decomposers
-
-    def test_register_rejects_non_decomposer_before_construction(self):
-        class NotDecomposer:
-            def __init__(self):
-                pytest.fail("registration called a non-decomposer constructor")
-
-        with pytest.raises(TypeError, match="is not a Decomposer"):
-            fobs.register(NotDecomposer)
 
     def test_reset_mutates_whitelist_in_place(self):
         fobs.reset()

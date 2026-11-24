@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
 import os
 from types import SimpleNamespace
 from typing import Any
@@ -21,8 +20,6 @@ import pytest
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.fl_constant import ConfigVarName
-from nvflare.apis.fl_context import FLContextManager
-from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.fuel.utils import fobs
@@ -183,15 +180,3 @@ def test_check_secure_content_can_skip_site_private_key(monkeypatch):
 
     assert fed_utils._check_secure_content("client") == ["client.key"]
     assert fed_utils._check_secure_content("client", check_private_key=False) == []
-
-
-def test_runtime_class_path_policy_uses_engine_workspace(tmp_path):
-    resources = tmp_path / "resources.json"
-    resources.write_text(json.dumps({"class_allow_list": ["site_models.Approved"]}))
-    workspace = SimpleNamespace(get_resources_file_path=lambda: str(resources))
-    engine = SimpleNamespace(get_workspace=lambda: workspace)
-    fl_ctx = FLContextManager(engine=engine, identity_name="server", job_id="job").new_context()
-
-    fed_utils.authorize_job_component_paths(fl_ctx, "site_models.Approved")
-    with pytest.raises(UnsafeComponentError, match="site_models.Unlisted.*allow_list"):
-        fed_utils.authorize_job_component_paths(fl_ctx, "site_models.Approved", "site_models.Unlisted")

@@ -13,12 +13,10 @@
 # limitations under the License.
 
 import os
-from tempfile import TemporaryDirectory
 from typing import Any, Dict, Optional
 
 from joblib import dump, load
 
-from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -58,10 +56,6 @@ class JoblibModelParamPersistor(ModelPersistor):
         Unlike PTFileModelPersistor, this persistor does NOT instantiate model classes.
         It only stores and transmits parameter values (e.g., hyperparameters, weights).
         The sklearn model class is instantiated on the client side using these params.
-        Loading a Joblib checkpoint requires a locally authorized BYOC job or a local
-        simulation because Joblib uses pickle. Other jobs initialize from initial_params
-        and can create a checkpoint at a new path. An existing checkpoint requires
-        authorization to load or replace.
 
         Args:
             initial_params: Initial parameters dict (e.g., {"n_clusters": 3, "kernel": "rbf"}).
@@ -88,13 +82,6 @@ class JoblibModelParamPersistor(ModelPersistor):
             os.makedirs(self.log_dir)
         fl_ctx.sync_sticky()
 
-    @staticmethod
-    def _can_access_checkpoint(fl_ctx: FLContext) -> bool:
-        job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
-        return fl_ctx.get_prop(FLContextKey.SIMULATE_MODE) is True or (
-            isinstance(job_meta, dict) and job_meta.get(AppValidationKey.BYOC) is True
-        )
-
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         """Initialize and load the Model.
 
@@ -106,15 +93,12 @@ class JoblibModelParamPersistor(ModelPersistor):
         """
         model = None
         initial_params = self.initial_params if isinstance(self.initial_params, dict) else {}
-        can_load_checkpoint = self._can_access_checkpoint(fl_ctx)
 
         # Priority 1: Load from explicit model_path argument, or from initial_params (backward compat)
         path = self.model_path or initial_params.get(MODEL_PATH_KEY)
         if path:
             if not os.path.isabs(str(path)):
                 raise ValueError(f"model_path must be a non-empty absolute path, got: {path!r}")
-            if not can_load_checkpoint:
-                raise PermissionError("Loading a Joblib checkpoint requires BYOC authorization or local simulation")
             if not os.path.exists(path):
                 raise ValueError(f"Model file not found: {path}. Check that the file exists at runtime.")
             self.logger.info(f"Loading model from {path}")
@@ -122,10 +106,6 @@ class JoblibModelParamPersistor(ModelPersistor):
 
         # Priority 2: Load from previously saved model
         if model is None and os.path.exists(self.save_path):
-            if not can_load_checkpoint:
-                raise PermissionError(
-                    "Loading an existing Joblib checkpoint requires BYOC authorization or local simulation"
-                )
             self.logger.info("Loading server model")
             model = load(self.save_path)
 
@@ -138,8 +118,9 @@ class JoblibModelParamPersistor(ModelPersistor):
                     model = config
             if model is None:
                 raise ValueError(
-                    "No model parameters available. Provide initial_params (hyperparameters). "
-                    "Jobs authorized to load checkpoints can also use an absolute model_path or a saved model."
+                    "No model parameters available. Provide initial_params (hyperparameters) "
+                    "and/or model_path (absolute path to saved .joblib/.pkl), "
+                    "or ensure a previously saved model exists."
                 )
 
         model_learnable = make_model_learnable(weights=model, meta_props=dict())
@@ -165,21 +146,4 @@ class JoblibModelParamPersistor(ModelPersistor):
                 self.logger.info(f"Saving received model to {os.path.abspath(self.save_path)}")
                 # save 'weights' which contains model parameters
                 model = model_learnable[ModelLearnableKey.WEIGHTS]
-                if self._can_access_checkpoint(fl_ctx):
-                    dump(model, self.save_path, compress=1)
-                else:
-                    self._save_new_checkpoint(model)
-
-    def _save_new_checkpoint(self, model):
-        # Publish the completed checkpoint atomically without replacing a file
-        # that already exists, including one created during serialization.
-        destination_dir = os.path.dirname(os.path.abspath(self.save_path))
-        with TemporaryDirectory(dir=destination_dir) as staging_dir:
-            staged_path = os.path.join(staging_dir, "checkpoint.joblib")
-            dump(model, staged_path, compress=1)
-            try:
-                os.link(staged_path, self.save_path)
-            except FileExistsError as ex:
-                raise PermissionError(
-                    "Replacing an existing Joblib checkpoint requires BYOC authorization or local simulation"
-                ) from ex
+                dump(model, self.save_path, compress=1)
