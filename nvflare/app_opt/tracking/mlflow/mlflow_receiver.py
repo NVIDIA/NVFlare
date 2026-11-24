@@ -18,11 +18,12 @@ import pathlib
 import time
 import timeit
 from typing import Dict, List, Optional
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import unquote, urlsplit
 from urllib.request import url2pathname
 
 from mlflow.entities import Metric, Param, RunTag
 from mlflow.tracking.client import MlflowClient
+from sqlalchemy.engine import URL
 
 from nvflare.apis.analytix import ANALYTIC_EVENT_TYPE, AnalyticsData, AnalyticsDataType, LogWriterName, TrackConst
 from nvflare.apis.dxo import from_shareable
@@ -120,7 +121,7 @@ class MLflowReceiver(AnalyticsReceiver):
 
         if not self.tracking_uri:
             mlflow_db = resolve_path_under_root(result_root, "mlflow.db", "MLflow database")
-            return f"sqlite:///{quote(mlflow_db, safe='/:')}"
+            return URL.create("sqlite", database=mlflow_db).render_as_string()
 
         uri = urlsplit(self.tracking_uri)
         if uri.query or uri.fragment or uri.netloc:
@@ -138,7 +139,9 @@ class MLflowReceiver(AnalyticsReceiver):
         # the canonical path once so the driver opens the exact path we checked.
         relative_path = os.path.relpath(os.path.abspath(path), result_root)
         path = resolve_path_under_root(result_root, relative_path, "tracking_uri")
-        return f"sqlite:///{quote(path, safe='/:')}" if uri.scheme == "sqlite" else pathlib.Path(path).as_uri()
+        if uri.scheme == "sqlite":
+            return URL.create("sqlite", database=path).render_as_string()
+        return pathlib.Path(path).as_uri()
 
     @staticmethod
     def _get_study_tracking_uri(fl_ctx: FLContext, workspace):
