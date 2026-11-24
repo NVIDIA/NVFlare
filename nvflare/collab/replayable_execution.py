@@ -63,7 +63,8 @@ class AsyncExecutionPort:
     reservation and publication rules. Its ``accept`` receives a placeholder
     result and must not read model data or have external side effects.
     Fixed replay with preflight requires the workflow to finish on the last
-    planned acceptance. Without preflight, the real state may finish early.
+    planned acceptance. Without preflight, the real state may finish early;
+    successful replay drains started calls before releasing temporary bases.
     """
 
     state: Any
@@ -261,6 +262,31 @@ class PlannedAsyncExecution:
             ready.add(identity)
             completed_sites[identity] = site
             available.append(site)
+
+        # A custom state can finish before every planned assignment is accepted.
+        # Started calls still need their base files until their results arrive.
+        while inflight:
+            if self.port.aborted():
+                raise RuntimeError("planned async workflow aborted during drain")
+            try:
+                site, identity, result, error = self.port.receive()
+            except queue.Empty:
+                continue
+            if inflight.pop(site, None) != identity:
+                raise ValueError("physical result identity mismatch")
+            if error is not None or result is None:
+                logging.getLogger(__name__).warning(
+                    "Discarding failed assignment %s after fixed replay finished: %s",
+                    identity,
+                    error or "no result",
+                )
+            elif self.retain_artifacts:
+                self.runtime.save_result(identity, result)
+
+        if not self.retain_artifacts:
+            for assignment in self.state.active.values():
+                self._release_base(assignment)
+
         if not self.state.finished or (strict_completion and next_acceptance != len(order)):
             raise ValueError("fixed replay must finish after accepting its complete arrival sequence")
 

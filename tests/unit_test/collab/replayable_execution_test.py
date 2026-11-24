@@ -106,6 +106,72 @@ def test_generic_async_port_replays_non_fedbuff_algorithm(tmp_path, retain_artif
 
 @pytest.mark.parametrize("retain_artifacts", [True, False])
 @pytest.mark.parametrize(
+    ("physical_clients", "straggler_fails"),
+    [(1, False), (2, False), (2, True)],
+    ids=["one-worker", "two-workers", "straggler-failure"],
+)
+def test_fixed_replay_drains_early_finish_before_releasing_bases(
+    tmp_path, caplog, retain_artifacts, physical_clients, straggler_fails
+):
+    runtime = SimulationPlanRuntime(
+        {
+            "format_version": 1,
+            "async_execution": {
+                "logical_sequence": ["a", "b"],
+                "arrival_sequence": [0, 1],
+                "retain_artifacts": retain_artifacts,
+            },
+        },
+        tmp_path,
+    )
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(SIMULATION_PLAN_PROP, runtime)
+    state = _CounterState(finish_version=1)
+    submitted = {}
+    responses = deque()
+    received = []
+    accepted = []
+
+    def submit(site, assignment, **kwargs):
+        submitted[assignment.assignment_id] = assignment
+        error = "training failed" if assignment.assignment_id == 1 and straggler_fails else None
+        responses.append((site, assignment.assignment_id, None if error else 1, error))
+
+    def receive():
+        site, identity, result, error = responses.popleft()
+        assert submitted[identity].base_model == 0
+        received.append(identity)
+        return site, identity, result, error
+
+    port = AsyncExecutionPort(
+        state=state,
+        clients=[f"site-{index}" for index in range(physical_clients)],
+        contribution_budget=2,
+        submit=submit,
+        receive=receive,
+        live_run=lambda: None,
+        normalize=lambda result, assignment: result,
+        aborted=lambda: False,
+        on_accept=lambda assignment, version, site: accepted.append(assignment.assignment_id),
+    )
+    run_async_execution(port, fl_ctx)
+    runtime.assert_consumed()
+
+    assert accepted == [0] and state.version == 1
+    assert received == [0, 1]
+    assert sorted(submitted) == [0, 1]
+    assert not list(tmp_path.glob("work-*"))
+    assert sorted(path.name for path in (tmp_path / "results").glob("*.pkl")) == (
+        [f"{identity:08d}.pkl" for identity in range(2) if identity == 0 or not straggler_fails]
+        if retain_artifacts
+        else []
+    )
+    if straggler_fails:
+        assert "Discarding failed assignment 1 after fixed replay finished" in caplog.text
+
+
+@pytest.mark.parametrize("retain_artifacts", [True, False])
+@pytest.mark.parametrize(
     ("result_order", "horizon_upload"),
     [
         pytest.param((1, 0), False, id="before-required-upload"),
