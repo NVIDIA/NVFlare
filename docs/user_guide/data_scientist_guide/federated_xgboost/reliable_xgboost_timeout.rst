@@ -85,6 +85,10 @@ is considered dead, and the whole job is aborted.
 Configure Timeouts Properly
 ***************************
 
+For jobs with many clients, check the server's request worker capacity
+before increasing timeouts. Too few workers can prevent XGBoost
+collectives from completing. See :ref:`xgboost_collective_worker_capacity`.
+
 These timeout values are related. For example, if the transaction timeout
 is greater than the server timeout, then it won't be that effective since
 the server will treat the client to be dead once the server timeout is reached

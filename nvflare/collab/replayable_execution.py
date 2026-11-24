@@ -14,9 +14,10 @@
 
 """Shared controlled-execution boundary for Collab assignment workflows."""
 
+import logging
 import pickle
 import queue
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -57,6 +58,13 @@ class AsyncExecutionPort:
     reserve(names, metadata, factory), and accept(assignment, result).
     The callbacks keep algorithm-specific normalization and observers outside
     the simulator's assignment and result scheduling policy.
+
+    ``make_planning_state`` builds a fresh model-free state with the same
+    reservation and publication rules. Its ``accept`` receives a placeholder
+    result and must not read model data or have external side effects.
+    Fixed replay with preflight requires the workflow to finish on the last
+    planned acceptance. Without preflight, the real state may finish early;
+    successful replay drains started calls before releasing temporary bases.
     """
 
     state: Any
@@ -72,6 +80,7 @@ class AsyncExecutionPort:
     on_publish: Callable = _no_event
     on_time: Callable = _no_event
     make_assignment: Callable | None = None
+    make_planning_state: Callable | None = None
 
 
 def run_async_execution(port: AsyncExecutionPort, fl_ctx) -> None:
@@ -90,9 +99,15 @@ class PlannedAsyncExecution:
         self.port = port
         self.state = port.state
         self.runtime = runtime
+        self.expected = None
+        self.retain_artifacts = True
+        self._base_users = Counter()
+        self._planned_acceptances = None
 
     def _make_assignment(self, identity, logical_name, version, model, metadata):
         path = self.runtime.save_model(version, model)
+        if not self.retain_artifacts and self._planned_acceptances is None:
+            self._base_users[version] += 1
         if self.port.make_assignment is not None:
             return self.port.make_assignment(identity, logical_name, version, path, metadata)
         return StoredAssignment(identity, logical_name, logical_name, version, path, metadata)
@@ -100,18 +115,64 @@ class PlannedAsyncExecution:
     def run(self):
         plan = self.runtime.claim(ASYNC_EXECUTION)
         sequence = plan["logical_sequence"]
-        seeds = plan.get("train_seeds")
+        timing = plan.get("timing")
         self.physical_sites = plan.get("physical_sites")
         total = self.port.contribution_budget
-        if len(sequence) != total:
+        ordered = timing is not None and "events" in timing
+        if not ordered and len(sequence) != total:
             raise ValueError(f"async plan has {len(sequence)} assignments; workflow requires {total}")
         if not self.port.clients:
             raise ValueError("planned async execution requires a physical client")
         if self.physical_sites is not None and set(self.physical_sites) - set(self.port.clients):
             raise ValueError("async plan names unavailable physical sites")
 
+        if ordered and self.port.make_planning_state is None:
+            raise ValueError("ordered timing requires an async planning state")
+        events = list(PlannedAsyncEvents(sequence, timing)) if timing is not None else None
+        preflight = None
+        if self.port.make_planning_state is not None:
+            preflight = _AsyncPreflight(self.port)
+            execution = PlannedAsyncExecution(preflight.port, preflight)
+            execution.physical_sites = self.physical_sites
+            try:
+                execution._run_plan(plan, events, strict_completion=True)
+            except ValueError as error:
+                raise ValueError(f"async plan preflight failed: {error}") from error
+            for filename, record in preflight.records:
+                self.runtime.trace("preflight.jsonl", {"trace": filename, **record})
+            self.expected = iter(preflight.records)
+            self._planned_acceptances = {
+                record["assignment_id"] for filename, record in preflight.records if filename == "accepted.jsonl"
+            }
+
+        self.retain_artifacts = plan.get("retain_artifacts", True)
+        if preflight is not None and not self.retain_artifacts:
+            # Future reservations can reuse a base after its current assignments finish.
+            self._base_users.update(
+                record["base_version"] for filename, record in preflight.records if filename == "assignments.jsonl"
+            )
+        with self.runtime.artifacts(self.retain_artifacts):
+            self._run_plan(plan, events, strict_completion=preflight is not None)
+        if preflight is not None:
+            if (missing := next(self.expected, None)) is not None:
+                raise RuntimeError(f"async execution ended before preflight event: {missing}")
+            self.runtime.verify_preflight(preflight.records)
+
+    def _trace(self, filename, record):
+        self.runtime.trace(filename, record)
+        if self.expected is not None and filename != "dispatch.jsonl":
+            expected = next(self.expected, None)
+            if expected != (filename, record):
+                raise RuntimeError(
+                    f"async execution differs from preflight: expected {expected}, got {filename} {record}"
+                )
+
+    def _run_plan(self, plan, events, *, strict_completion):
+        sequence = plan["logical_sequence"]
+        seeds = plan.get("train_seeds")
+        self.base_versions = plan.get("base_versions")
         if "timing" in plan:
-            self._run_timed(sequence, seeds, plan["timing"])
+            self._run_timed(sequence, seeds, events, plan["timing"])
             return
         order = plan["arrival_sequence"]
 
@@ -122,7 +183,7 @@ class PlannedAsyncExecution:
         ready = set()
         next_reservation = 0
         next_acceptance = 0
-        self.runtime.save_model(self.state.version, self.state.model)
+        self._save_publication()
 
         def dispatch():
             nonlocal next_reservation
@@ -134,12 +195,11 @@ class PlannedAsyncExecution:
             ]
             assignments = self.state.reserve(logical_names, metadata, self._make_assignment)
             expected_ids = list(range(next_reservation, next_reservation + len(logical_names)))
-            if [assignment.assignment_id for assignment in assignments] != expected_ids:
-                raise ValueError("async state must reserve every planned assignment with sequential IDs")
+            self._verify_reservations(assignments, expected_ids)
             next_reservation += len(assignments)
             pending.extend(assignments)
             for assignment in assignments:
-                self.runtime.trace(
+                self._trace(
                     "assignments.jsonl",
                     {
                         "assignment_id": assignment.assignment_id,
@@ -153,10 +213,10 @@ class PlannedAsyncExecution:
                 kwargs = {"train_seeds": {site: assignment.metadata["train_seed"]}} if seeds is not None else {}
                 self.port.submit(site, assignment, **kwargs)
                 inflight[site] = assignment.assignment_id
-                self.runtime.trace("dispatch.jsonl", {"assignment_id": assignment.assignment_id, "site": site})
+                self._trace("dispatch.jsonl", {"assignment_id": assignment.assignment_id, "site": site})
                 self.port.on_dispatch(assignment, self.state.version, site)
 
-        while not self.state.finished:
+        while not self.state.finished and next_acceptance < len(order):
             if self.port.aborted():
                 raise RuntimeError("planned async workflow aborted")
             dispatch()
@@ -168,9 +228,10 @@ class PlannedAsyncExecution:
                 result = self.runtime.load_result(expected)
                 version = self.state.version
                 published = self.state.accept(assignment, self.port.normalize(result, assignment))
+                self._verify_publication(assignment, version, published)
                 ready.remove(expected)
                 next_acceptance += 1
-                self.runtime.trace(
+                self._trace(
                     "accepted.jsonl",
                     {
                         "assignment_id": expected,
@@ -183,8 +244,9 @@ class PlannedAsyncExecution:
                 )
                 self.port.on_accept(assignment, version, completed_sites.pop(expected))
                 if published:
-                    self.runtime.save_model(self.state.version, self.state.model)
+                    self._save_publication()
                     self.port.on_publish(self.state.model, self.state.version)
+                self._discard_consumed_assignment(assignment)
                 continue
             if not inflight:
                 raise RuntimeError("planned async workflow cannot make progress")
@@ -201,23 +263,91 @@ class PlannedAsyncExecution:
             completed_sites[identity] = site
             available.append(site)
 
-    def _run_timed(self, sequence, seeds, timing):
+        # A custom state can finish before every planned assignment is accepted.
+        # Started calls still need their base files until their results arrive.
+        while inflight:
+            if self.port.aborted():
+                raise RuntimeError("planned async workflow aborted during drain")
+            try:
+                site, identity, result, error = self.port.receive()
+            except queue.Empty:
+                continue
+            if inflight.pop(site, None) != identity:
+                raise ValueError("physical result identity mismatch")
+            if error is not None or result is None:
+                logging.getLogger(__name__).warning(
+                    "Discarding failed assignment %s after fixed replay finished: %s",
+                    identity,
+                    error or "no result",
+                )
+            elif self.retain_artifacts:
+                self.runtime.save_result(identity, result)
+
+        if not self.retain_artifacts:
+            for assignment in self.state.active.values():
+                self._release_base(assignment)
+
+        if not self.state.finished or (strict_completion and next_acceptance != len(order)):
+            raise ValueError("fixed replay must finish after accepting its complete arrival sequence")
+
+    def _verify_reservations(self, assignments, expected_ids):
+        if [assignment.assignment_id for assignment in assignments] != expected_ids:
+            raise ValueError(f"async state could not reserve the planned assignments {expected_ids}")
+        for assignment in assignments:
+            identity = assignment.assignment_id
+            if self.base_versions is not None and assignment.base_version != self.base_versions[identity]:
+                raise ValueError(
+                    f"assignment {identity} has base version {assignment.base_version}; plan expects {self.base_versions[identity]}"
+                )
+
+    def _save_publication(self):
+        if self.retain_artifacts:
+            self.runtime.save_model(self.state.version, self.state.model)
+
+    def _verify_publication(self, assignment, version, published):
+        if self.port.make_planning_state is not None and bool(published) != (self.state.version > version):
+            raise RuntimeError(
+                f"async execution reported inconsistent publication at assignment {assignment.assignment_id}"
+            )
+
+    def _discard_consumed_assignment(self, assignment):
+        if not self.retain_artifacts:
+            self.runtime.discard_result(assignment.assignment_id)
+            self._release_base(assignment)
+
+    def _release_base(self, assignment):
+        version = assignment.base_version
+        self._base_users[version] -= 1
+        if not self._base_users[version]:
+            self.runtime.discard_model(version)
+            del self._base_users[version]
+
+    def _run_timed(self, sequence, seeds, events, timing):
         """Apply logical events on a virtual clock; wall time only gates result readiness."""
         available = list(self.port.clients)
         pending = deque()
         inflight = {}
         completed_sites = {}
         ready = set()
-        events = list(PlannedAsyncEvents(sequence, timing))
-        self.runtime.save_model(self.state.version, self.state.model)
+        ordered = "events" in timing
+        horizon = timing["horizon"]
+        released = set() if timing.get("release_on_train", False) else None
+        reserve_options = {}
+        if released is not None:
+            reserve_options["released_assignments"] = released
+        if timing.get("speculative", False):
+            reserve_options["speculative"] = True
+        self._save_publication()
 
         def dispatch():
             while pair := self._take_dispatch_pair(available, pending):
                 site, assignment = pair
+                if self.port.aborted():
+                    raise RuntimeError("planned async workflow aborted")
                 kwargs = {"train_seeds": {site: assignment.metadata["train_seed"]}} if seeds is not None else {}
                 self.port.submit(site, assignment, **kwargs)
                 inflight[site] = assignment.assignment_id
-                self.runtime.trace("dispatch.jsonl", {"assignment_id": assignment.assignment_id, "site": site})
+                self._trace("dispatch.jsonl", {"assignment_id": assignment.assignment_id, "site": site})
                 self.port.on_dispatch(assignment, self.state.version, site)
 
         def collect(dispatch_pending=True):
@@ -227,22 +357,39 @@ class PlannedAsyncExecution:
                 return
             if inflight.pop(site, None) != identity:
                 raise ValueError("physical result identity mismatch")
+            required = self._planned_acceptances is None or identity in self._planned_acceptances
             if error is not None or result is None:
-                raise RuntimeError(f"assignment {identity} failed: {error or 'no result'}")
-            self.runtime.save_result(identity, result)
-            ready.add(identity)
-            completed_sites[identity] = site
-            available.append(site)
+                if not ordered or required:
+                    raise RuntimeError(f"assignment {identity} failed: {error or 'no result'}")
+                logging.getLogger(__name__).warning(
+                    "Discarding failed assignment %s outside the planned acceptances: %s",
+                    identity,
+                    error or "no result",
+                )
+                result = None
             if dispatch_pending:
+                if result is not None and (required or self.retain_artifacts):
+                    self.runtime.save_result(identity, result)
+                    completed_sites[identity] = site
+                elif not self.retain_artifacts:
+                    self._release_base(self.state.active[identity])
+                # Even a discarded result can unblock the final phase at the horizon.
+                ready.add(identity)
+                available.append(site)
                 dispatch()
+            elif not self.retain_artifacts:
+                self._release_base(self.state.active[identity])
+            elif result is not None:
+                self.runtime.save_result(identity, result)
 
         index = 0
         while index < len(events) and not self.state.finished:
             if self.port.aborted():
                 raise RuntimeError("planned async workflow aborted")
             instant, identity, phase = events[index]
-            self.runtime.virtual_time = instant
-            self.port.on_time(instant)
+            if not ordered or phase != "upload":
+                self.runtime.virtual_time = instant
+                self.port.on_time(instant)
             if phase == "start":
                 # Reserve all clients starting at the same virtual instant together,
                 # so the refill threshold is checked once for the whole batch.
@@ -252,12 +399,11 @@ class PlannedAsyncExecution:
                     index += 1
                 names = [sequence[i] for i in starts]
                 metadata = [({"train_seed": seeds[i]} if seeds is not None else {}) for i in starts]
-                assignments = self.state.reserve(names, metadata, self._make_assignment)
-                if [assignment.assignment_id for assignment in assignments] != starts:
-                    raise ValueError(f"logical starts at time {instant} require sequential available assignments")
+                assignments = self.state.reserve(names, metadata, self._make_assignment, **reserve_options)
+                self._verify_reservations(assignments, starts)
                 pending.extend(assignments)
                 for assignment in assignments:
-                    self.runtime.trace(
+                    self._trace(
                         "assignments.jsonl",
                         {
                             "assignment_id": assignment.assignment_id,
@@ -267,7 +413,7 @@ class PlannedAsyncExecution:
                             **_seed_record(assignment),
                         },
                     )
-                    self.runtime.trace(
+                    self._trace(
                         "phases.jsonl",
                         {"assignment_id": assignment.assignment_id, "phase": "start", "virtual_time": instant},
                     )
@@ -276,21 +422,33 @@ class PlannedAsyncExecution:
             index += 1
             if identity not in self.state.active:
                 raise ValueError(f"phase for unreserved assignment {identity}")
-            self.runtime.trace("phases.jsonl", {"assignment_id": identity, "phase": phase, "virtual_time": instant})
-            if phase != "upload":
-                continue
-            while identity not in ready:
+            while phase == "upload" and identity not in ready:
                 if self.port.aborted():
                     raise RuntimeError("planned async workflow aborted")
                 if not inflight:
                     raise RuntimeError("planned async workflow cannot make progress")
                 collect()
+            if self.port.aborted():
+                raise RuntimeError("planned async workflow aborted")
+            if ordered and phase == "upload":
+                self.runtime.virtual_time = instant
+                self.port.on_time(instant)
+            self._trace("phases.jsonl", {"assignment_id": identity, "phase": phase, "virtual_time": instant})
+            if ordered and instant >= horizon:
+                break
+            if phase != "upload":
+                if phase == "train" and released is not None:
+                    released.add(identity)
+                continue
             assignment = self.state.active[identity]
             result = self.runtime.load_result(identity)
             version = self.state.version
             published = self.state.accept(assignment, self.port.normalize(result, assignment))
+            self._verify_publication(assignment, version, published)
+            if released is not None:
+                released.discard(identity)
             ready.remove(identity)
-            self.runtime.trace(
+            self._trace(
                 "accepted.jsonl",
                 {
                     "assignment_id": identity,
@@ -304,14 +462,27 @@ class PlannedAsyncExecution:
             )
             self.port.on_accept(assignment, version, completed_sites.pop(identity))
             if published:
-                self.runtime.save_model(self.state.version, self.state.model)
+                self._save_publication()
                 self.port.on_publish(self.state.model, self.state.version)
+            self._discard_consumed_assignment(assignment)
 
+        if ordered and index < len(events):
+            raise ValueError("ordered plan has events after the workflow finished")
         if not self.state.finished:
-            self.runtime.virtual_time = timing["horizon"]
-            self.runtime.trace("phases.jsonl", {"phase": "horizon", "virtual_time": timing["horizon"]})
+            if ordered:
+                if self.runtime.virtual_time < horizon:
+                    raise ValueError("ordered plan ended before the workflow finished or reached its horizon")
+            else:
+                self.runtime.virtual_time = horizon
+            self._trace("phases.jsonl", {"phase": "horizon", "virtual_time": self.runtime.virtual_time})
 
-        # Retain results already in flight for inspection after a horizon stop.
+        if not self.retain_artifacts:
+            for identity in completed_sites:
+                self._discard_consumed_assignment(self.state.active[identity])
+            for assignment in pending:
+                self._release_base(assignment)
+
+        # Drain active calls without admitting pending work after the stop.
         while inflight:
             if self.port.aborted():
                 raise RuntimeError("planned async workflow aborted during drain")
@@ -325,3 +496,37 @@ class PlannedAsyncExecution:
                     pending.remove(assignment)
                     return site, assignment
         return None
+
+
+class _AsyncPreflight:
+    """Run the same scheduler with immediate placeholder results and no artifact I/O."""
+
+    def __init__(self, port):
+        self.records = []
+        self.results = deque()
+        self.port = AsyncExecutionPort(
+            state=port.make_planning_state(),
+            clients=port.clients,
+            contribution_budget=port.contribution_budget,
+            submit=self.submit,
+            receive=self.results.popleft,
+            live_run=_no_event,
+            normalize=lambda result, assignment: result,
+            aborted=port.aborted,
+        )
+
+    def submit(self, site, assignment, **kwargs):
+        self.results.append((site, assignment.assignment_id, True, None))
+
+    def trace(self, filename, record):
+        if filename != "dispatch.jsonl":
+            self.records.append((filename, record))
+
+    def save_model(self, version, model):
+        return ""
+
+    def save_result(self, assignment_id, result):
+        pass
+
+    def load_result(self, assignment_id):
+        return True

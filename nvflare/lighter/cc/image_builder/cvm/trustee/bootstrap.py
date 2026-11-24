@@ -20,9 +20,6 @@ import tempfile
 import time
 from pathlib import Path
 
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ed25519
-
 from ..common.errors import require
 from ..common.io import canonical, digest_file, is_sha256, read_json, write_json
 from ..common.linux import protect_process
@@ -33,7 +30,7 @@ from ..common.versions import (
     COCO_SERVICE_BUILD_PROFILE,
     COCO_SERVICE_PATCH_SHA256,
 )
-from .client import MAX_ADMIN_TOKEN_LIFETIME_SECONDS, encode
+from .client import MAX_ADMIN_TOKEN_LIFETIME_SECONDS, encode, load_admin_signing_key
 
 RECEIPT_PROVENANCE_FIELDS = (
     "trustee_commit",
@@ -105,8 +102,7 @@ def issue_admin_token(
     )
     require(isinstance(issuer, str) and issuer and isinstance(audience, str) and audience, "Invalid token identity")
     protect_process()
-    key = serialization.load_pem_private_key(Path(private_key).read_bytes(), password=None)
-    require(isinstance(key, ed25519.Ed25519PrivateKey), "KBS administration requires an Ed25519 key")
+    key = load_admin_signing_key(private_key)
     issued = int(time.time() if now is None else now)
     header = encode(canonical({"alg": "EdDSA", "typ": "JWT"}))
     claims = encode(
