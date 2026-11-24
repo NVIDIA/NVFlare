@@ -814,61 +814,36 @@ in executor arguments control the timeout behavior:
 
 Number of Clients
 -----------------
-XGBoost collective operations, such as all-gather, require every participating
-client to enter the same operation before it can complete. The server forwards
-these requests through the ReliableMessage request worker pool. The pool has
-20 workers by default; this is a configurable concurrency limit, not a hard
-limit on the number of clients supported by NVFlare.
 
-For histogram-based federated XGBoost, set the server's
-``rm_max_request_workers`` to at least the number of participating clients.
-Allow additional capacity if other request handlers share the pool.
-For example, for 100 clients, add the following top-level setting to the
-server application configuration, alongside its existing ``workflows`` and
-``components`` entries:
+For histogram-based federated XGBoost, set ``rm_max_request_workers``
+in the server application configuration to at least the number of
+participating clients. The default is 20. Allow extra workers if other
+request handlers share the pool.
+
+For 100 clients, add this top-level setting alongside the existing
+``workflows`` and ``components`` entries:
 
 .. code-block:: json
-   :caption: config_fed_server.json (top-level setting)
+   :caption: config_fed_server.json (partial)
 
     {
         "format_version": 2,
         "rm_max_request_workers": 100
     }
 
-This setting controls the receiving process's worker pool. Setting it only in
-``config_fed_client.json`` does not increase the server's capacity. The vertical
-XGBoost recipe does not automatically increase the pool size with the client
-count; check the effective server job configuration when scaling up.
+XGBoost collectives wait for all participating clients. With too few
+server workers, requests can remain queued behind workers waiting for
+the same collective, causing timeouts. Increasing ``tx_timeout`` or
+setting ``rm_max_request_workers`` only in the client configuration
+does not resolve this bottleneck.
 
-.. warning::
+This requirement applies with and without encryption. Secure training
+also requires sufficient CPU and memory, especially when multiple
+clients share a host. For timeout settings, see
+:ref:`reliable_xgboost_timeout`.
 
-   If the server has fewer workers than participating clients, all available
-   workers can block waiting for a collective to complete while the remaining
-   clients' requests are queued. A request reported as ``in_process`` may still
-   be queued. This can cause ``exceeded tx_timeout``, ``COMMUNICATION_ERROR``,
-   and ``Allgather RPC failed``, including during the initial ``DMatrix`` data
-   loading operation, before any training round completes. Increasing
-   ``tx_timeout`` alone cannot resolve this worker starvation.
-
-Check worker capacity before tuning timeouts. Once the collective can make
-progress, allow enough time for data loading, network transfer, and secure
-computation as described in :ref:`reliable_xgboost_timeout`.
-The same collective worker requirement applies with and without encryption.
-Ensure the host has sufficient CPU, memory, and process/thread capacity for
-the participating clients and server workers. Increasing the worker count
-removes this concurrency bottleneck but does not guarantee that the host can
-support the workload. Secure training adds encryption-related computation and
-resource use; running many clients and the server on one host can exhaust its
-capacity even when the worker count is sufficient. Distribute clients across
-adequately provisioned hosts, reduce the workload or client count, and measure
-resource use before increasing concurrency further. Longer timeouts can
-accommodate slow operations that are making progress, but cannot provide
-missing resources or correct a communication failure caused by another defect.
-
-In simulator mode, also run all
-participating XGBoost clients concurrently, for example with ``-n 100 -t 100``;
-clients waiting for the collective cannot free simulator slots for clients
-that have not started it.
+In simulator mode, run all participating clients concurrently. For
+example, use ``-n 100 -t 100`` for 100 clients.
 
 
 Additional Resources
