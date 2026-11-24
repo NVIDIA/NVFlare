@@ -1,0 +1,9 @@
+{
+  "unique_private_mechanisms": 228,
+  "preserved_prior_attempts": 1,
+  "tuning_epsilon": 118.72335955100934,
+  "all_dp_runs_epsilon": 152.1349688016121,
+  "tuning_observed_accountant_epsilon_not_dp_guarantee": 113.85860891653266,
+  "all_runs_observed_accountant_epsilon_not_dp_guarantee": 143.8339156710677,
+  "delta": 1e-05
+}

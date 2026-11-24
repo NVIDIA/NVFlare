@@ -1,3 +1,7 @@
+:html_title: Federated Learning Tutorials in Python
+:html_description: Explore NVIDIA FLARE tutorials for federated learning in Python, including the simulator,
+                   Recipe API, Client API, and runnable framework examples.
+
 .. _tutorials:
 
 Tutorials

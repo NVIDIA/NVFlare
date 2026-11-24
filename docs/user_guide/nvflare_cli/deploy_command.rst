@@ -146,7 +146,7 @@ The command writes:
 - ``startup/start_docker.sh``
 - patched ``local/resources.json.default`` with ``DockerJobLauncher``
 - patched ``local/comm_config.json``
-- ``local/study_runtime.yaml`` template when missing (skipped for legacy kits that already have ``study_data.yaml``)
+- ``local/study_runtime.yaml`` template when missing
 
 The Docker launcher preserves ``stcp://`` while replacing the parent hostname
 with its Docker DNS name. It rejects URL and connection-security mismatches
@@ -253,10 +253,9 @@ Prepare the parent server or client kit first:
 After ``deploy prepare`` and before staging or starting the parent pod, deployment
 owners may edit the generated ``local/study_runtime.yaml`` to configure per-study
 datasets, env vars, secrets, and Pod templates in one auto-discovered file — no
-launcher arguments are needed. For legacy kits that still carry a v1
-``local/study_data.yaml``, the generated K8s launcher config instead sets
-``study_data_pvc_file_path`` to ``<workspace_mount_path>/local/study_data.yaml``
-so existing data mounts keep working; the two files must not coexist. Stage or
+launcher arguments are needed. The removed v1
+``local/study_data.yaml`` is no longer read; move its studies into
+``study_runtime.yaml`` and delete the old file. Stage or
 copy any referenced files under ``local/`` so the parent process can read them
 at the in-pod paths.
 
@@ -306,7 +305,7 @@ The command writes:
 - ``helm_chart/`` for the parent server or client pod
 - patched ``local/resources.json.default`` with ``K8sJobLauncher``
 - patched ``local/comm_config.json``
-- ``local/study_runtime.yaml`` template when missing (skipped for legacy kits that already have ``study_data.yaml``)
+- ``local/study_runtime.yaml`` template when missing
 
 ************
 K8s Staging

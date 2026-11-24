@@ -13,9 +13,9 @@
 # limitations under the License.
 """Site-owned per-study runtime configuration (v2): local/study_runtime.yaml.
 
-Filename selects the format: this strict v2 parser never reads the frozen v1
-local/study_data.yaml (see study_data.py). Docker, Kubernetes, and Slurm reject
-coexistence of both files; process mode ignores the legacy file.
+The v1 local/study_data.yaml format was removed in 2.10. Docker, Kubernetes, and
+Slurm refuse to launch while that file is present (see reject_legacy_study_data);
+process mode never read it and still ignores it.
 """
 
 from __future__ import annotations
@@ -31,9 +31,9 @@ from typing import Optional
 import yaml
 
 from nvflare.apis.job_launcher_spec import JobProcessEnv
-from nvflare.app_opt.job_launcher.study_data import MODE_RO, MODE_RW, StudyDatasetMount
 
 STUDY_RUNTIME_FILE = "local/study_runtime.yaml"
+LEGACY_STUDY_DATA_FILE = "local/study_data.yaml"
 SUPPORTED_FORMAT_VERSION = 2
 
 DATASET_TYPE_MOUNT = "mount"
@@ -103,6 +103,27 @@ RESERVED_DOCKER_KWARGS = frozenset(
 )
 
 
+DATA_MOUNT_ROOT = "/data"
+MODE_RO = "ro"
+MODE_RW = "rw"
+
+
+@dataclass(frozen=True)
+class StudyDatasetMount:
+    study: str
+    dataset: str
+    source: str
+    mode: str
+
+    @property
+    def mount_path(self) -> str:
+        return f"{DATA_MOUNT_ROOT}/{self.study}/{self.dataset}"
+
+    @property
+    def read_only(self) -> bool:
+        return self.mode == MODE_RO
+
+
 @dataclass(frozen=True)
 class SecretEnvRef:
     name: str
@@ -134,6 +155,16 @@ class StudyRuntime:
 
 def study_runtime_file_path(workspace_root: str) -> str:
     return os.path.join(workspace_root, *STUDY_RUNTIME_FILE.split("/"))
+
+
+def reject_legacy_study_data(workspace_root: str) -> None:
+    """Raise if the removed v1 local/study_data.yaml is still present, so its mounts are never silently dropped."""
+    legacy_file = os.path.join(workspace_root, *LEGACY_STUDY_DATA_FILE.split("/"))
+    if os.path.exists(legacy_file):
+        raise RuntimeError(
+            f"legacy study data file '{legacy_file}' is no longer supported; move its studies into "
+            f"{STUDY_RUNTIME_FILE} (format_version: 2) and delete it. See the 2.10 migration guide."
+        )
 
 
 def _error(file_path: str, message: str) -> ValueError:

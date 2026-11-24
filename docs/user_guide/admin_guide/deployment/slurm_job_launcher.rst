@@ -228,6 +228,14 @@ Important keys are:
        only as an explicit insecure opt-out on a trusted, isolated network.
    * - ``poll_interval``
      - Scheduler polling interval; default ``10`` seconds.
+       Cancellation observation waits use at most ``1`` second between queries
+       for the first ``10`` seconds after the initial cancellation request, then
+       return to ``poll_interval``. Repeated requests do not extend that window.
+       Failed cancellation requests are retried until one is accepted; subsequent
+       polls observe completion without repeating ``scancel``. Query time and
+       scheduler settlement still count against the client-parent cleanup bound.
+       After that bound, observation continues in the background and confirmed
+       completion releases client-parent ownership automatically.
    * - ``submit_timeout``
      - Maximum time to wait for ``sbatch`` to return a job ID; default ``30``
        seconds.
@@ -401,8 +409,8 @@ not written to the batch script or scheduler command.
 Mount sources must be absolute paths outside the runtime workspace and must
 exist on the compute nodes that can run the job. Bare mode
 rejects container, dataset, and secret-mount settings because it has no mount
-namespace. Migrate legacy
-``local/study_data.yaml`` files to ``study_runtime.yaml`` before using Slurm.
+namespace. The Slurm launcher refuses to launch while a legacy
+``local/study_data.yaml`` is present; move its studies into ``study_runtime.yaml``.
 
 Job Settings
 ============

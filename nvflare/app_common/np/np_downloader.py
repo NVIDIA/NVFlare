@@ -126,6 +126,9 @@ def download_arrays(
 
     Returns: tuple of (error message if any, downloaded state dict).
 
+    Raises:
+        DownloadUnavailable: another attempt completed this source; retry the enclosing submission.
+
     """
     consumer = ArrayConsumer(arrays_received_cb, cb_kwargs)
     download_object(

@@ -287,6 +287,8 @@ class AdminCommandNames:
     SHOW_ERRORS = "show_errors"
     RESET_ERRORS = "reset_errors"
     GET_JOB_LOG = "get_job_log"
+    GET_JOB_RESOURCES = "get_job_resources"
+    GET_STUDY_RESOURCES = "get_study_resources"
     AUX_COMMAND = "aux_command"
     SYS_INFO = "sys_info"
     REPORT_RESOURCES = "report_resources"
@@ -447,7 +449,7 @@ class WorkspaceConstants:
 
     LOGGING_CONFIG = "log_config.json"
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
-    AUDIT_LOG = "audit.log"
+    AUDIT_LOG = "audit.jsonl"
     LOG_FILE_NAME = "log.txt"
     ERROR_LOG_FILE_NAME = "error_log.txt"
     STATS_POOL_SUMMARY_FILE_NAME = "stats_pool_summary.json"

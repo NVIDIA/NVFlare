@@ -164,6 +164,7 @@ log.txt
 client_token.txt
 *.fl
 audit.log
+audit.jsonl
 *.crt
 .__nvfl_sig.json
 

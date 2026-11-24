@@ -19,9 +19,8 @@ from flwr.common import Context
 
 from .task import DEVICE, Net, get_weights, load_data, set_weights, test, train
 
-# Module-level cache for model and data to avoid reloading every round.
-# Flower's supernode runs as a long-lived subprocess (not re-imported per round),
-# so module-level state persists across FL rounds.
+# Cache model and data within this ClientApp process. Flower can launch a new
+# process for each task; cross-round state belongs in the Flower Context.
 net = None
 trainloader = None
 testloader = None

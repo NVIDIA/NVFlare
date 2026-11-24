@@ -17,31 +17,21 @@ Trust boundary:
 
 Goals: secrets as references only (never values in `local/` files); zero-configuration discovery (no launcher
 arguments, no `resources.json` edits); Docker, Kubernetes, and Slurm conceptually aligned; FLARE-owned launch
-behavior untouchable; datasets extensible by `type` so new providers need no format change; v1 deployments keep
-working.
+behavior untouchable; datasets extensible by `type` so new providers need no format change.
 
 Non-goals: job-requested Secrets; job-side runtime wiring; replacing `launcher_spec`/`resource_spec`; changing the
 pod template merge machinery; implementing the Databricks provider (schema shape only).
 
-## v1 Schema (shipped in 2.8 — frozen)
+## v1 Schema (shipped in 2.8 — removed in 2.10)
 
-```yaml
-# local/study_data.yaml
-default:
-  data:
-    source: nvfldata     # Docker: host path; K8s: PVC claim name
-    mode: ro             # ro | rw
-```
-
-`study -> dataset -> {source, mode}`, mounted at `/data/<study>/<dataset>`. File and parser stay exactly as-is.
-The unreleased `study_job_spec_file_path` pod-template mechanism (PR #4804) is removed and replaced by v2
-`pod_template`.
+`local/study_data.yaml` mapped `study -> dataset -> {source, mode}`, mounted at `/data/<study>/<dataset>`. It was
+replaced by the `datasets` section of v2 and removed in 2.10. The unreleased `study_job_spec_file_path` pod-template
+mechanism (PR #4804) was removed earlier and replaced by v2 `pod_template`.
 
 ## v2 Schema: `local/study_runtime.yaml`
 
 - Auto-discovered at a fixed workspace-relative path by the process, Docker, Kubernetes, and Slurm launchers. No launcher
   argument or deploy-config key selects the file.
-- Filename = format: `study_runtime.yaml` is v2 strict, `study_data.yaml` is v1 frozen. No content sniffing.
 - Job side unchanged: the job still submits only `{"study": "..."}`.
 - On a client, a file that lists at least one study is the list of studies the site runs: jobs for an unlisted study
   (including `default`) are rejected at the resource check. No file or empty `studies` accepts every study.
@@ -159,7 +149,7 @@ Process:
 The shared `ProcessJobLauncher` loads the file at each server or client job launch, using the existing parser
 and resolver. `get_job_meta_study` selects `default` when study metadata is absent. Missing files or study
 entries add no settings. Invalid entries anywhere in the file fail launch, but only the selected study's
-secret sources are resolved. The legacy `study_data.yaml` is ignored in process mode, even if both files exist.
+secret sources are resolved. The removed `study_data.yaml` is never read in process mode.
 
 Each launch starts from a fresh parent environment snapshot. Resolve secret references before overlaying
 study settings, then apply the existing custom Python path and bootstrap credentials. Do not mutate the
@@ -254,29 +244,25 @@ Job-supplied images use the existing BYOC authorization on all three container l
 
 ## Parsing, Compatibility, Migration
 
-For Docker and Kubernetes:
+For Docker, Kubernetes, and Slurm:
 
 ```text
 local/study_runtime.yaml present  → v2 strict parser (format_version: 2 required)
-local/study_data.yaml only        → v1 frozen parser, behavior unchanged
-both present (or v2 + legacy launcher args) → hard error
+local/study_data.yaml present (alone or with v2) → hard error
 ```
-
-Slurm requires the v2 file; a legacy-only file or coexistence of both files is a hard error.
 
 - `format_version: 2` required — the gate for future format evolution.
 - Hard errors: unknown top-level keys, unknown per-study keys, unknown dataset `type`, a key in both `env` and
   `secret_env`, an `env` or `secret_env` name that is launcher-owned (`PYTHONPATH`, the workspace-transfer
   variables), launcher-owned keys in `docker_kwargs`, launcher-mismatched keys (`pod_template` on Docker/Slurm,
-  `docker_kwargs` on Kubernetes/Slurm, `slurm` on Docker/Kubernetes), v1/v2 coexistence outside process mode.
+  `docker_kwargs` on Kubernetes/Slurm, `slurm` on Docker/Kubernetes), a leftover `study_data.yaml` outside process mode.
 - Missing referenced Secrets are not validated pre-launch (the launcher holds no Secret-read RBAC); the pending-pod
   failure classification already fails the job fast (`CreateContainerConfigError`, `FailedMount`).
-- Migration is wholesale: move all studies to `study_runtime.yaml`, delete `study_data.yaml` and any
-  `study_data_pvc_file_path` launcher arg.
+- Migration is wholesale: move all studies to `study_runtime.yaml`, delete `study_data.yaml` and remove the
+  `study_data_pvc_file_path` launcher arg, which the K8s launcher no longer accepts (see the 2.10 migration guide).
 - Workspace transfer: job workspace downloads exclude `study_runtime.yaml` plus any path-form `pod_template` files,
   read from this one well-known YAML. The `resources.json`-scraping exclusion logic is deleted.
-- `nvflare deploy prepare` generates a commented `study_runtime.yaml` template in new kits (skipped when a legacy
-  `study_data.yaml` exists) and emits the `study_data_pvc_file_path` launcher argument only for legacy kits. POC
+- `nvflare deploy prepare` generates a commented `study_runtime.yaml` template in new kits. POC
   Docker provisioning writes its data mapping into `study_runtime.yaml`. The file travels with the startup kit's
   `local/`.
 

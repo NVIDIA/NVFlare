@@ -56,7 +56,7 @@ def participants(args):
                 "kubeconfig": p.kubeconfig,
                 "cloud": p.cloud,
                 "image": image,
-                "has_study_dataset": bool((p.study_data.get(args.study) or {}).get(args.dataset)),
+                "has_study_dataset": bool((p.study_datasets.get(args.study) or {}).get(args.dataset)),
             }
         )
 
@@ -80,8 +80,8 @@ def participants(args):
             and not row["has_study_dataset"]
         ):
             raise SystemExit(
-                f"participant {row['name']} has no study_data mapping for {args.study}/{args.dataset}; "
-                "preloaded-data mode will not mount the dataset. Add study_data to the deploy config, "
+                f"participant {row['name']} has no study_runtime dataset for {args.study}/{args.dataset}; "
+                "preloaded-data mode will not mount the dataset. Add it under study_runtime in the deploy config, "
                 "lower --num-clients, pass --data-root for a different mounted path, or use --download for demo runs."
             )
         print("\t".join([row["role"], row["name"], row["namespace"], row["kubeconfig"], row["cloud"], job_image]))
