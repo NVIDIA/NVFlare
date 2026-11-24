@@ -101,6 +101,10 @@ class _AlgorithmHandlerManager:
             if handler.active:
                 handler.after_train_batch(pl_module)
 
+    def abort_round(self):
+        for handler in self._ordered_handlers():
+            handler.abort_round()
+
     def finish_round(self, pl_module: "pl.LightningModule") -> _AlgorithmResult:
         active_handlers = [handler for handler in self._ordered_handlers() if handler.active]
         if not active_handlers:

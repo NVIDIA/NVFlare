@@ -18,7 +18,7 @@ import numpy as np
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.workflows.scaffold import Scaffold
@@ -77,3 +77,31 @@ def test_scaffold_stops_before_aggregation_when_client_wait_is_aborted():
     aggregate.assert_not_called()
     save_model.assert_not_called()
     assert [call.args[0] for call in event.call_args_list] == [AppEventType.ROUND_STARTED]
+
+
+def test_scaffold_all_zero_step_round_keeps_model_and_control_variates():
+    from nvflare.app_common.workflows.base_fedavg import _make_unchanged_model_result
+
+    controller = Scaffold(num_clients=1, num_rounds=1, persistor_id="")
+    controller.fl_ctx = FLContext()
+    controller.abort_signal = Signal()
+    controller.model = FLModel(params={"weight": np.array([1.0])}, params_type=ParamsType.FULL, meta={})
+    controller._global_ctrl_weights = {"weight": np.array([0.25])}
+
+    with (
+        patch.object(controller, "info"),
+        patch.object(controller, "event"),
+        patch.object(controller, "sample_clients", return_value=["site-1"]),
+        patch.object(controller, "send_model_and_wait", return_value=[]),
+        patch.object(
+            controller,
+            "aggregate",
+            side_effect=lambda *_, **__: setattr(controller, "_keep_model", True) or _make_unchanged_model_result(0),
+        ),
+        patch.object(controller, "save_model"),
+        patch.object(controller, "_maybe_cleanup_memory"),
+    ):
+        controller._run_rounds()
+
+    assert controller.model.params["weight"] == np.array([1.0])
+    assert controller._global_ctrl_weights["weight"] == np.array([0.25])
