@@ -17,11 +17,14 @@ from unittest.mock import Mock
 import pytest
 import requests
 
+from nvflare.edge.constants import EdgeApiStatus
 from nvflare.edge.simulation import feg_api
+from nvflare.edge.simulation.simulator import Simulator
 from nvflare.edge.web.models.api_error import ApiError
 from nvflare.edge.web.models.device_info import DeviceInfo
 from nvflare.edge.web.models.job_request import JobRequest
 from nvflare.edge.web.models.job_response import JobResponse
+from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.edge.web.models.user_info import UserInfo
 
 
@@ -74,3 +77,36 @@ def test_http_error_preserves_api_error(api, monkeypatch):
 
     assert caught.value.status_code == 503
     assert caught.value.details == details
+
+
+@pytest.mark.parametrize(
+    "failures, expected_calls",
+    [
+        ([requests.ConnectTimeout], 2),
+        ([requests.ConnectTimeout] * 3, 3),
+        ([requests.ReadTimeout], 1),
+    ],
+)
+def test_result_post_retries_only_safe_connect_failures(api, monkeypatch, failures, expected_calls):
+    response = Mock(status_code=200, json=lambda: {"status": "OK"})
+    post = Mock(side_effect=[*(error("timeout") for error in failures), response])
+    monkeypatch.setattr(feg_api.requests, "post", post)
+    simulator = Simulator("test-job", Mock(), num_workers=1)
+    simulator.set_send_func(lambda request, device: api.report_result(request))
+    device = Mock(
+        device_id=f"{simulator.device_id_prefix}-1",
+        cookie={"selection": "id"},
+    )
+    device.get_device_info.return_value = api.device_info
+    device.get_user_info.return_value = api.user_info
+    device.do_task.return_value = {"weights": [1]}
+    task = TaskResponse(EdgeApiStatus.OK, job_id="job-1", task_id="task-1", task_name="train")
+    try:
+        simulator._do_learn(task, device, "selection-1")
+        assert post.call_count == expected_calls
+        assert all(call == post.call_args_list[0] for call in post.call_args_list)
+        assert post.call_args.kwargs["json"]["result"] == {"weights": [1]}
+        device.do_task.assert_called_once_with(task)
+        assert simulator._determine_my_devices({device.device_id: "selection-1"}) == {}
+    finally:
+        simulator.worker_pool.shutdown()
