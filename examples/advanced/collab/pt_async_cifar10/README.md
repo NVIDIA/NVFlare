@@ -235,7 +235,7 @@ observed assignment IDs, physical/logical clients and base versions. For
 simulator-owned replay and assignment seed helpers, see the separate
 [reproducible CIFAR-10 example](../pt_async_cifar10_reproducible/README.md).
 The [NumPy replay example](../numpy_async_reproducible/README.md) provides a
-small dataset-free path through the same simulator execution port.
+small dataset-free path through the same shared execution adapter.
 
 ## Outputs
 

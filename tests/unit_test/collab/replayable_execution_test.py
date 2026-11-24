@@ -20,7 +20,7 @@ import pytest
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.simulation_plan import SIMULATION_PLAN_PROP, SimulationPlanRuntime
 from nvflare.collab import FedBuffScheduleState
-from nvflare.collab.replayable_execution import AsyncExecutionPort, run_async_execution
+from nvflare.collab.replayable_execution import AsyncExecutionAdapter, run_async_execution
 
 
 class _CounterState:
@@ -60,7 +60,7 @@ class _CounterState:
 
 @pytest.mark.parametrize("retain_artifacts", [True, False])
 @pytest.mark.parametrize("finish_version", [1, 2])
-def test_generic_async_port_replays_non_fedbuff_algorithm(tmp_path, retain_artifacts, finish_version):
+def test_generic_async_adapter_replays_non_fedbuff_algorithm(tmp_path, retain_artifacts, finish_version):
     runtime = SimulationPlanRuntime(
         {
             "format_version": 1,
@@ -85,7 +85,7 @@ def test_generic_async_port_replays_non_fedbuff_algorithm(tmp_path, retain_artif
         assert assignment.base_model == 0
         accepted.append(assignment.assignment_id)
 
-    port = AsyncExecutionPort(
+    adapter = AsyncExecutionAdapter(
         state=state,
         clients=["site-1", "site-2"],
         contribution_budget=2,
@@ -96,7 +96,7 @@ def test_generic_async_port_replays_non_fedbuff_algorithm(tmp_path, retain_artif
         aborted=lambda: False,
         on_accept=on_accept,
     )
-    run_async_execution(port, fl_ctx)
+    run_async_execution(adapter, fl_ctx)
     runtime.assert_consumed()
     assert accepted == [1, 0][:finish_version]
     assert state.model == finish_version
@@ -143,7 +143,7 @@ def test_fixed_replay_drains_early_finish_before_releasing_bases(
         received.append(identity)
         return site, identity, result, error
 
-    port = AsyncExecutionPort(
+    adapter = AsyncExecutionAdapter(
         state=state,
         clients=[f"site-{index}" for index in range(physical_clients)],
         contribution_budget=2,
@@ -154,7 +154,7 @@ def test_fixed_replay_drains_early_finish_before_releasing_bases(
         aborted=lambda: False,
         on_accept=lambda assignment, version, site: accepted.append(assignment.assignment_id),
     )
-    run_async_execution(port, fl_ctx)
+    run_async_execution(adapter, fl_ctx)
     runtime.assert_consumed()
 
     assert accepted == [0] and state.version == 1
@@ -224,7 +224,7 @@ def test_ordered_replay_discards_failed_unaccepted_uploads(tmp_path, retain_arti
         return result
 
     state = make_state()
-    port = AsyncExecutionPort(
+    adapter = AsyncExecutionAdapter(
         state=state,
         clients=["site-1", "site-2"],
         contribution_budget=state.num_rounds,
@@ -235,7 +235,7 @@ def test_ordered_replay_discards_failed_unaccepted_uploads(tmp_path, retain_arti
         aborted=lambda: False,
         make_planning_state=make_state,
     )
-    run_async_execution(port, fl_ctx)
+    run_async_execution(adapter, fl_ctx)
     runtime.finalize()
     assert json.loads((tmp_path / "run.jsonl").read_text())["logical_trace_verified"] is True
     assert json.loads((tmp_path / "accepted.jsonl").read_text())["assignment_id"] == 0
@@ -247,9 +247,9 @@ def test_ordered_replay_discards_failed_unaccepted_uploads(tmp_path, retain_arti
     assert not list(tmp_path.glob("work-*"))
 
 
-def test_generic_async_port_uses_live_path_without_plan():
+def test_generic_async_adapter_uses_live_path_without_plan():
     called = []
-    port = AsyncExecutionPort(
+    adapter = AsyncExecutionAdapter(
         state=_CounterState(),
         clients=["site-1"],
         contribution_budget=2,
@@ -259,5 +259,5 @@ def test_generic_async_port_uses_live_path_without_plan():
         normalize=lambda result, assignment: result,
         aborted=lambda: False,
     )
-    run_async_execution(port, FLContext())
+    run_async_execution(adapter, FLContext())
     assert called == ["live"]

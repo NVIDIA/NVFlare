@@ -51,7 +51,7 @@ def _seed_record(assignment):
 
 
 @dataclass
-class AsyncExecutionPort:
+class AsyncExecutionAdapter:
     """Algorithm operations needed by a Collab workflow's execution policy.
 
     ``state`` exposes model, version, active, available_slots, finished,
@@ -83,21 +83,21 @@ class AsyncExecutionPort:
     make_planning_state: Callable | None = None
 
 
-def run_async_execution(port: AsyncExecutionPort, fl_ctx) -> None:
-    """Use live arrivals or the simulator plan through the same algorithm port."""
+def run_async_execution(adapter: AsyncExecutionAdapter, fl_ctx) -> None:
+    """Use live arrivals or the simulator plan through the same algorithm adapter."""
     runtime = fl_ctx.get_prop(SIMULATION_PLAN_PROP) if fl_ctx is not None else None
     if runtime is None or not runtime.has_section(ASYNC_EXECUTION):
-        port.live_run()
+        adapter.live_run()
         return
-    PlannedAsyncExecution(port, runtime).run()
+    PlannedAsyncExecution(adapter, runtime).run()
 
 
 class PlannedAsyncExecution:
     """Reserve logical work independently of physical sites; replay acceptance."""
 
-    def __init__(self, port: AsyncExecutionPort, runtime):
-        self.port = port
-        self.state = port.state
+    def __init__(self, adapter: AsyncExecutionAdapter, runtime):
+        self.adapter = adapter
+        self.state = adapter.state
         self.runtime = runtime
         self.expected = None
         self.retain_artifacts = True
@@ -108,8 +108,8 @@ class PlannedAsyncExecution:
         path = self.runtime.save_model(version, model)
         if not self.retain_artifacts and self._planned_acceptances is None:
             self._base_users[version] += 1
-        if self.port.make_assignment is not None:
-            return self.port.make_assignment(identity, logical_name, version, path, metadata)
+        if self.adapter.make_assignment is not None:
+            return self.adapter.make_assignment(identity, logical_name, version, path, metadata)
         return StoredAssignment(identity, logical_name, logical_name, version, path, metadata)
 
     def run(self):
@@ -117,22 +117,22 @@ class PlannedAsyncExecution:
         sequence = plan["logical_sequence"]
         timing = plan.get("timing")
         self.physical_sites = plan.get("physical_sites")
-        total = self.port.contribution_budget
+        total = self.adapter.contribution_budget
         ordered = timing is not None and "events" in timing
         if not ordered and len(sequence) != total:
             raise ValueError(f"async plan has {len(sequence)} assignments; workflow requires {total}")
-        if not self.port.clients:
+        if not self.adapter.clients:
             raise ValueError("planned async execution requires a physical client")
-        if self.physical_sites is not None and set(self.physical_sites) - set(self.port.clients):
+        if self.physical_sites is not None and set(self.physical_sites) - set(self.adapter.clients):
             raise ValueError("async plan names unavailable physical sites")
 
-        if ordered and self.port.make_planning_state is None:
+        if ordered and self.adapter.make_planning_state is None:
             raise ValueError("ordered timing requires an async planning state")
         events = list(PlannedAsyncEvents(sequence, timing)) if timing is not None else None
         preflight = None
-        if self.port.make_planning_state is not None:
-            preflight = _AsyncPreflight(self.port)
-            execution = PlannedAsyncExecution(preflight.port, preflight)
+        if self.adapter.make_planning_state is not None:
+            preflight = _AsyncPreflight(self.adapter)
+            execution = PlannedAsyncExecution(preflight.adapter, preflight)
             execution.physical_sites = self.physical_sites
             try:
                 execution._run_plan(plan, events, strict_completion=True)
@@ -176,7 +176,7 @@ class PlannedAsyncExecution:
             return
         order = plan["arrival_sequence"]
 
-        available = list(self.port.clients)
+        available = list(self.adapter.clients)
         pending = deque()
         inflight = {}
         completed_sites = {}
@@ -211,13 +211,13 @@ class PlannedAsyncExecution:
             while pair := self._take_dispatch_pair(available, pending):
                 site, assignment = pair
                 kwargs = {"train_seeds": {site: assignment.metadata["train_seed"]}} if seeds is not None else {}
-                self.port.submit(site, assignment, **kwargs)
+                self.adapter.submit(site, assignment, **kwargs)
                 inflight[site] = assignment.assignment_id
                 self._trace("dispatch.jsonl", {"assignment_id": assignment.assignment_id, "site": site})
-                self.port.on_dispatch(assignment, self.state.version, site)
+                self.adapter.on_dispatch(assignment, self.state.version, site)
 
         while not self.state.finished and next_acceptance < len(order):
-            if self.port.aborted():
+            if self.adapter.aborted():
                 raise RuntimeError("planned async workflow aborted")
             dispatch()
             expected = order[next_acceptance]
@@ -227,7 +227,7 @@ class PlannedAsyncExecution:
                 assignment = self.state.active[expected]
                 result = self.runtime.load_result(expected)
                 version = self.state.version
-                published = self.state.accept(assignment, self.port.normalize(result, assignment))
+                published = self.state.accept(assignment, self.adapter.normalize(result, assignment))
                 self._verify_publication(assignment, version, published)
                 ready.remove(expected)
                 next_acceptance += 1
@@ -242,16 +242,16 @@ class PlannedAsyncExecution:
                         **_seed_record(assignment),
                     },
                 )
-                self.port.on_accept(assignment, version, completed_sites.pop(expected))
+                self.adapter.on_accept(assignment, version, completed_sites.pop(expected))
                 if published:
                     self._save_publication()
-                    self.port.on_publish(self.state.model, self.state.version)
+                    self.adapter.on_publish(self.state.model, self.state.version)
                 self._discard_consumed_assignment(assignment)
                 continue
             if not inflight:
                 raise RuntimeError("planned async workflow cannot make progress")
             try:
-                site, identity, result, error = self.port.receive()
+                site, identity, result, error = self.adapter.receive()
             except queue.Empty:
                 continue
             if inflight.pop(site) != identity:
@@ -266,10 +266,10 @@ class PlannedAsyncExecution:
         # A custom state can finish before every planned assignment is accepted.
         # Started calls still need their base files until their results arrive.
         while inflight:
-            if self.port.aborted():
+            if self.adapter.aborted():
                 raise RuntimeError("planned async workflow aborted during drain")
             try:
-                site, identity, result, error = self.port.receive()
+                site, identity, result, error = self.adapter.receive()
             except queue.Empty:
                 continue
             if inflight.pop(site, None) != identity:
@@ -305,7 +305,7 @@ class PlannedAsyncExecution:
             self.runtime.save_model(self.state.version, self.state.model)
 
     def _verify_publication(self, assignment, version, published):
-        if self.port.make_planning_state is not None and bool(published) != (self.state.version > version):
+        if self.adapter.make_planning_state is not None and bool(published) != (self.state.version > version):
             raise RuntimeError(
                 f"async execution reported inconsistent publication at assignment {assignment.assignment_id}"
             )
@@ -324,7 +324,7 @@ class PlannedAsyncExecution:
 
     def _run_timed(self, sequence, seeds, events, timing):
         """Apply logical events on a virtual clock; wall time only gates result readiness."""
-        available = list(self.port.clients)
+        available = list(self.adapter.clients)
         pending = deque()
         inflight = {}
         completed_sites = {}
@@ -342,17 +342,17 @@ class PlannedAsyncExecution:
         def dispatch():
             while pair := self._take_dispatch_pair(available, pending):
                 site, assignment = pair
-                if self.port.aborted():
+                if self.adapter.aborted():
                     raise RuntimeError("planned async workflow aborted")
                 kwargs = {"train_seeds": {site: assignment.metadata["train_seed"]}} if seeds is not None else {}
-                self.port.submit(site, assignment, **kwargs)
+                self.adapter.submit(site, assignment, **kwargs)
                 inflight[site] = assignment.assignment_id
                 self._trace("dispatch.jsonl", {"assignment_id": assignment.assignment_id, "site": site})
-                self.port.on_dispatch(assignment, self.state.version, site)
+                self.adapter.on_dispatch(assignment, self.state.version, site)
 
         def collect(dispatch_pending=True):
             try:
-                site, identity, result, error = self.port.receive()
+                site, identity, result, error = self.adapter.receive()
             except queue.Empty:
                 return
             if inflight.pop(site, None) != identity:
@@ -384,12 +384,12 @@ class PlannedAsyncExecution:
 
         index = 0
         while index < len(events) and not self.state.finished:
-            if self.port.aborted():
+            if self.adapter.aborted():
                 raise RuntimeError("planned async workflow aborted")
             instant, identity, phase = events[index]
             if not ordered or phase != "upload":
                 self.runtime.virtual_time = instant
-                self.port.on_time(instant)
+                self.adapter.on_time(instant)
             if phase == "start":
                 # Reserve all clients starting at the same virtual instant together,
                 # so the refill threshold is checked once for the whole batch.
@@ -423,16 +423,16 @@ class PlannedAsyncExecution:
             if identity not in self.state.active:
                 raise ValueError(f"phase for unreserved assignment {identity}")
             while phase == "upload" and identity not in ready:
-                if self.port.aborted():
+                if self.adapter.aborted():
                     raise RuntimeError("planned async workflow aborted")
                 if not inflight:
                     raise RuntimeError("planned async workflow cannot make progress")
                 collect()
-            if self.port.aborted():
+            if self.adapter.aborted():
                 raise RuntimeError("planned async workflow aborted")
             if ordered and phase == "upload":
                 self.runtime.virtual_time = instant
-                self.port.on_time(instant)
+                self.adapter.on_time(instant)
             self._trace("phases.jsonl", {"assignment_id": identity, "phase": phase, "virtual_time": instant})
             if ordered and instant >= horizon:
                 break
@@ -443,7 +443,7 @@ class PlannedAsyncExecution:
             assignment = self.state.active[identity]
             result = self.runtime.load_result(identity)
             version = self.state.version
-            published = self.state.accept(assignment, self.port.normalize(result, assignment))
+            published = self.state.accept(assignment, self.adapter.normalize(result, assignment))
             self._verify_publication(assignment, version, published)
             if released is not None:
                 released.discard(identity)
@@ -460,10 +460,10 @@ class PlannedAsyncExecution:
                     **_seed_record(assignment),
                 },
             )
-            self.port.on_accept(assignment, version, completed_sites.pop(identity))
+            self.adapter.on_accept(assignment, version, completed_sites.pop(identity))
             if published:
                 self._save_publication()
-                self.port.on_publish(self.state.model, self.state.version)
+                self.adapter.on_publish(self.state.model, self.state.version)
             self._discard_consumed_assignment(assignment)
 
         if ordered and index < len(events):
@@ -484,7 +484,7 @@ class PlannedAsyncExecution:
 
         # Drain active calls without admitting pending work after the stop.
         while inflight:
-            if self.port.aborted():
+            if self.adapter.aborted():
                 raise RuntimeError("planned async workflow aborted during drain")
             collect(dispatch_pending=False)
 
@@ -501,18 +501,18 @@ class PlannedAsyncExecution:
 class _AsyncPreflight:
     """Run the same scheduler with immediate placeholder results and no artifact I/O."""
 
-    def __init__(self, port):
+    def __init__(self, adapter):
         self.records = []
         self.results = deque()
-        self.port = AsyncExecutionPort(
-            state=port.make_planning_state(),
-            clients=port.clients,
-            contribution_budget=port.contribution_budget,
+        self.adapter = AsyncExecutionAdapter(
+            state=adapter.make_planning_state(),
+            clients=adapter.clients,
+            contribution_budget=adapter.contribution_budget,
             submit=self.submit,
             receive=self.results.popleft,
             live_run=_no_event,
             normalize=lambda result, assignment: result,
-            aborted=port.aborted,
+            aborted=adapter.aborted,
         )
 
     def submit(self, site, assignment, **kwargs):
