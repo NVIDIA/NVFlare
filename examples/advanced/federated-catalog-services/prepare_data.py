@@ -218,7 +218,8 @@ if __name__ == "__main__":
     if site:
         prepare(site)
     else:
+        example_dir = Path(__file__).resolve().parent
+        # Both seeders use the same image. Refresh it once so they run this checkout's preparation code.
+        subprocess.run(["docker", "compose", "build", "site-1-seed"], cwd=example_dir, check=True)
         for site in sites:
-            subprocess.run(
-                ["docker", "compose", "run", "--rm", f"{site}-seed"], cwd=Path(__file__).resolve().parent, check=True
-            )
+            subprocess.run(["docker", "compose", "run", "--rm", f"{site}-seed"], cwd=example_dir, check=True)
