@@ -13,10 +13,11 @@
 # limitations under the License.
 
 
-"""Populate one site's source service with synthetic OMOP-shaped demo data."""
+"""Prepare synthetic OMOP-shaped demo data for the Unity Catalog and PostgreSQL sites."""
 
 import argparse
 import os
+import subprocess
 import time
 from pathlib import Path
 
@@ -206,5 +207,17 @@ def prepare(site):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("site", choices=["site-1", "site-2"])
-    prepare(parser.parse_args().site)
+    parser.add_argument(
+        "site",
+        nargs="?",
+        choices=omop_data.SITE_OMOP,
+        help="seed this site inside its container (default: prepare both via Docker Compose)",
+    )
+    site = parser.parse_args().site
+    if site:
+        prepare(site)
+    else:
+        for site in omop_data.SITE_OMOP:
+            subprocess.run(
+                ["docker", "compose", "run", "--rm", f"{site}-seed"], cwd=Path(__file__).resolve().parent, check=True
+            )

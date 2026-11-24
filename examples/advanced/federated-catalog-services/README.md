@@ -53,7 +53,18 @@ python job.py                                              # read the catalog an
 Before running `python job.py`, confirm `nvflare system status` shows both `site-1` and `site-2` registered. If
 startup is still in progress, wait a few seconds and rerun the status command.
 
-That is all. Setup is safe to rerun, and `--workspace` can be any path (the default is `./workspace`). Kits are tied
+Compose prepares both sites automatically during startup. To prepare or refresh just the demo data from the host
+after running `example_setup.py`, run:
+
+```bash
+python prepare_data.py
+```
+
+This starts the source services as needed and runs the Unity Catalog and PostgreSQL seeders in order. It also works
+before the FLARE server and clients are started. To prepare a single site, run `docker compose run --rm site-1-seed`
+or `docker compose run --rm site-2-seed`.
+
+Setup is safe to rerun, and `--workspace` can be any path (the default is `./workspace`). Kits are tied
 to the SDK that created them: if you change the SDK, setup refuses the old kits and asks for `--reprovision`. Source
 rows stay at the sites.
 
@@ -257,7 +268,7 @@ dataset to:
 ```
 
 Supply `DATABRICKS_TOKEN` only to that site's container through its secret configuration. Do not run the demo's
-seeding hook against the production workspace. Grant the token identity permission to discover the intended tables
+seeder against the production workspace. Grant the token identity permission to discover the intended tables
 and verify that its metadata visibility is appropriate for the Study. The catalog does not redact columns. `job.py` and the recipe stay the same. Secrets belong at the site,
 never in the job or the published catalog.
 
@@ -278,7 +289,7 @@ workspace. No Spark server or client is needed for this metadata-only path.
 | A site reports `FAILED` with `CONFIG_UNAVAILABLE` | Its `config/<site>/datasets.yaml` is invalid. The site's log names the problem. |
 | A dataset is listed as unavailable | The site could not read its source; for site-2, check `docker compose logs postgres`. |
 | Start over with fresh demo data | `docker compose down --volumes --remove-orphans`, then `docker compose up -d --build --wait`. This deletes this project's current demo data and job results. |
-| PostgreSQL is unhealthy, or site-2's preparation hook fails | Check `docker compose logs postgres`. Existing volumes retain their initialized database and password; changing `POSTGRES_DB` or `POSTGRES_PASSWORD` does not update them. For disposable demo data, use the clean reset above. |
+| PostgreSQL is unhealthy, or site-2’s seeder fails | Check `docker compose logs postgres site-2-seed`. Existing volumes retain their initialized database and password; changing `POSTGRES_DB` or `POSTGRES_PASSWORD` does not update them. For disposable demo data, use the clean reset above. |
 
 The site images install the optional `nvflare[catalog]` dependencies (datacontract-cli, PyArrow, DuckDB, psycopg and the Databricks SDK). Their license and notice files are included from the repository's
 `3rdParty` directory.

@@ -65,11 +65,15 @@ services:
         target: /startup-kit
         read_only: true
         bind: {create_host_path: false}
-    post_start:
-      # The bootstrap password is given to the seeding command only, not to the FLARE client or its jobs.
-      - command: ["python", "prepare_data.py", "site-2"]
-        environment:
-          POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-demo-bootstrap}
+    depends_on:
+      site-2-seed: {condition: service_completed_successfully}
+  site-2-seed:
+    image: nvflare-catalog-demo:local
+    build: *flare-build
+    entrypoint: ["python", "prepare_data.py", "site-2"]
+    environment:
+      # The bootstrap password belongs to the seeder, not the FLARE client or its jobs.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-demo-bootstrap}
     depends_on:
       postgres: {condition: service_healthy}
   unity-catalog:
