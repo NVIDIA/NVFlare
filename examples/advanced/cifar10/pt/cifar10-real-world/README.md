@@ -110,7 +110,9 @@ After training, the results are automatically downloaded using `run.get_result()
 Result can be found in : workspaces/secure_workspace/admin@nvidia.com/transfer/75d261cc-a9ef-40a4-8d0d-36e454653968
 ```
 
-On your MLFlow server UI (typically at `http://localhost:5000`), you should see the tracking results for the corresponding job ID, i.e., "75d261cc-a9ef-40a4-8d0d-36e454653968" in this case.
+For the default SQLite backend, follow the [local MLflow UI instructions](./cifar10_fedavg_mlflow/README.md#mlflow-ui)
+to open the downloaded `workspace/mlflow.db`. For an external study backend,
+find the runs for the job ID in that service's UI.
 
 ![mlflow](figs/mlflow.png)
 

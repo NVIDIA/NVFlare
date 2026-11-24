@@ -159,12 +159,19 @@ Result can be found in: workspaces/secure_workspace/admin@nvidia.com/transfer/<j
 
 ## Viewing Results
 
-### MLFlow UI
+### MLflow UI
 
-1. Open `http://localhost:5000` in your browser
-2. Find your experiment by job ID (displayed in terminal output)
-3. View metrics, parameters, and compare runs
-4. Download trained models from the Artifacts tab
+For the default local backend, the downloaded job result contains
+`workspace/mlflow.db`. Start the UI with the absolute path to the downloaded job
+directory:
+
+```bash
+JOB_RESULT="/absolute/path/to/downloaded/job-id"
+mlflow ui --backend-store-uri "sqlite:///${JOB_RESULT}/workspace/mlflow.db" --host 127.0.0.1 --port 5000
+```
+
+Open `http://localhost:5000` and find the runs for the job ID. For a study with a
+configured external endpoint, open that service's UI.
 
 ### Metrics Available
 
