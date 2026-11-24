@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
+import json
+
 import pytest
 
 from nvflare.apis.simulation_plan import (
     ASYNC_EXECUTION,
     PlannedAsyncEvents,
     SimulationPlanRuntime,
+    load_simulation_plan,
     validate_simulation_plan,
 )
 
@@ -53,6 +57,41 @@ def test_plan_runtime_requires_claim_and_finalizes_once(tmp_path):
     runtime.finalize()
     runtime.finalize()
     assert len((tmp_path / "run.jsonl").read_text().splitlines()) == 1
+
+
+@pytest.mark.parametrize("change", [None, "missing", "extra", "record", "plan"])
+def test_final_verification_reads_saved_plan_and_log(tmp_path, change):
+    plan = {"format_version": 1, ASYNC_EXECUTION: {"logical_sequence": ["a"], "arrival_sequence": [0]}}
+    plan_path = tmp_path / "simulation_plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    runtime = SimulationPlanRuntime(load_simulation_plan(plan_path), tmp_path, plan_path=plan_path)
+    record = {"assignment_id": 0, "logical_name": "a"}
+    expected = [("assignments.jsonl", record)]
+    if change != "missing":
+        runtime.trace("assignments.jsonl", {**record, "logical_name": "b"} if change == "record" else record)
+    if change == "extra":
+        runtime.trace("accepted.jsonl", record)
+
+    if change is None:
+        runtime.verify_preflight(expected)
+    else:
+        if change == "plan":
+            plan[ASYNC_EXECUTION]["logical_sequence"] = ["b"]
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        error = {
+            "missing": "differs from preflight at assignments.jsonl:1",
+            "record": "differs from preflight at assignments.jsonl:1",
+            "extra": "differs from preflight at accepted.jsonl:1",
+            "plan": "saved simulation plan differs from the plan used at launch",
+        }[change]
+        with pytest.raises(RuntimeError, match=error):
+            runtime.verify_preflight(expected)
+
+    runtime.finalize()
+    report = json.loads((tmp_path / "run.jsonl").read_text(encoding="utf-8"))
+    canonical_plan = b'{"async_execution":{"arrival_sequence":[0],"logical_sequence":["a"]},"format_version":1}'
+    assert report["plan_sha256"] == hashlib.sha256(canonical_plan).hexdigest()
+    assert report["logical_trace_verified"] == (change is None)
 
 
 def test_seeded_virtual_events_and_horizon_are_deterministic():

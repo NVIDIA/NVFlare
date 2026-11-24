@@ -110,12 +110,17 @@ application completion. Unconfirmed native cleanup retains attempt payloads
 and scheduler control records for investigation; it does not invalidate an
 already verified result or checkpoint.
 
-Resident ``job`` lifetime retains the common automatic CJ recovery policy.
-``max_cj_restart_failures: 0`` disables it. The budget counts consecutive failed
-starts and resets at READY, rather than being a lifetime or per-job cap.
-Task-mode CJ recovery remains disabled: independent worker allocations can
-outlive CJ. CP continues cleanup while alive; CP crash/restart adoption is not
-implemented. Persistent files alone do not authorize automatic physical retry.
+Both lifetimes use the same CJ restart policy. In task mode, a worker that
+exceeds its Slurm time limit can trigger a CJ restart. Before starting a
+replacement, the live CP must confirm that the previous CJ exited and all
+its worker allocations have stopped. An explicit job abort prevents restart.
+A restarted CP cannot adopt those allocations.
+
+``max_cj_restart_failures: 0`` disables automatic restarts. The budget counts
+consecutive failed starts and resets when the CJ reaches READY. On retry, the
+application can restore its last committed checkpoint. Resource measurements
+from an earlier CJ can be missing from the final subtotal, which is then
+marked partial (see :ref:`resource_statistics_reports`).
 
 Live worker connections and credentials
 ---------------------------------------
