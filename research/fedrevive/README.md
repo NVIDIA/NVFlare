@@ -20,11 +20,12 @@ It uses the model, data partition, runtime distributions, and training settings
 reported in the paper. It is intentionally separate from the other NVIDIA
 FLARE CIFAR-10 examples.
 
-The default `--arrival-mode simulated` uses the paper's seeded phase scheduler on
-a small physical worker pool. For live training and explicit simulator plans,
-`--arrival-mode actual` and `--arrival-mode replay` use the shared
-`FedBuffRecipe` with the same FedRevive update transform. The plan is supplied
-through `SimEnv`.
+The default `--arrival-mode simulated` generates the paper's seeded schedule
+before launching SimEnv. SimEnv preflights it with placeholder uploads, then
+executes and verifies its logical events on the physical worker pool.
+All arrival modes use the same `FedBuffRecipe` and FedRevive update transform.
+Use `--arrival-mode actual` for live arrivals or `--arrival-mode replay` to
+supply a saved or externally generated plan.
 
 CIFAR-100, FEMNIST, 20NewsGroups, DD-FedRevive, and AFL-DW are outside this
 initial contribution.
@@ -117,22 +118,18 @@ behavior.
 | `nvflare.collab.fedbuff_recipe` | Shared assignment acceptance, buffered publication, Collab calls, one bounded receipt queue and lifecycle |
 | `update.py` | Optional `FedReviveUpdate`: proxies, shared teacher history, revival gates and delta blending |
 | `dfkd.py` | Conditional generator, optimized latent/embedding tensors, Reptile update, weighted per-teacher objectives and sampling |
-| `schedule.py` | Paper mode: seeded download/train/upload phases and logical-client eligibility |
-| `workflow.py` | Paper mode: research reservations and physical-worker mapping over core calls/acceptance |
-| `storage.py` | Paper mode: run-owned temporary tensor files with reference counts |
+| `schedule_standard.py`, `schedule_shifted.py` | Paper planner and examples of log-normal and trace-based delay sampling |
+| `schedule_simple.py` | Minimal sampler with uniform delays for every phase |
+| `plot_plan.py` | Plot a saved plan and estimate peak temporary payload storage |
 | `SimEnv` with a replay plan | Explicit assignment and acceptance order or timing, with evidence in the run's `simulation/` directory |
 | `server.py` | Separate initial model loader, FedRevive model operations, and CIFAR evaluation/artifact observer |
 
-`FedReviveWorkflow` inherits the protected call/lifecycle implementation from
-`FedBuffWorkflow`; `PhaseCoordinator` inherits its numerical acceptance from
-`FedBuffTrainingCoordinator`. Concurrency bounds active logical assignments.
-Physical sites bound concurrent calls and the core receipt queue. One exact
-base file is shared by every outstanding assignment for its version.
-`TensorStore.retain` records these references at reservation and
-`TensorStore.release` deletes the file after the last assignment is consumed.
-Completed uploads wait on disk for their logical acceptance, then their files
-are deleted as soon as the coordinator consumes them. This bounds temporary
-model storage by outstanding assignments even in long or shifted runs.
+Concurrency bounds active logical assignments. Physical sites bound concurrent
+training calls and the receipt queue. The paper plan keeps intermediate payloads
+on disk only while needed. Assignments share one base file per version. The
+runner releases it after its last planned consumer finishes and writes uploads
+to disk only when the plan calls for their acceptance. Each cached upload is
+removed after acceptance and its callbacks.
 
 The observer retains experiment evidence:
 
@@ -140,17 +137,23 @@ The observer retains experiment evidence:
 | --- | --- |
 | `run_config.json` | Resolved experiment options |
 | `dfkd_config.json` | Resolved synthesis/KD defaults when FedRevive is enabled |
-| `phases.jsonl` | Paper mode's incremental download/train/upload events and simulated times |
 | `schedule.jsonl` | Dispatch/accept identities, versions and training seeds |
 | `updates.jsonl` | Validated upload metadata/metrics, including actual-arrival seeds and shards |
 | `revival.jsonl` | FedRevive gate decisions, blend weights and DFKD metrics |
 | `accuracy_history.json`, `results.json` | Centralized evaluations and final run summary |
 | `final_model/global_model.pt` | Final model |
+| `simulation/preflight.jsonl` | Expected logical assignments, phases, and acceptance/publication versions |
+| `simulation/phases.jsonl`, `simulation/accepted.jsonl` | Observed timed phases and acceptance events checked against preflight |
+| `simulation/run.jsonl` | Input plan SHA-256, final logical trace verification, and timing |
 
-The workflow discards pending uploads at its horizon and drains active calls
-before releasing outstanding bases. Normal shutdown, managed aborts, and
-handled failures remove temporary model files. A process killed before
-cleanup can leave temporary files in that run's directory.
+The generated plan is saved under `server/local/simulation_plan.json` in
+the job workspace. Pass this file to `--simulation-plan` with a fresh
+workspace to replay the schedule.
+
+At the horizon the workflow releases bases for assignments that will never
+dispatch and releases the remaining bases as active calls finish. Normal
+shutdown, managed aborts, and handled failures remove temporary model files.
+A process killed before cleanup can leave temporary files in that run's directory.
 Before starting the simulator, the launcher rejects a job directory that
 already exists or is reserved by another run under the effective workspace root.
 Use a distinct `--workspace-root` for each repeat of the same method, including
@@ -421,10 +424,109 @@ omits `train_seeds`, the client uses the existing seed derived from
 `--run-seed` and assignment ID. For timing plans and the evidence layout, see
 the [simulation guide](../../docs/user_guide/data_scientist_guide/reproducible_simulation.rst).
 
-To reproduce the paper schedule, use `--arrival-mode simulated`. Its logical
-clients become eligible again after training while an earlier upload can
-still be pending. Shared replay plans keep a logical client reserved until
-its result is accepted and use their own timing and contribution rules.
+The default paper planner emits ordered events with eligibility at training
+completion, so a logical client can start again while its earlier upload is
+pending. To replay that schedule, pass the saved plan with the same logical
+concurrency, buffer, refill and publication settings. For numerical replay, also
+keep the training configuration, including the server's `--run-seed`. The physical
+worker count can vary. Externally generated plans can use explicit per-assignment delays.
+
+### Generate standard and shifted plans offline
+
+From `research/fedrevive`, use the same prepared manifest and scheduling
+settings to compare the paper delays with a custom delay distribution.
+`schedule_shifted.py` reuses the standard scheduler with a delay callback.
+Its default is log-normal training with the same per-client mean and a log-scale
+standard deviation of 0.6. Download and upload use the paper distributions.
+
+```bash
+python schedule_standard.py /tmp/fedrevive/cifar10/manifest.json standard.json \
+  --num-rounds 4 --concurrency 2 --run-seed 10
+python schedule_shifted.py /tmp/fedrevive/cifar10/manifest.json shifted.json \
+  --num-rounds 4 --concurrency 2 --run-seed 10
+```
+
+Set `--train-lognormal-sigma` to change the spread, or pass `--delay-trace` to
+sample measured durations. Save the durations in `measured_delays.json` using
+the same virtual time unit as `--max-time`:
+
+```json
+{"download": [0.09, 0.12], "train": [0.8, 1.7, 3.2], "upload": [0.13, 0.21]}
+```
+
+```bash
+python schedule_shifted.py /tmp/fedrevive/cifar10/manifest.json trace.json \
+  --num-rounds 4 --concurrency 2 --run-seed 10 --delay-trace measured_delays.json
+```
+
+Each phase samples independently with replacement from its own list. Use
+explicit per-assignment delays if correlations between measured phases matter.
+Use the output JSON with the replay command above and the matching logical
+scheduling settings, including any overrides to `--buffer-size` and
+`--min-open-slots`. Use `plot_plan.py` to compare timelines before launch.
+
+For the paper's Figure 3 preset, run `schedule_standard.py` with the
+`cifar10_shifted/manifest.json` prepared for Figure 3. The standard planner
+reads either paper preset from its manifest and preserves the paper RNG stream.
+
+### Generate a custom paper schedule offline
+
+`schedule_simple.py` shows the smallest custom sampler. It draws each phase's
+delay uniformly between 0 and 1 virtual time units for every logical client.
+
+```bash
+python schedule_simple.py /tmp/fedrevive/cifar10/manifest.json simple.json \
+  --num-rounds 4 --concurrency 2 --run-seed 10
+```
+
+The callback below uses gamma-distributed training times with the mean from
+the input manifest. Save it as `schedule_custom.py` in `research/fedrevive` and
+run it with the same manifest and scheduling options.
+
+```python
+from schedule_standard import main, sample_paper_delay
+
+
+def custom_delay(assignment_id, logical_name, phase, profile, rng):
+    if phase == "train":
+        return float(rng.gamma(shape=2, scale=profile["train_mean"] / 2))
+    return sample_paper_delay(phase, profile, rng)
+
+
+if __name__ == "__main__":
+    main(delay_sampler=custom_delay)
+```
+
+The callback returns a finite nonnegative duration and receives a NumPy RNG
+derived from the run seed, assignment ID, and phase. For programmatic use, pass
+it directly to `make_simulation_plan()`. The generator uses the shared
+`FedBuffScheduleState` for reservations, refill limits, and publication counts.
+To change the participation policy, emit an ordered SimEnv plan from your own
+generator. SimEnv preflights the resulting JSON against the workflow before training.
+
+### Visualize a plan before running it
+
+Install the optional Matplotlib dependency and run this from `research/fedrevive`.
+
+```bash
+python -m pip install matplotlib
+python plot_plan.py plan.json plan.png --first-assignment 0 --limit 30
+```
+
+The chart shows virtual-time download, training, and upload phases for timed
+plans and acceptance positions for fixed plans. Faded spans show phases still
+open at the displayed plan boundary. Use `--first-assignment` to inspect later
+reservations by zero-based assignment ID. In Python, import
+`plot_simulation_plan` from `plot_plan` to get a Matplotlib figure from a plan
+dictionary or JSON path. Use SimEnv preflight to check feasibility against the
+configured recipe.
+
+Timed plans with explicit `base_versions` and `retain_artifacts: false` show a
+peak bound for temporary base and upload files over the full plan. The estimate
+assumes each accepted upload could be ready as soon as its assignment is
+reserved. Physical readiness can lower actual usage. For a size estimate, add
+`--base-mib` and `--upload-mib` with the sizes of one serialized base and one
+serialized upload. The estimate covers model payloads in the replay workspace.
 
 ## Adapt the workflow to another image dataset
 
@@ -461,7 +563,7 @@ pool checkpoints, and TensorBoard events in the NVFlare run directory.
 
 ## Results
 
-The following historical curves use one seed (10) and the pre-migration Collab
+Figures 1–3 show historical runs with seed 10 and the pre-migration Collab
 workflow. Both FedRevive configurations used teacher-mean synthesis targets
 and the earlier warmup and KD sampling rules. The paper reports averages over
 three seeds.
@@ -515,6 +617,45 @@ mean absolute difference of 0.0091. Thus, the lightweight estimated setting
 closely follows the true-histogram trajectory while avoiding client label
 statistics and reducing synthesis frequency.
 
+### FedRevive delay planner comparison
+
+We ran FedRevive for 1,200 publications with each offline planner. All three
+runs used the same CIFAR-10 shards, setup and run seed 10, two physical workers,
+and a logical concurrency limit of 100. The buffer size and refill threshold
+were both one. The server estimated class proportions with 64 probes and
+generated synthetic images every ten versions using teacher-mean targets.
+SimEnv verified the accepted updates against each run's own plan.
+
+![FedRevive test accuracy by publication and simulated time for the three delay planners](figs/planner_accuracy.png)
+
+| Planner | Phase delays | Simulated time | Wall time | Final accuracy |
+|---|---|---:|---:|---:|
+| [Standard](schedule_standard.py) | Paper defaults | 19.05 s | 56m 51s | 37.31% |
+| [Shifted](schedule_shifted.py) | Log-normal training delays ($\sigma=0.6$) | 19.45 s | 58m 07s | 32.65% |
+| [Simple](schedule_simple.py) | Uniform delays in all phases | 18.42 s | 57m 44s | 34.06% |
+
+Wall times were measured sequentially on one RTX 6000 Ada. The plan previews
+show assignments 100–111. Each full plan has a bound of 200 temporary payload
+files, or about 8.33 GiB. The estimate uses 42.65 MiB per serialized base or
+upload, rounded up from the run's payloads.
+
+<details>
+<summary>Plan timelines and temporary storage bounds</summary>
+
+**Standard planner**
+
+![Standard plan timeline and peak temporary payload estimate](figs/plan_standard.png)
+
+**Shifted planner**
+
+![Shifted plan timeline and peak temporary payload estimate](figs/plan_shifted.png)
+
+**Simple planner**
+
+![Simple plan timeline and peak temporary payload estimate](figs/plan_simple.png)
+
+</details>
+
 ## License
 
 This contribution is provided under the repository's Apache License 2.0. It
@@ -539,10 +680,11 @@ fedrevive/
 ├── model.py
 ├── client.py
 ├── server.py             # Model loader, operations, evaluation observer
-├── schedule.py           # Seeded research phases
-├── storage.py            # Reference-counted temporary tensor files
+├── schedule_standard.py  # Standard paper planner and delay sampler
+├── schedule_shifted.py   # Log-normal and measured-delay examples
+├── schedule_simple.py    # Minimal uniform-delay example
+├── plot_plan.py          # Inspect a plan and its storage bound offline
 ├── update.py             # Optional FedRevive update transform
-├── workflow.py           # Research composition over core async
 ├── fedrevive.py
 ├── dfkd.py
 ├── job.py

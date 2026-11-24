@@ -24,13 +24,19 @@ Per-Client Data Splits:
 import argparse
 
 from nvflare.app_opt.sklearn import KMeansFedAvgRecipe
-from nvflare.recipe import SimEnv, set_per_site_config
+from nvflare.recipe import SimEnv, is_export_requested, set_per_site_config
 
 
 def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_clients", type=int, default=3, help="Number of clients")
     parser.add_argument("--num_rounds", type=int, default=5, help="Number of training rounds")
+    parser.add_argument(
+        "--execution_lifetime",
+        choices=("job", "task"),
+        default="job",
+        help="Keep client compute for the job, or export task workers for a configured Kubernetes/Slurm site.",
+    )
     parser.add_argument("--n_clusters", type=int, default=3, help="Number of clusters for K-Means")
     parser.add_argument(
         "--data_path",
@@ -39,7 +45,7 @@ def define_parser():
         help="Path to iris dataset CSV file",
     )
 
-    return parser.parse_args()
+    return parser
 
 
 def calculate_data_splits(n_clients: int, total_size: int = 150, train_fraction: float = 0.8):
@@ -76,7 +82,12 @@ def calculate_data_splits(n_clients: int, total_size: int = 150, train_fraction:
 
 
 def main():
-    args = define_parser()
+    parser = define_parser()
+    args = parser.parse_args()
+    if args.execution_lifetime == "task" and not is_export_requested():
+        parser.error(
+            "task lifetime requires --export for a configured Kubernetes/Slurm site; local simulation requires job lifetime"
+        )
 
     n_clients = args.n_clients
     num_rounds = args.num_rounds
@@ -102,6 +113,7 @@ def main():
     recipe = KMeansFedAvgRecipe(
         name="sklearn_kmeans",
         min_clients=n_clients,
+        execution_lifetime=args.execution_lifetime,
         num_rounds=num_rounds,
         n_clusters=n_clusters,
         train_script="client.py",
@@ -109,7 +121,6 @@ def main():
     )
     set_per_site_config(recipe, per_site_config)
 
-    print("Executing recipe in simulation environment...")
     env = SimEnv(clients=clients, num_threads=n_clients)
     run = recipe.execute(env)
 

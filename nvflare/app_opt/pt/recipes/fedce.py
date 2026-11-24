@@ -35,6 +35,9 @@ class FedCERecipe(FedAvgRecipe):
     FedCE requires at least two clients and assumes that the same clients
     participate in every round. If participation changes, the aggregator logs
     a warning and carries prior contribution weights forward.
+
+    Task lifetime is not supported: client previous-model and score-history state
+    must survive between rounds. Use job lifetime.
     """
 
     def __init__(
