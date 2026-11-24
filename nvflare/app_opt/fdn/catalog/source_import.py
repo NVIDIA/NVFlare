@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import get_args
 from urllib.parse import unquote, urlsplit
 
 from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
@@ -271,6 +272,16 @@ def import_schema(dataset, secret, budget):
     settings = args.pop("config", {})
     if not isinstance(settings, Mapping) or set(settings).intersection(dataset.secret_keys):
         raise CatalogSourceError("invalid or duplicate importer settings")
+    if settings:
+        from datacontract.config import Config
+        from datacontract.config.settings import env_name
+        from pydantic import SecretStr
+
+        for name, field in Config.model_fields.items():
+            if env_name(name, field) in settings and (
+                field.annotation is SecretStr or SecretStr in get_args(field.annotation)
+            ):
+                raise CatalogSourceError("credential setting in options.config; put it in secrets")
     config = {**settings, **{key: secret(key) for key in dataset.secret_keys}}
     source = url.hostname if source_form == "host" else dataset.uri
     return _import_objects(budget, dataset.type, source, config=config, **args)

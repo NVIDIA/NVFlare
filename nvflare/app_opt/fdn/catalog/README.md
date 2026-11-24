@@ -29,6 +29,8 @@ clinical_records:
 
 `host` passes the bare host or account identifier as the upstream `source`; put database, schema or port in the importer's named options. `uri` passes the complete network URI to importers that expect a URL. Other options go to `DataContract.import_from_source()` as keyword arguments. Nonsecret upstream settings go in `options.config`. Keys under `secrets` are upstream setting names and their values name site environment variables.
 
+An upstream credential setting in `options.config` makes the dataset configuration invalid. For example, bind `DATACONTRACT_SNOWFLAKE_PASSWORD` under `secrets`, as shown above. The validation error directs the operator to `secrets` and omits the value.
+
 Use this form for an importer and source identity verified to read metadata only. The upstream registry also contains importers that sample data. FLARE's structural projection controls what is published after a read. File inputs such as CSV continue through their dedicated metadata-only read paths.
 
 Site credentials use dataset-scoped secret bindings. SQL accepts `username` and `password`; Unity Catalog accepts a bearer `token`. Site-wide `usage.catalog.limits` sets a shared deadline, call allowance and record allowance. Schema discovery runs in a site-local worker. The executor stops and reaps the worker at the deadline, then returns completed datasets. Site replies have a 16 MiB JSON limit. Source permissions and the configured metadata selection determine what the Study can discover.

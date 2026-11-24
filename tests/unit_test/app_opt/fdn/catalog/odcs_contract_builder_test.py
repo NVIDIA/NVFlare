@@ -25,6 +25,45 @@ from tests.unit_test.app_opt.fdn.catalog.datasets import dataset_config
 LIMITS = ReadLimits(**DEFAULT_LIMITS)
 
 
+def test_dataset_snapshot_rejects_every_upstream_secret_field():
+    pytest.importorskip("datacontract")
+    from typing import get_args
+
+    from datacontract.config import Config
+    from datacontract.config.settings import env_name
+    from pydantic import SecretStr
+
+    from nvflare.apis.dataset_config_spec import DatasetConfigError
+
+    for name, field in Config.model_fields.items():
+        key = env_name(name, field)
+        options = {"metadata_source": "host", "config": {key: "test-value"}}
+        if field.annotation is SecretStr or SecretStr in get_args(field.annotation):
+            with pytest.raises(DatasetConfigError, match="put it in secrets"):
+                dataset_config(type_="snowflake", uri="snowflake://account", options=options)
+        else:
+            dataset, _ = dataset_config(type_="snowflake", uri="snowflake://account", options=options)
+            assert dataset.options["config"][key] == "test-value"
+
+
+def test_importer_rejects_inline_credentials_in_a_programmatic_dataset():
+    pytest.importorskip("datacontract")
+    from nvflare.apis.dataset_config_spec import DatasetConfig
+    from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
+
+    dataset = DatasetConfig(
+        "study",
+        "ds",
+        "snowflake",
+        "snowflake://account",
+        None,
+        {"metadata_source": "host", "config": {"DATACONTRACT_SNOWFLAKE_PRIVATE_KEY_FILE_PWD": "test-value"}},
+    )
+    with pytest.raises(CatalogSourceError, match="put it in secrets") as err:
+        build_odcs_contract(dataset, None, ReadBudget(LIMITS), site="one")
+    assert "test-value" not in str(err.value)
+
+
 def test_configured_snowflake_import_uses_the_upstream_registry(monkeypatch):
     pytest.importorskip("datacontract")
     from datacontract.imports import snowflake_importer
