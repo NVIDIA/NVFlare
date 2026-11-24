@@ -25,6 +25,7 @@ import urllib.request
 import warnings
 from pathlib import Path
 
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
@@ -113,6 +114,15 @@ def resource_role_acl(build_id):
     }
 
 
+def load_admin_signing_key(private_key):
+    try:
+        key = serialization.load_pem_private_key(Path(private_key).read_bytes(), password=None)
+    except UnsupportedAlgorithm:
+        raise BuildError("KBS administration requires an Ed25519 key") from None
+    require(isinstance(key, ed25519.Ed25519PrivateKey), "KBS administration requires an Ed25519 key")
+    return key
+
+
 def api(config, method, endpoint, data=None, *, content_type="application/json"):
     require(config["url"].startswith("https://"), "KBS administration requires HTTPS")
     if "admin_token_file" in config:
@@ -128,8 +138,7 @@ def api(config, method, endpoint, data=None, *, content_type="application/json")
                 "cvm-resources-<build_id> role when signing a token; or supply a scoped token through "
                 "admin_token_file",
             )
-        key = serialization.load_pem_private_key(Path(config["admin_private_key"]).read_bytes(), password=None)
-        require(isinstance(key, ed25519.Ed25519PrivateKey), "KBS administration requires an Ed25519 key")
+        key = load_admin_signing_key(config["admin_private_key"])
         now = int(time.time())
         body = (
             encode(canonical({"alg": "EdDSA", "typ": "JWT"}))

@@ -19,6 +19,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cvm.common.errors import BuildError
@@ -62,6 +63,20 @@ class TrusteeBootstrapTests(unittest.TestCase):
             with patch("cvm.trustee.bootstrap.protect_process") as protect, self.assertRaises(BuildError):
                 issue_admin_token(private, "cvm-resources", root / "long.jwt", lifetime=30 * 86400 + 1)
             protect.assert_not_called()
+
+    def test_unsupported_key_algorithm_cannot_issue_a_token(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            private = root / "admin.key"
+            private.touch()
+            output = root / "token.jwt"
+            with (
+                patch("cvm.trustee.bootstrap.protect_process"),
+                patch.object(serialization, "load_pem_private_key", side_effect=UnsupportedAlgorithm("unsupported")),
+                self.assertRaisesRegex(BuildError, "KBS administration requires an Ed25519 key"),
+            ):
+                issue_admin_token(private, "cvm-resources", output)
+            self.assertFalse(output.exists())
 
     def test_deployment_receipt_hashes_exact_policy_files(self):
         with tempfile.TemporaryDirectory() as directory:
