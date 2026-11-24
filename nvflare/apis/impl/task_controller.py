@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from dataclasses import replace
 from typing import List, Union
 
 from nvflare.apis.client import Client
@@ -22,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.task_utils import apply_filters
+from nvflare.fuel.sec.task_audit import build_context, collect_events, prepare, record, reply_status
 from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.private.fed.utils.fed_utils import get_target_names
 from nvflare.private.privacy_manager import Scope
@@ -82,6 +84,42 @@ class TaskController(FLComponent, ControllerSpec):
         wait_time_after_min_received: int = 0,
         abort_signal: Signal = None,
     ):
+        audit_context = prepare(lambda: build_context(fl_ctx, task_name=task.name))
+        try:
+            return self._broadcast_and_wait(
+                task, fl_ctx, targets, min_responses, wait_time_after_min_received, abort_signal, audit_context
+            )
+        except Exception:
+            self._audit_direct(
+                "task.auxiliary.handling_error", audit_context, reason="processing_error", stage="handling"
+            )
+            raise
+
+    @staticmethod
+    def _audit_direct(action, context, *, site="", reason="", status="", stage=""):
+        if context is not None:
+            return prepare(
+                lambda: record(
+                    action,
+                    context=replace(context, site=site),
+                    reason=reason,
+                    status=status,
+                    stage=stage,
+                )
+            )
+        return ""
+
+    def _audit_missing_direct_replies(self, context, replies, sites):
+        def write():
+            for site in sites:
+                if site not in replies:
+                    self._audit_direct("task.auxiliary.no_reply", context, site=site, reason="missing_reply")
+
+        prepare(write)
+
+    def _broadcast_and_wait(
+        self, task, fl_ctx, targets, min_responses, wait_time_after_min_received, abort_signal, audit_context
+    ):
         engine = fl_ctx.get_engine()
         # apply task filters
 
@@ -101,6 +139,7 @@ class TaskController(FLComponent, ControllerSpec):
                 abort_signal=abort_signal,
             )
         except Exception as e:
+            self._audit_direct("task.auxiliary.filter_error", audit_context, reason="filter_error", stage="task_data")
             self.log_exception(
                 fl_ctx,
                 "processing error in task data filter {}; "
@@ -115,20 +154,24 @@ class TaskController(FLComponent, ControllerSpec):
         target_names = get_target_names(targets)
         _, invalid_names = engine.validate_targets(target_names)
         if invalid_names:
+            self._audit_direct("task.auxiliary.rejected", audit_context, reason="invalid_targets")
             raise ValueError(f"invalid target(s): {invalid_names}")
 
+        audit_sites = []
         # set up ClientTask for each client
         for target in targets:
             client: Client = self._get_client(target, engine)
             client_task = ClientTask(task=task, client=client)
             task.client_tasks.append(client_task)
             task.last_client_task_map[client_task.id] = client_task
+            prepare(lambda: audit_sites.append(client.name))
 
             # task_cb_error = self._call_task_cb(task.before_task_sent_cb, client, task, fl_ctx)
             # if task_cb_error:
             #     return self._make_error_reply(ReturnCode.ERROR, targets)
 
         if task.timeout <= 0:
+            self._audit_direct("task.auxiliary.rejected", audit_context, reason="invalid_timeout")
             raise ValueError(f"The task timeout must > 0. But got {task.timeout}")
 
         # Filters can return a new Shareable.
@@ -145,6 +188,9 @@ class TaskController(FLComponent, ControllerSpec):
         msg_root_ttl = pre_set_ttl if pre_set_ttl is not None else task.timeout
         request.set_header(ReservedHeaderKey.MSG_ROOT_TTL, msg_root_ttl)
 
+        for site in audit_sites:
+            self._audit_direct("task.auxiliary.prepared", audit_context, site=site)
+            self._audit_direct("task.auxiliary.dispatched", audit_context, site=site)
         replies = engine.send_aux_request(
             targets=targets,
             topic=ReservedTopic.DO_TASK,
@@ -154,6 +200,7 @@ class TaskController(FLComponent, ControllerSpec):
             secure=task.secure,
         )
 
+        self._audit_missing_direct_replies(audit_context, replies, audit_sites)
         delete_msg_root(msg_root_id)
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
@@ -163,6 +210,12 @@ class TaskController(FLComponent, ControllerSpec):
             # get the client task for the target
             for client_task in task.client_tasks:
                 if client_task.client.name == target:
+                    if target in audit_sites:
+                        # Transport can synthesize an outcome for an unanswered request.
+                        # Capture the supplied status before result handling can change it.
+                        self._audit_direct(
+                            "task.auxiliary.outcome_reported", audit_context, site=target, status=reply_status(reply)
+                        )
                     rc = reply.get_return_code()
                     if rc and rc == ReturnCode.OK:
                         # apply result filters
@@ -178,6 +231,13 @@ class TaskController(FLComponent, ControllerSpec):
                                 abort_signal=abort_signal,
                             )
                         except Exception as e:
+                            self._audit_direct(
+                                "task.auxiliary.filter_error",
+                                audit_context,
+                                site=target,
+                                reason="filter_error",
+                                stage="task_result",
+                            )
                             self.log_exception(
                                 fl_ctx,
                                 "processing error in task result filter {}; ".format(secure_format_exception(e)),
@@ -190,7 +250,9 @@ class TaskController(FLComponent, ControllerSpec):
                         client_task.result = reply
 
                         client: Client = self._get_client(target, engine)
-                        task_cb_error = self._call_task_cb(task.result_received_cb, client, task, fl_ctx)
+                        task_cb_error = self._call_task_cb(
+                            task.result_received_cb, client, task, fl_ctx, audit_context=audit_context
+                        )
                         if task_cb_error:
                             client_task.result = make_reply(ReturnCode.ERROR)
                             break
@@ -203,7 +265,11 @@ class TaskController(FLComponent, ControllerSpec):
         if task.task_done_cb is not None:
             try:
                 task.task_done_cb(task=task, fl_ctx=fl_ctx)
+                self._audit_direct("task.auxiliary.callback_returned", audit_context, stage="task_done_callback")
             except Exception as e:
+                self._audit_direct(
+                    "task.auxiliary.callback_error", audit_context, reason="callback_error", stage="task_done_callback"
+                )
                 self.log_exception(
                     fl_ctx, f"processing error in task_done_cb error on task {task.name}: {secure_format_exception(e)}"
                 ),
@@ -236,7 +302,11 @@ class TaskController(FLComponent, ControllerSpec):
                 client_obj = c
         return client_obj
 
-    def _call_task_cb(self, task_cb, client, task, fl_ctx):
+    @collect_events
+    def _call_task_cb(self, task_cb, client, task, fl_ctx, *, audit_context=None):
+        if audit_context is None:
+            audit_context = prepare(lambda: build_context(fl_ctx, task_name=task.name))
+        audit_site = prepare(lambda: client.name, default="")
         task_cb_error = False
         with task.cb_lock:
             client_task = self._get_client_task(client, task)
@@ -244,7 +314,17 @@ class TaskController(FLComponent, ControllerSpec):
             if task_cb is not None:
                 try:
                     task_cb(client_task=client_task, fl_ctx=fl_ctx)
+                    self._audit_direct(
+                        "task.auxiliary.callback_returned", audit_context, site=audit_site, stage="result_callback"
+                    )
                 except Exception as e:
+                    self._audit_direct(
+                        "task.auxiliary.callback_error",
+                        audit_context,
+                        site=audit_site,
+                        reason="callback_error",
+                        stage="result_callback",
+                    )
                     self.log_exception(
                         fl_ctx,
                         f"processing error in {task_cb} on task {client_task.task.name} "
@@ -276,7 +356,9 @@ class TaskController(FLComponent, ControllerSpec):
     ):
         engine = fl_ctx.get_engine()
 
-        self._validate_target(engine, targets)
+        self._validate_target(
+            engine, targets, audit_context=prepare(lambda: build_context(fl_ctx, task_name=task.name))
+        )
 
         return self.send_and_wait(task, fl_ctx, targets, send_order, task_assignment_timeout)
 
@@ -291,7 +373,9 @@ class TaskController(FLComponent, ControllerSpec):
     ):
         engine = fl_ctx.get_engine()
 
-        self._validate_target(engine, targets)
+        self._validate_target(
+            engine, targets, audit_context=prepare(lambda: build_context(fl_ctx, task_name=task.name))
+        )
 
         replies = {}
         for target in targets:
@@ -299,12 +383,15 @@ class TaskController(FLComponent, ControllerSpec):
             replies.update(reply)
         return replies
 
-    def _validate_target(self, engine, targets):
+    def _validate_target(self, engine, targets, *, audit_context=None):
         if len(targets) == 0:
+            self._audit_direct("task.auxiliary.rejected", audit_context, reason="missing_targets")
             raise ValueError("Must provide a target to send.")
         if len(targets) != 1:
+            self._audit_direct("task.auxiliary.rejected", audit_context, reason="too_many_targets")
             raise ValueError("send_and_wait can only send to a single target.")
         target_names = get_target_names(targets)
         _, invalid_names = engine.validate_targets(target_names)
         if invalid_names:
+            self._audit_direct("task.auxiliary.rejected", audit_context, reason="invalid_targets")
             raise ValueError(f"invalid target(s): {invalid_names}")
