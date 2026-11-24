@@ -22,6 +22,7 @@ from nvflare.app_common.fdn.catalog.common.artifacts import read_index
 from nvflare.app_common.fdn.catalog.common.payload import CATALOG_JOB_META, RESULTS_FILE, TASK_NAME, PayloadError
 from nvflare.app_common.fdn.catalog.server.controller import CatalogController
 from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor
+from nvflare.fuel.utils.experimental import experimental
 from nvflare.job_config.api import FedJob
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.recipe.spec import ExecEnv, Recipe
@@ -43,6 +44,8 @@ class CatalogReadError(RuntimeError):
 
 class CatalogRecipe(Recipe):
     """Reads the dataset catalogs of the sites in a Study.
+
+    Experimental: this recipe is not ready for production and its API may change.
 
     The Study is the one of the execution environment (for example ``ProdEnv(study=...)``). Each site reads the
     datasets declared for that Study using the site-configured source access. The controller writes the
@@ -67,6 +70,7 @@ class CatalogRecipe(Recipe):
         >>> results = recipe.get_catalog_results(run)
     """
 
+    @experimental("CatalogRecipe is not ready for production and its API may change")
     def __init__(
         self,
         name: str = "get_catalog",
