@@ -43,8 +43,11 @@ from pathlib import PurePosixPath
 
 import yaml
 
+from nvflare.apis.dataset_config_spec import DATASET_CONFIG_FILE
 from nvflare.apis.fl_constant import ConnPropKey, WorkspaceConstants
+from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.dataset_config.api import extract_study_config
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -85,7 +88,10 @@ PER_REQUEST_TIMEOUT = 300.0
 BOOTSTRAP_CONNECT_TIMEOUT = 30.0
 BOOTSTRAP_CONNECT_POLL_INTERVAL = 0.1
 
-_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset({"local/study_data.yaml", "local/study_runtime.yaml"})
+# Site-wide files are excluded. The job receives its own Study dataset configuration separately.
+_DEFAULT_WORKSPACE_DOWNLOAD_EXCLUDES = frozenset(
+    {"local/study_data.yaml", "local/study_runtime.yaml", f"local/{DATASET_CONFIG_FILE}"}
+)
 
 
 @dataclass
@@ -93,6 +99,7 @@ class _JobTransferRecord:
     job_id: str
     workspace_root: str
     transfer_token: str
+    study: str = DEFAULT_STUDY  # the job's Study: its part of local/datasets.yaml is sent instead of the site file
     download_tx_id: str = ""
     download_bundle_path: str = ""
 
@@ -145,7 +152,11 @@ def _workspace_download_excludes(workspace_root: str) -> frozenset[str]:
 def _write_dir_to_zip(zf: zipfile.ZipFile, src: str, root: str, excluded_paths: frozenset[str] = frozenset()) -> None:
     if not os.path.isdir(src):
         return
-    for dirpath, _dirs, files in os.walk(src):
+    for dirpath, dirs, files in os.walk(src):
+        # A Kubernetes ConfigMap or Secret mounted as a directory keeps its real files in hidden "..<timestamp>/"
+        # folders behind a "..data" link; the visible names link into them. Archive only the visible names (written
+        # with their content), so an excluded or filtered file cannot leave through its backing copy.
+        dirs[:] = [d for d in dirs if not d.startswith("..")]
         for fname in files:
             abs_path = os.path.join(dirpath, fname)
             rel_path = os.path.relpath(abs_path, root).replace(os.sep, "/")
@@ -169,12 +180,16 @@ def _job_cert_excludes(job_id: str) -> frozenset[str]:
     return frozenset(posixpath.join(cert_dir, fname) for fname in (JOB_CERT_FILE_NAME, JOB_KEY_FILE_NAME))
 
 
-def _zip_workspace_to_file(workspace_root: str, job_id: str, file_path: str) -> None:
+def _zip_workspace_to_file(workspace_root: str, job_id: str, file_path: str, study: str = DEFAULT_STUDY) -> None:
     # entry names are relative to workspace_root, so the run dir is joined without resolving symlinks
     excluded_paths = _workspace_download_excludes(workspace_root)
     run_dir = os.path.join(workspace_root, _run_dir_name(job_id))
     with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
         _write_dir_to_zip(zf, os.path.join(workspace_root, "local"), workspace_root, excluded_paths)
+        # the site dataset configuration covers every Study: the job receives only its Study's part
+        dataset_config = extract_study_config(os.path.join(workspace_root, "local", DATASET_CONFIG_FILE), study)
+        if dataset_config is not None:
+            zf.writestr(f"local/{DATASET_CONFIG_FILE}", dataset_config)
         _write_dir_to_zip(zf, run_dir, workspace_root, _job_cert_excludes(job_id))
 
 
@@ -277,10 +292,11 @@ class WorkspaceTransferManager:
                 cell.__dict__["_workspace_transfer_manager"] = manager
             return manager
 
-    def add_job(self, job_id: str, workspace_root: str) -> str:
+    def add_job(self, job_id: str, workspace_root: str, study: str = DEFAULT_STUDY) -> str:
         record = _JobTransferRecord(
             job_id=job_id,
             workspace_root=workspace_root,
+            study=study,
             transfer_token=secrets.token_urlsafe(24),
         )
         with self._lock:
@@ -329,7 +345,7 @@ class WorkspaceTransferManager:
         tmp.close()
         downloader = None
         try:
-            _zip_workspace_to_file(record.workspace_root, record.job_id, tmp.name)
+            _zip_workspace_to_file(record.workspace_root, record.job_id, tmp.name, record.study)
             downloader = ObjectDownloader(
                 cell=self.cell,
                 timeout=self.download_timeout,
