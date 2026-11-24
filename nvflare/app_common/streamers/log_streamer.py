@@ -239,7 +239,9 @@ class _LogTailProducer(BaseChunkProducer):
         # tolerance) the stream tears down with a misleading ERROR log line
         # and no further bytes are streamed. Until we see the first OK reply
         # we treat an EXECUTION_EXCEPTION as a transient miss, roll the file
-        # offset back, and let produce() re-emit the same bytes.
+        # offset back, and ask stream_log() to restart the stream so that
+        # produce() re-emits the same bytes as the first message of a new one.
+        self.restart_stream = False
         self._first_ok_received = False
         self._bootstrap_miss_count = 0
         self._last_data_offset = None
@@ -373,9 +375,11 @@ class _LogTailProducer(BaseChunkProducer):
         # the job. Instead, until we see the first OK reply, treat a small number
         # of uniform EXECUTION_EXCEPTION replies as transient: roll the file
         # offset back so the bytes are re-emitted on the next produce(), log at
-        # debug, and keep the stream alive. After the retry budget is exhausted,
-        # or after the first OK reply, fall through to the base behavior so
-        # genuine receiver failures are still surfaced.
+        # debug, and end this stream so stream_log() starts a new one. A
+        # receiver that rejected the first message holds no stream to continue:
+        # it accepts the bytes only as the first message of a stream. After the
+        # retry budget is exhausted, or after the first OK reply, fall through
+        # to the base behavior so genuine receiver failures are still surfaced.
         if not self._first_ok_received and replies:
             transient = all(
                 reply.get_return_code(ReturnCode.OK) == ReturnCode.EXECUTION_EXCEPTION for reply in replies.values()
@@ -391,7 +395,8 @@ class _LogTailProducer(BaseChunkProducer):
                     f"transient bootstrap miss {self._bootstrap_miss_count}/{self._MAX_BOOTSTRAP_MISSES} "
                     f"on first chunk to {list(replies)}; rolling back and retrying"
                 )
-                return None  # keep producing — receiver should be ready by next send
+                self.restart_stream = True
+                return False
 
         if replies and any(reply.get_return_code(ReturnCode.OK) == ReturnCode.OK for reply in replies.values()):
             self._first_ok_received = True
@@ -553,16 +558,22 @@ class LogStreamer(StreamerBase):
 
         producer = _LogTailProducer(file_name, chunk_size, chunk_timeout, poll_interval, stop_event, liveness_interval)
         try:
-            return engine.stream_objects(
-                channel=channel,
-                topic=topic,
-                stream_ctx=stream_ctx,
-                targets=targets,
-                producer=producer,
-                fl_ctx=fl_ctx,
-                optional=optional,
-                secure=secure,
-            )
+            while True:
+                producer.restart_stream = False
+                result = engine.stream_objects(
+                    channel=channel,
+                    topic=topic,
+                    stream_ctx=stream_ctx,
+                    targets=targets,
+                    producer=producer,
+                    fl_ctx=fl_ctx,
+                    optional=optional,
+                    secure=secure,
+                )
+                if not producer.restart_stream:
+                    return result
+                # Give the receiver time to become ready before the next attempt.
+                time.sleep(poll_interval)
         finally:
             producer.close()
 
