@@ -100,6 +100,7 @@ NVIDIA FLARE
    Preflight Check <user_guide/nvflare_cli/preflight_check>
    user_guide/admin_guide/deployment/operation
    user_guide/admin_guide/monitoring
+   Resource Statistics <user_guide/admin_guide/resource_statistics>
    user_guide/admin_guide/configurations/logging_configuration
    Live Log Streaming <programming_guide/live_log_streaming>
    Site Configuration Metadata <user_guide/admin_guide/configurations/site_config>
