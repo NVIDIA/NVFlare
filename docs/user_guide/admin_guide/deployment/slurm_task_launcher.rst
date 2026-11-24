@@ -153,7 +153,7 @@ applications that omit ``execution_lifetime``. Those applications use the
 ordinary job launcher's workspace, networking, study settings and image selection.
 
 Docker CP and CJs with Slurm workers
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 An existing Docker CP can opt into task execution with Docker CJs and Slurm task
 workers. CP remains a persistent Docker container on its user-defined network.
@@ -306,15 +306,21 @@ application completion. Unconfirmed native cleanup retains attempt payloads
 and scheduler control records for investigation; it does not invalidate an
 already verified result or checkpoint.
 
-Resident ``job`` lifetime retains the common automatic CJ recovery policy.
-The native Slurm ``task`` profile also permits replacement after confirmed CJ
-exit and settlement of all CP-owned worker allocations. The shared supervisor
-interrupts CJ on eligible worker loss, and the replacement restores
-application-owned checkpoint state. See :doc:`/design/client_job_recovery` for
-the common policy. Set ``NVFLARE_MAX_CJ_RESTART_FAILURES=0`` on CP, or pass
+Resident ``job`` lifetime and native Slurm ``task`` execution use the common
+automatic CJ recovery policy. In native Slurm task mode, eligible worker loss,
+such as exceeding a Slurm time limit, can trigger a CJ restart. Before
+starting a replacement, the live CP must confirm that the previous CJ exited
+and all of its worker allocations have settled. An explicit job abort prevents
+restart. On replacement, the application can restore its last committed
+checkpoint. Resource measurements from an earlier CJ can be missing from the
+final subtotal, which is then marked partial (see
+:ref:`resource_statistics_reports`).
+
+See :doc:`/design/client_job_recovery` for the common policy. Set
+``NVFLARE_MAX_CJ_RESTART_FAILURES=0`` on CP, or pass
 ``max_cj_restart_failures=0`` through its Python ``--set`` arguments, to disable
-recovery. The budget counts consecutive failed starts and resets at READY,
-rather than being a lifetime or per-job cap.
+automatic recovery. The budget counts consecutive failed starts and resets
+when the CJ reaches READY.
 
 The login node ``process`` and ``docker`` task profiles keep automatic CJ recovery
 disabled in this initial implementation. CP continues cleanup while alive;
