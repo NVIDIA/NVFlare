@@ -151,5 +151,12 @@ existing unrelated and legacy audit caller failure behavior remains unchanged.
 
 See the `task and workflow coverage contract
 <../../../design/audit_task_workflow_coverage.md>`_ for capture owners, evidence
-limits, failure behavior, dependencies and validation coverage. Model saving and
-loading remain a later increment.
+limits, failure behavior, dependencies and validation coverage.
+
+See the :doc:`model initialization and saving catalog
+</design/audit_model_training_coverage>` for the model operations audited during training.
+
+.. toctree::
+    :hidden:
+
+    /design/audit_model_training_coverage
