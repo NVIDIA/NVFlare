@@ -11,12 +11,69 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import importlib
+import inspect
+import warnings
 from unittest.mock import MagicMock
 
 import pytest
 
 from nvflare.fuel.utils.config import ConfigFormat, ConfigLoader
 from nvflare.fuel.utils.config_factory import ConfigFactory
+
+
+@pytest.fixture
+def fresh_deprecation_messages(monkeypatch):
+    module = importlib.import_module("nvflare.fuel.utils.deprecated")
+    monkeypatch.setattr(module, "_WARNED_DEPRECATION_MESSAGES", set())
+
+
+@pytest.mark.parametrize(
+    "module_name,class_name,fmt,label",
+    [
+        ("pyhocon_loader", "PyhoconConfig", ConfigFormat.PYHOCON, "HOCON/PyHOCON"),
+        ("omegaconf_loader", "OmegaConfConfig", ConfigFormat.OMEGACONF, "YAML/OmegaConf"),
+    ],
+)
+def test_deprecated_config_warns_once_and_preserves_classes(
+    fresh_deprecation_messages, module_name, class_name, fmt, label
+):
+    config_class = getattr(importlib.import_module(f"nvflare.fuel_opt.utils.{module_name}"), class_name)
+    assert inspect.isclass(config_class)
+
+    class DerivedConfig(config_class):
+        pass
+
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always")
+        loader = ConfigFactory.get_config_loader(fmt)
+        first = loader.load_config_from_dict({"value": 1})
+        second = loader.load_config_from_dict({"value": 2})
+        derived = DerivedConfig(first.get_native_conf())
+
+    assert len(records) == 1
+    assert records[0].category is DeprecationWarning
+    assert label in str(records[0].message)
+    assert "deprecated in 2.9.1" in str(records[0].message)
+    assert "removed in 2.10.0" in str(records[0].message)
+    assert "Use JSON instead" in str(records[0].message)
+    assert isinstance(first, config_class) and isinstance(second, config_class)
+    assert isinstance(derived, config_class) and isinstance(derived, DerivedConfig)
+    assert first.to_dict() == derived.to_dict() == {"value": 1}
+    assert second.to_dict() == {"value": 2}
+
+
+def test_loader_registration_and_json_remain_quiet(fresh_deprecation_messages):
+    from nvflare.fuel_opt.utils.omegaconf_loader import OmegaConfLoader
+    from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconLoader
+
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always")
+        assert OmegaConfLoader().get_format() == ConfigFormat.OMEGACONF
+        assert PyhoconLoader().get_format() == ConfigFormat.PYHOCON
+        config = ConfigFactory.get_config_loader(ConfigFormat.JSON).load_config_from_dict({"value": 1})
+    assert config.to_dict() == {"value": 1}
+    assert not records
 
 
 class TestConfigFactory:
