@@ -41,7 +41,7 @@ class FakeReader:
         self.secrets = []
         self.durations = []
 
-    def __call__(self, dataset, secret, budget, *, site):
+    def __call__(self, dataset, secret, budget, *, site, abort_signal):
         budget.request()
         self.durations.append(budget.remaining())
         name = dataset.name
@@ -241,10 +241,10 @@ class TestDeadline:
         monkeypatch.setattr(_metadata, "time", clock)
         reader = FakeReader()
 
-        def read(dataset, secret, budget, *, site):
+        def read(dataset, secret, budget, *, site, abort_signal):
             if dataset.name == "good-b":
                 clock.advance(9)
-            return reader(dataset, secret, budget, site=site)
+            return reader(dataset, secret, budget, site=site, abort_signal=abort_signal)
 
         monkeypatch.setattr(executor_module, "run_catalog_discovery", read)
         parsed = result(run(config_doc({"good": dataset(), "good-b": dataset()}), time_budget_s=8))

@@ -51,7 +51,7 @@ class CatalogExecutor(Executor):
         if not isinstance(meta, dict) or meta.get(CATALOG_JOB_META) is not True:
             return make_reply(ReturnCode.TASK_UNSUPPORTED)
         result = self._read(shareable, fl_ctx, abort_signal)
-        if result is None:
+        if result is None or abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
         reply = make_reply(ReturnCode.OK)
         reply[CATALOG_READ_KEY] = result
@@ -105,8 +105,14 @@ class CatalogExecutor(Executor):
             try:
                 budget.remaining()
                 contract = run_catalog_discovery(
-                    dataset, lambda key, n=name: config.get_secret(n, key), budget, site=fl_ctx.get_identity_name()
+                    dataset,
+                    lambda key, n=name: config.get_secret(n, key),
+                    budget,
+                    site=fl_ctx.get_identity_name(),
+                    abort_signal=abort_signal,
                 )
+                if contract is None:
+                    return None
                 records = check_contract(contract)
                 budget.records(records)
                 entry = {"dataset": name, "contract": contract}

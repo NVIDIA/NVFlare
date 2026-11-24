@@ -46,7 +46,10 @@ def test_one_executor_reads_file_sql_and_unity_catalog_sources(tmp_path, monkeyp
     from nvflare.app_common.fdn.catalog.site import executor
     from nvflare.app_opt.fdn.catalog.odcs_contract_builder import build_odcs_contract
 
-    monkeypatch.setattr(executor, "run_catalog_discovery", build_odcs_contract)
+    def read_in_process(dataset, secret, budget, *, site, abort_signal):
+        return build_odcs_contract(dataset, secret, budget, site=site)
+
+    monkeypatch.setattr(executor, "run_catalog_discovery", read_in_process)
     sdk = pytest.importorskip("databricks.sdk")
     from databricks.sdk.service.catalog import TableInfo
     from datacontract.data_contract import DataContract

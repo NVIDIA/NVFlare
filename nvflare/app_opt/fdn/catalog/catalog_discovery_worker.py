@@ -20,14 +20,17 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor, wait
 from urllib.parse import parse_qsl, urlsplit
 
 from nvflare.app_common.fdn.catalog.common.odcs import MAX_CONTRACT_BYTES
 from nvflare.app_common.fdn.catalog.site.source_error import CatalogSourceError
 
+_ABORT_POLL_SECONDS = 0.1
 
-def run_catalog_discovery(dataset, secret, budget, *, site):
-    """Run discovery for one dataset in a child process bounded by the remaining site deadline."""
+
+def run_catalog_discovery(dataset, secret, budget, *, site, abort_signal=None):
+    """Read one dataset within the site deadline. Return None if the task is cancelled."""
     uri = dataset.uri
     env = os.environ.copy()
     keys = ()
@@ -75,16 +78,27 @@ def run_catalog_discovery(dataset, secret, budget, *, site):
     # Parent owns temporary CSV/DDL files even when a blocking SDK call is killed.
     with tempfile.TemporaryDirectory() as temp:
         env.update(TMPDIR=temp, TEMP=temp, TMP=temp)
-        with subprocess.Popen(
-            [sys.executable, "-m", __name__],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            env=env,
-        ) as proc:
+        with (
+            subprocess.Popen(
+                [sys.executable, "-m", __name__],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=env,
+            ) as proc,
+            ThreadPoolExecutor(max_workers=1) as io,
+        ):
             budget.calls_left = 0  # restore the unused grant only after a complete reply
             try:
-                output, _ = proc.communicate(data, timeout=budget.remaining())
+                # Keep a single pipe exchange, including writes larger than the pipe buffer.
+                # The task thread can cancel even while the I/O thread is writing the request.
+                reply_io = io.submit(proc.communicate, data, timeout=budget.remaining())
+                if abort_signal is not None:
+                    while not reply_io.done():
+                        if abort_signal.triggered:
+                            return None
+                        wait([reply_io], timeout=min(_ABORT_POLL_SECONDS, budget.remaining()))
+                output, _ = reply_io.result()
             except subprocess.TimeoutExpired:
                 raise CatalogSourceError("metadata read deadline exceeded", budget=True) from None
             finally:

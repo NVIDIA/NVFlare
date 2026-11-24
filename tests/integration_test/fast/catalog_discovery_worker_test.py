@@ -53,16 +53,18 @@ def test_sqlite_worker_discovers_current_schema_on_each_read(tmp_path):
         assert [p["name"] for p in table["properties"]] == names
 
 
-def test_executor_reads_configured_upstream_importer_from_site_yaml(tmp_path, monkeypatch):
+@pytest.mark.parametrize("cancel", [False, True], ids=["completed", "cancelled-during-source-read"])
+def test_executor_reads_configured_upstream_importer_from_site_yaml(tmp_path, monkeypatch, cancel):
     import json
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    from threading import Thread
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from threading import Event, Thread
     from types import SimpleNamespace
 
+    import psutil
     import yaml
 
     pytest.importorskip("datacontract.imports.odata_importer")
-    from nvflare.apis.fl_constant import FLContextKey, ReservedKey
+    from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
     from nvflare.apis.fl_context import FLContext
     from nvflare.apis.shareable import Shareable
     from nvflare.apis.signal import Signal
@@ -73,14 +75,20 @@ def test_executor_reads_configured_upstream_importer_from_site_yaml(tmp_path, mo
         build_task_payload,
     )
     from nvflare.app_common.fdn.catalog.site.executor import CatalogExecutor
+    from tests.timing_utils import ThreadGroup, join_thread
 
     requests = []
+    reading, release = Event(), Event()
 
     class Service(BaseHTTPRequestHandler):
         def do_GET(self):
             requests.append((self.path, self.headers.get("X-API-Key")))
             if self.path != "/service/$metadata":
                 self.send_error(403)
+                return
+            if cancel:
+                reading.set()
+                release.wait()
                 return
             self.send_response(200)
             self.end_headers()
@@ -94,7 +102,7 @@ def test_executor_reads_configured_upstream_importer_from_site_yaml(tmp_path, mo
             )
 
     monkeypatch.setenv("SITE_CATALOG_KEY", "test-site-key")
-    with ThreadingHTTPServer(("127.0.0.1", 0), Service) as server:
+    with HTTPServer(("127.0.0.1", 0), Service) as server:
         dataset = {
             "type": "odata",
             "uri": f"http://127.0.0.1:{server.server_port}/service/",
@@ -114,6 +122,27 @@ def test_executor_reads_configured_upstream_importer_from_site_yaml(tmp_path, mo
         listener = Thread(target=server.serve_forever)
         listener.start()
         try:
+            if cancel:
+                abort = Signal()
+                replies = []
+
+                def execute():
+                    replies.append(CatalogExecutor().execute(TASK_NAME, task, ctx, abort))
+
+                with ThreadGroup(release) as threads:
+                    task_thread = threads.start(execute)
+                    assert reading.wait(45), "worker did not reach the metadata service"
+                    (worker,) = [
+                        child
+                        for child in psutil.Process().children()
+                        if run_catalog_discovery.__module__ in child.cmdline()
+                    ]
+                    abort.trigger(True)
+                    join_thread(task_thread, timeout=5)
+                    assert not worker.is_running(), "cancelled worker was not reaped"
+                    assert replies[0].get_return_code() == ReturnCode.TASK_ABORTED
+                    assert CATALOG_READ_KEY not in replies[0]
+                return
             result = CatalogExecutor().execute(TASK_NAME, task, ctx, Signal())[CATALOG_READ_KEY]
         finally:
             server.shutdown()
