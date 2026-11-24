@@ -418,17 +418,29 @@ def test_shutdown_or_abort_during_result_decoding_keeps_cancellation_without_fal
 
 
 @pytest.mark.parametrize("parent_owned", [False, True])
-def test_real_worker_end_run_uses_native_shutdown_paths(native_task, monkeypatch, parent_owned):
+def test_real_worker_end_run_uses_native_shutdown_paths(native_task, monkeypatch, caplog, parent_owned):
     from tests.process_launcher_test_utils import _assert_pid_not_running, _wait_for_file
 
     _, custom, context, policy = native_task
     ready = custom / "shutdown-worker.pid"
+    progress = custom / "shutdown-worker.stage"
     script = (
-        "import os, pathlib, time\nimport nvflare.client as flare\n"
-        "flare.init()\nflare.receive()\n"
+        "import os, pathlib, time\n"
+        f"progress = pathlib.Path({str(progress)!r})\n"
+        "def mark_stage(stage):\n"
+        "    pending = progress.with_suffix('.tmp')\n"
+        "    pending.write_text(stage)\n"
+        "    pending.replace(progress)\n"
+        "mark_stage('importing nvflare.client')\n"
+        "import nvflare.client as flare\n"
+        "mark_stage('initializing Client API')\n"
+        "flare.init()\n"
+        "mark_stage('receiving first task')\n"
+        "flare.receive()\n"
         f"pathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
         "while True: time.sleep(0.01)\n"
     )
+    caplog.set_level("INFO", logger=policy.launcher.logger.name)
     # The test-only launcher supplies real process settlement; this flag selects
     # the same CJ shutdown branch as a parent-owned native proxy.
     monkeypatch.setattr(policy.launcher, "cleanup_owned_by_parent", parent_owned, raising=False)
@@ -438,9 +450,17 @@ def test_real_worker_end_run_uses_native_shutdown_paths(native_task, monkeypatch
     results = []
     with ThreadGroup(timeout=WAIT_TIMEOUT) as workers:
         workers.start(lambda: results.append(adapter.execute("train", data, context, Signal())))
+        # Allow for interpreter startup, the Cell handshake, and task receipt.
+        readiness_timeout = 20.0
         try:
-            _wait_for_file(ready)
+            _wait_for_file(ready, timeout=readiness_timeout)
             pid = int(ready.read_text())
+        except pytest.fail.Exception:
+            stage = progress.read_text().strip() if progress.exists() else ""
+            raise AssertionError(
+                f"Worker did not receive its first task within {readiness_timeout:g} seconds. "
+                f"Last worker stage was {stage or 'before the task script'}."
+            ) from None
         finally:
             adapter.handle_event(EventType.END_RUN, context)
 
