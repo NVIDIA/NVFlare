@@ -136,8 +136,17 @@ class _UnchangedModelResult(FLModel):
     pass
 
 
-def _keeps_model(controller, aggr_result) -> bool:
-    return controller._keep_model or type(aggr_result) is _UnchangedModelResult
+def _keeps_model(aggr_result) -> bool:
+    return type(aggr_result) is _UnchangedModelResult
+
+
+_TASK_REPLY_COUNT = "_fedavg_task_reply_count"
+
+
+class _ReplyCountedResults(list):
+    def __init__(self, results, reply_count: int):
+        super().__init__(results)
+        self.reply_count = reply_count
 
 
 def _make_unchanged_model_result(current_round) -> FLModel:
@@ -227,12 +236,29 @@ class BaseFedAvg(ModelController):
         self.current_round = None
         self._reply_count = 0
         self._reply_lock = Lock()
-        self._keep_model = False
+        self._task_reply_count = None
+
+    def _prepare_task(self, data, task_name, timeout, callback):
+        task = super()._prepare_task(data=data, task_name=task_name, timeout=timeout, callback=callback)
+        self._task_reply_count = [0]
+        task.set_prop(_TASK_REPLY_COUNT, self._task_reply_count)
+        return task
 
     def _process_result(self, client_task, fl_ctx) -> None:
         with self._reply_lock:
             self._reply_count += 1
+            task_reply_count = client_task.task.get_prop(_TASK_REPLY_COUNT)
+            if task_reply_count is not None:
+                task_reply_count[0] += 1
         super()._process_result(client_task, fl_ctx)
+
+    def send_model_and_wait(self, *args, **kwargs) -> List[FLModel]:
+        self._task_reply_count = None
+        results = super().send_model_and_wait(*args, **kwargs)
+        with self._reply_lock:
+            reply_count = self._task_reply_count[0] if self._task_reply_count else 0
+            self._task_reply_count = None
+        return _ReplyCountedResults(results, reply_count)
 
     def _maybe_cleanup_memory(self):
         """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
@@ -309,13 +335,11 @@ class BaseFedAvg(ModelController):
         if self.fl_ctx:
             self._set_ctx_prop_preserving_attrs(fl_ctx=self.fl_ctx, key=AppConstants.AGGREGATION_STATS, value=None)
         self.event(AppEventType.BEFORE_AGGREGATION)
-        self._keep_model = False
-        reply_count, self._reply_count = self._reply_count, 0
+        reply_count = results.reply_count if isinstance(results, _ReplyCountedResults) else 0
         kept_results = self._drop_zero_step_results(results)
         if results and not kept_results:
             if reply_count > len(results):
                 raise RuntimeError("no accepted contributions to aggregate")
-            self._keep_model = True
             self.warning(f"All results reported 0 steps at round {self.current_round}, keeping the global model.")
             aggr_result = _make_unchanged_model_result(self.current_round)
             self._publish_zero_contribution_stats()
@@ -402,7 +426,7 @@ class BaseFedAvg(ModelController):
         Returns: None.
 
         """
-        if _keeps_model(self, aggr_result):
+        if _keeps_model(aggr_result):
             return model
 
         self.event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE)

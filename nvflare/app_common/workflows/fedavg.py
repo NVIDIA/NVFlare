@@ -41,6 +41,7 @@ from .base_fedavg import (
     _get_client_name,
     _get_num_steps_weight,
     _is_zero_step_result,
+    _keeps_model,
     _make_unchanged_model_result,
     _release_params,
     make_fedavg_metrics_aggregation_info,
@@ -278,7 +279,7 @@ class FedAvg(BaseFedAvg):
                     AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggregate_results
                 )
 
-                if self._keep_model:
+                if _keeps_model(aggregate_results):
                     if self.stop_condition:
                         self.num_fl_rounds_without_improvement += 1
                         if self.patience and self.patience <= self.num_fl_rounds_without_improvement:
@@ -402,8 +403,7 @@ class FedAvg(BaseFedAvg):
 
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
-        self._keep_model = self._all_results_zero_step()
-        if self._keep_model:
+        if self._all_results_zero_step():
             self.warning(f"All results reported 0 steps at round {self.current_round}, keeping the global model.")
             self._publish_zero_contribution_stats()
             return _make_unchanged_model_result(self.current_round)

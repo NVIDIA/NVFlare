@@ -141,9 +141,7 @@ class Scaffold(BaseFedAvg):
 
             # update SCAFFOLD global controls
             ctr_diff = (
-                {}
-                if _keeps_model(self, aggregate_results)
-                else aggregate_results.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]
+                {} if _keeps_model(aggregate_results) else aggregate_results.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]
             )
             for v_name, v_value in ctr_diff.items():
                 if v_name not in self._global_ctrl_weights:

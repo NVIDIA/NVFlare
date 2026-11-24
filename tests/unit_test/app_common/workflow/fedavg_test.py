@@ -2797,7 +2797,6 @@ class TestZeroStepReviewFollowUps:
 
         controller = _base_fedavg()
         model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, metrics={"acc": 0.9}, meta={"k": 1})
-        controller._keep_model = True
 
         updated = controller.update_model(model, _make_unchanged_model_result(0))
 
@@ -2939,3 +2938,137 @@ def test_direct_aggregate_fn_then_update_model_keeps_model_on_all_zero_round(fn_
 
     assert updated.params["w"] == pytest.approx([5.0])
     assert updated.metrics == {"acc": 0.9}
+
+
+def _reply(params, steps, meta=None):
+    meta = {FLMetaKey.NUM_STEPS_CURRENT_ROUND: steps, **(meta or {})}
+    return FLModelUtils.to_shareable(FLModel(params=params, params_type=ParamsType.DIFF, meta=meta))
+
+
+def _wire_batches(controller, batches, model):
+    _wire_controller(controller, [None], model)
+    pending = list(batches)
+
+    def broadcast_and_wait(task, fl_ctx, targets=None, **_):
+        for i, reply in enumerate(pending.pop(0)):
+            client_task = ClientTask(Client(f"site-{i + 1}", f"site-{i + 1}"), task)
+            client_task.result = reply
+            task.result_received_cb(client_task, fl_ctx)
+
+    controller.broadcast_and_wait = broadcast_and_wait
+    return controller
+
+
+def _validate_before_train(controller):
+    send = controller.send_model_and_wait
+
+    def send_with_validation(task_name="train", data=None, **kwargs):
+        if task_name == "train":
+            send(task_name="validate", data=data, **kwargs)
+        return send(task_name=task_name, data=data, **kwargs)
+
+    controller.send_model_and_wait = send_with_validation
+
+
+_VALIDATION = FLModelUtils.to_shareable(FLModel(params={}, metrics={"acc": 0.5}))
+
+
+class TestPerBatchReplyCount:
+    def test_scaffold_run_with_validation_before_training(self):
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        model = FLModel(params={"w": np.array([1.0])}, params_type=ParamsType.FULL, meta={})
+        ctrl = {AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"w": np.array([0.5])}}
+        controller = _wire_batches(
+            Scaffold(num_clients=1, num_rounds=2, persistor_id=""),
+            [[_VALIDATION], [_reply({}, 0)], [_VALIDATION], [_reply({"w": np.array([2.0])}, 3, ctrl)]],
+            model,
+        )
+        controller.model = model
+        controller._global_ctrl_weights = {"w": np.array([0.0])}
+        _validate_before_train(controller)
+
+        controller.run()
+
+        assert controller.save_model.call_count == 2
+        assert controller.model.params["w"] == pytest.approx([3.0])
+        assert controller._global_ctrl_weights["w"] == pytest.approx([0.5])
+
+    def test_fedavg_lr_run_with_validation_before_training(self):
+        from nvflare.app_common.np.constants import NPConstants
+        from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
+
+        model = FLModel(params={NPConstants.NUMPY_KEY: np.zeros(3)}, params_type=ParamsType.FULL, meta={})
+        trained = {"gradient": np.ones(3), "hessian": np.eye(3)}
+        controller = _wire_batches(
+            FedAvgLR(num_clients=1, num_rounds=2, damping_factor=1.0, epsilon=1.0, n_features=2),
+            [[_VALIDATION], [_reply({}, 0)], [_VALIDATION], [_reply(trained, 3)]],
+            model,
+        )
+        _validate_before_train(controller)
+
+        controller.run()
+
+        assert controller.save_model.call_count == 2
+        assert not np.allclose(controller.save_model.call_args.args[0].params[NPConstants.NUMPY_KEY], 0.0)
+
+    def test_aggregate_uses_train_batch_count_after_later_validation(self):
+        model = FLModel(params={"w": np.array([1.0])}, params_type=ParamsType.FULL, meta={})
+        controller = _wire_batches(_base_fedavg(), [[_reply({}, 0)], [_VALIDATION]], model)
+
+        train_results = controller.send_model_and_wait(task_name="train", data=model)
+        controller.send_model_and_wait(task_name="validate", data=model)
+        aggr = controller.aggregate(train_results)
+
+        assert controller.update_model(model, aggr).params["w"] == pytest.approx([1.0])
+
+    def test_zero_step_and_rejected_reply_in_batch_still_fails(self):
+        model = FLModel(params={"w": np.array([1.0])}, params_type=ParamsType.FULL, meta={})
+        controller = _wire_batches(_base_fedavg(), [[_reply({}, 0), _unconvertible_reply()]], model)
+
+        results = controller.send_model_and_wait(task_name="train", data=model)
+
+        with pytest.raises(RuntimeError, match="no accepted contributions"):
+            controller.aggregate(results)
+
+
+class TestNoStaleKeepModel:
+    def test_base_direct_update_after_all_zero_round_is_applied(self):
+        from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+
+        controller = _base_fedavg()
+        controller.fl_ctx = FLContext()
+        controller.event = lambda *_: None
+        model = FLModel(params={"w": np.array([1.0])}, params_type=ParamsType.FULL, meta={})
+
+        model = controller.update_model(model, controller.aggregate([_steps_result("site-1", 7.0, 0)]))
+        assert model.params["w"] == pytest.approx([1.0])
+        model = controller.update_model(model, BaseFedAvg.aggregate_fn([_steps_result("site-1", 5.0, 5)]))
+
+        assert model.params["w"] == pytest.approx([5.0])
+
+    def test_lr_direct_update_after_all_zero_round_is_applied(self):
+        from nvflare.app_common.np.constants import NPConstants
+        from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
+
+        controller = FedAvgLR(num_clients=1, num_rounds=1, damping_factor=1.0, epsilon=1.0, n_features=2)
+        controller.fl_ctx = FLContext()
+        controller.event = lambda *_: None
+        controller.info = MagicMock()
+        controller.warning = MagicMock()
+        controller.current_round = 0
+        model = FLModel(params={NPConstants.NUMPY_KEY: np.zeros(3)}, params_type=ParamsType.FULL, meta={})
+        zero = FLModel(params={}, params_type=ParamsType.DIFF, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+        trained = FLModel(
+            params={"gradient": np.ones(3), "hessian": np.eye(3)},
+            params_type=ParamsType.DIFF,
+            meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 5},
+        )
+
+        model = controller.update_model(
+            model, controller.aggregate([zero], aggregate_fn=controller.newton_raphson_aggregator_fn)
+        )
+        np.testing.assert_array_equal(model.params[NPConstants.NUMPY_KEY], np.zeros(3))
+        model = controller.update_model(model, controller.newton_raphson_aggregator_fn([trained]))
+
+        assert not np.allclose(model.params[NPConstants.NUMPY_KEY], 0.0)

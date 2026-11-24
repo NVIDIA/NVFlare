@@ -213,7 +213,7 @@ class FedAvgLR(BaseFedAvg):
         aggregated gradient and hessian.
 
         """
-        if model_update is None or _keeps_model(self, model_update):
+        if model_update is None or _keeps_model(model_update):
             return model
         if model_update.params is None:
             raise ValueError("model params is None")
