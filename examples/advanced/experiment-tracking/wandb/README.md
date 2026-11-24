@@ -76,8 +76,9 @@ python3
 Provide your API key when prompted. Get your key from https://wandb.ai/authorize
 
 For a self-hosted backend, the receiving site's operator can set `WANDB_BASE_URL`
-before starting NVFlare. Jobs selecting another `wandb_args.settings.base_url`
-require that complete URL in `wandb_base_urls` in the receiver site's
+before starting NVFlare. When it is unset, the receiver uses the operator's saved
+global W&B host, with the SDK's cloud endpoint as the final default. Jobs selecting
+another `wandb_args.settings.base_url` require that complete URL in `wandb_base_urls` in the receiver site's
 `local/resources.json` (or `resources.json.default` when the main file is absent):
 
 ```json
