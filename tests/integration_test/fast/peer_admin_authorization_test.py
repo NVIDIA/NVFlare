@@ -16,7 +16,7 @@
 
 Real provisioning, server, enrollment, client entry points and admin login; separate
 processes/CWDs on a shared host filesystem (no OS user or mount isolation).
-The existing one-round job and its evaluation workflow verify task, workflow and model audit observations;
+The one-round job and its evaluation workflow verify task, workflow, model, and evaluation audit observations;
 controlled component suites cover execution failures, duplicate/late results, and
 abort semantics without adding another federation startup here.
 """
@@ -394,10 +394,16 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay, monkeypatch
             "path": "tests.task_audit_test_utils.TaskAuditJobTrainer",
             "args": {"directory": str(children)},
         }
+        config["components"].append(
+            {"id": "validation_learner", "path": "tests.task_audit_test_utils.TaskAuditModelValidator"}
+        )
         config["executors"].append(
             {
                 "tasks": [AppConstants.TASK_VALIDATION],
-                "executor": {"path": "tests.task_audit_test_utils.TaskAuditModelValidator"},
+                "executor": {
+                    "path": "nvflare.app_common.executors.model_learner_executor.ModelLearnerExecutor",
+                    "args": {"learner_id": "validation_learner"},
+                },
             }
         )
         config_path.write_text(json.dumps(config))
@@ -487,6 +493,11 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay, monkeypatch
                 for name in ("site-1", "site-2")
             ):
                 return None
+            if not all(
+                any(event.get("action") == "evaluation.execution.returned" for event in records[name])
+                for name in ("site-1", "site-2")
+            ):
+                return None
             return records
 
         job_records = wait_for(completed_job_audits, timeout=30)
@@ -495,7 +506,7 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay, monkeypatch
                 assert set(event) <= {"event_id", "reference", "timestamp", "user", "action", "job", "scope", "message"}
                 assert all(isinstance(value, str) for value in event.values()), event
                 assert event["timestamp"].endswith("+00:00"), event
-                if event.get("action", "").startswith(("task.", "workflow.")):
+                if event.get("action", "").startswith(("task.", "workflow.", "evaluation.")):
                     assert event["job"] == job_id, event
                     assert event["user"] == "unknown", event
                     serialized = json.dumps(event)
@@ -513,7 +524,7 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay, monkeypatch
         records_by_site = {name: {event["event_id"]: event for event in events} for name, events in job_records.items()}
         for name, events in job_records.items():
             for event in events:
-                if event.get("action", "").startswith(("task.", "workflow.")) and event.get("reference"):
+                if event.get("action", "").startswith(("task.", "workflow.", "evaluation.")) and event.get("reference"):
                     assert event["reference"] in records_by_site[name], event
 
         server_job_audit = job_records["localhost"]
@@ -566,6 +577,32 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay, monkeypatch
         summary["model_audit_records"] = (
             "verified training source, saved model, named retrieval, evaluation at both clients, and privacy"
         )
+        server_evaluation = [event for event in server_job_audit if event["action"].startswith("evaluation.")]
+        for name in ("site-1", "site-2"):
+            client_job_audit = job_records[name]
+            assignment = _one_task_record(
+                client_job_audit, "task.assignment.received", task=AppConstants.TASK_VALIDATION
+            )
+            client_evaluation = [event for event in client_job_audit if event["action"].startswith("evaluation.")]
+            assert [(event["action"], event.get("message", "")) for event in client_evaluation] == [
+                ("evaluation.execution.started", ""),
+                ("evaluation.execution.stage_returned", "stage=learner"),
+                ("evaluation.execution.stage_returned", "stage=encode_reply"),
+                ("evaluation.execution.returned", "status=reply_prepared"),
+            ]
+            assert all(event["reference"] == assignment["reference"] for event in client_evaluation)
+            result = _one_task_record(
+                server_job_audit, "task.result.received", site=name, task=AppConstants.TASK_VALIDATION
+            )
+            handled = [event for event in server_evaluation if event.get("reference") == result["reference"]]
+            assert [(event["action"], event.get("message", "")) for event in handled] == [
+                ("evaluation.result.started", ""),
+                ("evaluation.result.stage_returned", "stage=store_result"),
+                ("evaluation.result.returned", "status=processed"),
+            ]
+        assert len(server_evaluation) == 6, server_evaluation
+        summary["evaluation_audit_records"] = "verified both clients' execution and the server's result handling"
+
         workflow_id = "scatter_and_gather"
         initialized = _one_task_record(server_job_audit, "workflow.execution.initialized", workflow=workflow_id)
         control = _one_task_record(server_job_audit, "workflow.control.returned", workflow=workflow_id)

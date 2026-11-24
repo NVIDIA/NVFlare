@@ -118,6 +118,27 @@ def build_context(fl_ctx=None, **overrides):
         return None
 
 
+def capture_operation_context(fl_ctx):
+    """Snapshot job and scope with a matching, approved local reference."""
+
+    def capture():
+        local = build_context(fl_ctx)
+        if local is None:
+            return None
+        parent = current_context()
+        reference = ""
+        if (
+            parent is not None
+            and local.job_id
+            and local.job_id == parent.job_id
+            and local.scope_name == parent.scope_name
+        ):
+            reference = parent.reference
+        return TaskAuditContext(job_id=local.job_id, scope_name=local.scope_name, reference=reference)
+
+    return prepare(capture)
+
+
 def current_context():
     return _context.get()
 

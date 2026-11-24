@@ -31,12 +31,16 @@ from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
+from nvflare.fuel.sec import evaluation_audit
 from nvflare.fuel.utils.log_utils import get_module_logger, log_progress
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 # Inherited reporting uses the defining module; subclass diagnostics keep their own logger.
 _logger = get_module_logger(__name__)
+
+# Leave space in the shared collector for terminal and enclosing task records.
+_MAX_RESULT_STORAGE_OBSERVATIONS = 64
 
 
 class CrossSiteModelEval(Controller):
@@ -419,38 +423,41 @@ class CrossSiteModelEval(Controller):
         )
 
     def _accept_val_result(self, client_name: str, result: Shareable, fl_ctx: FLContext):
-        model_owner = result.get_cookie(AppConstants.MODEL_OWNER, "")
+        with evaluation_audit.operation("result", fl_ctx) as audit:
+            model_owner = result.get_cookie(AppConstants.MODEL_OWNER, "")
 
-        # Fire event. This needs to be a new local context per each client
-        fl_ctx.set_prop(AppConstants.MODEL_OWNER, model_owner, private=True, sticky=False)
-        fl_ctx.set_prop(AppConstants.DATA_CLIENT, client_name, private=True, sticky=False)
-        fl_ctx.set_prop(AppConstants.VALIDATION_RESULT, result, private=True, sticky=False)
-        self.fire_event(AppEventType.VALIDATION_RESULT_RECEIVED, fl_ctx)
+            # Fire event. This needs to be a new local context per each client
+            fl_ctx.set_prop(AppConstants.MODEL_OWNER, model_owner, private=True, sticky=False)
+            fl_ctx.set_prop(AppConstants.DATA_CLIENT, client_name, private=True, sticky=False)
+            fl_ctx.set_prop(AppConstants.VALIDATION_RESULT, result, private=True, sticky=False)
+            self.fire_event(AppEventType.VALIDATION_RESULT_RECEIVED, fl_ctx)
 
-        rc = result.get_return_code()
-        if rc and rc != ReturnCode.OK:
-            # Raise errors if bad peer context or execution exception.
-            if rc in [ReturnCode.MISSING_PEER_CONTEXT, ReturnCode.BAD_PEER_CONTEXT]:
-                self.log_error(fl_ctx, "Peer context is bad or missing.")
-            elif rc in [ReturnCode.EXECUTION_EXCEPTION, ReturnCode.TASK_UNKNOWN]:
-                self.log_error(fl_ctx, "Execution Exception in model validation.")
-            elif rc in [
-                ReturnCode.EXECUTION_RESULT_ERROR,
-                ReturnCode.TASK_DATA_FILTER_ERROR,
-                ReturnCode.TASK_RESULT_FILTER_ERROR,
-            ]:
-                self.log_error(fl_ctx, "Execution result is not a shareable. Validation results will be ignored.")
-            else:
-                self.log_error(
-                    fl_ctx,
-                    f"Client {client_name} sent results for validating {model_owner} model with return code set."
-                    " Logging empty results.",
-                )
+            rc = result.get_return_code()
+            if rc and rc != ReturnCode.OK:
+                # Raise errors if bad peer context or execution exception.
+                if rc in [ReturnCode.MISSING_PEER_CONTEXT, ReturnCode.BAD_PEER_CONTEXT]:
+                    self.log_error(fl_ctx, "Peer context is bad or missing.")
+                elif rc in [ReturnCode.EXECUTION_EXCEPTION, ReturnCode.TASK_UNKNOWN]:
+                    self.log_error(fl_ctx, "Execution Exception in model validation.")
+                elif rc in [
+                    ReturnCode.EXECUTION_RESULT_ERROR,
+                    ReturnCode.TASK_DATA_FILTER_ERROR,
+                    ReturnCode.TASK_RESULT_FILTER_ERROR,
+                ]:
+                    self.log_error(fl_ctx, "Execution result is not a shareable. Validation results will be ignored.")
+                else:
+                    self.log_error(
+                        fl_ctx,
+                        f"Client {client_name} sent results for validating {model_owner} model with return code set."
+                        " Logging empty results.",
+                    )
 
-            if client_name not in self._val_results:
-                self._val_results[client_name] = {}
-            self._val_results[client_name][model_owner] = {}
-        else:
+                if client_name not in self._val_results:
+                    self._val_results[client_name] = {}
+                self._val_results[client_name][model_owner] = {}
+                audit.record("rejected", reason="non_ok_reply")
+                return
+
             try:
                 dxo = from_shareable(result)
             except ValueError as e:
@@ -459,15 +466,21 @@ class CrossSiteModelEval(Controller):
                     f"Exception: {secure_format_exception(e)}"
                 )
                 self.log_exception(fl_ctx, reason)
+                audit.record("rejected", reason="invalid_result")
                 return
 
             # The DXO could contain multiple sub-DXOs (e.g. received from a T2 system)
             leaf_dxos, errors = get_leaf_dxos(dxo, client_name)
             if errors:
+                audit.record("stage_error", stage="decode_result", reason="invalid_entries")
                 for err in errors:
                     self.log_error(fl_ctx, f"Bad result from {client_name}: {err}")
-            for k, v in leaf_dxos.items():
-                self._save_validation_result(k, model_owner, v, fl_ctx)
+            for index, (result_client, result_dxo) in enumerate(leaf_dxos.items()):
+                if index == _MAX_RESULT_STORAGE_OBSERVATIONS:
+                    audit.record("observations_limited", stage="store_result", reason="record_limit")
+                with audit.stage("store_result", report_return=index < _MAX_RESULT_STORAGE_OBSERVATIONS):
+                    self._save_validation_result(result_client, model_owner, result_dxo, fl_ctx)
+            audit.record("returned", status="processed")
 
     def _save_validation_result(self, client_name: str, model_name: str, dxo, fl_ctx):
         file_name = client_name + "_" + model_name

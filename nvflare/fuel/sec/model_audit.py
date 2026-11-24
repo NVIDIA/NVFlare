@@ -24,17 +24,6 @@ _static_save = ContextVar("model_audit_static_save", default=None)
 _SAVE_OPERATIONS = ("save", "best_save")
 
 
-def _capture_context(fl_ctx):
-    local = task_audit.build_context(fl_ctx)
-    if local is None:
-        return None
-    parent = task_audit.current_context()
-    reference = ""
-    if parent is not None and local.job_id and local.job_id == parent.job_id and local.scope_name == parent.scope_name:
-        reference = parent.reference
-    return task_audit.TaskAuditContext(job_id=local.job_id, scope_name=local.scope_name, reference=reference)
-
-
 class _Operation:
     def __init__(self, name, context, owner):
         self.name = name
@@ -85,7 +74,7 @@ class _Operation:
 def operation(name, fl_ctx, *, owner=None):
     """Collect one short operation, joining any outer lock owner's collector."""
     with task_audit.collect(), suspend_implementation():
-        context = task_audit.prepare(lambda: _capture_context(fl_ctx))
+        context = task_audit.capture_operation_context(fl_ctx)
         audit = _Operation(name, context, owner)
         try:
             audit.record("started")

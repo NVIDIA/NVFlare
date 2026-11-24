@@ -23,6 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.fuel.sec import evaluation_audit
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.security.logging import secure_format_exception
 
@@ -70,6 +71,15 @@ class NPValidator(Executor):
             count += interval
 
         if task_name == self._validate_task_name:
+            return self._execute_validation(task_name, shareable, fl_ctx, abort_signal)
+        if task_name == self._submit_model_task_name:
+            # Dummy validator has no local model; signal OK so CSE controller can skip this client's submission.
+            self.log_info(fl_ctx, "submit_model (dummy): no local model, returning OK.")
+            return make_reply(ReturnCode.OK)
+        return make_reply(ReturnCode.TASK_UNKNOWN)
+
+    def _execute_validation(self, task_name, shareable, fl_ctx, abort_signal):
+        with evaluation_audit.operation("execution", fl_ctx) as audit:
             try:
                 # First we extract DXO from the shareable.
                 try:
@@ -78,6 +88,7 @@ class NPValidator(Executor):
                     self.log_error(
                         fl_ctx, f"Unable to extract model dxo from shareable. Exception: {secure_format_exception(e)}"
                     )
+                    audit.record("rejected", reason="invalid_input")
                     return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Get model from shareable. data_kind must be WEIGHTS.
@@ -87,11 +98,13 @@ class NPValidator(Executor):
                     self.log_error(
                         fl_ctx, "Model DXO doesn't have data or is not of type DataKind.WEIGHTS. Unable to validate."
                     )
+                    audit.record("rejected", reason="invalid_input")
                     return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Check if key exists in model
                 if NPConstants.NUMPY_KEY not in model:
                     self.log_error(fl_ctx, "numpy_key not in model. Unable to validate.")
+                    audit.record("rejected", reason="invalid_input")
                     return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # The workflow provides MODEL_OWNER information in the shareable header.
@@ -105,6 +118,7 @@ class NPValidator(Executor):
 
                 # Check abort signal regularly.
                 if abort_signal.triggered:
+                    audit.record("aborted", stage="before_evaluation")
                     return make_reply(ReturnCode.TASK_ABORTED)
 
                 # Do some dummy validation.
@@ -117,19 +131,18 @@ class NPValidator(Executor):
 
                 # Check abort signal regularly.
                 if abort_signal.triggered:
+                    audit.record("aborted", stage="after_evaluation")
                     return make_reply(ReturnCode.TASK_ABORTED)
 
                 self.log_info(fl_ctx, f"Validation result: {val_results}")
 
                 # Create DXO for metrics and return shareable.
                 metric_dxo = DXO(data_kind=DataKind.METRICS, data=val_results)
-                return metric_dxo.to_shareable()
+                reply = metric_dxo.to_shareable()
+                audit.record("returned", status="reply_prepared")
+                return reply
             except Exception as e:
                 self.log_exception(fl_ctx, f"Exception in NPValidator execute: {secure_format_exception(e)}.")
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-        elif task_name == self._submit_model_task_name:
-            # Dummy validator has no local model; signal OK so CSE controller can skip this client's submission.
-            self.log_info(fl_ctx, "submit_model (dummy): no local model, returning OK.")
-            return make_reply(ReturnCode.OK)
-        else:
-            return make_reply(ReturnCode.TASK_UNKNOWN)
+                reply = make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                audit.record("error")
+                return reply

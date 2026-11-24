@@ -164,8 +164,18 @@ are excluded. See the :doc:`training model coverage contract
 </design/audit_model_training_coverage>` and the :doc:`evaluation lookup event
 catalog </design/audit_model_evaluation_coverage>`.
 
+Evaluation Execution and Result Handling
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Selected client evaluation handlers record the learner call or built-in
+validation branch and the reply they prepare. The server records handling
+of evaluation replies and selected result and summary writes. Reply
+preparation establishes a local result. The records exclude measurements,
+names, model values, and paths. See the :doc:`evaluation execution and result
+catalog </design/audit_evaluation_results_coverage>`.
+
 .. toctree::
     :hidden:
 
     /design/audit_model_training_coverage
     /design/audit_model_evaluation_coverage
+    /design/audit_evaluation_results_coverage

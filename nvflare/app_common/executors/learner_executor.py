@@ -21,6 +21,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ValidateType
+from nvflare.fuel.sec import evaluation_audit
 from nvflare.security.logging import secure_format_exception
 
 
@@ -127,13 +128,16 @@ class LearnerExecutor(Executor):
             return make_reply(ReturnCode.EMPTY_RESULT)
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        self.log_debug(fl_ctx, f"validate abort_signal {abort_signal.triggered}")
+        with evaluation_audit.operation("execution", fl_ctx) as audit:
+            self.log_debug(fl_ctx, f"validate abort_signal {abort_signal.triggered}")
 
-        shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.MODEL_VALIDATE)
-        validate_result: Shareable = self.learner.validate(shareable, fl_ctx, abort_signal)
-        if validate_result and isinstance(validate_result, Shareable):
-            return validate_result
-        else:
+            shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.MODEL_VALIDATE)
+            validate_result: Shareable = audit.call("learner", self.learner.validate, shareable, fl_ctx, abort_signal)
+            if validate_result and isinstance(validate_result, Shareable):
+                audit.record("returned", status="reply_prepared")
+                return validate_result
+
+            audit.record("rejected", reason="invalid_reply")
             return make_reply(ReturnCode.EMPTY_RESULT)
 
     def finalize(self, fl_ctx: FLContext):
