@@ -111,6 +111,7 @@ class AsyncNumAssessor(Assessor):
 
     def _do_child_update(self, update: Shareable, fl_ctx: FLContext) -> (bool, Optional[Shareable]):
         report = StateUpdateReport.from_shareable(update)
+        newly_available_devices = set(report.available_devices or {}) - self.available_devices.keys()
         if report.available_devices:
             self.available_devices.update(report.available_devices)
             self.log_debug(
@@ -181,6 +182,10 @@ class AsyncNumAssessor(Assessor):
                 self._fill_selection(fl_ctx)
         else:
             self.log_debug(fl_ctx, "no model updates")
+            if newly_available_devices and self.current_model_version > 0:
+                num_holes = self.device_selection_size - len(self.current_selection)
+                if num_holes >= self.min_hole_to_fill:
+                    self._fill_selection(fl_ctx)
 
         # reply
         if self.current_model_version == 0:
@@ -209,6 +214,12 @@ class AsyncNumAssessor(Assessor):
             self.current_selection_version += 1
             # remove all used devices from available devices
             usable_devices = set(self.available_devices.keys()) - set(self.used_devices.keys())
+            if self.device_reuse:
+                # A device may be reused for a later model, but a contributor to the
+                # current model would receive the same selection ID and be rejected.
+                model_state = self.updates.get(self.current_model_version)
+                if isinstance(model_state, _ModelState):
+                    usable_devices.difference_update(model_state.devices)
             if usable_devices:
                 for _ in range(num_holes):
                     device_id = random.choice(list(usable_devices))
