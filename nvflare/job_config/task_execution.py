@@ -68,22 +68,29 @@ def validate_task_resources(meta, site_name):
                 raise ValueError("task GPUs must be nonnegative integer counts")
 
 
-def validate_task_workflows(workflows):
+def validate_task_workflows(workflows, components):
     """Reject the workflow configurations not yet integrated with task workers."""
     # These export-only checks are P4 compatibility policy, not controller APIs.
     from nvflare.app_common.workflows.cross_site_eval import CrossSiteEval
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
     from nvflare.app_common.workflows.scaffold import Scaffold
+    from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
     from nvflare.app_common.workflows.scatter_and_gather_scaffold import ScatterAndGatherScaffold
 
     for workflow in workflows:
         controller = workflow.controller
+        aggregators = [getattr(controller, "aggregator", None)]
+        if isinstance(controller, ScatterAndGather):
+            # ScatterAndGather resolves its aggregator from the server components at startup.
+            aggregators.append(components.get(controller.aggregator_id))
+
         reason = None
         if isinstance(controller, (Scaffold, ScatterAndGatherScaffold)):
             reason = "client SCAFFOLD control variates are not restored between workers"
         elif any(
             base.__module__ == "nvflare.app_opt.pt.fedce" and base.__name__ == "FedCEModelAggregator"
-            for base in type(getattr(controller, "aggregator", None)).__mro__
+            for aggregator in aggregators
+            for base in type(aggregator).__mro__
         ):
             # Inspect class ancestry without importing the optional PyTorch dependency.
             reason = "client FedCE previous-model and score-history state is not restored between workers"

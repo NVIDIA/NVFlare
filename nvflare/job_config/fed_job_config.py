@@ -164,7 +164,7 @@ class FedJobConfig:
         ):
             for app in self.fed_apps.values():
                 if app.server_app:
-                    validate_task_workflows(app.server_app.workflows)
+                    validate_task_workflows(app.server_app.workflows, app.server_app.components)
 
         for site, app_name in self.deploy_map.items():
             app = self.fed_apps[app_name].client_app
