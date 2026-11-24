@@ -22,9 +22,9 @@ The [README](README.md) covers data preparation, CLI options, and experiment art
   preflight during execution.
 - **Paper scheduling.** The reference scheduler releases a logical client after
   its training phase, so it can receive a new assignment while an earlier upload
-  is pending. The paper planner generates the ordered events and expected base
-  versions before launch. It preserves the NumPy `RandomState` draw order,
-  heap tie handling, the simulated-time cutoff, and the training seed formula
+  is pending. The paper planner uses `FedBuffScheduleState` to generate ordered
+  events and expected base versions before launch. It preserves the NumPy
+  `RandomState` draw order, heap tie handling, the simulated-time cutoff, and the training seed formula
   `run_seed * 1_000_000 + assignment_id + 1`.
 - **Distillation and synthesis.** The shared teacher buffer, ordinary KD loss,
   feature-statistics objective, and mean-probability probe supply reusable
@@ -39,8 +39,9 @@ The [README](README.md) covers data preparation, CLI options, and experiment art
 
 The shared feature objective groups each layer's mean and variance losses before
 summing. In one ResNet CPU comparison, the scalar changed from 299.679016 to
-299.679047 with identical input gradients. Ordered replay fails on physical call
-errors during execution and records errors from drained calls after completion.
+299.679047 with identical input gradients. Ordered replay fails if a planned
+acceptance has a physical call error. Errors outside the planned acceptances
+are logged whether they arrive during replay or drain.
 The simulator reclaims temporary uploads and bases after their last consumer
 finishes. The run retains the plan, verified traces, metrics, and final model.
 

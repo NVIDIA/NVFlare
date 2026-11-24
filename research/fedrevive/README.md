@@ -499,9 +499,10 @@ if __name__ == "__main__":
 
 The callback returns a finite nonnegative duration and receives a NumPy RNG
 derived from the run seed, assignment ID, and phase. For programmatic use, pass
-it directly to `make_paper_plan()`. If you also want a different participation
-or refill policy, emit an ordered SimEnv plan from your own generator. SimEnv
-preflights the resulting JSON against the workflow before training.
+it directly to `make_simulation_plan()`. The generator uses the shared
+`FedBuffScheduleState` for reservations, refill limits, and publication counts.
+To change the participation policy, emit an ordered SimEnv plan from your own
+generator. SimEnv preflights the resulting JSON against the workflow before training.
 
 ### Visualize a plan before running it
 

@@ -137,7 +137,7 @@ def test_paper_plan_preserves_logical_release_ties_and_horizon(research):
         f"client-{i}": {"download_mean": 0, "train_mean": 0, "upload_mean": delay, "upload_half_width": 0}
         for i, delay in enumerate((5, 1))
     }
-    plan = research("schedule_standard").make_paper_plan(
+    plan = research("schedule_standard").make_simulation_plan(
         profiles, run_seed=10, max_time=2, num_rounds=3, concurrency=2, min_open_slots=1, buffer_size=1
     )["async_execution"]
     assert plan["logical_sequence"] == ["client-0", "client-1", "client-0"]
@@ -165,7 +165,7 @@ def test_custom_paper_delays_use_independent_assignment_and_phase_rngs(research)
         return lognormal(assignment_id, logical_name, phase, profile, rng)
 
     def events(sampler):
-        plan = planner.make_paper_plan(profiles, **options, delay_sampler=sampler)
+        plan = planner.make_simulation_plan(profiles, **options, delay_sampler=sampler)
         return plan["async_execution"]["timing"]["events"]
 
     custom_events = events(lognormal)
@@ -183,8 +183,8 @@ def test_shifted_planner_samples_each_phase_from_its_trace(research):
     sampler = research("schedule_shifted").trace_delay_sampler(samples)
     profiles = {"client-0": {"download_mean": 0, "train_mean": 0, "upload_mean": 0}}
     options = dict(run_seed=10, max_time=200, num_rounds=3, concurrency=1, min_open_slots=1, buffer_size=1)
-    plan = planner.make_paper_plan(profiles, **options, delay_sampler=sampler)
-    assert plan == planner.make_paper_plan(profiles, **options, delay_sampler=sampler)
+    plan = planner.make_simulation_plan(profiles, **options, delay_sampler=sampler)
+    assert plan == planner.make_simulation_plan(profiles, **options, delay_sampler=sampler)
     events = iter(plan["async_execution"]["timing"]["events"])
     for identity in range(3):
         start = next(events)

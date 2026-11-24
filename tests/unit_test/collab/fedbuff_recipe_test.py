@@ -373,7 +373,7 @@ def test_ordered_plan_releases_client_at_train_and_validates_refill_base(tmp_pat
     if scenario == "publication_drift":
         monkeypatch.setattr(FedBuffTrainingCoordinator, "accept", lambda *args: False)
     if scenario in ("client_failure", "publication_drift"):
-        match = "assignment 0 failed" if scenario == "client_failure" else "async execution differs from preflight"
+        match = "assignment 1 failed" if scenario == "client_failure" else "async execution differs from preflight"
         with pytest.raises(RuntimeError, match=match):
             _execute(observer, [client], runtime=runtime, num_rounds=2, concurrency=2)
         assert [version for version, _ in observer.versions] == [0]

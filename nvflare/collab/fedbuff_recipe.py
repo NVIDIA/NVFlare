@@ -120,8 +120,7 @@ class AcceptedUpdate:
         return self.current_version - self.assignment.base_version
 
 
-def _validate_options(num_rounds, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform):
-    """Share early recipe validation with standalone coordinator construction."""
+def _validate_schedule_options(num_rounds, concurrency, buffer_size, min_open_slots):
     for name, value in (
         ("num_rounds", num_rounds),
         ("concurrency", concurrency),
@@ -132,6 +131,9 @@ def _validate_options(num_rounds, concurrency, buffer_size, min_open_slots, serv
             raise ValueError(f"{name} must be a positive integer")
     if min_open_slots > concurrency:
         raise ValueError("min_open_slots cannot exceed concurrency")
+
+
+def _validate_update_options(server_lr, weight_metric, update_transform):
     if not math.isfinite(server_lr) or server_lr <= 0:
         raise ValueError("server_lr must be finite and positive")
     if weight_metric is not None and (not isinstance(weight_metric, str) or not weight_metric):
@@ -140,10 +142,16 @@ def _validate_options(num_rounds, concurrency, buffer_size, min_open_slots, serv
         raise TypeError("update_transform must be callable")
 
 
-class _FedBuffScheduleState:
-    """Shared reservation and publication rules, with no models during preflight."""
+class FedBuffScheduleState:
+    """Model-free FedBuff reservation and publication state for planning.
+
+    Reserve batches of eligible logical clients and call ``accept(assignment, None)``
+    for each logical upload. An acceptance increments the contribution count
+    and returns whether a new global version was published.
+    """
 
     def __init__(self, num_rounds, concurrency, buffer_size, min_open_slots):
+        _validate_schedule_options(num_rounds, concurrency, buffer_size, min_open_slots)
         self.model = None
         self.num_rounds = num_rounds
         self.concurrency = concurrency
@@ -162,9 +170,10 @@ class _FedBuffScheduleState:
     @property
     def available_slots(self):
         """Capacity allowed by active-client/refill limits and the remaining contribution budget."""
-        return self._available_slots()
+        return self.get_available_slots()
 
-    def _available_slots(self, speculative=False):
+    def get_available_slots(self, *, speculative=False):
+        """Return refill capacity. Speculative reservations may exceed the remaining budget."""
         slots = self.concurrency - len(self.active)
         if self._closed or self.finished or slots < self.min_open_slots:
             return 0
@@ -187,7 +196,7 @@ class _FedBuffScheduleState:
             raise ValueError("logical client names must be unique within a reservation")
         if metadata is not None and len(metadata) != len(logical_names):
             raise ValueError("metadata must match logical client names")
-        slots = self._available_slots(speculative=True) if speculative else self.available_slots
+        slots = self.get_available_slots(speculative=True) if speculative else self.available_slots
         busy = {a.logical_name for identity, a in self.active.items() if identity not in released_assignments}
         overlapping = busy.intersection(logical_names[:slots])
         if overlapping:
@@ -217,7 +226,7 @@ class _FedBuffScheduleState:
         return published
 
 
-class FedBuffTrainingCoordinator(_FedBuffScheduleState):
+class FedBuffTrainingCoordinator(FedBuffScheduleState):
     """Track active clients, buffered contributions and the refill threshold.
 
     Single-owner: invoke dispatch/accept on the workflow thread.
@@ -240,10 +249,8 @@ class FedBuffTrainingCoordinator(_FedBuffScheduleState):
         update_transform=None,
         update_observer=None,
     ):
-        _validate_options(
-            num_rounds, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
-        )
         super().__init__(num_rounds, concurrency, buffer_size, min_open_slots)
+        _validate_update_options(server_lr, weight_metric, update_transform)
         self.model_ops = model_ops
         self.model = model_ops.snapshot(initial_model)
         model_ops.validate(self.model, self.model)
@@ -352,9 +359,8 @@ class FedBuffWorkflow:
         call_timeout: float = 3600.0,
         observer=None,
     ):
-        _validate_options(
-            num_rounds, concurrency, buffer_size, min_open_slots, server_lr, weight_metric, update_transform
-        )
+        _validate_schedule_options(num_rounds, concurrency, buffer_size, min_open_slots)
+        _validate_update_options(server_lr, weight_metric, update_transform)
         if not math.isfinite(call_timeout) or call_timeout <= 0:
             raise ValueError("call_timeout must be finite and positive")
         if not callable(getattr(model_loader, "load_model", None)):
@@ -524,7 +530,7 @@ class FedBuffWorkflow:
         # A custom coordinator may define different reservation or publication rules.
         if type(coordinator) is FedBuffTrainingCoordinator:
             planning_state = partial(
-                _FedBuffScheduleState,
+                FedBuffScheduleState,
                 coordinator.num_rounds,
                 coordinator.concurrency,
                 coordinator.buffer_size,

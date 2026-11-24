@@ -139,6 +139,9 @@ same reservation and acceptance rules using placeholder uploads and a version
 counter. Invalid capacity, client eligibility, and base-version expectations
 fail before any client trains. Actual logical events are checked against the
 preflight during execution. Physical dispatch order can vary with the worker pool.
+In ordered replay, a failed call aborts the run if preflight requires its
+upload for acceptance. Other call failures are logged and their uploads
+discarded, regardless of when they arrive.
 
 The reusable input is saved at ``<workspace>/<job>/server/local/simulation_plan.json``.
 The run directory ``<workspace>/<job>/server/simulate_job/simulation/`` contains
@@ -204,6 +207,9 @@ returns a fresh state with the same reservation and publication rules using
 only logical state. Its ``accept`` receives a placeholder result. A workflow
 that supports speculative reservations or release at training completion
 also accepts ``speculative`` or ``released_assignments`` in ``reserve``.
+Fixed replay with preflight requires the workflow to finish on the last planned
+acceptance. Custom states without preflight can finish early. Exhausting the
+sequence before the workflow finishes is an error in both cases.
 The shared runner owns the live-versus-planned choice; a new algorithm must
 still expose these real decisions rather than expecting ``SimEnv`` to infer
 them from opaque workflow code. Other workflow families can use the same

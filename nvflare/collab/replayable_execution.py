@@ -62,6 +62,8 @@ class AsyncExecutionPort:
     ``make_planning_state`` builds a fresh model-free state with the same
     reservation and publication rules. Its ``accept`` receives a placeholder
     result and must not read model data or have external side effects.
+    Fixed replay with preflight requires the workflow to finish on the last
+    planned acceptance. Without preflight, the real state may finish early.
     """
 
     state: Any
@@ -132,12 +134,15 @@ class PlannedAsyncExecution:
             execution = PlannedAsyncExecution(preflight.port, preflight)
             execution.physical_sites = self.physical_sites
             try:
-                execution._run_plan(plan, events)
+                execution._run_plan(plan, events, strict_completion=True)
             except ValueError as error:
                 raise ValueError(f"async plan preflight failed: {error}") from error
             for filename, record in preflight.records:
                 self.runtime.trace("preflight.jsonl", {"trace": filename, **record})
             self.expected = iter(preflight.records)
+            self._planned_acceptances = {
+                record["assignment_id"] for filename, record in preflight.records if filename == "accepted.jsonl"
+            }
 
         self.retain_artifacts = plan.get("retain_artifacts", True)
         if preflight is not None and not self.retain_artifacts:
@@ -145,11 +150,8 @@ class PlannedAsyncExecution:
             self._base_users.update(
                 record["base_version"] for filename, record in preflight.records if filename == "assignments.jsonl"
             )
-            self._planned_acceptances = {
-                record["assignment_id"] for filename, record in preflight.records if filename == "accepted.jsonl"
-            }
         with self.runtime.artifacts(self.retain_artifacts):
-            self._run_plan(plan, events)
+            self._run_plan(plan, events, strict_completion=preflight is not None)
         if preflight is not None:
             if (missing := next(self.expected, None)) is not None:
                 raise RuntimeError(f"async execution ended before preflight event: {missing}")
@@ -164,7 +166,7 @@ class PlannedAsyncExecution:
                     f"async execution differs from preflight: expected {expected}, got {filename} {record}"
                 )
 
-    def _run_plan(self, plan, events):
+    def _run_plan(self, plan, events, *, strict_completion):
         sequence = plan["logical_sequence"]
         seeds = plan.get("train_seeds")
         self.base_versions = plan.get("base_versions")
@@ -259,7 +261,7 @@ class PlannedAsyncExecution:
             ready.add(identity)
             completed_sites[identity] = site
             available.append(site)
-        if not self.state.finished or next_acceptance != len(order):
+        if not self.state.finished or (strict_completion and next_acceptance != len(order)):
             raise ValueError("fixed replay must finish after accepting its complete arrival sequence")
 
     def _verify_reservations(self, assignments, expected_ids):
@@ -329,26 +331,29 @@ class PlannedAsyncExecution:
                 return
             if inflight.pop(site, None) != identity:
                 raise ValueError("physical result identity mismatch")
-            if not dispatch_pending and not self.retain_artifacts:
-                self._release_base(self.state.active[identity])
+            required = self._planned_acceptances is None or identity in self._planned_acceptances
             if error is not None or result is None:
-                if ordered and not dispatch_pending:
-                    logging.getLogger(__name__).warning(
-                        "Discarding failed assignment %s during drain: %s", identity, error
-                    )
-                    return
-                raise RuntimeError(f"assignment {identity} failed: {error or 'no result'}")
+                if not ordered or required:
+                    raise RuntimeError(f"assignment {identity} failed: {error or 'no result'}")
+                logging.getLogger(__name__).warning(
+                    "Discarding failed assignment %s outside the planned acceptances: %s",
+                    identity,
+                    error or "no result",
+                )
+                result = None
             if dispatch_pending:
-                if self._planned_acceptances is None or identity in self._planned_acceptances:
+                if result is not None and (required or self.retain_artifacts):
                     self.runtime.save_result(identity, result)
                     completed_sites[identity] = site
-                else:
-                    # Readiness can still gate the horizon even when the upload is discarded.
+                elif not self.retain_artifacts:
                     self._release_base(self.state.active[identity])
+                # Even a discarded result can unblock the final phase at the horizon.
                 ready.add(identity)
                 available.append(site)
                 dispatch()
-            elif self.retain_artifacts:
+            elif not self.retain_artifacts:
+                self._release_base(self.state.active[identity])
+            elif result is not None:
                 self.runtime.save_result(identity, result)
 
         index = 0

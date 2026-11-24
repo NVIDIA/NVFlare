@@ -24,6 +24,7 @@ from pathlib import Path
 import numpy as np
 
 from nvflare.apis.simulation_plan import ASYNC_EXECUTION, FORMAT_VERSION, PHASES, validate_simulation_plan
+from nvflare.collab import FedBuffScheduleState
 
 
 @dataclass
@@ -50,7 +51,7 @@ def sample_paper_delay(phase, profile, rng):
     raise ValueError(f"unknown paper phase: {phase}")
 
 
-def make_paper_plan(
+def make_simulation_plan(
     profiles,
     run_seed,
     max_time,
@@ -61,18 +62,19 @@ def make_paper_plan(
     buffer_size,
     delay_sampler=None,
 ):
-    """Compile paper-mode scheduling into an ordered SimEnv plan.
+    """Generate an ordered SimEnv plan from logical clients and phase delays.
 
-    Logical clients become eligible after training, while their uploads
-    continue to occupy slots.
+    Preserve the reference scheduling in Askin et al. (2025), "Reviving Stale
+    Updates: Data-Free Knowledge Distillation for Asynchronous Federated
+    Learning" (https://arxiv.org/abs/2511.00655). Logical clients become eligible
+    after training, while their uploads continue to occupy slots.
 
     A custom ``delay_sampler(assignment_id, logical_name, phase, profile, rng)``
     returns a finite nonnegative duration. Its NumPy Generator is derived from
     the run seed, assignment ID and phase, independent of client selection and
     other samples. Omitting the sampler preserves the paper's shared RNG stream.
     """
-    if num_rounds < 1 or buffer_size < 1 or not 1 <= min_open_slots <= concurrency:
-        raise ValueError("num_rounds and buffer_size must be positive and min_open_slots must be within concurrency")
+    state = FedBuffScheduleState(num_rounds, concurrency, buffer_size, min_open_slots)
     if not max_time > 0:
         raise ValueError("max_time must be positive")
     if delay_sampler is not None and not callable(delay_sampler):
@@ -109,27 +111,24 @@ def make_paper_plan(
     sequence = []
     base_versions = []
     events = []
-    active = {}
+    released = set()
     instant = 0.0
-    accepted = 0
-    version = 0
     refill = True
-    while version < num_rounds:
+    while not state.finished:
         if refill:
             refill = False
-            slots = concurrency - len(active)
-            count = min(slots, len(logical)) if slots >= min_open_slots else 0
+            count = min(state.get_available_slots(speculative=True), len(logical))
             if count:
                 indices = rng.choice(len(logical), size=count, replace=False).tolist()
                 selected = [logical[index] for index in indices]
                 for index in sorted(indices, reverse=True):
                     del logical[index]
-                for name in selected:
-                    identity = len(sequence)
+                for assignment in state.reserve(selected, speculative=True, released_assignments=released):
+                    identity = assignment.assignment_id
+                    name = assignment.logical_name
                     sequence.append(name)
-                    base_versions.append(version)
+                    base_versions.append(assignment.base_version)
                     schedule.append(_record(instant, identity, "start"))
-                    active[identity] = name
                     heapq.heappush(events, Phase(instant + sample(identity, name, "download"), "download", identity))
 
         if not events:
@@ -142,19 +141,20 @@ def make_paper_plan(
         schedule.append(_record(instant, identity, event.phase))
         if instant >= max_time:
             break
-        name = active[identity]
+        assignment = state.active[identity]
+        name = assignment.logical_name
         if event.phase == "download":
             duration = sample(identity, name, "train")
             heapq.heappush(events, Phase(instant + duration, "train", identity))
         elif event.phase == "train":
+            released.add(identity)
             logical.append(name)
             logical.sort(key=_client_index)
             duration = sample(identity, name, "upload")
             heapq.heappush(events, Phase(instant + duration, "upload", identity))
         else:
-            del active[identity]
-            accepted += 1
-            version = accepted // buffer_size
+            state.accept(assignment, None)
+            released.discard(identity)
             refill = True
     # Round-budget-only runs still serialize a finite horizon beyond all events.
     horizon = math.nextafter(instant, math.inf) if max_time == math.inf else max_time
@@ -206,7 +206,7 @@ def write_plan(args, *, delay_sampler=None):
     if args.output.resolve() == args.manifest.resolve():
         raise ValueError("plan output must differ from the input manifest")
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    plan = make_paper_plan(
+    plan = make_simulation_plan(
         manifest["runtime_profiles"],
         args.run_seed,
         args.max_time,
