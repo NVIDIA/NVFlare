@@ -97,8 +97,8 @@ vis.show_table_comparison()  # compare every dataset, including CSV datasets
 
 Red marks metadata not published by a source, gray marks a dataset that was not read,
 and yellow marks different reported column definitions. The `get_*` counterparts
-return DataFrames for further analysis; the `show_*` functions return styled
-tables that Jupyter renders. Each table includes a title and explanation, so
+return DataFrames for further analysis. The explorer also uses `show_contract` to open
+site-1's published `lab_results` contract in Jupyter. Each comparison table includes a title and explanation, so
 these remain visible when the runner invokes the explorer notebook.
 
 ## Site configurations

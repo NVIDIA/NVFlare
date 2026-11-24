@@ -15,8 +15,7 @@
 """Offline catalog views, following the federated statistics visualization pattern.
 
 Open the job's ``catalog/`` output directory, a saved snapshot JSON file, or the dict returned by ``get_catalog(...)``.
-The viewer runs offline. The ``get_*`` methods return DataFrames and the ``show_*`` methods return pandas Stylers
-for display in Jupyter. pandas and Jinja2 are visualization dependencies only.
+The tabular views return DataFrames and pandas Stylers. ``show_contract`` displays a published ODCS document in Jupyter.
 """
 
 import json
@@ -255,6 +254,33 @@ class CatalogVisualization:
             "Site datasets and data sources",
             "One row per site and dataset, with its source, status and published table/column counts.",
         ).format(escape="html", na_rep="unknown", subset=["observed_at"])
+
+    def show_contract(self, site: str, dataset: str):
+        """Display a published ODCS contract from this snapshot as an offline notebook page."""
+        from IPython.display import HTML
+
+        title = escape(f"Study {self.study} · {site} / {dataset}")
+        if self._results["format_version"] == 1:
+            return HTML(f"<p><strong>{title}</strong><br>Version 1 snapshots contain table metadata only.</p>")
+        for item in self._results["datasets"]:
+            if item["site"] == site and item["dataset"] == dataset:
+                break
+        else:
+            return HTML(f"<p><strong>{title}</strong><br>This snapshot has no published contract for this dataset.</p>")
+
+        from datacontract.data_contract import DataContract
+
+        contract = DataContract(data_contract_str=json.dumps(item["contract"]), inline_references=False)
+        page = contract.export("html")
+        # The upstream page references CDN scripts. Show its static schema inside an isolated, offline frame.
+        policy = (
+            """<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">"""
+        )
+        page = page.replace("<head>", f"<head>{policy}", 1)
+        return HTML(
+            f"<strong>{title}</strong>"
+            f'<iframe title="{title}" sandbox="" srcdoc="{escape(page)}" width="100%" height="640"></iframe>'
+        )
 
     def get_tables(self, site=None, dataset=None):
         """Published tables, column counts and declared primary keys."""

@@ -252,7 +252,11 @@ def test_offline_notebook_cells_use_result_json_and_reusable_views(results, tmp_
     assert styled.apply.called
     assert display.call_count >= 8  # explicit display also works when %run suppresses expression output
     captions = [call.args[0] for call in styled.set_caption.call_args_list]
-    assert len(captions) == display.call_count  # every rendered group carries its own title and explanation
+    html_outputs = [
+        call.args[0].data for call in display.call_args_list if isinstance(call.args[0], IPython.display.HTML)
+    ]
+    assert len(html_outputs) == 1 and "Version 1 snapshots" in html_outputs[0]
+    assert len(captions) == display.call_count - 1
     assert all(caption.startswith("<strong>") and caption.partition("</strong><br>")[2] for caption in captions)
     assert any("Column nullability comparison: person" in caption for caption in captions)
     assert not any(name in namespace for name in ("session", "subprocess", "catalog_run", "catalog_json"))
@@ -354,6 +358,25 @@ def test_legacy_composite_key_retains_its_declared_order(results):
     results["datasets"][0]["metadata"]["tables"][0]["primary_key"] = ["age", "id"]
     tables = CatalogVisualization(results).get_tables(site="site-1").set_index("table")
     assert tables.at["person", "primary_key"] == "age, id"
+
+
+def test_show_contract_displays_only_the_selected_sites_document():
+    pytest.importorskip("datacontract")
+    contract = {"apiVersion": "v3.2.0", "kind": "DataContract", "id": "shared", "version": "1"}
+    sites = {
+        site: SiteEntry(
+            SiteStatus.OK,
+            catalogs=({"dataset": "visits", "contract": {**contract, "description": {"purpose": purpose}}},),
+        )
+        for site, purpose in [("one", "First site description"), ("two", "Selected site description")]
+    }
+    sites["three"] = SiteEntry(SiteStatus.OK, skipped=("visits",))
+    view = CatalogVisualization(build_catalog_results("study", "job", "", sites))
+
+    page = view.show_contract(site="two", dataset="visits").data
+    assert "Selected site description" in page and "First site description" not in page
+    assert 'sandbox=""' in page and "Content-Security-Policy" in page
+    assert "no published contract" in view.show_contract(site="three", dataset="visits").data
 
 
 @pytest.mark.parametrize(

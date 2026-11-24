@@ -26,28 +26,33 @@ python -m pip install -r requirements.txt
 The container build uses this example directory and the same SDK source revision as the installed NVFlare. Setup
 records that revision automatically; a repository checkout is not required.
 
-For a contributor SDK with local changes or an unpublished commit, build a wheel from that SDK checkout with
-`python -m pip wheel --no-deps . --wheel-dir /tmp/nvflare-sdk-wheels`. Then select its actual host path before
-running setup:
+When testing a contributor SDK, use the same wheel on the host and in the containers. If you already have
+the wheel, skip the build. Otherwise, from the SDK checkout, run
+`python -m pip wheel --no-deps . --wheel-dir /tmp/nvflare-sdk-wheels`.
+
+From the **services example directory**, set the absolute path to your wheel and install it in your active
+environment. For a repository checkout, the example directory is `examples/advanced/federated-catalog-services`.
 
 ```bash
-export NVFLARE_PACKAGE="/tmp/nvflare-sdk-wheels/<wheel file>.whl[catalog]"
-python example_setup.py --workspace /tmp/nvflare/catalog
+export NVFLARE_PACKAGE="/absolute/path/to/your.whl[catalog]"
+python -m pip install "$NVFLARE_PACKAGE" -r requirements.txt
 ```
 
-Setup copies the selected wheel into the ignored `.sdk/` build directory and writes its container path as
-`CATALOG_SDK_PACKAGE` in `.env`. The host input `NVFLARE_PACKAGE` can remain exported without overriding that
-container path. Keep the wheel path on one line. Clean editable installations whose commits are available on GitHub
-can use the default archive build. Dirty or unpublished SDKs need the wheel route because GitHub cannot supply their
-local changes.
+If the wheel is already in the example’s `.sdk/` directory, use its absolute host path there.
+Setup stages the wheel in `.sdk/` and records the container path in the Compose `.env` file.
 
-Then, from this example directory:
+From the example directory, run setup once and start the federation:
 
 ```bash
-python example_setup.py --workspace /tmp/nvflare/catalog   # create the startup kits and select the admin
-docker compose up -d --build --wait                        # start the server and both sites
-nvflare system status                                     # confirm both sites are registered
-python job.py                                              # read the catalog and save catalog_results.json
+python example_setup.py --workspace /tmp/nvflare/catalog
+docker compose up -d --build --wait
+nvflare system status
+```
+
+When both sites are registered, read the catalog:
+
+```bash
+python job.py
 ```
 
 Before running `python job.py`, confirm `nvflare system status` shows both `site-1` and `site-2` registered. If
@@ -118,7 +123,7 @@ It runs `job.py`, then executes `catalog_explorer.ipynb` on the saved `catalog_r
 show the fresh results from your run.
 
 [catalog_explorer.ipynb](catalog_explorer.ipynb) follows the federated statistics visualization pattern: load a
-result, create `CatalogVisualization`, and call its display functions. It runs offline with the checked-in
+result, create `CatalogVisualization`, and call its display functions. It opens the local `catalog_results.json` when available and otherwise uses the checked-in
 [sample result](demo/catalog_results.json), captured from the upstream Unity and PostgreSQL importers in this two-site federation (6 tables / 102 columns and 5 tables / 79 columns respectively). No startup kit, login or
 running Docker services are needed. It can be opened independently for an existing result; the runner supplies
 `CATALOG_FILE` when invoking it with `%run -i`.
@@ -137,8 +142,8 @@ vis.show_column_comparison("person", dataset="clinical_records")
 Other views list tables and relationships or compare nullability and primary keys. Column headers identify both site
 and dataset, so multiple databases at one site remain distinct. Red marks metadata that was not published, gray marks
 a dataset that was not read, and yellow marks different reported column definitions. The `get_*` counterparts return
-DataFrames; the `show_*` functions return styled tables that Jupyter renders, each with a title and explanation that
-also appear when invoked by the runner notebook.
+DataFrames. The explorer also uses `show_contract` to open site-2's published PostgreSQL contract
+and inspect its foreign keys.
 
 ## What setup does
 

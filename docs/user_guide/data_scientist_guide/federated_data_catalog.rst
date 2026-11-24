@@ -133,17 +133,19 @@ include them through pandas and JupyterLab.
    vis.show_column_comparison("person", dataset="clinical_records")
    vis.show_column_comparison("person", dataset="clinical_records", field="nullable")
    vis.show_relationships(dataset="clinical_records")
+   vis.show_contract(site="site-2", dataset="clinical_records")
 
-Each rendered view includes a title, which names the result's Study, and an explanation;
+Each table includes a title naming the Study and an explanation of its contents.
 ``vis.study`` returns the Study. Each comparison column identifies both
 the site and dataset, so several databases at one site remain distinct. Red marks metadata
 not published by a source; gray marks a dataset that was not read; yellow marks different
 reported column definitions. Unknown nullability is shown as ``unknown``. Type names remain
 as reported by their source.
 
-``show_*`` methods return pandas Stylers that Jupyter renders. Their ``get_*`` counterparts
-return DataFrames for further analysis or export. Both catalog examples include an offline
-``catalog_explorer.ipynb``; the services example includes a checked-in synthetic result.
+``show_contract`` displays a published ODCS document in Jupyter using the Data Contract CLI
+renderer included with ``nvflare[catalog]``. Tabular views return pandas Stylers, and their
+``get_*`` counterparts return DataFrames for further analysis or export. Both catalog examples
+include an offline ``catalog_explorer.ipynb``. The services example includes a checked-in synthetic result.
 For a complete workflow, open ``get_catalog.ipynb`` in either example. It reads the catalog
 and invokes ``catalog_explorer.ipynb`` with the fresh result.
 
