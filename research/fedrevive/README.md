@@ -508,7 +508,7 @@ generator. SimEnv preflights the resulting JSON against the workflow before trai
 
 For a small, runnable comparison that defines two delay policies, saves their
 plans, plots their timelines, and checks staleness, see the
-[simulation plan tutorial](simulation_plan_tutorial.md).
+[simulation plan notebook](simulation_plan_tutorial.ipynb).
 
 Install the optional Matplotlib dependency and run this from `research/fedrevive`.
 

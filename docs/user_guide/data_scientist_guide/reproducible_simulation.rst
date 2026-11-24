@@ -130,8 +130,8 @@ reuses that planner to generate log-normal training delays or sample measured
 durations. The :github_nvflare_link:`uniform delay example <research/fedrevive/schedule_simple.py>`
 shows a minimal custom sampler. Custom samplers receive an assignment- and
 phase-specific RNG.
-The :github_nvflare_link:`simulation plan tutorial
-<research/fedrevive/simulation_plan_tutorial.md>` compares baseline and
+The :github_nvflare_link:`simulation plan notebook
+<research/fedrevive/simulation_plan_tutorial.ipynb>` compares baseline and
 custom delay timelines and inspects their staleness before training.
 
 Evidence and Limits
