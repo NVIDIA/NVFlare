@@ -179,11 +179,11 @@ def test_diagnostics_throttled_with_protected_stderr_write(writer, monkeypatch):
     monkeypatch.setattr(audit.os, "write", lambda fd, data: calls.append((fd, data)))
     for _ in range(4):
         assert audit.record("admin.command.dispatched") == ""
-    assert calls == [(2, b"Administrative audit recording failed; failed attempts since startup: 1\n")]
+    assert calls == [(2, b"Audit recording failed; failed attempts since startup: 1\n")]
     clock.return_value = 70.0
     assert audit.record("admin.command.dispatched") == ""
     assert len(calls) == 2
-    assert calls[1] == (2, b"Administrative audit recording failed; failed attempts since startup: 5\n")
+    assert calls[1] == (2, b"Audit recording failed; failed attempts since startup: 5\n")
     monkeypatch.setattr(audit.os, "write", Mock(side_effect=OSError("diagnostic failure")))
     clock.return_value = 130.0
     assert audit.record("admin.command.dispatched") == ""
@@ -217,8 +217,8 @@ def test_audit_failure_diagnostic_survives_site_log_changes(
 
     assert audit._failed_attempts == 2
     assert records(path) == []
-    assert not any("Administrative audit recording failed" in r.getMessage() for r in caplog.records)
-    assert capfd.readouterr().err == "Administrative audit recording failed; failed attempts since startup: 1\n"
+    assert not any("Audit recording failed" in r.getMessage() for r in caplog.records)
+    assert capfd.readouterr().err == "Audit recording failed; failed attempts since startup: 1\n"
 
 
 def test_ordinary_audit_callers_keep_failure_semantics(writer, monkeypatch):
