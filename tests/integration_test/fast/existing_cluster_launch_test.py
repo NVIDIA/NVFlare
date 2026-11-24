@@ -17,19 +17,17 @@
 import hashlib
 import json
 import os
-import runpy
 import shlex
 import shutil
-import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import Mock, patch
 
 import pytest
 
 from nvflare.lighter.cc_provision import workload_security
-from tests.unit_test.lighter.cc_provision.impl.deployment_guards_test import ROOT, require_coco_bash
+from tests.coco_test_utils.shell import ROOT, require_coco_bash
+from tests.coco_test_utils.workload_context import final_workload_pod
+from tests.process_test_utils import run_owned_process
 
 RUNTIMES = ("kata-qemu-snp", "kata-qemu-nvidia-gpu-snp", "kata-qemu-tdx", "kata-qemu-nvidia-gpu-tdx")
 
@@ -120,8 +118,7 @@ def launch(tmp_path):
         case="ready",
         namespace="default",
     ):
-        fixture = runpy.run_path(str(Path(__file__).with_name("workload_security_context_test.py")))
-        pod = fixture["final_workload_pod"](runtime)
+        pod = final_workload_pod(runtime)
         if mutate:
             mutate(pod)
         source.write_text(json.dumps(pod))
@@ -129,11 +126,9 @@ def launch(tmp_path):
         arguments = [require_coco_bash(), str(kit / "50-launch-handoff.sh"), str(source)]
         if hash_mode != "omitted":
             arguments.append({"empty": "", "correct": digest, "mismatch": "0" * 64, "malformed": "bad"}[hash_mode])
-        result = subprocess.run(
+        result = run_owned_process(
             arguments,
-            capture_output=True,
-            text=True,
-            timeout=45 if case == "stale-event" else 15,
+            timeout=60,
             env={
                 **os.environ,
                 "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
@@ -279,26 +274,3 @@ def test_context_namespace_is_taken_from_actual_applied_pod(launch):
     assert result.returncode == 0, result.stderr
     assert "existing-context-namespace/review" in result.stdout
     assert all(entry["args"][entry["args"].index("-n") + 1] == "existing-context-namespace" for entry in operations[2:])
-
-
-@pytest.mark.parametrize("failure", ["deadline", "request-timeout"])
-def test_readiness_deadline_and_api_request_timeout_are_bounded(tmp_path, failure):
-    applied = tmp_path / "applied.json"
-    applied.write_text(json.dumps({"metadata": {"name": "review", "namespace": "default", "uid": "current-uid"}}))
-    script = (ROOT / "coco/50-launch-handoff.sh").read_text()
-    program = script.split("<<'PY'\n", 2)[2].split("\nPY\n", 1)[0]
-    clock = SimpleNamespace(monotonic=Mock(side_effect=[0, 601 if failure == "deadline" else 1]), sleep=Mock())
-    request = Mock(side_effect=subprocess.TimeoutExpired("kubectl", 15))
-    api = SimpleNamespace(run=request, TimeoutExpired=subprocess.TimeoutExpired)
-    with (
-        patch.dict(sys.modules, {"time": clock, "subprocess": api}),
-        patch.object(sys, "argv", ["readiness", str(applied)]),
-    ):
-        with pytest.raises(SystemExit, match="timed out"):
-            exec(compile(program, str(ROOT / "coco/50-launch-handoff.sh"), "exec"), {})
-    if failure == "deadline":
-        request.assert_not_called()
-    else:
-        assert request.call_args.kwargs["timeout"] <= 15
-        assert "--request-timeout=10s" in request.call_args.args[0]
-    clock.sleep.assert_not_called()

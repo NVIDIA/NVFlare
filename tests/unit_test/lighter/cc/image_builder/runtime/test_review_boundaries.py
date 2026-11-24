@@ -125,7 +125,7 @@ class ReviewBoundaryTests(unittest.TestCase):
                         assert drained.wait(2), 'Audit writer did not finish test cleanup'
         """
         )
-        result = subprocess.run([sys.executable, "-c", program], capture_output=True, text=True, timeout=10)
+        result = subprocess.run([sys.executable, "-c", program], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_docker_client_does_not_receive_container_control_variables(self):

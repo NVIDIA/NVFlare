@@ -46,7 +46,7 @@ from nvflare.app_opt.flower.http_transport import (
 from nvflare.app_opt.flower.process import FlowerProcessManager
 from nvflare.private.fed.resource_stats import cpu_consumed
 from tests.process_test_utils import OwnedProcesses, process_running
-from tests.timing_utils import ManualClock, ThreadGroup, wait_for
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, ManualClock, ThreadGroup, wait_for
 
 
 def envelope(path, body=b""):
@@ -416,7 +416,11 @@ def detached_flower_factory(flower_process_factory, tmp_path):
         manager = factory(parent_code + "time.sleep(300)")
         children = []
         for ready in ready_files:
-            wait_for(lambda ready=ready: ready.exists() and ready.read_text().isdigit())
+            wait_for(
+                lambda ready=ready: ready.exists() and ready.read_text().isdigit(),
+                timeout=PROCESS_STARTUP_TIMEOUT,
+                message=f"Detached Flower worker did not publish its PID to {ready}",
+            )
             children.append(psutil.Process(int(ready.read_text())))
         return manager, children
 
@@ -529,7 +533,11 @@ def test_flower_cleanup_finds_worker_spawned_during_shutdown(flower_process_fact
         "import subprocess,sys,time; "
         + f"subprocess.Popen([sys.executable,'-c',{worker_code!r}],start_new_session=True); time.sleep(300)"
     )
-    wait_for(lambda: ready.exists() and ready.read_text().isdigit())
+    wait_for(
+        lambda: ready.exists() and ready.read_text().isdigit(),
+        timeout=PROCESS_STARTUP_TIMEOUT,
+        message=f"Detached Flower worker did not publish its PID to {ready}",
+    )
     worker = psutil.Process(int(ready.read_text()))
     manager.process.kill()
     manager.process.wait(timeout=10)
@@ -539,14 +547,18 @@ def test_flower_cleanup_finds_worker_spawned_during_shutdown(flower_process_fact
     def spawn_before_kill(process):
         if process == worker and not spawned:
             process.send_signal(signal.SIGUSR1)
-            wait_for(lambda: late_ready.exists() and late_ready.read_text().isdigit())
+            wait_for(
+                lambda: late_ready.exists() and late_ready.read_text().isdigit(),
+                timeout=PROCESS_STARTUP_TIMEOUT,
+                message=f"Flower worker launched during cleanup did not publish its PID to {late_ready}",
+            )
             spawned.append(psutil.Process(int(late_ready.read_text())))
         return kill(process)
 
     with patch.object(psutil.Process, "kill", spawn_before_kill):
         # This functional case launches an interpreter inside the kill hook;
         # its completion budget must include startup under CI contention.
-        manager.stop(timeout=10)
+        manager.stop(timeout=PROCESS_STARTUP_TIMEOUT)
     assert spawned
     wait_for(lambda: not process_running(spawned[0]))
     assert not manager._monitor.is_alive()

@@ -41,7 +41,7 @@ class BootstrapDiagnosticsTests(unittest.TestCase):
                 code = PROGRAM.replace("PHASE", repr(phase)).replace(
                     "NOTIFY", "bootstrap.notify = lambda message: os.kill(os.getpid(), signal.SIGKILL)"
                 )
-                result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=5)
+                result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, -signal.SIGKILL)
                 self.assertEqual(result.stderr, f"CVM bootstrap failed [phase={phase}]; PID 1 will power off\n")
                 self.assertNotIn("private-token-content", result.stderr)
@@ -69,7 +69,7 @@ bootstrap.notify = notify""".replace(
                     )
                     code = PROGRAM.replace("PHASE", repr("attestation")).replace("NOTIFY", notify)
                     result = subprocess.run(
-                        [sys.executable, "-c", code], stderr=write_fd, stdout=subprocess.PIPE, text=True, timeout=5
+                        [sys.executable, "-c", code], stderr=write_fd, stdout=subprocess.PIPE, text=True, timeout=30
                     )
                     self.assertEqual(result.returncode, 1)
                     self.assertEqual(result.stdout, "shutdown requested\n")

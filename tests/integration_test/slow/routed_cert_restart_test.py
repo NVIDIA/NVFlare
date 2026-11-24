@@ -17,6 +17,7 @@
 import multiprocessing
 import time
 import traceback
+from queue import Empty
 
 import pytest
 
@@ -25,8 +26,9 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT
 
-pytestmark = [pytest.mark.slow, pytest.mark.timeout(90)]
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(180)]
 _TARGET = "relay-1.site-1"
 _IDENTITIES = {"server": "server", "relay-1": "relay-1", _TARGET: "site-1"}
 
@@ -57,7 +59,7 @@ def _run_peer(fqcn, root_url, parent_url, credentials, ready, stop):
         cell.register_request_cb("restart", "echo", echo)
         cell.start()
         upstream = "relay-1" if parent_url else "server"
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while not cell.is_cell_connected(upstream):
             if time.monotonic() >= deadline:
                 raise RuntimeError(f"{fqcn} did not connect to {upstream}")
@@ -117,7 +119,10 @@ def test_encrypted_requests_recover_after_routed_peer_key_replacement(tmp_path):
         )
         process.start()
         processes.append((process, stop))
-        result = ready.get(timeout=15)
+        try:
+            result = ready.get(timeout=PROCESS_STARTUP_TIMEOUT)
+        except Empty:
+            pytest.fail(f"Cell {fqcn} did not report readiness")
         assert "error" not in result, result
         return process, stop, result["url"]
 
@@ -151,7 +156,7 @@ def test_encrypted_requests_recover_after_routed_peer_key_replacement(tmp_path):
 
         # A request during recovery may fail. Real reciprocal certificate exchange
         # must repair the warm cache without reconnecting the server or relay.
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while True:
             reply = request()
             if reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK:

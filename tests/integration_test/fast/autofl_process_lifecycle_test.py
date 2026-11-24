@@ -24,13 +24,13 @@ from types import SimpleNamespace
 import pytest
 
 from tests.autofl_test_utils import _load_runner
-from tests.timing_utils import ThreadGroup, wait_for
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, ThreadGroup, wait_for
 
 _TIMEOUT_TRIGGER_TIME = 100.0
 
 
 @contextmanager
-def _timeout_after_output(runner, log_path, marker):
+def _timeout_after_output(runner, log_path, marker, *, advance=_TIMEOUT_TRIGGER_TIME):
     """Establish the real I/O precondition, then expire the runner's policy clock.
 
     The real clock keeps advancing after expiry so process termination grace
@@ -41,17 +41,26 @@ def _timeout_after_output(runner, log_path, marker):
     expired_at = []
 
     def monotonic():
-        return 0.0 if not expired_at else _TIMEOUT_TRIGGER_TIME + real_time.monotonic() - expired_at[0]
+        if not expired_at:
+            return 0.0
+        offset, observed_at = expired_at[0]
+        return offset + real_time.monotonic() - observed_at
 
     def expire_when_ready():
+        offset = _TIMEOUT_TRIGGER_TIME
         try:
-            wait_for(lambda: log_path.exists() and marker in log_path.read_text(encoding="utf-8"))
+            wait_for(
+                lambda: log_path.exists() and marker in log_path.read_text(encoding="utf-8"),
+                timeout=PROCESS_STARTUP_TIMEOUT,
+                message=f"{log_path} did not contain {marker!r} before the test advanced the policy clock",
+            )
+            offset = advance
         finally:
-            expired_at.append(real_time.monotonic())
+            expired_at.append((offset, real_time.monotonic()))
 
     runner.time = SimpleNamespace(monotonic=monotonic, sleep=real_time.sleep)
     try:
-        with ThreadGroup() as workers:
+        with ThreadGroup(timeout=PROCESS_STARTUP_TIMEOUT + 5) as workers:
             workers.start(expire_when_ready)
             yield
     finally:
@@ -463,30 +472,30 @@ def test_run_stops_on_stale_partial_simulator_aggregation(tmp_path):
     )
     site_log.write_text("[site=site-1] round=0\n", encoding="utf-8")
 
-    rc, output, runtime, _command = runner.run_python(
-        sys.executable,
-        [
-            "-c",
-            (
-                "import pathlib, time; "
-                f"path = pathlib.Path({str(site_log)!r}); "
-                "time.sleep(0.2); "
-                "path.write_text('[site=site-1] round=0\\n[site=site-2] round=0\\n'); "
-                "time.sleep(30)"
-            ),
-        ],
-        cwd=tmp_path,
-        timeout=30,
-        log_path=log_path,
-        env={},
-        simulator_stall_roots=[sim_root],
-        stall_check_interval=0.01,
-        simulator_no_progress_timeout=1,
-    )
+    with _timeout_after_output(runner, site_log, "[site=site-2]", advance=2.0):
+        rc, output, runtime, _command = runner.run_python(
+            sys.executable,
+            [
+                "-c",
+                (
+                    "import pathlib, time; "
+                    f"path = pathlib.Path({str(site_log)!r}); "
+                    "path.write_text('[site=site-1] round=0\\n[site=site-2] round=0\\n'); "
+                    "time.sleep(30)"
+                ),
+            ],
+            cwd=tmp_path,
+            timeout=30,
+            log_path=log_path,
+            env={},
+            simulator_stall_roots=[sim_root],
+            stall_check_interval=0.01,
+            simulator_no_progress_timeout=1,
+        )
 
     log_text = log_path.read_text(encoding="utf-8")
     assert rc == runner.SIMULATOR_STALL_EXIT_CODE
-    assert runtime < 5
+    assert runtime - 2.0 < 5
     assert "SIMULATOR_STALL: partial simulator aggregation made no server-side progress" in output
     assert "Aggregated 1/8 results" in log_text
 

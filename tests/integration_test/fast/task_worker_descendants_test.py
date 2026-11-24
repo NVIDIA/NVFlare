@@ -42,7 +42,8 @@ from nvflare.private.fed.task_worker import (
     read_bootstrap,
 )
 from tests.local_task_launcher import ProcessTaskLauncher
-from tests.task_worker_test_utils import _identity, _live, _stage, _wait_until, _workspace
+from tests.process_launcher_test_utils import _wait_for_file
+from tests.task_worker_test_utils import _identity, _live, _stage, _workspace
 
 
 def _run_process(bootstrap_path, extra_env=None):
@@ -476,7 +477,7 @@ def test_launcher_preserves_descendant_shutdown_windows(tmp_path, shutdown):
         error.handle.cancel()
         raise
     try:
-        _wait_until(ready.exists)
+        _wait_for_file(ready)
         try:
             child = psutil.Process(int(ready.read_text()))
         except psutil.NoSuchProcess:

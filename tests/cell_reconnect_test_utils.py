@@ -21,7 +21,7 @@ from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, MessageH
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.file_driver import FileDriver
 from nvflare.fuel.f3.message import Message
-from tests.timing_utils import wait_for
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, wait_for
 
 CHILD = "server.job"
 
@@ -81,7 +81,11 @@ def run_child(config_dir, parent_url, incarnation, ready, stop):
         cell = CoreCell(CHILD, None, False, {}, parent_url=parent_url)
         cell.register_request_cb("reconnect", "echo", lambda request: Message(payload=incarnation))
         cell.start()
-        wait_for(lambda: cell.is_cell_connected("server"))
+        wait_for(
+            lambda: cell.is_cell_connected("server"),
+            timeout=PROCESS_STARTUP_TIMEOUT,
+            message=f"Cell child {incarnation} did not connect to the parent",
+        )
         ready.put({"connected": incarnation})
         stop.wait(90)
     except Exception:

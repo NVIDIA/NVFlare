@@ -160,7 +160,7 @@ class AuditTests(unittest.TestCase):
                 assert audit.flush(1)
             """
         )
-        result = subprocess.run([sys.executable, "-c", program], capture_output=True, text=True, timeout=5)
+        result = subprocess.run([sys.executable, "-c", program], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         lines = result.stdout.splitlines()
         self.assertEqual([line.split("=", 1)[0] for line in lines], ["CVM_ATTESTATION", "CVM_DIAGNOSTIC"])

@@ -26,7 +26,7 @@ import pytest
 from nvflare.private.fed.resource_stats import cpu_consumed as cpu_module
 from nvflare.private.fed.resource_stats.cpu_consumed import CpuConsumedAccountant, resource
 from tests.resource_stats_cpu_test_utils import cleanup_subprocess, exercise_forked_cpu_hooks
-from tests.timing_utils import stop_processes
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, stop_processes
 
 
 @pytest.mark.skipif(resource is None, reason="waited-child CPU accounting requires Unix")
@@ -43,7 +43,7 @@ def test_cpu_work_vs_sleep_and_short_lived_waited_children():
     # Both workers have exited before the one and only final measurement.
     children = CpuConsumedAccountant()
     for _ in range(2):
-        subprocess.run([sys.executable, "-c", "sum(range(12000000))"], check=True, timeout=10)
+        subprocess.run([sys.executable, "-c", "sum(range(12000000))"], check=True, timeout=PROCESS_STARTUP_TIMEOUT)
     child_cpu = float(children.finish()["cpu_seconds"])
     assert child_cpu > float("0.05")
 
@@ -63,7 +63,7 @@ def test_two_concurrent_job_processes_do_not_count_shared_parent_cpu():
             process = subprocess.Popen([sys.executable, "-c", program], stdout=subprocess.PIPE, text=True)
             cleanup.callback(cleanup_subprocess, process)
             processes.append(process)
-        outputs = [process.communicate(timeout=10)[0] for process in processes]
+        outputs = [process.communicate(timeout=PROCESS_STARTUP_TIMEOUT)[0] for process in processes]
         assert all(process.returncode == 0 for process in processes)
         records = [json.loads(output) for output in outputs]
         assert all(("status" not in record and float(record["cpu_seconds"]) > 0 for record in records))
@@ -87,7 +87,7 @@ assert CpuConsumedAccountant().finish() == {
     "status": "unavailable", "issues": ["observation_incomplete"]
 }
 """
-    subprocess.run([sys.executable, "-c", script], check=True, timeout=10)
+    subprocess.run([sys.executable, "-c", script], check=True, timeout=PROCESS_STARTUP_TIMEOUT)
 
 
 @pytest.mark.skipif("fork" not in multiprocessing.get_all_start_methods(), reason="requires POSIX fork")

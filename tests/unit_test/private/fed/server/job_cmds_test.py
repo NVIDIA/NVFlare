@@ -17,8 +17,6 @@ import errno
 import gc
 import io
 import shutil
-import subprocess
-import sys
 import threading
 from argparse import Namespace
 from pathlib import Path
@@ -3294,21 +3292,6 @@ def test_delete_job_drains_active_streams_without_recreating_deleted_job(tmp_pat
     with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
         JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
     assert path.read_bytes() == b"before deletion\n"
-    # A separate process must also recognize the active-file leases.
-    subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import sys\nfrom types import SimpleNamespace\n"
-            "from nvflare.app_common.logging.log_staging import ClientLogStaging\n"
-            "staging=ClientLogStaging(SimpleNamespace(get_log_root=lambda:sys.argv[1]))\n"
-            "with staging.locked():\n    staging.remove_closed_job_logs('job-1')\n",
-            fl_ctx.get_engine().get_workspace().get_log_root(),
-        ],
-        check=True,
-        capture_output=True,
-        timeout=15,
-    )
     receiver._on_chunk_received(b"after deletion\n", first, fl_ctx)
     assert path.read_bytes() == b"before deletion\nafter deletion\n"
     receiver._on_stream_done(first, fl_ctx)

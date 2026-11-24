@@ -16,7 +16,6 @@
 """Shared setup for policy unit tests and real process integration scenarios."""
 
 import json
-import time
 
 import psutil
 
@@ -134,14 +133,6 @@ def _stage(store, identity, workspace_root, executor, data, components=(), conte
     path = store.bootstrap_path(identity)
     write_bootstrap(path, bootstrap)
     return path
-
-
-def _wait_until(predicate, timeout=10):
-    deadline = time.monotonic() + timeout
-    while not predicate():
-        if time.monotonic() >= deadline:
-            raise AssertionError("bounded process probe timed out")
-        time.sleep(0.05)
 
 
 def _live(process):
