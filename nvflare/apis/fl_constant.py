@@ -407,6 +407,7 @@ class RunProcessKey:
     JOB_ID = "_job_id"
     PARTICIPANTS = "_participants"
     PROCESS_FINISHED = "_process_finished"
+    PROCESS_EXITED = "_process_exited"
     PROCESS_EXE_ERROR = "_process_exe_error"
     PROCESS_RETURN_CODE = "_process_return_code"
 
@@ -600,7 +601,7 @@ class ConfigVarName:
     # server: require prior positive job observation before reporting "missing job on client" as dead-job
     SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT = "sync_client_jobs_require_previous_report"
 
-    # server: max time to wait for client terminal outcomes after the server process exits
+    # Legacy setting: caps failed-job resource-report collection; no client-outcome wait.
     CLIENT_OUTCOME_WAIT_TIMEOUT = "client_outcome_wait_timeout"
 
     # server: validity in days of the per-job certificates issued at job deploy

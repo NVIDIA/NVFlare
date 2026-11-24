@@ -389,6 +389,55 @@ def test_wait_for_complete_records_nonzero_return_code_for_first_failure():
     assert "job-1" not in engine.run_processes
 
 
+@pytest.mark.parametrize("failure_code", [ProcessExitCode.EXCEPTION, ProcessExitCode.UNSAFE_COMPONENT])
+@pytest.mark.parametrize("sj_exit_code", [JobReturnCode.SUCCESS, -9])
+@pytest.mark.parametrize("report_during", ["cleanup", "status-grace"])
+def test_client_failure_after_sj_exit_preserves_server_outcome(failure_code, sj_exit_code, report_during):
+    run_process_info = {RunProcessKey.PARTICIPANTS: {}}
+    engine = _make_wait_engine(run_process_info, {})
+    runner = JobRunner("/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+    job = SimpleNamespace(job_id="job-1", run_aborted=False)
+    runner.running_jobs = {"job-1": job}
+    fl_ctx = FLContextManager(engine=engine).new_context()
+    reports = []
+
+    def late_failure(*_args):
+        assert not run_process_info.get(RunProcessKey.PROCESS_FINISHED, False)
+        assert "job-1" in engine.run_processes
+        if failure_code == ProcessExitCode.UNSAFE_COMPONENT:
+            runner.stop_run("job-1", fl_ctx, from_client=True)
+        else:
+            runner.fail_run("job-1", failure_code, fl_ctx, from_client=True)
+        reports.append(failure_code)
+        return []
+
+    with (
+        patch("nvflare.private.fed.server.server_engine.get_return_code", return_value=sj_exit_code),
+        patch(
+            "nvflare.private.fed.server.server_engine.glob.glob",
+            side_effect=late_failure if report_during == "cleanup" else lambda *_: [],
+        ),
+        patch("nvflare.private.fed.server.server_engine.time") as clock,
+    ):
+        if report_during == "status-grace":
+            clock.time.side_effect = [0, 0, 2]
+            clock.sleep.side_effect = late_failure
+        else:
+            clock.time.side_effect = [0, 2]
+        engine.wait_for_complete(workspace="/tmp", job_id="job-1", process=MagicMock())
+
+    assert reports == [failure_code]
+    assert not job.run_aborted
+    runner._stop_run.assert_not_called()
+    if sj_exit_code == JobReturnCode.SUCCESS:
+        assert not engine.exception_run_processes
+    else:
+        assert engine.exception_run_processes["job-1"][RunProcessKey.PROCESS_RETURN_CODE] == sj_exit_code
+    assert "job-1" not in engine.run_processes
+
+
 def _job_engine(workspace_root):
     fobs_ctx = {}
     cell = SimpleNamespace(get_fobs_context=lambda: dict(fobs_ctx), update_fobs_context=fobs_ctx.update)

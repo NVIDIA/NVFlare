@@ -231,6 +231,11 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
     def wait_for_complete(self, workspace, job_id, process):
         process.wait()
+        with self.lock:
+            run_process_info = self.run_processes.get(job_id)
+            if run_process_info is not None:
+                # Close client failure authority before cleanup or the status-report grace.
+                run_process_info[RunProcessKey.PROCESS_EXITED] = True
         # A killed or fail-fast job process skips its own tensor offload cleanup.
         leftover = glob.escape(os.path.join(tempfile.gettempdir(), server_root_dir_prefix(workspace, job_id))) + "*"
         for root_dir in glob.glob(leftover):

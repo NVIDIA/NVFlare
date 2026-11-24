@@ -57,6 +57,7 @@ from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
 from nvflare.private.fed.server.auth_registry import NonRegularAuthRegistry
 from nvflare.private.fed.server.client_manager import ClientManager
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
+from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState, ServerState
@@ -965,14 +966,12 @@ class TestFederatedServer:
         "run_processes, exception_run_processes, expected",
         [
             ({"job1": {}}, {}, []),
-            ({}, {}, []),
+            ({}, {}, ["job1"]),
             ({}, {"job1": {}}, ["job1"]),
         ],
-        ids=["server-running", "awaiting-client-outcome", "server-failed"],
+        ids=["server-running", "server-completed", "server-failed"],
     )
-    def test_sync_client_jobs_keeps_outcome_barrier_only_without_terminal_server_failure(
-        self, run_processes, exception_run_processes, expected
-    ):
+    def test_sync_client_jobs_aborts_clients_after_server_exit(self, run_processes, exception_run_processes, expected):
         with (
             patch("nvflare.private.fed.server.fed_server.ServerEngine"),
             patch("nvflare.private.fed.server.fed_server.ConfigService.get_bool_var", return_value=True),
@@ -1184,16 +1183,14 @@ class TestFederatedServer:
             server._sync_client_jobs(other_request, token)
             assert "job1" not in server._job_reported_clients
 
-            # A client that no longer has a barrier-only job cannot report again.
+            # A missing client report after SJ exit does not invalidate its outcome.
             server.client_manager.clients = {token: client}
             server.engine.job_runner.get_client_outcome_jobs.return_value = {"job1"}
             server.engine.job_runner.is_client_outcome_pending.return_value = True
             fl_ctx = MagicMock()
             server.engine.new_context.return_value = nullcontext(fl_ctx)
             server._sync_client_jobs(other_request, token)
-            server.engine.job_runner.fail_run.assert_called_once_with(
-                "job1", ProcessExitCode.INFRASTRUCTURE_ERROR, fl_ctx
-            )
+            server.engine.job_runner.fail_run.assert_not_called()
             server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job1", "C1")
 
     def test_disabled_client_heartbeat_is_rejected(self, tmp_path):
@@ -1338,7 +1335,7 @@ class TestFederatedServer:
 
             server.process_job_outcome(request)
 
-            server.engine.job_runner.stop_run.assert_called_once_with("job-1", fl_ctx)
+            server.engine.job_runner.stop_run.assert_called_once_with("job-1", fl_ctx, from_client=True)
             server.engine.job_runner.fail_run.assert_not_called()
             server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
@@ -1372,7 +1369,7 @@ class TestFederatedServer:
             server.engine.new_context.return_value = nullcontext(fl_ctx)
             server.engine.job_runner.stop_run = MagicMock()
             server.engine.job_runner.fail_run = MagicMock()
-            server.engine.job_runner.fail_run.side_effect = lambda *_: assert_client_outcome_unresolved(
+            server.engine.job_runner.fail_run.side_effect = lambda *_, **__: assert_client_outcome_unresolved(
                 server.engine.job_runner
             )
 
@@ -1390,7 +1387,7 @@ class TestFederatedServer:
 
             server.process_job_outcome(request)
 
-            server.engine.job_runner.fail_run.assert_called_once_with("job-1", expected_code, fl_ctx)
+            server.engine.job_runner.fail_run.assert_called_once_with("job-1", expected_code, fl_ctx, from_client=True)
             server.engine.job_runner.stop_run.assert_not_called()
             server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
@@ -1499,7 +1496,7 @@ class TestFederatedServer:
             assert reply.payload == {JobOutcomeMsgKey.RESOURCE_REPORT_STATUS: "server_error"}
             server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
-    def test_notify_dead_client_fails_barrier_only_job(self):
+    def test_notify_dead_client_preserves_completed_server_outcome(self):
         server = object.__new__(FederatedServer)
         server.logger = MagicMock()
         server.engine = MagicMock()
@@ -1513,7 +1510,7 @@ class TestFederatedServer:
 
         server.notify_dead_client(client)
 
-        server.engine.job_runner.fail_run.assert_called_once_with("job-1", ProcessExitCode.INFRASTRUCTURE_ERROR, fl_ctx)
+        server.engine.job_runner.fail_run.assert_not_called()
         server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
 
@@ -1606,3 +1603,76 @@ def test_registration_reply_retains_live_token_or_rejects_disconnected_transport
     server.sign_auth_token.assert_called_once_with("relay-1", "live-token")
     assert server._non_regular_auth_clients.resolve("relay-1", "live-token") == "relay-1"
     assert server._non_regular_auth_clients.resolve("relay-1", "proposed-token") is None
+
+
+@pytest.mark.parametrize(
+    "client_code, expected_status",
+    [
+        (ProcessExitCode.CONFIG_ERROR, RunStatus.FINISHED_EXECUTION_EXCEPTION),
+        (ProcessExitCode.EXCEPTION, RunStatus.FINISHED_EXECUTION_EXCEPTION),
+        (ProcessExitCode.INFRASTRUCTURE_ERROR, RunStatus.FINISHED_ABNORMAL),
+        (ProcessExitCode.UNSAFE_COMPONENT, RunStatus.FINISHED_ABORTED),
+        (JobReturnCode.ABORTED, RunStatus.FINISHED_ABORTED),
+    ],
+)
+@pytest.mark.parametrize("server_state", ["running", "reported-success", "exited", "finalized"])
+def test_client_failure_cannot_override_finished_server_outcome(client_code, expected_status, server_state):
+    runner = JobRunner("/tmp")
+    runner.log_info = MagicMock()
+    runner._stop_run = MagicMock()
+    job = MagicMock(job_id="job-1", run_aborted=False)
+    runner.running_jobs = {} if server_state == "finalized" else {"job-1": job}
+    runner._pending_client_outcomes = {} if server_state == "finalized" else {"job-1": {"site-1"}}
+    engine = MagicMock()
+    engine.job_runner = runner
+    engine.run_processes = {"job-1": {RunProcessKey.PARTICIPANTS: {}}}
+    engine.exception_run_processes = {}
+    fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value = engine
+    engine.new_context.side_effect = lambda: nullcontext(fl_ctx)
+
+    server = object.__new__(FederatedServer)
+    server.engine = engine
+    server.logger = MagicMock()
+    server.client_manager = MagicMock()
+    server.client_manager.is_from_authorized_client.return_value = True
+    client = MagicMock()
+    client.name = "site-1"
+    server.client_manager.clients = {"token-1": client}
+
+    if server_state != "running":
+        # Exercise the real SJ status handler, including the window before process exit.
+        reply = server._listen_command(
+            _parent_command(
+                "server.job-1",
+                "server.job-1",
+                ServerCommandNames.UPDATE_RUN_STATUS,
+                job_id="job-1",
+                execution_error=False,
+            )
+        )
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+        if server_state in ("exited", "finalized"):
+            engine.run_processes.clear()
+
+    reply = server.process_job_outcome(
+        new_cell_message(
+            {CellMessageHeaderKeys.TOKEN: "token-1", MessageHeaderKey.ORIGIN: "site-1"},
+            {JobOutcomeMsgKey.JOB_ID: "job-1", JobOutcomeMsgKey.CODE: client_code},
+        )
+    )
+
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+    status = (
+        RunStatus.FINISHED_ABORTED
+        if job.run_aborted
+        else runner._classify_finished_job_status(engine.exception_run_processes.get("job-1"))
+    )
+    if server_state == "running":
+        assert status == expected_status
+        runner._stop_run.assert_called_once_with("job-1", fl_ctx)
+    else:
+        assert status == RunStatus.FINISHED_COMPLETED
+        assert not engine.exception_run_processes
+        runner._stop_run.assert_not_called()
+    assert not runner.is_client_outcome_pending("job-1", "site-1")
