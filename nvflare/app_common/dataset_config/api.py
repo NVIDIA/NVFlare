@@ -43,6 +43,14 @@ from nvflare.apis.dataset_config_spec import (
 
 FORMAT_VERSION = 1
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# The shared snapshot can be loaded without any importer installed. Check credential
+# setting names here before job components or the Kubernetes workspace copy can see values.
+_IMPORTER_CREDENTIAL = re.compile(
+    r"(?:datacontract_|datamesh_manager_|entropy_data_)(?:.*_)?"
+    r"(?:password|pwd|token|secret|credential|private_key|passcode|passphrase|"
+    r"http_headers|account_key|secret_access_key|api_key|header_authorization|connection_string)",
+    re.IGNORECASE,
+)
 # Query parameter names that carry a credential, compared case-insensitively: database passwords in a connection
 # string, signed or SAS URLs, and API tokens. A uri reaches every component, so these must go in secrets instead.
 _CREDENTIAL_QUERY_KEYS = frozenset(
@@ -202,6 +210,11 @@ def _dataset(study: str, name, entry, source: str) -> tuple[DatasetConfig, dict]
         raise _error(source, f"{label}.type is required")
     path = _check_uri(entry.get("uri"), label, source)
     options = _mapping(entry.get("options"), f"{label}.options", source)
+    config = options.get("config")
+    if isinstance(config, dict):
+        for key in config:
+            if isinstance(key, str) and _IMPORTER_CREDENTIAL.fullmatch(key):
+                raise _error(source, f"{label}.options.config contains a credential setting; put it in secrets")
     secrets = _mapping(entry.get("secrets"), f"{label}.secrets", source)
     for key, variable in secrets.items():
         if not isinstance(key, str) or not key:

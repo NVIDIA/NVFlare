@@ -118,6 +118,18 @@ class TestSnapshot:
 
 
 class TestValidation:
+    def test_plaintext_importer_password_rejected_before_workspace_transfer(self, tmp_path, caplog):
+        key = "DATACONTRACT_SNOWFLAKE_PASSWORD"
+        opts = {"metadata_source": "host", "config": {key: "sentinel-credential"}}
+        document = with_dataset(type="snowflake", uri="snowflake://account", options=opts)
+        with pytest.raises(DatasetConfigError, match="put it in secrets") as err:
+            parse(document)
+        path = tmp_path / "datasets.yaml"
+        path.write_text(yaml.safe_dump(document))
+        transferred = extract_study_config(str(path), "oncology")
+        assert "invalid_site_configuration" in yaml.safe_load(transferred)
+        assert "sentinel-credential" not in str(err.value) + caplog.text + transferred.decode()
+
     @pytest.mark.parametrize(
         "data",
         [
