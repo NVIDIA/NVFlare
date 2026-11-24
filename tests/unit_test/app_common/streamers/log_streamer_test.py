@@ -404,12 +404,8 @@ class _LoopbackAuxRunner:
         return {target: self.handlers[topic](topic, request, fl_ctx) for target in targets}
 
 
-def test_stream_restarts_when_receiver_registers_after_first_chunk(tmp_path):
-    """A receiver that rejected the first chunk holds no stream to continue, so
-    the retry must open a new stream instead of sending the next sequence number
-    of the rejected one. The log must keep being tailed afterwards."""
-    log_path = tmp_path / "log.txt"
-    log_path.write_bytes(b"first line\n")
+def _stream_log_to_late_receiver(log_path, appended: bytes, chunk_size=None):
+    """Stream a stopped log to a receiver that registers, and sees the log grow, only after the first request."""
     aux_runner = _LoopbackAuxRunner()
     streamer = ObjectStreamer(aux_runner)
     received = []
@@ -429,7 +425,7 @@ def test_stream_restarts_when_receiver_registers_after_first_chunk(tmp_path):
                 ),
             )
             with open(log_path, "ab") as f:
-                f.write(b"second line\n")
+                f.write(appended)
         return reply
 
     aux_runner.handlers[TOPIC_STREAM_REQUEST] = register_after_first_request
@@ -451,14 +447,40 @@ def test_stream_restarts_when_receiver_registers_after_first_chunk(tmp_path):
             fl_ctx=fl_ctx,
             stop_event=stop_event,
             poll_interval=0.01,
+            chunk_size=chunk_size,
         )
     finally:
         streamer.shutdown()
+    return rc, b"".join(received), aux_runner.stream_requests
+
+
+def test_stream_restarts_when_receiver_registers_after_first_chunk(tmp_path):
+    """A receiver that rejected the first chunk holds no stream to continue, so
+    the retry must open a new stream instead of sending the next sequence number
+    of the rejected one. The log must keep being tailed afterwards."""
+    log_path = tmp_path / "log.txt"
+    log_path.write_bytes(b"first line\n")
+
+    rc, received, requests = _stream_log_to_late_receiver(log_path, appended=b"second line\n")
 
     assert rc == ReturnCode.OK
-    assert b"".join(received) == b"first line\nsecond line\n"
-    requests = aux_runner.stream_requests
+    assert received == b"first line\nsecond line\n"
     assert [request.get_header(HeaderKey.SEQ) for request in requests] == [0, 0, 1]
     rejected, accepted, eof = (request.get_header(HeaderKey.TX_ID) for request in requests)
     assert rejected != accepted == eof
     assert requests[1].get_header(HeaderKey.CTX)
+
+
+def test_stream_restarted_after_rejected_eof_sends_log_written_since(tmp_path):
+    """A rejected EOF was never delivered. Lines written before the retry must
+    all be sent, followed by a new EOF, rather than ending after one chunk."""
+    log_path = tmp_path / "log.txt"
+    log_path.write_bytes(b"")
+    appended = b"written while the receiver was not ready\n"
+
+    rc, received, requests = _stream_log_to_late_receiver(log_path, appended, chunk_size=8)
+
+    assert rc == ReturnCode.OK
+    assert received == appended
+    assert requests[0][KEY_EOF] is True
+    assert [request[KEY_EOF] for request in requests[1:]] == [False] * 6 + [True]

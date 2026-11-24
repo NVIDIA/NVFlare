@@ -395,6 +395,9 @@ class _LogTailProducer(BaseChunkProducer):
                     f"transient bootstrap miss {self._bootstrap_miss_count}/{self._MAX_BOOTSTRAP_MISSES} "
                     f"on first chunk to {list(replies)}; rolling back and retrying"
                 )
+                # A rejected EOF was never delivered: the new stream drains the file and sends its own.
+                self.eof = False
+                self._draining = False
                 self.restart_stream = True
                 return False
 
