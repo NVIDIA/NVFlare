@@ -31,6 +31,7 @@ import pytest
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
 from nvflare.fuel.f3.drivers.connector_info import Mode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.grpc.utils import get_grpc_client_credentials, probe_grpc_peer_cert
@@ -115,7 +116,10 @@ class _ConnectProxyHandler(socketserver.BaseRequestHandler):
         self.request.settimeout(5)
         request = b""
         while b"\r\n\r\n" not in request and len(request) < 8192:
-            request += self.request.recv(8192 - len(request))
+            chunk = self.request.recv(8192 - len(request))
+            if not chunk:
+                return
+            request += chunk
         method, target, _ = request.split(b"\r\n", 1)[0].split(b" ", 2)
         assert method == b"CONNECT"
         with self.server.count_lock:
@@ -153,7 +157,19 @@ def _http_proxy():
 
 @pytest.mark.parametrize("scheme", ["grpcs", "agrpcs"])
 @pytest.mark.parametrize("listener_cn", ["server", "rogue-server"])
-def test_active_grpc_mtls_requires_listener_cn(scheme, listener_cn, tmp_path, isolated_cell_registry):
+def test_active_grpc_mtls_requires_listener_cn(scheme, listener_cn, tmp_path, isolated_cell_registry, monkeypatch):
+    identity_rejected = threading.Event()
+    require_match = CellIdentityResolver.require_match
+
+    def observe_rejection(resolver, fqcn, peer_cn, peer_desc, peer_cert=None):
+        try:
+            return require_match(resolver, fqcn, peer_cn, peer_desc, peer_cert)
+        except ValueError:
+            if fqcn == "server" and peer_cn == "rogue-server":
+                identity_rejected.set()
+            raise
+
+    monkeypatch.setattr(CellIdentityResolver, "require_match", observe_rejection)
     pki = _write_pki(tmp_path, listener_cn)
     root_url = f"{scheme}://localhost:{_free_port()}"
     ctx = mp.get_context("spawn")
@@ -189,6 +205,8 @@ def test_active_grpc_mtls_requires_listener_cn(scheme, listener_cn, tmp_path, is
             assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
             assert reply.payload == "hello"
         else:
+            assert identity_rejected.wait(8), "client never rejected the listener certificate identity"
+            assert not client.is_cell_connected("server")
             reply = client.send_request("identity", "echo", "server", Message(payload="hello"), timeout=3.0)
             assert reply.get_header(MessageHeaderKey.RETURN_CODE) != ReturnCode.OK
     finally:
@@ -201,7 +219,8 @@ def test_active_grpc_mtls_requires_listener_cn(scheme, listener_cn, tmp_path, is
 
 
 @pytest.mark.parametrize("scheme", ["grpcs", "agrpcs"])
-def test_active_grpc_mtls_through_http_connect_proxy(scheme, tmp_path, monkeypatch, isolated_cell_registry):
+@pytest.mark.parametrize("proxy_mode", ["connect", "wildcard", "bypass", "unsupported_scheme"])
+def test_active_grpc_mtls_through_http_connect_proxy(scheme, proxy_mode, tmp_path, monkeypatch, isolated_cell_registry):
     pki = _write_pki(tmp_path, "server")
     root_url = f"{scheme}://localhost:{_free_port()}"
     ctx = mp.get_context("spawn")
@@ -212,9 +231,14 @@ def test_active_grpc_mtls_through_http_connect_proxy(scheme, tmp_path, monkeypat
         server.start()
         assert ready_q.get(timeout=20) == "ready"
         with _http_proxy() as proxy:
-            for name in ("no_grpc_proxy", "NO_GRPC_PROXY", "no_proxy", "NO_PROXY"):
+            for name in ("grpc_proxy", "https_proxy", "http_proxy", "no_grpc_proxy", "no_proxy"):
                 monkeypatch.delenv(name, raising=False)
-            monkeypatch.setenv("grpc_proxy", f"http://127.0.0.1:{proxy.server_address[1]}")
+            if proxy_mode == "unsupported_scheme":
+                monkeypatch.setenv("https_proxy", f"https://127.0.0.1:{proxy.server_address[1]}")
+            else:
+                monkeypatch.setenv("grpc_proxy", f"http://127.0.0.1:{proxy.server_address[1]}")
+            if proxy_mode in ("wildcard", "bypass"):
+                monkeypatch.setenv("no_grpc_proxy", "*" if proxy_mode == "wildcard" else "localhost")
             client = Cell(
                 "site-1",
                 root_url,
@@ -236,7 +260,10 @@ def test_active_grpc_mtls_through_http_connect_proxy(scheme, tmp_path, monkeypat
             reply = client.send_request("identity", "echo", "server", Message(payload="proxy"), timeout=3.0)
             assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.OK
             assert reply.payload == "proxy"
-            assert proxy.connection_count >= 2
+            if proxy_mode in ("connect", "wildcard"):
+                assert proxy.connection_count >= 2
+            else:
+                assert proxy.connection_count == 0
             client.stop()
             client = None
     finally:
@@ -318,7 +345,7 @@ def test_grpc_channel_rejects_listener_certificate_change_after_probe(tmp_path, 
             DriverParams.CLIENT_KEY.value: pki["client.key"],
             DriverParams.CONNECT_TIMEOUT.value: 3.0,
         }
-        authority = "localhost:8443" if authority_option == "grpc.default_authority" else "localhost"
+        authority = "localhost:8443"
         options = [(authority_option, authority)]
         peer_cert = probe_grpc_peer_cert(params, options)
         channel_credentials = get_grpc_client_credentials(params, peer_cert=peer_cert)

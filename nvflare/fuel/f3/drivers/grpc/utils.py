@@ -118,14 +118,11 @@ def _proxy_for_target(host, port, options):
         target = host.lower()
         if not entry:
             continue
-        if entry == "*" or entry == target or entry == f"{target}:{port}":
-            return None
-        if entry.startswith(".") and (target == entry[1:] or target.endswith(entry)):
-            return None
-        if target.endswith("." + entry):
+        domain = entry.removeprefix(".")
+        if domain and (target == domain or target.endswith("." + domain)):
             return None
         try:
-            if ipaddress.ip_address(host) in ipaddress.ip_network(entry, strict=False):
+            if "/" in entry and ipaddress.ip_address(host) in ipaddress.ip_network(entry, strict=False):
                 return None
         except ValueError:
             pass
@@ -142,15 +139,20 @@ def _proxy_for_target(host, port, options):
         return None
     if isinstance(proxy, bytes):
         proxy = proxy.decode("utf-8")
-    parsed = urlsplit(proxy if "://" in proxy else f"http://{proxy}")
-    if parsed.scheme != "http" or not parsed.hostname:
-        raise ValueError("unsupported gRPC HTTP proxy configuration")
+    # Core ignores malformed or non-HTTP proxy URLs and connects directly.
+    try:
+        parsed = urlsplit(proxy)
+        if parsed.scheme != "http" or not parsed.hostname:
+            return None
+        proxy_port = parsed.port or 443
+    except ValueError:
+        return None
     auth = None
     if parsed.username is not None:
         user = unquote(parsed.username)
         password = unquote(parsed.password or "")
         auth = base64.b64encode(f"{user}:{password}".encode("utf-8"))
-    return parsed.hostname, parsed.port or 80, auth
+    return parsed.hostname, proxy_port, auth
 
 
 def _proxy_request(host, port, auth):
@@ -167,20 +169,27 @@ def _check_proxy_response(response):
         raise OSError("gRPC HTTP proxy did not establish a tunnel")
 
 
-def _connect_raw(host, port, timeout, pending):
+def _remaining_time(deadline):
+    if deadline is None:
+        return None
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("gRPC certificate probe timed out")
+    return remaining
+
+
+def _connect_raw(host, port, deadline, pending):
     last_error = None
-    deadline = None if timeout is None else time.monotonic() + timeout
-    for family, socktype, proto, _, address in pending.resolve_addresses(host, port, timeout):
-        remaining = None if deadline is None else max(0.001, deadline - time.monotonic())
-        if deadline is not None and time.monotonic() >= deadline:
-            raise TimeoutError("gRPC certificate probe timed out")
+    addresses = pending.resolve_addresses(host, port, _remaining_time(deadline))
+    for index, (family, socktype, proto, _, address) in enumerate(addresses):
+        remaining = _remaining_time(deadline)
         raw = socket.socket(family, socktype, proto)
-        raw.settimeout(remaining)
         try:
+            if remaining is not None:
+                # Reserve time for fallback addresses if an earlier address stalls.
+                raw.settimeout(remaining / (len(addresses) - index))
             pending.register(raw)
             raw.connect(address)
-            if deadline is not None:
-                raw.settimeout(max(0.001, deadline - time.monotonic()))
             return raw
         except OSError as ex:
             last_error = ex
@@ -195,14 +204,16 @@ def _probe_config(params: dict, options):
     host = params[DriverParams.HOST.value].strip("[]")
     port = int(params[DriverParams.PORT.value])
     opts = dict(options or ())
-    target_name = opts.get("grpc.ssl_target_name_override")
-    if not target_name:
-        authority = opts.get("grpc.default_authority")
-        if isinstance(authority, bytes):
-            authority = authority.decode("utf-8")
-        target_name = urlsplit(f"//{authority}").hostname if authority else host
-    if isinstance(target_name, bytes):
-        target_name = target_name.decode("utf-8")
+    authority = opts.get("grpc.ssl_target_name_override") or opts.get("grpc.default_authority")
+    if isinstance(authority, bytes):
+        authority = authority.decode("utf-8")
+    if authority:
+        try:
+            target_name = str(ipaddress.ip_address(authority))
+        except ValueError:
+            target_name = urlsplit(f"//{authority}").hostname
+    else:
+        target_name = host
 
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -248,13 +259,16 @@ def probe_grpc_peer_cert(params: dict, options=None, pending: PendingProbeSocket
     """
     context, host, port, target_name, timeout, proxy = _probe_config(params, options)
     pending = pending or PendingProbeSockets()
-    raw = _connect_raw(proxy[0] if proxy else host, proxy[1] if proxy else port, timeout, pending)
+    deadline = None if timeout is None else time.monotonic() + timeout
+    raw = _connect_raw(proxy[0] if proxy else host, proxy[1] if proxy else port, deadline, pending)
     active = raw
     try:
         if proxy:
+            raw.settimeout(_remaining_time(deadline))
             raw.sendall(_proxy_request(host, port, proxy[2]))
             response = b""
             while b"\r\n\r\n" not in response and len(response) < 8192:
+                raw.settimeout(_remaining_time(deadline))
                 chunk = raw.recv(8192 - len(response))
                 if not chunk:
                     break
@@ -263,6 +277,7 @@ def probe_grpc_peer_cert(params: dict, options=None, pending: PendingProbeSocket
         tls = context.wrap_socket(raw, server_hostname=target_name, do_handshake_on_connect=False)
         active = tls
         pending.register(tls, replace=raw)
+        tls.settimeout(_remaining_time(deadline))
         tls.do_handshake()
         return _verified_peer_cert(tls)
     finally:
@@ -272,41 +287,26 @@ def probe_grpc_peer_cert(params: dict, options=None, pending: PendingProbeSocket
 
 async def probe_grpc_peer_cert_aio(params: dict, options=None) -> bytes:
     context, host, port, target_name, timeout, proxy = _probe_config(params, options)
+    return await asyncio.wait_for(_probe_async(context, host, port, target_name, proxy), timeout=timeout)
+
+
+async def _probe_async(context, host, port, target_name, proxy):
     if proxy:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(proxy[0], proxy[1], limit=8192), timeout=timeout
-        )
+        reader, writer = await asyncio.open_connection(proxy[0], proxy[1], limit=8192)
     else:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(
-                host, port, ssl=context, server_hostname=target_name, ssl_handshake_timeout=timeout
-            ),
-            timeout=timeout,
-        )
+        reader, writer = await asyncio.open_connection(host, port, ssl=context, server_hostname=target_name)
     try:
         if proxy:
             writer.write(_proxy_request(host, port, proxy[2]))
-            await asyncio.wait_for(writer.drain(), timeout=timeout)
-            response = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=timeout)
+            await writer.drain()
+            response = await reader.readuntil(b"\r\n\r\n")
             _check_proxy_response(response)
-            # StreamWriter.start_tls was added in Python 3.11. Upgrade the
-            # existing CONNECT stream with the event-loop API available in 3.10.
-            writer._transport = await asyncio.wait_for(
-                asyncio.get_running_loop().start_tls(
-                    writer.transport,
-                    writer._protocol,
-                    context,
-                    server_side=False,
-                    server_hostname=target_name,
-                    ssl_handshake_timeout=timeout,
-                ),
-                timeout=timeout,
+            # Upgrade the CONNECT stream using the event-loop API available in Python 3.10.
+            writer._transport = await asyncio.get_running_loop().start_tls(
+                writer.transport, writer._protocol, context, server_side=False, server_hostname=target_name
             )
         return _verified_peer_cert(writer.get_extra_info("ssl_object"))
     finally:
-        # The probe never sends application data and HTTP/2 listeners need not
-        # answer TLS close_notify. Abort immediately to release the socket on
-        # normal completion and cancellation without delaying each connection.
         writer.transport.abort()
 
 
