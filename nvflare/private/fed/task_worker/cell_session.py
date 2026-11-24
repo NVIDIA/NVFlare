@@ -37,6 +37,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.utils import make_reply, new_cell_message
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils import fobs
+from nvflare.private.fed.resource_stats.message_traffic import snapshot_message_traffic
 
 from .protocol import CELL_SESSION_CREDENTIALS
 
@@ -212,3 +213,8 @@ class CellWorkerTransport:
     def close(self):
         if self._cell is not None:
             self._cell.stop()
+
+    def traffic_snapshot(self, *, incomplete=False):
+        """Return this endpoint's counters, including its normal close activity."""
+
+        return snapshot_message_traffic(self._cell, incomplete=incomplete)

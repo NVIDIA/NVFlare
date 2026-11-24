@@ -5,6 +5,11 @@ Monitoring
 
 NVIDIA FLARE provides system monitoring capabilities to track job and system lifecycle metrics for federated learning jobs. This feature enables comprehensive system-level monitoring and visualization of FLARE operations.
 
+For saved measurements from finished jobs, see :ref:`resource_statistics`.
+Those reports are collected automatically and queried with
+``nvflare resources``; they do not require the StatsD, Prometheus, or
+Grafana setup described on this page.
+
 Overview
 ========
 
@@ -67,4 +72,4 @@ The monitoring system provides:
 * Comprehensive visualization capabilities
 * Integration with industry-standard monitoring tools
 
-For more detailed information about setup, configuration, and usage, please refer to the :github_nvflare_link:`Monitoring README <examples/advanced/monitoring/README.md>`. 
+For more detailed information about setup, configuration, and usage, please refer to the :github_nvflare_link:`Monitoring README <examples/advanced/monitoring/README.md>`.

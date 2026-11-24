@@ -31,6 +31,7 @@ from nvflare.app_opt.tracking.wandb import wandb_receiver as subject
 def context(tmp_path, monkeypatch):
     monkeypatch.delenv("WANDB_BASE_URL", raising=False)
     monkeypatch.delenv("WANDB_API_KEY", raising=False)
+    monkeypatch.setenv("WANDB_CONFIG_DIR", str(tmp_path / "wandb-sdk"))
     (tmp_path / "startup").mkdir()
     (tmp_path / "local").mkdir()
     ctx = MagicMock()
@@ -91,7 +92,7 @@ def test_unapproved_backend_stops_before_login_queue_or_process(context, monkeyp
     login = MagicMock()
     queue = MagicMock()
     process = MagicMock()
-    monkeypatch.setattr(subject.wandb, "login", login)
+    monkeypatch.setattr(subject, "_verify_backend", login)
     monkeypatch.setattr(subject, "Queue", queue)
     monkeypatch.setattr(subject, "Process", process)
     receiver = subject.WandBReceiver(args(settings={"base_url": "http://127.0.0.1:19999"}), mode=mode)
@@ -182,13 +183,13 @@ def test_job_cannot_bypass_backend_policy_through_transport_overrides(context, s
 def test_approved_online_login_and_worker_init_use_same_destination(context, monkeypatch):
     approve(context, ["https://approved.example"])
     login = MagicMock()
-    monkeypatch.setattr(subject.wandb, "login", login)
+    monkeypatch.setattr(subject, "_verify_backend", login)
     queues, processes = capture_workers(monkeypatch)
     original = args(settings={"base_url": "https://approved.example/"}, config={"learning_rate": 0.1})
     snapshot = deepcopy(original)
     receiver = subject.WandBReceiver(original, mode="online")
     receiver.initialize(context)
-    login.assert_called_once_with(host="https://approved.example", timeout=1, verify=True)
+    login.assert_called_once_with("https://approved.example")
     assert len(queues) == len(processes) == 2
     first, second = [q.put.call_args.args[0].task_data for q in queues]
     assert first["settings"]["base_url"] == second["settings"]["base_url"] == "https://approved.example"
@@ -205,7 +206,7 @@ def test_approved_online_login_and_worker_init_use_same_destination(context, mon
 
 def test_offline_mode_preserves_no_login_behavior(context, monkeypatch):
     login = MagicMock()
-    monkeypatch.setattr(subject.wandb, "login", login)
+    monkeypatch.setattr(subject, "_verify_backend", login)
     queues, _ = capture_workers(monkeypatch)
     subject.WandBReceiver(args(), mode="offline").initialize(context)
     login.assert_not_called()
@@ -225,7 +226,7 @@ def test_settings_object_without_explicit_backend_inherits_site_default(context,
 def test_invalid_configuration_is_rejected_before_credentials_or_workers(context, monkeypatch, invalid_source):
     monkeypatch.setenv("WANDB_API_KEY", "a" * 40)
     login = MagicMock()
-    monkeypatch.setattr(subject.wandb, "login", login)
+    monkeypatch.setattr(subject, "_verify_backend", login)
     queues, processes = capture_workers(monkeypatch)
     config = args()
     if invalid_source == "job-settings":

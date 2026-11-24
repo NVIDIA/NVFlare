@@ -120,6 +120,11 @@
     "destination_path": "collab/numpy_async",
     "category": "advanced"
   },
+  "collab-numpy-async-reproducible": {
+    "source_path": "examples/advanced/collab/numpy_async_reproducible",
+    "destination_path": "collab/numpy_async_reproducible",
+    "category": "advanced"
+  },
   "collab-pt": {
     "source_path": "examples/advanced/collab/pt_cifar10",
     "destination_path": "collab/pt_cifar10",
@@ -128,6 +133,11 @@
   "collab-pt-async": {
     "source_path": "examples/advanced/collab/pt_async_cifar10",
     "destination_path": "collab/pt_async_cifar10",
+    "category": "advanced"
+  },
+  "collab-pt-async-reproducible": {
+    "source_path": "examples/advanced/collab/pt_async_cifar10_reproducible",
+    "destination_path": "collab/pt_async_cifar10_reproducible",
     "category": "advanced"
   },
   "collab-simple-async": {
@@ -247,6 +257,10 @@
   },
   "multi-gpu-pt": {
     "source_path": "examples/advanced/multi-gpu/pt",
+    "category": "advanced"
+  },
+  "omop": {
+    "source_path": "examples/advanced/omop",
     "category": "advanced"
   },
   "psi": {

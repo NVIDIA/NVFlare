@@ -16,7 +16,7 @@ import os
 import re
 import sys
 
-from .check_rule import CheckServerAvailable
+from .check_rule import CheckEndpointCredentials, CheckServerAvailable
 from .package_checker import PackageChecker
 from .utils import NVFlareConfig, NVFlareRole
 
@@ -40,9 +40,11 @@ class ClientPackageChecker(PackageChecker):
         The CheckServerAvailable rule automatically detects the communication scheme
         (GRPC, HTTP, etc.) and uses the appropriate connectivity check method.
         """
-        self.rules = [
-            CheckServerAvailable(name="Check server available", role=self.NVF_ROLE),
-        ]
+        connectivity = CheckServerAvailable(name="Check server available", role=self.NVF_ROLE)
+        if self.NVF_ROLE == NVFlareRole.CLIENT:
+            self.rules = [[CheckEndpointCredentials(self.NVF_ROLE), connectivity]]
+        else:
+            self.rules = [connectivity]
 
     def get_uid_from_startup_script(self) -> str:
         """Extract uid from sub_start.sh"""

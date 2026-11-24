@@ -69,7 +69,7 @@ def validate_task_resources(meta, site_name):
 
 
 def validate_task_workflows(workflows):
-    """Reject the workflow configurations not yet integrated with CPU task workers."""
+    """Reject the workflow configurations not yet integrated with task workers."""
     # These export-only checks are P4 compatibility policy, not controller APIs.
     from nvflare.app_common.workflows.cross_site_eval import CrossSiteEval
     from nvflare.app_common.workflows.cross_site_model_eval import CrossSiteModelEval
@@ -81,6 +81,12 @@ def validate_task_workflows(workflows):
         reason = None
         if isinstance(controller, (Scaffold, ScatterAndGatherScaffold)):
             reason = "client SCAFFOLD control variates are not restored between workers"
+        elif any(
+            base.__module__ == "nvflare.app_opt.pt.fedce" and base.__name__ == "FedCEModelAggregator"
+            for base in type(getattr(controller, "aggregator", None)).__mro__
+        ):
+            # Inspect class ancestry without importing the optional PyTorch dependency.
+            reason = "client FedCE previous-model and score-history state is not restored between workers"
         elif isinstance(controller, CrossSiteEval) or (
             isinstance(controller, CrossSiteModelEval) and controller._submit_model_task_name
         ):

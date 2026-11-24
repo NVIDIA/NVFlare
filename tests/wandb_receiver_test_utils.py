@@ -73,8 +73,10 @@ def main(config_file):
         queue.put(subject.WandBTask("site-1", "log", {"loss": 0.25}, 0))
         queue.put(subject.WandBTask("site-1", "stop", {}, 0))
         try:
-            receiver._process_queue_tasks(queue)
+            if not config.get("preflight_only"):
+                receiver._process_queue_tasks(queue)
             result["status"] = "finished"
+            result["mode"] = receiver.mode
         except Exception as error:
             result["status"] = "sdk_error"
             result["error_type"] = type(error).__name__

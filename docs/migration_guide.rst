@@ -32,8 +32,8 @@ Weights & Biases Backend Approval
 
 Jobs using ``WandBReceiver`` with a custom ``wandb_args.settings.base_url``
 now require receiving-site approval unless the URL matches that site's
-``WANDB_BASE_URL`` (or the SDK's default cloud endpoint when that variable is
-unset). Add trusted URLs to ``wandb_base_urls`` in the receiving site's canonical
+``WANDB_BASE_URL`` (or the SDK's saved global host when that variable is unset, with the cloud
+endpoint as the final default). Add trusted URLs to ``wandb_base_urls`` in the receiving site's canonical
 ``local/resources.json`` or its default fallback. Apply this at every site
 running the receiver, including client-side tracking. Job settings cannot
 provide proxy overrides or disable TLS verification. See

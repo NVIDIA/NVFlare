@@ -15,11 +15,14 @@
 import json
 import os
 import time
+from configparser import ConfigParser
 from copy import deepcopy
 from multiprocessing import Process, Queue
+from pathlib import Path
 from typing import List, NamedTuple, Optional
 from urllib.parse import urlsplit
 
+import requests
 import wandb
 
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType, LogWriterName
@@ -28,6 +31,7 @@ from nvflare.apis.fl_constant import ProcessType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
+from nvflare.private.fed.resource_stats.cpu_consumed import mark_child_cpu_coverage_uncertain
 
 
 class WandBTask(NamedTuple):
@@ -66,6 +70,43 @@ def _normalize_base_url(url):
     return wandb.Settings(base_url=url).base_url
 
 
+def _operator_base_url():
+    configured = os.environ.get("WANDB_BASE_URL")
+    if configured:
+        return _normalize_base_url(configured)
+
+    # Match the SDK's global settings location. Job-local wandb/settings is
+    # deliberately excluded from the authority to choose a backend.
+    config_dir = Path(os.environ.get("WANDB_CONFIG_DIR") or "~/.config/wandb").expanduser()
+    settings = ConfigParser(interpolation=None)
+    try:
+        with (config_dir / "settings").open() as settings_file:
+            settings.read_file(settings_file)
+    except FileNotFoundError:
+        pass
+    return _normalize_base_url(settings.get("default", "base_url", fallback=wandb.Settings().base_url))
+
+
+def _get_base_url(settings):
+    return settings["base_url"] if isinstance(settings, dict) else settings.base_url
+
+
+def _verify_backend(base_url):
+    credentials = requests.utils.get_netrc_auth(base_url)
+    key = os.environ.get("WANDB_API_KEY") or (credentials[1] if credentials else None)
+    if not key:
+        raise ValueError("No W&B API key available for the selected backend")
+    response = requests.post(
+        f"{base_url}/graphql",
+        json={"query": "query { viewer { id } }"},
+        auth=("api", key),
+        timeout=(1.0, 1.0),
+        allow_redirects=False,
+    )
+    if response.status_code != 200 or not (response.json().get("data") or {}).get("viewer"):
+        raise ValueError("The selected W&B backend did not verify the API key")
+
+
 def _get_job_id_tag(fl_ctx: FLContext) -> str:
     """Gets a unique job id tag."""
     job_id = fl_ctx.get_job_id()
@@ -89,9 +130,6 @@ class WandBReceiver(AnalyticsReceiver):
         self.metrics_buffer = {}
         self.process_timeout = process_timeout
 
-        # os.environ["WANDB_API_KEY"] = YOUR_KEY_HERE
-        os.environ["WANDB_MODE"] = self.mode
-
     def _get_wandb_args(self, fl_ctx):
         """Pin credential-bearing traffic to a site-approved backend before SDK login."""
         args = deepcopy(self.wandb_args)
@@ -114,7 +152,7 @@ class WandBReceiver(AnalyticsReceiver):
         ):
             raise ValueError("job W&B settings cannot override proxies or disable TLS verification")
 
-        default_url = _normalize_base_url(os.environ.get("WANDB_BASE_URL") or wandb.Settings().base_url)
+        default_url = _operator_base_url()
         # Only the receiving site's canonical resources file can authorize an
         # additional backend. ConfigService also searches job-controlled paths.
         resources_file = fl_ctx.get_workspace().get_resources_file_path()
@@ -144,6 +182,7 @@ class WandBReceiver(AnalyticsReceiver):
         cnt = 0
         run = None
         current_step = 0
+        original_base_url = os.environ.get("WANDB_BASE_URL")
         try:
             while True:
                 wandb_task: WandBTask = queue.get()
@@ -156,6 +195,11 @@ class WandBReceiver(AnalyticsReceiver):
                     break
                 elif wandb_task.task_type == "init":
                     self.log_info(self.fl_ctx, f"received request to init at {wandb_task.task_owner}")
+                    settings = wandb_task.task_data.get("settings")
+                    if settings is not None:
+                        # Older SDKs consult this environment variable during
+                        # login even when the per-run endpoint is explicit.
+                        os.environ["WANDB_BASE_URL"] = _get_base_url(settings)
                     run = wandb.init(**wandb_task.task_data)
                 elif wandb_task.task_type == "log":
                     if cnt % 500 == 0:
@@ -184,8 +228,14 @@ class WandBReceiver(AnalyticsReceiver):
                             self.metrics_buffer[current_step] = {}
                         self.metrics_buffer[current_step].update(wandb_task.task_data)
         finally:
-            if run:
-                run.finish()
+            try:
+                if run:
+                    run.finish()
+            finally:
+                if original_base_url is None:
+                    os.environ.pop("WANDB_BASE_URL", None)
+                else:
+                    os.environ["WANDB_BASE_URL"] = original_base_url
 
     def initialize(self, fl_ctx: FLContext):
         wandb_args = self._get_wandb_args(fl_ctx)
@@ -211,11 +261,9 @@ class WandBReceiver(AnalyticsReceiver):
 
         if self.mode == "online":
             try:
-                settings = wandb_args["settings"]
-                base_url = settings["base_url"] if isinstance(settings, dict) else settings.base_url
-                wandb.login(host=base_url, timeout=1, verify=True)
-            except Exception as e:
-                self.log_warning(fl_ctx, f"Unsuccessful login: {e}. Using wandb offline mode.")
+                _verify_backend(_get_base_url(wandb_args["settings"]))
+            except Exception:
+                self.log_warning(fl_ctx, "Could not verify the selected W&B backend. Using offline mode.")
                 self.mode = "offline"
 
         for site_name in site_names:
@@ -241,6 +289,7 @@ class WandBReceiver(AnalyticsReceiver):
             p = Process(target=self._process_queue_tasks, args=(q,))
             self.processes[site_name] = p
             p.start()
+            mark_child_cpu_coverage_uncertain()
             time.sleep(0.2)
 
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):

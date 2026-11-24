@@ -78,7 +78,7 @@ class _FakeFlare:
         self._current = None
 
 
-def _worker(rank, port, result_queue, accelerator):
+def _worker(rank, port, result_queue, accelerator, num_samples):
     import torch.nn.functional as F
     from pytorch_lightning.plugins.environments import LightningEnvironment
     from pytorch_lightning.strategies import DDPStrategy
@@ -136,12 +136,13 @@ def _worker(rank, port, result_queue, accelerator):
                 enable_progress_bar=False,
                 enable_model_summary=False,
                 num_sanity_val_steps=0,
+                val_check_interval=2,
             )
             lightning_patch(trainer, sync_every_n_steps=2)
-            inputs = torch.arange(8, dtype=torch.float32).unsqueeze(1).repeat(1, 2)
-            loader = DataLoader(TensorDataset(inputs, torch.arange(8) % 2), batch_size=1, shuffle=False)
+            inputs = torch.arange(num_samples, dtype=torch.float32).unsqueeze(1).repeat(1, 2)
+            loader = DataLoader(TensorDataset(inputs, torch.arange(num_samples) % 2), batch_size=1, shuffle=False)
             net = Net()
-            trainer.fit(net, train_dataloaders=loader)
+            trainer.fit(net, train_dataloaders=loader, val_dataloaders=loader)
             while True:
                 evaluate = trainer.global_rank == 0 and fake.is_running() and fake.is_evaluate()
                 if not trainer.strategy.broadcast(evaluate, src=0):
@@ -175,14 +176,17 @@ def _worker(rank, port, result_queue, accelerator):
         ),
     ],
 )
-def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchanges(accelerator):
+@pytest.mark.parametrize("num_samples", [8, 12], ids=["sync-at-epoch-end", "sync-mid-epoch"])
+def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchanges(accelerator, num_samples):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
 
     ctx = torch.multiprocessing.get_context("spawn")
     result_queue = ctx.Queue()
-    procs = [ctx.Process(target=_worker, args=(rank, port, result_queue, accelerator)) for rank in range(2)]
+    procs = [
+        ctx.Process(target=_worker, args=(rank, port, result_queue, accelerator, num_samples)) for rank in range(2)
+    ]
     try:
         for proc in procs:
             proc.start()
@@ -201,9 +205,10 @@ def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchan
 
     assert rank0["global_step"] == rank1["global_step"] == 4
     assert rank0["sent_steps"] == [2, 2, "metrics"]
-    assert rank0["validated"] == rank1["validated"] == 1
+    assert rank0["validated"] == rank1["validated"] == 3
     assert rank0["pending_task"] == "submit_model"
     assert rank1["events"] == []
     assert rank0["seen"] == rank1["seen"]
+    assert len(rank0["seen"]) == 4
     assert {device for device, _ in rank0["seen"]} == {"cuda" if accelerator == "gpu" else "cpu"}
     assert [rank0["seen"][0][1], rank0["seen"][2][1]] == [0.0, 1.0]

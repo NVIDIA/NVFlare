@@ -30,6 +30,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import gen_new_peer_ctx
+from nvflare.fuel.sec.admin_audit import prepare, record
 from nvflare.fuel.utils.log_utils import dynamic_log_config, get_obj_logger, validate_site_log_config
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
@@ -480,7 +481,9 @@ class ConfigureJobLogCommand(CommandProcessor):
                 reload_path=workspace.get_log_config_file_path(),
             )
         except Exception as e:
+            record("logging.job.error", job_id=prepare(fl_ctx.get_job_id, default=""), reason="local_application_error")
             return secure_format_exception(e)
+        record("logging.job.applied", job_id=prepare(fl_ctx.get_job_id, default=""))
 
 
 class AppCommandProcessor(CommandProcessor):

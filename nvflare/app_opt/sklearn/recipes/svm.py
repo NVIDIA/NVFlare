@@ -95,6 +95,10 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         key_metric_mode: One of "min" or "max". Use "min" when lower key_metric values are better
             and "max" when higher values are better. Defaults to "max".
 
+        execution_lifetime: Keep client compute for the job (default) or recreate it for each task.
+            Task lifetime requires a configured Kubernetes or Slurm site and in-process script execution.
+            Scripts retaining local state must restore it from a native checkpoint.
+
     Example:
         Basic usage with same config for all clients:
 
@@ -155,6 +159,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
         per_site_config: Optional[dict[str, dict]] = None,
         key_metric: str = "AUC",  # Matches client's metric key
         key_metric_mode: Literal["min", "max"] = "max",
+        execution_lifetime: str = "job",
     ):
         v = _SVMValidator(kernel=kernel, model_path=model_path)
         self.kernel = v.kernel
@@ -191,6 +196,7 @@ class SVMFedAvgRecipe(FedAvgRecipe):
             per_site_config=per_site_config,
             key_metric=key_metric,
             key_metric_mode=key_metric_mode,
+            execution_lifetime=execution_lifetime,
         )
 
         # Add the SVMAssembler as a component to the job

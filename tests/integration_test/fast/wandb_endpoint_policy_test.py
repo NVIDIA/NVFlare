@@ -31,7 +31,7 @@ pytest.importorskip("wandb")
 
 
 @contextmanager
-def listener(key):
+def listener(key, accepted=False):
     records = []
     expected = {"Basic " + base64.b64encode(f"api:{key}".encode()).decode(), "Bearer " + key}
 
@@ -41,8 +41,12 @@ def listener(key):
             records.append(self.headers.get("Authorization") in expected)
             # A deliberate auth failure bounds this local SDK fixture. Online
             # initialization retains the receiver's existing offline fallback.
-            body = b'{"errors":[{"message":"fixture unauthorized"}]}'
-            self.send_response(401)
+            if accepted:
+                body = b'{"data":{"viewer":{"id":"test-user"}}}'
+                self.send_response(200)
+            else:
+                body = b'{"errors":[{"message":"fixture unauthorized"}]}'
+                self.send_response(401)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -69,20 +73,39 @@ def listener(key):
 
 @pytest.mark.timeout(150)
 @pytest.mark.parametrize(
-    "case", ["default", "approved", "offline", "default-run", "approved-run", "reject-online", "reject-run"]
+    "case",
+    [
+        "default",
+        "saved-default",
+        "approved",
+        "approved-success",
+        "offline",
+        "default-run",
+        "approved-run",
+        "reject-online",
+        "reject-run",
+    ],
 )
 def test_real_sdk_backend_approval_and_offline_logging(tmp_path, case):
     key = "a" * 40
-    with listener(key) as (trusted, trusted_requests), listener(key) as (selected, selected_requests):
+    with (
+        listener(key) as (trusted, trusted_requests),
+        listener(key, accepted=case == "approved-success") as (
+            selected,
+            selected_requests,
+        ),
+    ):
         config = {
             "workspace": str(tmp_path / "workspace"),
             "result": str(tmp_path / "result.json"),
             "mode": "offline" if case == "offline" else ("run" if case.endswith("-run") else "online"),
         }
-        if case in ("approved", "approved-run", "reject-online", "reject-run"):
+        if case in ("approved", "approved-success", "approved-run", "reject-online", "reject-run"):
             config["selected"] = selected
-        if case in ("approved", "approved-run"):
+        if case in ("approved", "approved-success", "approved-run"):
             config["approved"] = [selected]
+        if case == "approved-success":
+            config["preflight_only"] = True
         config_path = tmp_path / "config.json"
         config_path.write_text(json.dumps(config))
         env = {k: v for k, v in os.environ.items() if not k.startswith("WANDB_") and not k.lower().endswith("_proxy")}
@@ -95,6 +118,14 @@ def test_real_sdk_backend_approval_and_offline_logging(tmp_path, case):
             NETRC=str(tmp_path / "absent.netrc"),
             PYTHONPATH=str(Path(__file__).resolve().parents[3]),
         )
+        sdk_config = Path(env["WANDB_CONFIG_DIR"])
+        sdk_config.mkdir()
+        saved_settings = sdk_config / "settings"
+        original_settings = f"[default]\nbase_url = {trusted}\n"
+        saved_settings.write_text(original_settings)
+        if case == "saved-default":
+            del env["WANDB_BASE_URL"]
+
         result = run_owned_process(
             [sys.executable, "-m", "tests.wandb_receiver_test_utils", str(config_path)],
             cwd=tmp_path,
@@ -103,6 +134,7 @@ def test_real_sdk_backend_approval_and_offline_logging(tmp_path, case):
         )
         assert result.returncode == 0, result.stderr
         report = json.loads((tmp_path / "result.json").read_text())
+        assert saved_settings.read_text() == original_settings
         print(json.dumps({"trusted_auth_matches": trusted_requests, "selected_auth_matches": selected_requests}))
         if case.startswith("reject"):
             assert report["status"] == "blocked", (
@@ -122,20 +154,20 @@ def test_real_sdk_backend_approval_and_offline_logging(tmp_path, case):
                 assert trusted_requests and all(trusted_requests)
                 assert selected_requests == []
             else:
-                # Older SDKs verify environment keys against the site default
-                # before using a per-run host. Both destinations are approved.
-                assert trusted_requests or selected_requests
-                assert all(trusted_requests + selected_requests)
+                assert selected_requests and all(selected_requests)
+                assert trusted_requests == []
+        elif case == "approved-success":
+            assert report["status"] == "finished" and report["mode"] == "online"
+            assert selected_requests == [True] and trusted_requests == []
         else:
             assert report["status"] == "finished", (report, result.stderr)
             assert report["workers_started"] == 1
             # dir defaults to the child working directory, outside workspace.
             assert list(tmp_path.rglob("*.wandb"))
-            if case == "default":
+            if case in ("default", "saved-default"):
                 assert trusted_requests and all(trusted_requests)
                 assert selected_requests == []
             elif case == "approved":
-                assert trusted_requests or selected_requests
-                assert all(trusted_requests + selected_requests)
+                assert selected_requests == [True] and trusted_requests == []
             else:
                 assert trusted_requests == selected_requests == []
