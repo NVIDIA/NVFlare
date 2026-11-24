@@ -26,7 +26,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import NotAuthenticated
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError, CCTokenVerifyError
+from nvflare.app_opt.confidential_computing.cc_authorizer import CCAuthorizer, CCTokenGenerateError
 from nvflare.app_opt.confidential_computing.cc_timeouts import resolve_token_timeouts
 from nvflare.fuel.f3.cellnet.core_cell import make_reply
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -213,12 +213,15 @@ class CCManager(FLComponent):
             self.logger.info(f"Processing CC validation for client (type={client_type})")
 
             peer = fl_ctx.get_peer_context()
-            verdict = self._registration_verdict(
-                fl_ctx.get_prop(FLContextKey.CLIENT_NAME), peer.get_prop(CC_INFO) if peer else None
-            )
+            client_name = fl_ctx.get_prop(FLContextKey.CLIENT_NAME)
+            verdict = self._registration_verdict(client_name, peer.get_prop(CC_INFO) if peer else None)
             if verdict.error:
                 raise NotAuthenticated(f"CC info validation failed: {verdict.error}")
-            self._generate_and_attach_tokens(fl_ctx)
+            try:
+                self._generate_and_attach_tokens(fl_ctx)
+            except Exception as exc:
+                self.logger.warning(f"CC token generation raised {type(exc).__name__} for site {client_name}")
+                raise NotAuthenticated("CC token generation failed during registration") from None
         elif event_type == EventType.BEFORE_CHECK_CLIENT_RESOURCES:
             # Server side: job scheduler check client resources
             # Perform cross-site validation before scheduling jobs
@@ -332,8 +335,8 @@ class CCManager(FLComponent):
     def _verify_participants_tokens(self, participants_tokens: dict[str, list[dict[str, str]]]) -> VerificationResult:
         """Return a verdict, without deciding whether to reject or shut down.
 
-        Authorizers may consume replay IDs; this method has no logging,
-        lifecycle or federation-failure side effects.
+        Authorizers may consume replay IDs. Provider exceptions are logged by
+        type only and returned as failed verification.
         """
         result, errors = {}, []
         for site, cc_info in participants_tokens.items():
@@ -348,7 +351,9 @@ class CCManager(FLComponent):
                 verifier = self.cc_verifiers.get(namespace)
                 try:
                     valid = verifier is not None and verifier.verify_for_site(info.get(CC_TOKEN, ""), site)
-                except CCTokenVerifyError:
+                except Exception as exc:
+                    # Provider exception messages can contain tokens or evidence.
+                    self.logger.warning("CC verifier %s raised %s for site %s", namespace, type(exc).__name__, site)
                     valid = False
                 if valid:
                     result[site + "." + namespace] = True
