@@ -206,18 +206,19 @@ def prepare(site):
 
 
 if __name__ == "__main__":
+    sites = ("site-1", "site-2")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "site",
         nargs="?",
-        choices=omop_data.SITE_OMOP,
+        choices=sites,
         help="seed this site inside its container (default: prepare both via Docker Compose)",
     )
     site = parser.parse_args().site
     if site:
         prepare(site)
     else:
-        for site in omop_data.SITE_OMOP:
+        for site in sites:
             subprocess.run(
                 ["docker", "compose", "run", "--rm", f"{site}-seed"], cwd=Path(__file__).resolve().parent, check=True
             )
