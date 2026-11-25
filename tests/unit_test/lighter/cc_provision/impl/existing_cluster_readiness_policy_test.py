@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Exercise the manifest-only launcher without contacting Kubernetes."""
+"""Check the manifest launcher's readiness deadline and API request timeout."""
 
 import json
 import subprocess

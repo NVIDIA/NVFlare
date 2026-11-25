@@ -30,6 +30,7 @@ from nvflare.fuel.f3.streaming.stream_types import StreamTargetUnreachable
 from nvflare.fuel.utils.network_utils import get_open_ports
 from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, ManualClock, stop_processes
 
+_TEST_TIMEOUT = 120
 _CONNECT_TIMEOUT = PROCESS_STARTUP_TIMEOUT
 _CHANNEL = "routed_stream_error_test"
 _TOPIC = "late_reply"
@@ -64,6 +65,11 @@ def _wait_for_peer_state(cell, peer_fqcn, connected):
     raise RuntimeError(f"{peer_fqcn} did not {state} from {cell.get_fqcn()}")
 
 
+def _wait_for_stop(cell, stop_event):
+    if not stop_event.wait(_TEST_TIMEOUT):
+        raise RuntimeError(f"{cell.get_fqcn()} did not receive a stop signal")
+
+
 def _run_server(root_url, status_queue, stop_event):
     cell = None
     capture = _ErrorCapture()
@@ -77,7 +83,7 @@ def _run_server(root_url, status_queue, stop_event):
         status_queue.put({"receiver_connected": True})
         _wait_for_peer_state(cell, _MISSING_RECEIVER, connected=False)
         status_queue.put({"receiver_removed": True})
-        stop_event.wait()
+        _wait_for_stop(cell, stop_event)
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -94,7 +100,7 @@ def _run_receiver(root_url, status_queue, stop_event):
         cell.start()
         _wait_for_connection(cell, "server")
         status_queue.put({"ready": True})
-        stop_event.wait()
+        _wait_for_stop(cell, stop_event)
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -176,7 +182,7 @@ def _run_recovery_server(root_url, status_queue, stop_event):
             raise RuntimeError("sender never exercised the missing downstream route")
         _wait_for_peer_state(cell, _MISSING_RECEIVER, connected=True)
         status_queue.put({"route_recovered": True})
-        stop_event.wait()
+        _wait_for_stop(cell, stop_event)
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -234,7 +240,7 @@ def _run_recovery_receiver(root_url, status_queue, result_queue, stop_event):
         cell.start()
         _wait_for_connection(cell, "server")
         status_queue.put({"ready": True})
-        stop_event.wait()
+        _wait_for_stop(cell, stop_event)
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -252,7 +258,7 @@ def _queue_result(queue, stage):
     return result
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(_TEST_TIMEOUT)
 def test_routed_optional_stream_reports_downstream_route_removal_without_error_logs():
     """The sender's first hop succeeds, then the server reports the missing final receiver."""
     context = multiprocessing.get_context("spawn")
@@ -298,7 +304,7 @@ def test_routed_optional_stream_reports_downstream_route_removal_without_error_l
     assert server_result["errors"] == []
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(_TEST_TIMEOUT)
 def test_non_optional_reliable_stream_recovers_after_transient_downstream_route_failure():
     context = multiprocessing.get_context("spawn")
     root_url = f"tcp://localhost:{get_open_ports(1)[0]}"

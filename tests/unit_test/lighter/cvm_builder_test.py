@@ -14,30 +14,20 @@
 
 """Run the standalone Linux builder contracts in the regular NVFlare test suite."""
 
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-BUILDER = Path(__file__).resolve().parents[3] / "nvflare/lighter/cc/image_builder"
+from tests.cvm_builder_test_utils import BUILDER, builder_environment
+
 TESTS = Path(__file__).resolve().parents[3] / "tests/unit_test/lighter/cc/image_builder"
-
-
-def _builder_environment(**overrides):
-    env = dict(os.environ, **overrides)
-    if "COV_CORE_SOURCE" in env:
-        # pytest-cov's subprocess support inherits --cov=nvflare, but these
-        # isolated contracts import the same files through the cvm namespace.
-        # Trace their physical source directory so those hits reach the report.
-        env["COV_CORE_SOURCE"] = str(BUILDER)
-    return env
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="CVM Builder requires Linux memfd and /proc interfaces")
 def test_cvm_builder_contracts():
-    env = _builder_environment(PYTHONPATH=str(BUILDER))
+    env = builder_environment(PYTHONPATH=str(BUILDER))
     result = subprocess.run(
         [sys.executable, "-m", "unittest", "discover", "-s", str(TESTS), "-p", "test_*.py", "-v"],
         cwd=BUILDER,
@@ -79,7 +69,7 @@ def test_cvm_builder_entrypoints(entrypoint):
             "--help",
         ],
         cwd=BUILDER.parent,
-        env=_builder_environment(CVM_BUILDER_PYTHON=sys.executable),
+        env=builder_environment(CVM_BUILDER_PYTHON=sys.executable),
         capture_output=True,
         text=True,
         timeout=30,

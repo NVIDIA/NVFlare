@@ -21,7 +21,7 @@ from queue import Empty
 import pytest
 
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
-from tests.cell_reconnect_test_utils import run_child, run_parent
+from tests.cell_reconnect_test_utils import RECONNECT_TEST_TIMEOUT, run_child, run_parent
 from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, stop_processes
 
 
@@ -39,7 +39,7 @@ def _wait_for_child_ready(ready, incarnation):
         pytest.fail(f"Cell child {incarnation} did not report a connection")
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(RECONNECT_TEST_TIMEOUT)
 def test_graceful_child_replacement_before_old_transport_disconnect(tmp_path):
     config = {
         "backbone_conn_gen": 1,

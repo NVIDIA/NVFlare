@@ -17,10 +17,7 @@
 import json
 import os
 import queue
-import subprocess
-import sys
 import tempfile
-import textwrap
 import time
 import unittest
 from pathlib import Path
@@ -141,31 +138,6 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(records.get_nowait(), "quarantine")
         while not records.empty():
             self.assertEqual(records.get_nowait(), audit._Diagnostic("gpu_readiness_revoke_failed"))
-
-    def test_flush_waits_until_prior_records_are_written(self):
-        # The production worker is intentionally process-long. Exercise it in
-        # a child so the test cannot leave a daemon consuming the suite's
-        # shared audit queue after its mocks are restored.
-        program = textwrap.dedent(
-            """
-            from unittest.mock import patch
-            from cvm.runtime import audit
-            with patch.object(audit.Path, 'exists', return_value=False), \
-                 patch.object(audit, 'read_json', return_value={
-                     'build_id': 'build', 'attestation_policy_id': 'policy'
-                 }), \
-                 patch.object(audit, 'append'):
-                audit.emit('quarantine')
-                audit.emit_diagnostic('gpu_quarantine_terminal')
-                assert audit.flush(1)
-            """
-        )
-        result = subprocess.run([sys.executable, "-c", program], capture_output=True, text=True, timeout=30)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        lines = result.stdout.splitlines()
-        self.assertEqual([line.split("=", 1)[0] for line in lines], ["CVM_ATTESTATION", "CVM_DIAGNOSTIC"])
-        self.assertEqual(json.loads(lines[0].split("=", 1)[1])["decision"], "quarantine")
-        self.assertEqual(json.loads(lines[1].split("=", 1)[1])["code"], "gpu_quarantine_terminal")
 
     def test_flush_is_bounded_without_writer_progress(self):
         records = queue.Queue(maxsize=8)

@@ -28,6 +28,7 @@ TESTS = (
     "tests/integration_test/fast/cell_reconnect_test.py",
     "tests/integration_test/fast/cell_session_mtls_test.py",
     "tests/integration_test/fast/concurrent_cleanup_test.py",
+    "tests/integration_test/fast/cvm_runtime_process_test.py",
     "tests/integration_test/fast/dashboard_kit_test.py",
     "tests/integration_test/fast/download_parallel_test.py",
     "tests/integration_test/fast/existing_cluster_launch_test.py",

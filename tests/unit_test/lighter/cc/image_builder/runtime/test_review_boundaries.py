@@ -18,10 +18,7 @@ import contextlib
 import json
 import os
 import signal
-import subprocess
-import sys
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -54,79 +51,6 @@ class ReviewBoundaryTests(unittest.TestCase):
             command[command.index("--attestation-policy-selector") + 1],
             "cvm-gpu-r1",
         )
-
-    def test_stalled_audit_cannot_delay_quarantine_or_denial(self):
-        # Isolate the intentionally stalled daemon writer from the test runner.
-        program = textwrap.dedent(
-            """
-            import contextlib, os, subprocess, sys, tempfile, threading, time
-            from pathlib import Path
-            from unittest.mock import patch
-            from cvm.common.errors import BuildError
-            from cvm.runtime import audit, bootstrap, supervisor
-            entered, release = threading.Event(), threading.Event()
-            def stuck(path, line):
-                entered.set()
-                release.wait()
-            with tempfile.TemporaryDirectory() as directory, \
-                 patch.object(audit, 'read_json', return_value={'build_id': 'test', 'attestation_policy_id': 'default'}), \
-                 patch.object(audit.Path, 'exists', return_value=False), \
-                 patch.object(audit, 'append', side_effect=stuck):
-                audit.emit('allow')
-                workload = None
-                def stop(argv, **kwargs):
-                    if argv[:2] == ['systemctl', 'stop']:
-                        workload.terminate()
-                        workload.wait(timeout=1)
-                try:
-                    assert entered.wait(2)
-                    writer = audit._writer
-                    workload = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
-                    started = time.monotonic()
-                    with patch.object(supervisor, 'run', side_effect=stop), \
-                         patch.object(supervisor, 'revoke_vault'), \
-                         patch.object(supervisor, 'watchdog') as watchdog, \
-                         patch.object(supervisor, 'QUARANTINE_WINDOW_SECONDS', 0):
-                        try:
-                            supervisor.quarantine({}, ['cvm_app.service'], Path(directory))
-                        except BuildError:
-                            pass
-                        else:
-                            raise AssertionError('Denial must fail closed')
-                        watchdog.assert_called_once_with(supervisor.REVOCATION_TIMEOUT_SECONDS)
-                    assert workload.poll() is not None
-                    with patch.object(sys, 'argv', ['bootstrap', 'bootstrap']), \
-                         patch.object(bootstrap, 'bootstrap', side_effect=BuildError('denied')), \
-                         patch.object(bootstrap, 'notify') as notify:
-                        try:
-                            bootstrap.main()
-                        except SystemExit:
-                            pass
-                        else:
-                            raise AssertionError('Must exit after denial')
-                        notify.assert_called_once_with('WATCHDOG=trigger')
-                    for _ in range(100):
-                        audit.emit('deny')
-                        audit.emit_diagnostic('gpu_readiness_revoke_failed')
-                    assert audit._writer is writer and audit._records.qsize() <= 8
-                    assert time.monotonic() - started < 2
-                finally:
-                    try:
-                        if workload is not None:
-                            workload.kill() if workload.poll() is None else None
-                            workload.wait(timeout=1)
-                    finally:
-                        release.set()
-                        # Drain under the mocks, before interpreter shutdown can
-                        # race the daemon's buffered stdout writes. The queue can
-                        # be full, so wait for room for this test-only barrier.
-                        drained = threading.Event()
-                        audit._records.put(audit._Barrier(drained), timeout=2)
-                        assert drained.wait(2), 'Audit writer did not finish test cleanup'
-        """
-        )
-        result = subprocess.run([sys.executable, "-c", program], capture_output=True, text=True, timeout=30)
-        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_docker_client_does_not_receive_container_control_variables(self):
         values = {"DOCKER_HOST": "tcp://untrusted:2375", "PATH": "/evil", "LD_PRELOAD": "/evil.so", "SECRET": "private"}

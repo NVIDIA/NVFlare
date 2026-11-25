@@ -24,6 +24,7 @@ from nvflare.fuel.f3.message import Message
 from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, wait_for
 
 CHILD = "server.job"
+RECONNECT_TEST_TIMEOUT = 120
 
 
 def run_parent(config_dir, control, goodbye_seen, close_entered, close_released):
@@ -34,7 +35,7 @@ def run_parent(config_dir, control, goodbye_seen, close_entered, close_released)
     def close_connection(driver, connection):
         if armed and connection is armed[0]:
             close_entered.set()
-            if not close_released.wait(90):
+            if not close_released.wait(RECONNECT_TEST_TIMEOUT):
                 raise TimeoutError("test did not release the old connection's close notification")
         original_close(driver, connection)
 
@@ -87,7 +88,8 @@ def run_child(config_dir, parent_url, incarnation, ready, stop):
             message=f"Cell child {incarnation} did not connect to the parent",
         )
         ready.put({"connected": incarnation})
-        stop.wait(90)
+        if not stop.wait(RECONNECT_TEST_TIMEOUT):
+            raise TimeoutError(f"Cell child {incarnation} did not receive a stop signal")
     except Exception:
         ready.put({"error": traceback.format_exc()})
     finally:

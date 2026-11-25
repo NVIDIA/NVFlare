@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Exercise the manifest-only launcher without contacting Kubernetes."""
+"""Check that a job-log lease protects files from a separate process."""
 
 import os
 import sys
