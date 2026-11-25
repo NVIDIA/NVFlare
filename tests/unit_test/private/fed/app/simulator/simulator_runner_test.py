@@ -15,12 +15,14 @@ import copy
 import json
 import os
 import shutil
+import subprocess
 import sys
 import threading
 import uuid
 from argparse import Namespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -33,7 +35,7 @@ from nvflare.private.fed.app.simulator import simulator_runner as simulator_runn
 from nvflare.private.fed.app.simulator import simulator_worker
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
-from tests.timing_utils import CheckedThread, join_thread, wait_for
+from tests.timing_utils import CheckedThread, ThreadGroup, isolate_time, join_thread, wait_for
 
 
 class MockCell:
@@ -42,6 +44,227 @@ class MockCell:
 
     def get_internal_listener_url(self):
         return "tcp://0:123"
+
+
+class _BoundedClientPool(list):
+    """Make a selector regression fail promptly instead of spinning under the pool lock."""
+
+    probes = 0
+
+    def __getitem__(self, index):
+        self.probes += 1
+        assert self.probes <= 100, "selector spun on a fully reserved pool"
+        return super().__getitem__(index)
+
+
+@pytest.fixture
+def client_scheduler(tmp_path, monkeypatch):
+    args = Namespace(workspace=str(tmp_path), log_config=None, set=[])
+    clients = _BoundedClientPool(
+        SimpleNamespace(client_name=f"site-{i}", simulate_running=False, token="token", cell=Mock())
+        for i in range(1, 4)
+    )
+    for client in clients:
+        for directory in ("startup", "local"):
+            (tmp_path / client.client_name / directory).mkdir(parents=True)
+    runner = SimulatorClientRunner(str(tmp_path / "custom"), args, clients, {}, args, {})
+    clock = isolate_time(monkeypatch, simulator_runner_module)
+    clock.sleep = Mock()
+    return runner, clients, threading.Lock()
+
+
+@pytest.fixture
+def client_task_boundary(client_scheduler, monkeypatch):
+    runner, clients, lock = client_scheduler
+    process, conn = Mock(), Mock()
+    process.poll.return_value = None
+    monkeypatch.setattr(simulator_runner_module, "get_open_ports", Mock(return_value=[12345]))
+    monkeypatch.setattr(simulator_runner_module, "popen_in_new_session", Mock(return_value=process))
+    monkeypatch.setattr(runner, "_create_connection", Mock(return_value=conn))
+    with lock:
+        client = runner.get_next_run_client(None)
+    return runner, clients, lock, client, process, conn
+
+
+def test_client_selection_reserves_before_another_thread_can_select(client_scheduler):
+    runner, clients, lock = client_scheduler
+    clients[0].simulate_running = clients[1].simulate_running = True
+    selected, release = threading.Event(), threading.Event()
+    choices = []
+
+    def select_then_pause():
+        with lock:
+            choices.append(runner.get_next_run_client(None))
+        selected.set()
+        release.wait()
+
+    with ThreadGroup(release) as workers:
+        workers.start(select_then_pause)
+        assert selected.wait(5), "first scheduler did not select a client"
+        with lock:
+            assert choices[0] is clients[2]
+            assert clients[2].simulate_running
+            assert runner.get_next_run_client(None) is None
+
+
+def test_client_selection_is_round_robin_and_can_reuse_a_released_client(client_scheduler):
+    runner, clients, lock = client_scheduler
+    with lock:
+        assert [runner.get_next_run_client(None) for _ in clients] == clients
+        assert runner.get_next_run_client(None) is None
+        clients[1].simulate_running = False
+        assert runner.get_next_run_client(None) is clients[1]
+        assert all(client.simulate_running for client in clients)
+
+
+@pytest.mark.parametrize("fail_during_handoff", [False, True])
+def test_scheduler_retains_handoff_reservation_and_releases_it_on_error(
+    client_scheduler, monkeypatch, fail_during_handoff
+):
+    runner, clients, lock = client_scheduler
+    executed = []
+
+    def task(client, *args, **kwargs):
+        assert client.simulate_running
+        executed.append(client)
+        if len(executed) == 1:
+            with lock:
+                next_client = runner.get_next_run_client(None)
+            return False, next_client, None
+        return True, None, None
+
+    def between_tasks(_interval):
+        if executed:
+            assert not clients[0].simulate_running
+            assert clients[1].simulate_running
+            if fail_during_handoff:
+                raise RuntimeError("interrupted before the next worker")
+
+    monkeypatch.setattr(runner, "do_one_task", task)
+    simulator_runner_module.time.sleep.side_effect = between_tasks
+    runner.run_client_thread(2, None, lock, False)
+
+    assert executed == clients[: 1 if fail_during_handoff else 2]
+    assert not any(client.simulate_running for client in clients)
+
+
+@pytest.mark.parametrize("end_run", [False, True])
+def test_scheduler_releases_client_when_task_raises(client_scheduler, monkeypatch, end_run):
+    runner, clients, lock = client_scheduler
+    monkeypatch.setattr(runner, "do_one_task", Mock(side_effect=RuntimeError("worker failed")))
+    if end_run:
+        with pytest.raises(RuntimeError, match="worker failed"):
+            runner._end_run_clients(None, lock, 2, 60)
+    else:
+        runner.run_client_thread(2, None, lock, False)
+    assert not any(client.simulate_running for client in clients)
+
+
+def test_lookahead_client_stays_reserved_during_worker_cleanup(client_task_boundary, monkeypatch):
+    runner, clients, lock, client, process, conn = client_task_boundary
+    clients[1].simulate_running = True
+    conn.recv.return_value = False
+    cleaning, release = threading.Event(), threading.Event()
+    results = []
+
+    def cleanup(_process):
+        cleaning.set()
+        release.wait()
+
+    monkeypatch.setattr(runner, "_cleanup_process", cleanup)
+    with ThreadGroup(release) as workers:
+        workers.start(lambda: results.append(runner.do_one_task(client, 2, None, lock)))
+        assert cleaning.wait(5), "worker did not reach cleanup"
+        with lock:
+            assert client.simulate_running
+            assert clients[2].simulate_running
+            assert runner.get_next_run_client(None) is None
+    assert results == [(False, clients[2], None)]
+    assert conn.send.call_args.args == (False,)
+
+
+@pytest.mark.parametrize("failure", ["connection", "initial-send", "handoff-send", "worker-death"])
+def test_worker_failure_cleans_process_and_releases_unconsumed_lookahead(client_task_boundary, monkeypatch, failure):
+    runner, clients, lock, client, process, conn = client_task_boundary
+    if failure == "connection":
+        runner._create_connection.side_effect = RuntimeError("handshake failed")
+    elif failure == "initial-send":
+        conn.send.side_effect = OSError("setup failed")
+    elif failure == "handoff-send":
+        conn.recv.return_value = False
+        conn.send.side_effect = [None, OSError("handoff failed")]
+    else:
+        conn.recv.return_value = False
+        process.poll.side_effect = [None, 1, None]
+
+    if failure == "connection":
+        with pytest.raises(RuntimeError, match="handshake failed"):
+            runner.do_one_task(client, 2, None, lock)
+    else:
+        assert runner.do_one_task(client, 2, None, lock) == (True, None, client.client_name)
+
+    process.terminate.assert_called_once()
+    process.wait.assert_called_once()
+    assert client.simulate_running  # The calling scheduler still owns the current client.
+    assert not any(candidate.simulate_running for candidate in clients[1:])
+
+
+def test_busy_pool_keeps_current_worker_without_spinning(client_task_boundary):
+    runner, clients, lock, client, process, conn = client_task_boundary
+    for candidate in clients:
+        candidate.simulate_running = True
+    conn.recv.side_effect = [False, True, client.client_name, False]
+
+    assert runner.do_one_task(client, 2, None, lock) == (True, None, client.client_name)
+
+    assert [call.args[0] for call in conn.send.call_args_list[1:]] == [True, False]
+
+
+def test_scheduler_waits_for_a_client_to_be_released(client_scheduler, monkeypatch):
+    runner, clients, lock = client_scheduler
+    for client in clients:
+        client.simulate_running = True
+
+    def release_after_retry(_interval):
+        if simulator_runner_module.time.sleep.call_count == 2:
+            with lock:
+                clients[0].simulate_running = False
+
+    simulator_runner_module.time.sleep.side_effect = release_after_retry
+    task = Mock(return_value=(True, None, None))
+    monkeypatch.setattr(runner, "do_one_task", task)
+    runner.run_client_thread(2, None, lock, False)
+
+    assert simulator_runner_module.time.sleep.call_count == 2
+    assert task.call_args.args[0] is clients[0]
+    assert not clients[0].simulate_running
+
+
+def test_cleanup_error_releases_lookahead_before_handoff(client_task_boundary, monkeypatch):
+    runner, clients, lock, client, process, conn = client_task_boundary
+    conn.recv.return_value = False
+    monkeypatch.setattr(runner, "_cleanup_process", Mock(side_effect=RuntimeError("cleanup failed")))
+
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        runner.do_one_task(client, 2, None, lock)
+
+    assert client.simulate_running
+    assert not any(candidate.simulate_running for candidate in clients[1:])
+
+
+@pytest.mark.parametrize("exit_before_kill", [False, True])
+def test_worker_cleanup_reaps_after_kill_and_tolerates_exit_race(client_scheduler, exit_before_kill):
+    runner, _, _ = client_scheduler
+    process = Mock()
+    process.poll.return_value = None
+    process.wait.side_effect = [subprocess.TimeoutExpired("worker", 5), 0]
+    if exit_before_kill:
+        process.kill.side_effect = ProcessLookupError()
+
+    runner._cleanup_process(process)
+
+    methods = [call[0] for call in process.method_calls]
+    assert methods == ["poll", "terminate", "wait", "kill"] + ([] if exit_before_kill else ["wait"])
 
 
 @pytest.mark.parametrize("extension", ["json", "conf", "yaml"])
