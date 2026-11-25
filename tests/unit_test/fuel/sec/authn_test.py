@@ -18,14 +18,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from nvflare.apis.fl_constant import CellMessageAuthHeaderKey
+from nvflare.apis.fl_constant import CellMessageAuthHeaderKey, ConnectionSecurity
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey, MessageType, ReturnCode
+from nvflare.fuel.f3.drivers.connector_info import Mode
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
-from nvflare.fuel.sec.authn import is_cross_client_family, set_add_auth_headers_filters
+from nvflare.fuel.sec.authn import (
+    is_cross_client_family,
+    is_message_from_upstream,
+    is_message_origin_trusted,
+    set_add_auth_headers_filters,
+)
 from nvflare.private.fed.server.fed_server import FederatedServer
 
 AUTH_HEADERS = [
@@ -78,6 +84,7 @@ class _Cert:
 def _make_server_auth_filter(monkeypatch, client_fqcn_resolver=None):
     server_auth = FederatedServer.__new__(FederatedServer)
     server_auth.logger = logging.getLogger(__name__)
+    server_auth.cell = SimpleNamespace(get_fqcn=lambda: "server")
     server_auth._get_id_asserter = lambda: SimpleNamespace(cert=_Cert())
     server_auth._resolve_client_fqcn_for_auth = client_fqcn_resolver or (
         lambda client_name, _token, _origin="", _peer=None: client_name
@@ -105,7 +112,9 @@ def _make_routed_message(
                 CellMessageAuthHeaderKey.TOKEN_SIGNATURE: f"sig-{origin}",
             }
         )
-    return Message(headers=headers)
+    message = Message(headers=headers)
+    message.set_prop(MessagePropKey.ENDPOINT, Endpoint(origin))
+    return message
 
 
 def test_auth_filter_does_not_add_client_credentials_to_peer_replies():
@@ -374,7 +383,7 @@ def test_auth_filter_keeps_client_reply_auth_on_server_path():
     }
 
 
-def test_auth_filter_keeps_auth_on_replies_from_server_path_origin():
+def test_auth_filter_strips_server_job_credentials_on_direct_client_reply():
     server = _make_running_cell(f"server.{_unique_fqcn('job')}")
     client = _make_running_cell(_unique_fqcn("client"))
     set_add_auth_headers_filters(server, "server-job", "tok-server", "sig-server", "ssid-server")
@@ -388,12 +397,25 @@ def test_auth_filter_keeps_auth_on_replies_from_server_path_origin():
 
     assert reply.payload == "pong"
     assert reply.get_header(MessageHeaderKey.ORIGIN) == server.get_fqcn()
-    assert _auth_header_values(reply) == {
-        CellMessageAuthHeaderKey.CLIENT_NAME: "server-job",
-        CellMessageAuthHeaderKey.TOKEN: "tok-server",
-        CellMessageAuthHeaderKey.TOKEN_SIGNATURE: "sig-server",
-        CellMessageAuthHeaderKey.SSID: "ssid-server",
-    }
+    assert _auth_header_values(reply) == {key: None for key in AUTH_HEADERS}
+
+
+@pytest.mark.parametrize("msg_type", [MessageType.REQ, MessageType.REPLY])
+@pytest.mark.parametrize("next_hop", ["server", "site-a", "site-a.job"])
+def test_server_job_credentials_are_only_attached_for_the_root_boundary(msg_type, next_hop):
+    from nvflare.fuel.sec.authn import add_authentication_headers, add_server_path_reply_authentication_headers
+
+    message = _make_routed_message("site-a.job", msg_type, origin="server.job", with_auth=True)
+    message.set_header(MessageHeaderKey.TO_CELL, next_hop)
+    message.set_header(CellMessageAuthHeaderKey.SSID, "old-ssid")
+    add = add_authentication_headers if msg_type == MessageType.REQ else add_server_path_reply_authentication_headers
+    add(message, "server_job", "job-token", "job-signature", "ssid")
+    if next_hop == "server":
+        assert _auth_header_values(message) == dict(
+            zip(AUTH_HEADERS, ["server_job", "job-token", "job-signature", "ssid"])
+        )
+    else:
+        assert _auth_header_values(message) == {key: None for key in AUTH_HEADERS}
 
 
 def test_auth_filter_keeps_cross_site_reply_auth_when_routed_via_local_parent():
@@ -503,3 +525,90 @@ def test_auth_filter_does_not_add_auth_to_same_site_reply_via_parent():
 )
 def test_cross_client_family_uses_authenticated_site_identity(origin, destination, client_name, expected):
     assert is_cross_client_family(origin, destination, client_name) is expected
+
+
+@pytest.mark.parametrize(
+    "local,peer,origin,trusted",
+    [
+        ("server", "site-a", "server.job", False),
+        ("server", "relay-1", "server.job", False),
+        ("server", "relay-1", "relay-1.site-a.job", True),
+        ("site-a.job", "site-a", "server.job", True),
+        ("site-a.job", "site-b.job", "server.job", False),
+        ("relay-1.site-a.job", "server", "site-b.job", True),
+        ("server.job", "site-a.job", "server.job", False),
+        ("server.job", "server", "site-a.job", True),
+        ("server", "site-a", "site-a-other.job", False),
+        ("server", "site-a", "site-a.job", True),
+        ("server", "site-a", None, False),
+    ],
+)
+def test_transport_origin_binding(local, peer, origin, trusted):
+    message = Message({MessageHeaderKey.ORIGIN: origin})
+    message.set_prop(MessagePropKey.ENDPOINT, Endpoint(peer))
+    assert is_message_origin_trusted(message, local) is trusted
+
+
+@pytest.mark.parametrize(
+    "destination,kept",
+    [
+        ("site-a", False),
+        ("site-a.job", False),
+        ("unregistered-relay", False),
+        ("relay-1", False),
+        ("server", True),
+        ("server.job", True),
+    ],
+)
+def test_parent_credentials_are_only_sent_to_server_cells(destination, kept):
+    server = FederatedServer.__new__(FederatedServer)
+    server.logger = logging.getLogger(__name__)
+    server.my_own_token_signature = "signature"
+    server.my_own_auth_client_name = server.my_own_token = "server"
+    message = _make_routed_message(destination, MessageType.REPLY, origin="server", with_auth=True)
+    message.set_header(CellMessageAuthHeaderKey.SSID, "old-session")
+    server._add_auth_headers(message)
+    assert bool(message.get_header(CellMessageAuthHeaderKey.TOKEN_SIGNATURE)) is kept
+    if not kept:
+        assert _auth_header_values(message) == {key: None for key in AUTH_HEADERS}
+
+
+@pytest.mark.parametrize("msg_type", [MessageType.REQ, MessageType.REPLY])
+@pytest.mark.parametrize("secure", [False, True])
+def test_server_boundary_keeps_server_job_adhoc_url_without_credentials(monkeypatch, msg_type, secure):
+    message = _make_routed_message("site-a.job", msg_type, origin="server.job", with_auth=True)
+    message.set_header(MessageHeaderKey.CONN_URL, "stcp://server:9000")
+    auth_filter = _make_server_auth_filter(monkeypatch)
+    if not secure:
+        server = FederatedServer.__new__(FederatedServer)
+        server._get_id_asserter = lambda: None
+        auth_filter = server._validate_auth_headers
+    assert auth_filter(message) is None
+    assert _auth_header_values(message) == {key: None for key in AUTH_HEADERS}
+    assert message.get_header(MessageHeaderKey.CONN_URL) == "stcp://server:9000"
+
+
+@pytest.mark.parametrize(
+    "local,peer,origin,mode,allow,expected",
+    [
+        ("site-a.job", "server", "server.job", Mode.PASSIVE, False, False),
+        ("site-a.job", "server", "server.job", Mode.ACTIVE, False, True),
+        ("site-a.job", "site-b.job", "site-b.job", Mode.PASSIVE, False, False),
+        ("relay-1", "relay-1.site-a", "relay-1.site-a.job", Mode.PASSIVE, True, True),
+        ("relay-1", "server", "server.job", Mode.PASSIVE, True, False),
+        ("server", "site-a", "site-a.job", Mode.PASSIVE, False, True),
+    ],
+)
+@pytest.mark.parametrize("security", [ConnectionSecurity.TLS, ConnectionSecurity.CLEAR])
+def test_unverified_listener_cannot_authenticate_a_claimed_upstream(
+    local, peer, origin, mode, allow, expected, security
+):
+    message = Message({MessageHeaderKey.ORIGIN: origin})
+    message.set_prop(MessagePropKey.ENDPOINT, Endpoint(peer))
+    message.set_prop(
+        MessagePropKey.CONNECTION,
+        SimpleNamespace(connector=SimpleNamespace(mode=mode, params={"connection_security": security})),
+    )
+    assert is_message_origin_trusted(message, local, allow_unverified_client=allow) is expected
+    if mode == Mode.PASSIVE:
+        assert not is_message_from_upstream(message, local)
