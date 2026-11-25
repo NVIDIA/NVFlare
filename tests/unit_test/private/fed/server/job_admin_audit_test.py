@@ -415,6 +415,34 @@ def test_direct_job_log_invalid_input_is_rejected_once_without_raw_arguments(aud
     assert "job" not in event
 
 
+@pytest.mark.parametrize("latest_status", [RunStatus.FINISHED_COMPLETED, RunStatus.RUNNING, None])
+def test_abort_when_running_job_disappears_before_stop(audit_records, tmp_path, latest_status):
+    records, _writer = audit_records
+    # The initial read sees RUNNING. By the time stop_run looks, the runtime entry is gone.
+    latest_job = make_job(latest_status) if latest_status else None
+    manager = SimpleNamespace(get_job=MagicMock(side_effect=[make_job(RunStatus.RUNNING), latest_job]))
+    engine = make_engine(manager)
+    engine.job_runner = JobRunner(str(tmp_path))
+    engine.run_processes = {}
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    engine.new_context = lambda: nullcontext(fl_ctx)
+    conn = job_connection(engine, RunStatus.RUNNING)
+
+    JobCommandModule().abort_job(conn, ["abort_job", JOB_ID])
+
+    [event] = records()
+    if latest_status == RunStatus.FINISHED_COMPLETED:
+        assert not conn.errors
+        assert conn.successes[0][1][MetaKey.STATUS] == MetaStatusValue.OK
+        assert event["action"] == "job.abort.unchanged"
+    else:
+        assert not conn.successes
+        assert conn.errors[0][0] == f"Job {JOB_ID} is not running."
+        assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.INTERNAL_ERROR
+        assert event["action"] == "job.abort.error"
+
+
 def test_abort_request_after_server_exit_does_not_claim_dispatch(audit_records, tmp_path):
     records, _writer = audit_records
     manager = SimpleNamespace(get_job=lambda *args: make_job(RunStatus.RUNNING.value))
