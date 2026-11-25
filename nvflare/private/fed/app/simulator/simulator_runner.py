@@ -687,6 +687,8 @@ class SimulatorClientRunner(FLComponent):
 
         self.clients_finished_end_run = set()
         self.fatal_clients = set()
+        self.clients_failed_end_run = set()
+        self.unreaped_clients = set()
 
     def run(self, gpu):
         try:
@@ -724,46 +726,63 @@ class SimulatorClientRunner(FLComponent):
 
     def run_client_thread(self, num_of_threads, gpu, lock, end_run_for_all, timeout=60):
         task_name = RunnerTask.TASK_EXEC
-        while True:
-            time.sleep(1)
-            with lock:
-                client = self.get_next_run_client(gpu)
-                if client is None and all(
-                    c.client_name in self.clients_finished_end_run or c.client_name in self.fatal_clients
-                    for c in self.federated_clients
-                ):
-                    return
-            if client is None:
-                continue
-
-            stop_run, end_run_client = False, None
-            try:
-                stop_run, end_run_client = self.do_one_task(
-                    client, num_of_threads, gpu, lock, timeout=timeout, task_name=task_name
-                )
-            except Exception as e:
-                self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
-                stop_run = True
-            finally:
+        client = None
+        try:
+            while True:
+                time.sleep(1)
                 with lock:
-                    if end_run_client == client.client_name:
-                        self.clients_finished_end_run.add(client.client_name)
-                    elif stop_run:
-                        self.fatal_clients.add(client.client_name)
+                    client = self.get_next_run_client(gpu, task_name=task_name)
+                    if client is None and not any(self._client_pending(c, task_name) for c in self.federated_clients):
+                        return
+                if client is None:
+                    continue
+
+                stop_run, end_run_client = False, None
+                try:
+                    self.logger.info(f"Simulate Run client: {client.client_name} on GPU group: {gpu}")
+                    stop_run, end_run_client = self.do_one_task(
+                        client, num_of_threads, gpu, lock, timeout=timeout, task_name=task_name
+                    )
+                except Exception as e:
+                    self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
+                    stop_run = True
+                finally:
+                    with lock:
+                        try:
+                            if end_run_client == client.client_name:
+                                self.clients_finished_end_run.add(client.client_name)
+                            elif stop_run:
+                                self.fatal_clients.add(client.client_name)
+                                if task_name == RunnerTask.END_RUN:
+                                    self.clients_failed_end_run.add(client.client_name)
+                        finally:
+                            client.simulate_running = False
+                end_run_confirmed = end_run_client == client.client_name
+                client = None
+
+                if stop_run and end_run_confirmed:
+                    if not end_run_for_all:
+                        return
+                    task_name = RunnerTask.END_RUN
+        except Exception as e:
+            self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
+            if client is not None:
+                with lock:
+                    self.fatal_clients.add(client.client_name)
+                    if task_name == RunnerTask.END_RUN:
+                        self.clients_failed_end_run.add(client.client_name)
                     client.simulate_running = False
 
-            if stop_run:
-                if not end_run_for_all:
-                    return
-                if end_run_client == client.client_name:
-                    task_name = RunnerTask.END_RUN
+    def _client_pending(self, client, task_name):
+        name = client.client_name
+        if name in self.clients_finished_end_run or name in self.unreaped_clients:
+            return False
+        if task_name == RunnerTask.END_RUN:
+            return name not in self.clients_failed_end_run
+        return name not in self.fatal_clients
 
-    def _client_available(self, client):
-        return (
-            not client.simulate_running
-            and client.client_name not in self.clients_finished_end_run
-            and client.client_name not in self.fatal_clients
-        )
+    def _client_available(self, client, task_name=RunnerTask.TASK_EXEC):
+        return not client.simulate_running and self._client_pending(client, task_name)
 
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
@@ -860,7 +879,9 @@ class SimulatorClientRunner(FLComponent):
                     reported_end_run_client = conn.recv()
                     fatal_error = conn.recv()
                     if fatal_error:
-                        self.logger.error(f"Client {client.client_name} stopped due to FATAL_SYSTEM_ERROR")
+                        self.logger.error(
+                            f"Client {client.client_name} reported a worker execution or shutdown failure"
+                        )
                         with lock:
                             self.fatal_clients.add(client.client_name)
                     else:
@@ -871,7 +892,7 @@ class SimulatorClientRunner(FLComponent):
                 with lock:
                     continue_run = not stop_run and (
                         num_of_threads == len(self.federated_clients)
-                        or not any(self._client_available(c) for c in self.federated_clients)
+                        or not any(self._client_available(c, task_name) for c in self.federated_clients)
                     )
 
                 # Check process health before sending
@@ -891,28 +912,38 @@ class SimulatorClientRunner(FLComponent):
             self.logger.error(f"Communication error with client {client.client_name}: {e}")
             return True, end_run_client
         finally:
-            if self._cleanup_process(process) is False and end_run_client != client.client_name:
-                # An unreaped worker must not be replaced, even if its task itself succeeded.
+            if self._cleanup_process(process) is False:
+                # Never start another worker for this site without confirmed exit.
                 with lock:
-                    self.fatal_clients.add(client.client_name)
+                    self.unreaped_clients.add(client.client_name)
+                    if end_run_client != client.client_name:
+                        self.fatal_clients.add(client.client_name)
 
     def _cleanup_process(self, process, timeout=5.0) -> bool:
         """Terminate and reap the worker; report an unconfirmed exit after kill without masking its reply."""
-        if not process or process.poll() is not None:
-            return True  # Already dead or None
-
+        if not process:
+            return True
         try:
+            if process.poll() is not None:
+                return True
             try:
                 process.terminate()
+            except ProcessLookupError:
+                pass
+            try:
                 process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                process.kill()
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
                 process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             self.logger.warning(f"Simulator worker {process.pid} did not exit within {timeout} seconds after kill")
             return False
-        except (OSError, ProcessLookupError):
-            pass  # Process already gone
+        except OSError as error:
+            self.logger.warning(f"Cannot confirm simulator worker {process.pid} exit: {error}")
+            return False
         return True
 
     def _get_new_sys_path(self):
@@ -939,13 +970,12 @@ class SimulatorClientRunner(FLComponent):
                 pass
         return conn
 
-    def get_next_run_client(self, gpu):
+    def get_next_run_client(self, gpu, task_name=RunnerTask.TASK_EXEC):
         """Reserve the next idle client, or return None. The caller must hold the pool lock."""
         for _ in self.federated_clients:
             self.run_client_index = (self.run_client_index + 1) % len(self.federated_clients)
             client = self.federated_clients[self.run_client_index]
-            if self._client_available(client):
+            if self._client_available(client, task_name):
                 client.simulate_running = True
-                self.logger.info(f"Simulate Run client: {client.client_name} on GPU group: {gpu}")
                 return client
         return None

@@ -1213,11 +1213,7 @@ class ClientRunner(TBI):
             # now ready to end run
             self.fire_event(EventType.END_RUN, fl_ctx)
             self.log_info(fl_ctx, "END_RUN fired")
-            return (
-                not handler_errors
-                and not fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
-                and not fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR)
-            )
+            return not handler_errors and not fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
 
     def abort(self, msg: str = ""):
         """To Abort the current run.

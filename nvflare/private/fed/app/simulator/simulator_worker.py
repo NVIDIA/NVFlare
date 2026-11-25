@@ -130,6 +130,8 @@ class ClientTaskWorker(FLComponent):
             self.logger.error(f"do_one_task execute exception: {secure_format_exception(e)}")
             secure_log_traceback()
             stop_run = True
+            # An uncaught initialization/execution exception is a failed worker,
+            # even when no component explicitly fired FATAL_SYSTEM_ERROR.
             fatal_error = True
 
         return interval, stop_run, end_run_client, fatal_error
