@@ -289,7 +289,7 @@ shows an ordinary ``FedBuffRecipe`` run with a simulator-owned plan, seed
 helpers and retained experiment evidence. Its concrete model and seed helpers
 remain example code, outside the installed SDK. A new async algorithm can
 connect its assignment, acceptance and publication operations through the
-shared execution port; this example needs no recipe subclass.
+shared execution adapter; this example needs no recipe subclass.
 
 Failure and Recovery Limits
 ---------------------------
