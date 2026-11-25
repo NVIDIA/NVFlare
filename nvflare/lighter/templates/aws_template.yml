@@ -91,7 +91,7 @@ aws_start_sh: |
       useDefault=true
   else
       useDefault=false
-      . $config_file
+      . "$config_file"
       report_status "$?" "Loading config file"
   fi
 
