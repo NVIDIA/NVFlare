@@ -142,9 +142,11 @@ Collection does not initialize application CUDA or retain a CUDA context.
 The parent supplies participant identity and attaches the report to the existing
 `REPORT_JOB_OUTCOME` request. It releases resources through the normal lifecycle
 even if statistics are missing, invalid, or delayed. An error during resource
-release is logged without suppressing the terminal outcome report. After an
-aborted or failed server job exits, the server allows up to 20 seconds for
-outstanding client reports before archiving and releasing the scheduler slot.
+release is logged without suppressing the terminal outcome report. After the
+server job exits, the parent archives the reports already received and records
+gaps without waiting for outstanding client reports, for every terminal outcome.
+Reports arriving after summary closure are rejected and cannot change the job
+verdict or its archived statistics. Scheduler-slot release follows archival.
 The server atomically publishes
 `resource_stats/resource_summary.json` with each participant's measurements and
 original report timestamp stored once. Queries prefer WORKSPACE and consult

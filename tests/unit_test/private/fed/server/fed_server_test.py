@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 from contextlib import nullcontext
 from threading import Lock
@@ -61,6 +62,7 @@ from nvflare.private.fed.server.job_runner import JobRunner
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_state import DEFAULT_SERVICE_SESSION_ID, HotState, ServerState
+from tests.resource_stats_report_test_utils import _participant_summary
 
 
 def assert_client_outcome_unresolved(job_runner):
@@ -1616,7 +1618,10 @@ def test_registration_reply_retains_live_token_or_rejects_disconnected_transport
     ],
 )
 @pytest.mark.parametrize("server_state", ["running", "reported-success", "exited", "finalized"])
-def test_client_failure_cannot_override_finished_server_outcome(client_code, expected_status, server_state):
+@pytest.mark.parametrize("with_resource_report", [False, True])
+def test_client_failure_cannot_override_finished_server_outcome(
+    tmp_path, client_code, expected_status, server_state, with_resource_report
+):
     runner = JobRunner("/tmp")
     runner.log_info = MagicMock()
     runner._stop_run = MagicMock()
@@ -1624,6 +1629,7 @@ def test_client_failure_cannot_override_finished_server_outcome(client_code, exp
     runner.running_jobs = {} if server_state == "finalized" else {"job-1": job}
     runner._pending_client_outcomes = {} if server_state == "finalized" else {"job-1": {"site-1"}}
     engine = MagicMock()
+    engine.lock = Lock()
     engine.job_runner = runner
     engine.run_processes = {"job-1": {RunProcessKey.PARTICIPANTS: {}}}
     engine.exception_run_processes = {}
@@ -1639,6 +1645,13 @@ def test_client_failure_cannot_override_finished_server_outcome(client_code, exp
     client = MagicMock()
     client.name = "site-1"
     server.client_manager.clients = {"token-1": client}
+    payload = {JobOutcomeMsgKey.JOB_ID: "job-1", JobOutcomeMsgKey.CODE: client_code}
+    if with_resource_report:
+        if server_state != "finalized":
+            runner.resource_stats.start_job("job-1", ["site-1"], tmp_path)
+        payload[JobOutcomeMsgKey.RESOURCE_REPORT] = {
+            JobOutcomeMsgKey.PARTICIPANT_SUMMARY: json.dumps(_participant_summary()).encode()
+        }
 
     if server_state != "running":
         # Exercise the real SJ status handler, including the window before process exit.
@@ -1658,11 +1671,13 @@ def test_client_failure_cannot_override_finished_server_outcome(client_code, exp
     reply = server.process_job_outcome(
         new_cell_message(
             {CellMessageHeaderKeys.TOKEN: "token-1", MessageHeaderKey.ORIGIN: "site-1"},
-            {JobOutcomeMsgKey.JOB_ID: "job-1", JobOutcomeMsgKey.CODE: client_code},
+            payload,
         )
     )
 
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+    if with_resource_report and server_state != "finalized":
+        assert reply.payload[JobOutcomeMsgKey.RESOURCE_REPORT_STATUS] == "accepted"
     status = (
         RunStatus.FINISHED_ABORTED
         if job.run_aborted

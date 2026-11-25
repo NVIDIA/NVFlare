@@ -78,7 +78,6 @@ from nvflare.private.fed.utils.job_cert_utils import (
 from nvflare.security.logging import secure_format_exception
 
 WORKSPACE_SAVE_RETRY_GRACE_TIME = 60
-FAILED_JOB_REPORT_GRACE_TIME = 20.0
 
 
 @dataclass
@@ -89,7 +88,6 @@ class _FinishedJobState:
     workspace_save_started_at: float | None = None
     workspace_archive_written: bool = False
     workspace_archive_sources: Tuple[str, ...] = ()
-    report_deadline: float | None = None
 
 
 def _send_to_clients(admin_server, client_sites: List[str], engine, message, timeout=None, optional=False):
@@ -141,9 +139,6 @@ class JobRunner(FLComponent):
         self._server_resource_generations = {}
         self._pending_client_outcomes = {}
         self.resource_stats = ResourceStatsCoordinator()
-        self.client_outcome_wait_timeout = ConfigService.get_float_var(
-            name=ConfigVarName.CLIENT_OUTCOME_WAIT_TIMEOUT, conf=SystemConfigs.APPLICATION_CONF, default=900.0
-        )
         self.job_cert_valid_days = ConfigService.get_int_var(
             name=ConfigVarName.JOB_CERT_VALID_DAYS,
             conf=[SystemConfigs.STARTUP_CONF, SystemConfigs.RESOURCES_CONF],
@@ -604,36 +599,26 @@ class JobRunner(FLComponent):
                 if job_id not in engine.run_processes.keys():
                     job = self.running_jobs.get(job_id)
                     if job:
-                        with engine.lock:
-                            exception_process = engine.exception_run_processes.get(job_id)
-                            server_status = self._classify_finished_job_status(exception_process)
-                        abnormal = job.run_aborted or server_status != RunStatus.FINISHED_COMPLETED
-                        with self.lock:
-                            # SJ owns the workflow outcome. Client shutdown reports must
-                            # neither delay publication nor revise it after SJ exits.
-                            self._pending_client_outcomes.pop(job_id, None)
                         with engine.new_context() as completion_ctx:
                             completion_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, sticky=False)
-                            finished_state = self._finished_job_states.get(job.job_id)
-                            if finished_state is None:
-                                report_deadline = None
-                                if abnormal and self.resource_stats.has_job(job_id):
-                                    grace = min(FAILED_JOB_REPORT_GRACE_TIME, self.client_outcome_wait_timeout)
-                                    report_deadline = time.monotonic() + grace
-                                if job.run_aborted:
-                                    status = RunStatus.FINISHED_ABORTED
-                                else:
-                                    status = self._get_finished_job_status(engine, job, completion_ctx)
-                                finished_state = _FinishedJobState(status=status, report_deadline=report_deadline)
-                                self._finished_job_states[job.job_id] = finished_state
+                            with self.lock:
+                                # Select the verdict atomically with accepted aborts. No
+                                # client shutdown or statistics wait can change it afterward.
+                                self._pending_client_outcomes.pop(job_id, None)
+                                finished_state = self._finished_job_states.get(job_id)
+                                first_completion = finished_state is None
+                                if first_completion:
+                                    with engine.lock:
+                                        status = (
+                                            RunStatus.FINISHED_ABORTED
+                                            if job.run_aborted
+                                            else self._get_finished_job_status(engine, job, completion_ctx)
+                                        )
+                                    finished_state = _FinishedJobState(status=status)
+                                    self._finished_job_states[job_id] = finished_state
                             status = finished_state.status
-                            # Client cancellation has started. Other jobs can finish while these reports arrive.
-                            if (
-                                finished_state.report_deadline is not None
-                                and time.monotonic() < finished_state.report_deadline
-                                and self.resource_stats.has_missing_client_reports(job_id)
-                            ):
-                                continue
+                            if first_completion and not job.run_aborted:
+                                self._abort_clients_after_server_failure(engine, job, completion_ctx)
                             # Publish terminal status only after artifacts are ready for download.
                             if not finished_state.workspace_archival_complete:
                                 if not finished_state.resource_stats_finalized:
@@ -746,17 +731,18 @@ class JobRunner(FLComponent):
         return RunStatus.FINISHED_EXECUTION_EXCEPTION
 
     def _get_finished_job_status(self, engine, job, fl_ctx):
+        return self._classify_finished_job_status(engine.exception_run_processes.get(job.job_id))
+
+    def _abort_clients_after_server_failure(self, engine, job, fl_ctx):
+        """Dispatch cleanup after the verdict is selected, without holding lifecycle locks."""
         run_process = engine.exception_run_processes.get(job.job_id)
         if run_process is not None:
             self.log_info(fl_ctx, f"Try to abort job ({job.job_id}) on clients ...")
-
-            # stop client run
-            participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
+            participants = run_process.get(RunProcessKey.PARTICIPANTS, {})
             active_client_sites_names = _get_active_job_participants(
                 connected_clients=engine.client_manager.clients, participants=participants
             )
             self.abort_client_run(job.job_id, active_client_sites_names, fl_ctx)
-        return self._classify_finished_job_status(run_process)
 
     def _save_workspace(
         self, fl_ctx: FLContext, finished_state: _FinishedJobState | None = None, job_id: str | None = None
@@ -1170,28 +1156,44 @@ class JobRunner(FLComponent):
         )
 
     def stop_run(self, job_id: str, fl_ctx: FLContext, *, from_client: bool = False):
-        if from_client:
-            engine = fl_ctx.get_engine()
-            with self.lock:
-                with engine.lock:
-                    if not self._is_server_job_running(engine, job_id):
-                        return ""
-                    result = self.mark_run_aborted(job_id, fl_ctx)
+        engine = fl_ctx.get_engine()
+        with self.lock:
+            with engine.lock:
+                if from_client and not self._is_server_job_running(engine, job_id):
+                    return ""
+                result = self._mark_run_aborted(job_id, fl_ctx, engine)
+        if not result:
+            # Record the accepted abort before a slow RPC can race SJ exit and
+            # completion. Its result remains successful even if cleanup finishes here.
             self._stop_run(job_id, fl_ctx)
-            return result
-        self._stop_run(job_id, fl_ctx)
-        return self.mark_run_aborted(job_id, fl_ctx)
+        return result
 
     def mark_run_aborted(self, job_id: str, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        with self.lock:
+            with engine.lock:
+                return self._mark_run_aborted(job_id, fl_ctx, engine)
+
+    def _mark_run_aborted(self, job_id: str, fl_ctx: FLContext, engine):
+        """Record abort intent under both lifecycle locks, including during startup."""
+        if job_id in self._finished_job_states:
+            return f"Job {job_id} is already finishing."
         job = self.running_jobs.get(job_id)
-        if job:
-            self.log_info(fl_ctx, f"Stop the job run: {job_id}")
-            fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, sticky=False)
-            job.run_aborted = True
-            return ""
-        else:
+        run_process = engine.run_processes.get(job_id)
+        if job is None and run_process is None:
             self.log_info(fl_ctx, f"Job {job_id} is not running. It can not be stopped.")
             return f"Job {job_id} is not running."
+        if job is not None:
+            job.run_aborted = True
+        if run_process is not None:
+            # The process exists before running_jobs registration. Preserve the
+            # accepted abort there so a clean SJ exit cannot erase a startup abort.
+            run_process = engine.exception_run_processes.get(job_id, run_process)
+            run_process[RunProcessKey.PROCESS_RETURN_CODE] = JobReturnCode.ABORTED
+            engine.exception_run_processes[job_id] = run_process
+        self.log_info(fl_ctx, f"Stop the job run: {job_id}")
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, sticky=False)
+        return ""
 
     def fail_run(self, job_id: str, process_return_code: int, fl_ctx: FLContext, *, from_client: bool = False):
         engine = fl_ctx.get_engine()

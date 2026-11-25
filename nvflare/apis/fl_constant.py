@@ -601,7 +601,7 @@ class ConfigVarName:
     # server: require prior positive job observation before reporting "missing job on client" as dead-job
     SYNC_CLIENT_JOBS_REQUIRE_PREVIOUS_REPORT = "sync_client_jobs_require_previous_report"
 
-    # Legacy setting: caps failed-job resource-report collection; no client-outcome wait.
+    # Deprecated: completion no longer waits for client outcomes or resource reports.
     CLIENT_OUTCOME_WAIT_TIMEOUT = "client_outcome_wait_timeout"
 
     # server: validity in days of the per-job certificates issued at job deploy

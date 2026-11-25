@@ -419,6 +419,7 @@ def test_abort_request_after_server_exit_does_not_claim_dispatch(audit_records, 
     records, _writer = audit_records
     manager = SimpleNamespace(get_job=lambda *args: make_job(RunStatus.RUNNING.value))
     engine = make_engine(manager)
+    engine.lock = Lock()
     engine.run_processes = {}
     engine.abort_app_on_server = MagicMock()
     runner = JobRunner(str(tmp_path))

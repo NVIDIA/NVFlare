@@ -269,14 +269,24 @@ OPEN: accept one record per trusted slot
   -> ARCHIVED: existing job archives saved
 ```
 
-After the server job exits on failure or abort, the server allows up to 20 seconds
-for outstanding client resource reports before archiving. Cancellation starts
-immediately. A shorter `client_outcome_wait_timeout` or an earlier outcome
-deadline caps the wait. On each completion check, the server proceeds once it
-has accepted reports from all expected clients except those marked disabled.
-At expiry it archives the available reports and records any gaps. Terminal status
-and scheduler-slot release follow archival. Successful jobs use the normal
-client-outcome wait.
+After the server job exits, the parent selects its terminal verdict and archives
+the resource reports already received, recording missing, invalid or disabled
+participants as gaps. Successful, failed and aborted jobs all proceed without
+waiting for client shutdown outcomes or outstanding resource reports. Terminal
+status and scheduler-slot release follow archival. The former 900-second
+client-outcome wait and 20-second failed-job statistics grace are removed;
+`client_outcome_wait_timeout` is retained as a deprecated name and has no effect.
+
+SJ status reporting or observed process exit closes the authority of client
+terminal outcomes to change the workflow verdict. An administrative abort accepted
+before the parent selects the verdict is recorded before cancellation dispatch;
+it remains effective if SJ exits while an abort RPC is pending. A resource report may still be accepted while its
+job ledger is open, including when its envelope carries a late client failure,
+without changing that verdict. Once the summary closes, missing reports remain
+marked as gaps and new reports are rejected. The parent does not reopen a
+completed job or update its archive to incorporate a late report. Optional
+statistics can therefore be incomplete; any output required for workflow success
+must be confirmed before SJ completes.
 
 At closure, each roster entry contains either an accepted value or a gap. An
 accepted entry contains `participant_name`, the original `reported_at`,
