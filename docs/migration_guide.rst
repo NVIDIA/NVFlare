@@ -53,6 +53,19 @@ uses job-local SQLite by default.
 See :doc:`programming_guide/experiment_tracking/experiment_tracking_apis` for
 operator configuration and job-local storage rules.
 
+Weights & Biases Backend Approval
+---------------------------------
+
+Jobs using ``WandBReceiver`` with a custom ``wandb_args.settings.base_url``
+now require receiving-site approval unless the URL matches that site's
+``WANDB_BASE_URL``. When that variable is unset, the receiver uses the saved
+global W&B host, with the cloud endpoint as the final default. Add trusted URLs
+to ``wandb_base_urls`` in the receiving site's canonical ``local/resources.json``
+or its default fallback. Apply this at every site
+running the receiver, including client-side tracking. Job settings cannot
+provide proxy overrides or disable TLS verification. See
+:ref:`experiment_tracking_log_writer` for experiment-tracking configuration.
+
 Study Data File Removed
 -----------------------
 

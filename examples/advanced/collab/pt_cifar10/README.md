@@ -68,6 +68,13 @@ collab/pt_cifar10/
 Shared code stays at the package root. Each algorithm folder contains only the
 behavior that differs.
 
+The additional [FedDF example](feddf/README.md) reuses the FedAvg
+client with synchronous rounds and independently imported distillation helpers.
+It compares uniform parameter averaging and mean-logit server distillation on the same strongly
+heterogeneous private shards, with a separate unlabeled server proxy set.
+Follow its own preparation command so proxy images are excluded from all client
+shards; the original three jobs below retain their existing data preparation.
+
 ## Data
 
 This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html)

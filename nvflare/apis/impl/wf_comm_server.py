@@ -27,6 +27,15 @@ from nvflare.apis.job_def import job_from_meta
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
 from nvflare.apis.signal import Signal
 from nvflare.apis.wf_comm_spec import WFCommSpec
+from nvflare.fuel.sec.task_audit import (
+    TaskAuditContext,
+    build_context,
+    collect_events,
+    current_context,
+    prepare,
+    record,
+    set_context,
+)
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.msg_root_utils import delete_msg_root
 from nvflare.security.logging import secure_format_exception
@@ -106,6 +115,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         super().__init__()
         self.controller = None
         self._engine = None
+        self._task_audit_base = TaskAuditContext()
         self._tasks = []  # list of standing tasks
         self._client_task_map = {}  # client_task_id => client_task
         self._completed_client_task_map = OrderedDict()  # client_task_id => _CompletedClientTaskInfo
@@ -136,6 +146,9 @@ class WFCommServer(FLComponent, WFCommSpec):
             return
 
         self._engine = engine
+        self._task_audit_base = prepare(
+            lambda: build_context(fl_ctx, workflow_id=fl_ctx.get_prop(FLContextKey.WORKFLOW, ""))
+        )
         self._dead_client_grace = ConfigService.get_float_var(
             name=ConfigVarName.DEAD_CLIENT_GRACE_PERIOD, conf=SystemConfigs.APPLICATION_CONF, default=60.0
         )
@@ -501,6 +514,98 @@ class WFCommServer(FLComponent, WFCommSpec):
             self._completed_client_task_map.move_to_end(task_id)
         return completed
 
+    def _audit_assignment_context(self, fl_ctx, client_task=None, completed=None, task_id="", refine=False):
+        """Snapshot only matched local assignment values; never consume result headers."""
+
+        def snapshot():
+            caller = current_context()
+            base = self._task_audit_base
+            expected_job = (
+                client_task.props.get(_CLIENT_TASK_JOB_ID)
+                if client_task is not None
+                else (completed.job_id if completed is not None else "")
+            ) or (base.job_id if base else "")
+            scoped = isinstance(caller, TaskAuditContext) and bool(caller.job_id) and caller.job_id == expected_job
+            source = caller if scoped else (base if base and base.job_id else None)
+            if source is not None:
+                local = build_context(
+                    job_id=source.job_id,
+                    scope_name=source.scope_name,
+                    workflow_id=source.workflow_id
+                    or (base.workflow_id if base and base.job_id == source.job_id else ""),
+                )
+            else:
+                # This is initial approval only. Later observations reuse a
+                # matching immutable caller or communicator snapshot above.
+                local = build_context(fl_ctx, **({"job_id": expected_job} if expected_job else {}))
+            if local is None:
+                return None
+            if client_task is not None:
+                site = client_task.client.name
+                task_name = client_task.task.name
+                task_id_value = client_task.id
+                attempt_id = client_task.attempt_id
+            elif completed is not None:
+                site = completed.client_name
+                task_name = completed.task_name
+                task_id_value = task_id
+                attempt_id = completed.attempt_id
+            else:
+                return local
+            matched_caller = (
+                scoped
+                and caller.task_id == task_id_value
+                and caller.task_name == task_name
+                and caller.attempt_id == (attempt_id or "")
+                and caller.site == site
+            )
+            if not matched_caller:
+                peer = fl_ctx.get_peer_context()
+                if (
+                    not isinstance(peer, FLContext)
+                    or peer.get_identity_name() != site
+                    or peer.get_job_id() != local.job_id
+                ):
+                    return local
+            approved = build_context(
+                job_id=local.job_id,
+                scope_name=local.scope_name,
+                task_name=task_name,
+                task_id=task_id_value,
+                attempt_id=attempt_id,
+                site=site,
+                workflow_id=local.workflow_id,
+                reference=caller.reference if matched_caller else "",
+            )
+            if refine and scoped and approved is not None:
+                set_context(approved)
+            return approved
+
+        return prepare(snapshot)
+
+    def _audit_retirement(self, task, reason):
+        """Capture retirement before cleanup or a done callback changes its status."""
+
+        def capture():
+            base = self._task_audit_base
+            context = build_context(
+                job_id=base.job_id if base else "",
+                scope_name=base.scope_name if base else "",
+                workflow_id=base.workflow_id if base else "",
+                task_name=task.name,
+            )
+            status = task.completion_status
+            record(
+                "task.retired",
+                context=context,
+                reason=reason,
+                status=status.value if isinstance(status, TaskCompletionStatus) else "unknown",
+            )
+            return context
+
+        return prepare(capture)
+
+    @collect_events
     def check_submission(
         self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
     ) -> bool:
@@ -509,6 +614,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         try:
             attempt_id = result.get_task_attempt_id()
         except ValueError as e:
+            record("task.result.rejected", context=build_context(fl_ctx), reason="invalid_attempt")
             self.log_warning(fl_ctx, f"invalid task attempt identity: {e}")
             return False
         with self._task_lock:
@@ -520,12 +626,14 @@ class WFCommServer(FLComponent, WFCommSpec):
                     or client_task.task.name != task_name
                     or client_task.attempt_id != attempt_id
                 ):
+                    record("task.result.rejected", context=build_context(fl_ctx), reason="assignment_mismatch")
                     self.log_info(
                         fl_ctx,
                         f"result submission dropped: assignment identity mismatch; "
                         f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
                     )
                     return False
+                approved = self._audit_assignment_context(fl_ctx, client_task=client_task, refine=True)
                 if client_task.task.completion_status is not None:
                     completed = self._remember_completed_client_task(client_task)
                 else:
@@ -534,25 +642,30 @@ class WFCommServer(FLComponent, WFCommSpec):
                         fl_ctx.set_prop(
                             FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False
                         )
+                        record("task.result.duplicate", context=approved, reason="already_received")
                         self.log_info(fl_ctx, f"result already received; client={client.name}, task_id={task_id}")
                         return False
                     return True
             if completed is not None:
                 if not self._matches_retired_assignment(completed, client.name, task_name, attempt_id, fl_ctx):
+                    record("task.result.rejected", context=build_context(fl_ctx), reason="retired_assignment_mismatch")
                     self.log_info(
                         fl_ctx,
                         f"result submission dropped: retired assignment identity, peer or job mismatch; "
                         f"client={client.name}, task={task_name}, task_id={task_id}, attempt_id={attempt_id}",
                     )
                     return False
+                approved = self._audit_assignment_context(fl_ctx, completed=completed, task_id=task_id, refine=True)
                 if completed.received:
                     fl_ctx.set_prop(
                         FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False
                     )
+                    record("task.result.duplicate", context=approved, reason="already_received")
                     self.log_info(fl_ctx, f"result already received; client={client.name}, task_id={task_id}")
                     return False
                 return True  # Preserve the first-late-result policy within this workflow.
             if attempt_id is not None:
+                record("task.result.rejected", context=build_context(fl_ctx), reason="unknown_assignment")
                 self.log_info(
                     fl_ctx,
                     f"result submission dropped: unknown task assignment; "
@@ -561,6 +674,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 return False
             return True  # Established unfenced unknown-task hooks.
 
+    @collect_events
     def claim_submission(
         self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
     ) -> bool:
@@ -586,6 +700,12 @@ class WFCommServer(FLComponent, WFCommSpec):
             sticky=False,
         )
         fl_ctx.set_prop(FLContextKey.TASK_RESULT_RECEIPT, TaskResultReceipt.RECEIVED, private=True, sticky=False)
+        approved = self._audit_assignment_context(fl_ctx, client_task=client_task, completed=completed, task_id=task_id)
+        record(
+            "task.result.received",
+            context=approved,
+            reason="complete_result" if client_task is not None or completed is not None else "legacy_unknown",
+        )
         return True
 
     def finish_submission(self, task_id: str, fl_ctx: FLContext):
@@ -605,6 +725,7 @@ class WFCommServer(FLComponent, WFCommSpec):
                 if client_task.task.completion_status is not None:
                     self._remember_completed_client_task(client_task)
 
+    @collect_events
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         with self._controller_lock:
             try:
@@ -640,12 +761,21 @@ class WFCommServer(FLComponent, WFCommSpec):
             is_late = completed is not None and self._matches_retired_assignment(
                 completed, client.name, task_name, attempt_id, fl_ctx
             )
+        approved = self._audit_assignment_context(fl_ctx, client_task=client_task, completed=completed, task_id=task_id)
         if client_task is None:
             fl_ctx.set_prop(FLContextKey.TASK_RESULT_IS_LATE, is_late, private=True, sticky=False)
+            action = "task.late_result" if is_late else "task.unknown_result"
+            stage = "before_hook"
             try:
                 self.fire_event(EventType.BEFORE_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
+                stage = "hook"
                 self.controller.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
+                record(action + ".returned", context=approved)
+                stage = "after_hook"
                 self.fire_event(EventType.AFTER_PROCESS_RESULT_OF_UNKNOWN_TASK, fl_ctx)
+            except Exception:
+                record(action + ".error", context=approved, stage=stage, reason="processing_error")
+                raise
             finally:
                 fl_ctx.remove_prop(FLContextKey.TASK_RESULT_IS_LATE, force_removal=True)
             return
@@ -653,11 +783,18 @@ class WFCommServer(FLComponent, WFCommSpec):
         with task.cb_lock:
             client_task.result = result
             manager = task.props[_TASK_KEY_MANAGER]
-            manager.check_task_result(result, client_task, fl_ctx)
+            try:
+                manager.check_task_result(result, client_task, fl_ctx)
+            except Exception:
+                record("task.result_manager.error", context=approved, reason="processing_error")
+                raise
+            record("task.result_manager.returned", context=approved)
             if task.result_received_cb is not None:
                 try:
                     task.result_received_cb(client_task=client_task, fl_ctx=fl_ctx)
+                    record("task.result_callback.returned", context=approved)
                 except Exception as e:
+                    record("task.result_callback.error", context=approved, reason="processing_error")
                     error_log_ctx = fl_ctx
                     if task.get_prop(TaskPropKey.RESULT_CB_LOG_CLIENT_NAMES) is False:
                         error_log_ctx = fl_ctx.clone()
@@ -1010,6 +1147,7 @@ class WFCommServer(FLComponent, WFCommSpec):
         # references still owned by this communicator.
         task.task_done_cb = None
 
+    @collect_events
     def _clear_standing_tasks(
         self, completion_status=TaskCompletionStatus.CANCELLED, fl_ctx: Optional[FLContext] = None
     ):
@@ -1024,12 +1162,28 @@ class WFCommServer(FLComponent, WFCommSpec):
             self._client_task_map.clear()
             self._completed_client_task_map.clear()
 
-        for task in exit_tasks:
+        for index, task in enumerate(exit_tasks):
             if task.completion_status is None:
                 task.completion_status = completion_status
             task.is_standing = False
-            self._release_task_resources(task, fl_ctx)
+            retired_context = self._audit_retirement(task, "finalization")
+            try:
+                self._release_task_resources(task, fl_ctx)
+            except Exception:
+                prepare(
+                    lambda: record(
+                        "task.cleanup.error",
+                        context=retired_context,
+                        reason="resource_release_error",
+                    )
+                )
+                # All tasks already left the collections. Preserve that fact
+                # for later tasks without changing their interrupted cleanup.
+                for remaining in exit_tasks[index + 1 :]:
+                    self._audit_retirement(remaining, "finalization_interrupted")
+                raise
 
+    @collect_events
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
 
@@ -1212,12 +1366,14 @@ class WFCommServer(FLComponent, WFCommSpec):
                 return
             time.sleep(self._task_check_period)
 
+    @collect_events
     def check_tasks(self):
         with self._controller_lock:
             self._do_check_tasks()
 
     def _do_check_tasks(self):
         exit_tasks = []
+        retirement_contexts = {}
         with self._task_lock:
             for task in self._tasks:
                 if task.completion_status is not None:
@@ -1262,6 +1418,9 @@ class WFCommServer(FLComponent, WFCommSpec):
                     self.logger.debug("Removing client_task with id={}".format(client_task.id))
                     self._remember_completed_client_task(client_task)
                     self._client_task_map.pop(client_task.id)
+                prepare(
+                    lambda: retirement_contexts.setdefault(id(exit_task), self._audit_retirement(exit_task, "monitor"))
+                )
 
         # do the task exit processing outside the lock to minimize the locking time
         # and to avoid potential deadlock since the CB could schedule another task
@@ -1270,6 +1429,7 @@ class WFCommServer(FLComponent, WFCommSpec):
 
         with self._engine.new_context() as fl_ctx:
             for exit_task in exit_tasks:
+                done_context = prepare(lambda: retirement_contexts.get(id(exit_task)))
                 with exit_task.cb_lock:
                     self.log_info(
                         fl_ctx, "task {} exit with status {}".format(exit_task.name, exit_task.completion_status)
@@ -1295,7 +1455,15 @@ class WFCommServer(FLComponent, WFCommSpec):
                     if exit_task.task_done_cb is not None:
                         try:
                             exit_task.task_done_cb(task=exit_task, fl_ctx=fl_ctx)
+                            prepare(lambda: record("task.done_callback.returned", context=done_context))
                         except Exception as e:
+                            prepare(
+                                lambda: record(
+                                    "task.done_callback.error",
+                                    context=done_context,
+                                    reason="processing_error",
+                                )
+                            )
                             self.log_exception(
                                 fl_ctx,
                                 "processing error in task_done_cb error on task {}: {}".format(

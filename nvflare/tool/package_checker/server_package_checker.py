@@ -17,9 +17,9 @@ import os
 import shutil
 import sys
 
-from .check_rule import CheckAddressBinding, CheckWriting
+from .check_rule import CheckAddressBinding, CheckEndpointCredentials, CheckWriting
 from .package_checker import PackageChecker
-from .utils import NVFlareConfig, get_communication_scheme
+from .utils import SUPPORTED_SCHEMES, NVFlareConfig, NVFlareRole, get_communication_scheme
 
 SERVER_SCRIPT = "nvflare.private.fed.app.server.server_train"
 
@@ -85,14 +85,14 @@ class ServerPackageChecker(PackageChecker):
         # Determine the communication scheme
         scheme = get_communication_scheme(package_path, NVFlareConfig.SERVER)
 
-        supported_schemes = ["grpc", "agrpc", "http", "https", "tcp", "stcp"]
-        if scheme not in supported_schemes:
+        if scheme not in SUPPORTED_SCHEMES:
             raise RuntimeError(
                 f"Communication scheme '{scheme}' is not supported. "
-                f"Supported schemes: {', '.join(supported_schemes)}"
+                f"Supported schemes: {', '.join(SUPPORTED_SCHEMES)}"
             )
 
         self.rules = [
+            CheckEndpointCredentials(NVFlareRole.SERVER),
             CheckAddressBinding(name="Check FL port binding", get_host_and_port_from_package=_get_fl_host_and_port),
             CheckAddressBinding(
                 name="Check admin port binding", get_host_and_port_from_package=_get_admin_host_and_port

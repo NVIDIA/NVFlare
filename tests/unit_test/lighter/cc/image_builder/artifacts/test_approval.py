@@ -19,6 +19,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cvm.artifacts.acceptance import aggregate
@@ -26,6 +27,7 @@ from cvm.artifacts.bundle import (
     approve_bundle,
     key_id,
     load_public_keys,
+    load_signing_key,
     required_acceptance_checks,
     sign_receipt,
     verify_approval,
@@ -169,6 +171,18 @@ class ApprovalTests(unittest.TestCase):
         loaded = load_public_keys([str(self.public_key)])[0]
         self.assertEqual(len(key_id(loaded)), 64)
         self.assertEqual(sign_receipt(self.receipt, self.signing_key)["signature"]["key_id"], key_id(loaded))
+
+    def test_unsupported_pem_algorithms_report_ed25519_requirements(self):
+        with (
+            patch.object(serialization, "load_pem_public_key", side_effect=UnsupportedAlgorithm("unsupported")),
+            self.assertRaisesRegex(BuildError, "supply Ed25519 PEM files"),
+        ):
+            load_public_keys([self.public_key])
+        with (
+            patch.object(serialization, "load_pem_private_key", side_effect=UnsupportedAlgorithm("unsupported")),
+            self.assertRaisesRegex(BuildError, "supply an unencrypted Ed25519 PEM file"),
+        ):
+            load_signing_key(self.signing_key)
 
     def test_approve_bundle_publishes_a_signed_receipt_for_the_exact_manifest(self):
         report = {"manifest_sha256": self.receipt["manifest_sha256"], "checks": self.receipt["checks"]}

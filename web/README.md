@@ -2,6 +2,8 @@
 
 ## Installation
 
+Use Node.js 22.23.4 or newer.
+
 ### 1. Install Dependencies
 
 ```bash
