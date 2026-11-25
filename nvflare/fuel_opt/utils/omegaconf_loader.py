@@ -14,9 +14,17 @@
 from typing import Dict, Optional
 
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
+from nvflare.fuel.utils.deprecated import deprecated
 
 
 class OmegaConfConfig(Config):
+    """YAML/OmegaConf configuration support.
+
+    .. deprecated:: 2.9.1
+        Use JSON instead. Support will be removed in 2.10.0.
+    """
+
+    @deprecated("YAML/OmegaConf configuration is deprecated in 2.9.1 and will be removed in 2.10.0. Use JSON instead.")
     def __init__(self, conf, file_path: Optional[str] = None):
         super(OmegaConfConfig, self).__init__(conf, ConfigFormat.OMEGACONF, file_path)
 
@@ -36,6 +44,12 @@ class OmegaConfConfig(Config):
 
 
 class OmegaConfLoader(ConfigLoader):
+    """YAML/OmegaConf configuration support.
+
+    .. deprecated:: 2.9.1
+        Use JSON instead. Support will be removed in 2.10.0.
+    """
+
     def __init__(self):
         super(OmegaConfLoader, self).__init__(ConfigFormat.OMEGACONF)
 

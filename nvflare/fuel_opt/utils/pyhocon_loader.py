@@ -15,9 +15,17 @@
 from typing import Dict, Optional
 
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
+from nvflare.fuel.utils.deprecated import deprecated
 
 
 class PyhoconConfig(Config):
+    """HOCON/PyHOCON configuration support.
+
+    .. deprecated:: 2.9.1
+        Use JSON instead. Support will be removed in 2.10.0.
+    """
+
+    @deprecated("HOCON/PyHOCON configuration is deprecated in 2.9.1 and will be removed in 2.10.0. Use JSON instead.")
     def __init__(self, conf, file_path: Optional[str] = None):
         super(PyhoconConfig, self).__init__(conf, ConfigFormat.PYHOCON, file_path)
 
@@ -60,6 +68,12 @@ class PyhoconConfig(Config):
 
 
 class PyhoconLoader(ConfigLoader):
+    """HOCON/PyHOCON configuration support.
+
+    .. deprecated:: 2.9.1
+        Use JSON instead. Support will be removed in 2.10.0.
+    """
+
     def __init__(self):
         super(PyhoconLoader, self).__init__(ConfigFormat.PYHOCON)
 
