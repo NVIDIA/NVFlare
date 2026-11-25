@@ -16,13 +16,20 @@
 
 from pathlib import Path
 
+import numpy as np
+
+from nvflare.apis.dxo import DataKind, from_shareable
 from nvflare.apis.filter import Filter
+from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.model_learner import ModelLearner
+from nvflare.app_common.np.constants import NPConstants
 from tests.peer_admin_test_utils import PeerAdminJobTrainer, _write_json
 
 TASK_KEY = "audit_private_task_data"
 TASK_MARKER = "private-audit-task-data-marker"
 RESULT_KEY = "audit_private_result_data"
 RESULT_MARKER = "private-audit-result-data-marker"
+MODEL_SOURCE_VALUE = 104729
 
 
 class TaskAuditDataFilter(Filter):
@@ -39,6 +46,14 @@ class TaskAuditJobTrainer(PeerAdminJobTrainer):
         result[RESULT_KEY] = RESULT_MARKER
         return result
 
+    def _train(self, shareable, fl_ctx, abort_signal):
+        model = from_shareable(shareable).data.get(NPConstants.NUMPY_KEY)
+        if not np.array_equal(model, [[MODEL_SOURCE_VALUE]]):
+            raise RuntimeError("audit regression source model did not reach client")
+        site = fl_ctx.get_identity_name()
+        _write_json(self.directory / f"model-source-{site}.json", {"source_model_seen": True})
+        return super()._train(shareable, fl_ctx, abort_signal)
+
 
 class TaskAuditResultFilter(Filter):
     def __init__(self, directory):
@@ -52,3 +67,14 @@ class TaskAuditResultFilter(Filter):
         site = fl_ctx.get_peer_context().get_identity_name()
         _write_json(self.directory / f"result-{site}.json", {"private_result_seen": True})
         return shareable
+
+
+class TaskAuditModelValidator(ModelLearner):
+    def validate(self, model: FLModel) -> FLModel:
+        if (
+            from_shareable(self.shareable).data_kind != DataKind.WEIGHTS
+            or model.params is None
+            or not np.array_equal(model.params.get(NPConstants.NUMPY_KEY), [[MODEL_SOURCE_VALUE + 1]])
+        ):
+            raise RuntimeError("audit regression saved model did not reach the evaluation client")
+        return FLModel(metrics={"accuracy": 1.0})

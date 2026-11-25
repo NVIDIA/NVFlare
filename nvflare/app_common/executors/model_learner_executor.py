@@ -24,6 +24,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_learner import ModelLearner
 from nvflare.app_common.app_constant import AppConstants, ValidateType
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.sec import evaluation_audit, task_audit
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.security.logging import secure_format_exception
 
@@ -103,7 +104,7 @@ class ModelLearnerExecutor(Executor):
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         # Do one task at a time since the shareable and fl_ctx are kept in "self".
-        with self.learner_exe_lock:
+        with task_audit.collect(), self.learner_exe_lock:
             return self._do_execute(task_name, shareable, fl_ctx, abort_signal)
 
     def _do_execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -231,28 +232,37 @@ class ModelLearnerExecutor(Executor):
             return make_reply(ReturnCode.EMPTY_RESULT)
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        try:
-            model = FLModelUtils.from_shareable(shareable)
-        except ValueError:
-            self.log_error(fl_ctx, "request does not contain valid model")
-            return make_reply(ReturnCode.BAD_REQUEST_DATA)
+        with evaluation_audit.operation("execution", fl_ctx) as audit:
+            try:
+                model = FLModelUtils.from_shareable(shareable)
+            except ValueError:
+                self.log_error(fl_ctx, "request does not contain valid model")
+                audit.record("rejected", reason="invalid_input")
+                return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-        try:
-            result = self.learner.validate(model)
-        except Exception as e:
-            self.log_exception(fl_ctx, f"Learner {self.learner_name} failed to validate: {secure_format_exception(e)}")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            try:
+                result = audit.call("learner", self.learner.validate, model)
+            except Exception as e:
+                self.log_exception(
+                    fl_ctx, f"Learner {self.learner_name} failed to validate: {secure_format_exception(e)}"
+                )
+                audit.record("error")
+                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        if isinstance(result, str):
-            self.log_error(fl_ctx, f"Learner {self.learner_name} failed to validate: {result}")
-            return make_reply(result)
+            if isinstance(result, str):
+                self.log_error(fl_ctx, f"Learner {self.learner_name} failed to validate: {result}")
+                audit.record("rejected", reason="learner_code")
+                return make_reply(result)
 
-        if isinstance(result, FLModel):
-            return FLModelUtils.to_shareable(result)
-        else:
+            if isinstance(result, FLModel):
+                reply = audit.call("encode_reply", FLModelUtils.to_shareable, result)
+                audit.record("returned", status="reply_prepared")
+                return reply
+
             self.log_error(
                 fl_ctx, f"Learner {self.learner_name}: bad result from validate: expect FLModel but got {type(result)}"
             )
+            audit.record("rejected", reason="invalid_reply")
             return make_reply(ReturnCode.EMPTY_RESULT)
 
     def configure(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:

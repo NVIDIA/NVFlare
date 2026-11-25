@@ -31,8 +31,17 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.utils.error_handling_utils import get_error_handling_message, should_ignore_result_error
 from nvflare.app_common.utils.fl_component_wrapper import FLComponentWrapper
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.sec import model_audit
 from nvflare.fuel.utils.validation_utils import check_non_negative_int, check_positive_int, check_str
 from nvflare.security.logging import secure_format_exception
+
+
+def _publish_initial_model(controller, model):
+    # The persistor uses the Learnable format to save the model.
+    ml = make_model_learnable(weights=model.params, meta_props=model.meta)
+    controller.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, ml, private=True, sticky=True)
+    controller.event(AppEventType.INITIAL_MODEL_LOADED)
+    return model
 
 
 class BaseModelController(Controller, FLComponentWrapper, ABC):
@@ -431,15 +440,14 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
                 )
                 return
         else:
-            self.info("persistor not configured, creating empty initial FLModel")
-            model = FLModel(params_type=ParamsType.FULL, params={})
+            with model_audit.operation("load", self.fl_ctx) as audit:
+                self.info("persistor not configured, creating empty initial FLModel")
+                with audit.stage("initialize", reason="no_destination"):
+                    model = FLModel(params_type=ParamsType.FULL, params={})
+                published = audit.call("publish_initial_model", _publish_initial_model, self, model)
+                return audit.returned(published)
 
-        # persistor uses Learnable format to save model
-        ml = make_model_learnable(weights=model.params, meta_props=model.meta)
-        self.fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, ml, private=True, sticky=True)
-        self.event(AppEventType.INITIAL_MODEL_LOADED)
-
-        return model
+        return _publish_initial_model(self, model)
 
     def get_run_dir(self):
         """Get current run directory."""
@@ -459,7 +467,9 @@ class BaseModelController(Controller, FLComponentWrapper, ABC):
             self.event(AppEventType.AFTER_LEARNABLE_PERSIST)
             self.info("End persist model on server.")
         else:
-            self.error("persistor not configured, model will not be saved")
+            with model_audit.operation("save", self.fl_ctx) as audit:
+                self.error("persistor not configured, model will not be saved")
+                audit.skipped(reason="no_destination")
 
     def sample_clients(self, num_clients: int = None) -> List[str]:
         """Returns a list of `num_clients` clients.

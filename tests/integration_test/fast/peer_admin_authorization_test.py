@@ -16,7 +16,7 @@
 
 Real provisioning, server, enrollment, client entry points and admin login; separate
 processes/CWDs on a shared host filesystem (no OS user or mount isolation).
-The existing one-round job also verifies actual task/workflow audit observations;
+The one-round job and its evaluation workflow verify task, workflow, model, and evaluation audit observations;
 controlled component suites cover execution failures, duplicate/late results, and
 abort semantics without adding another federation startup here.
 """
@@ -31,11 +31,14 @@ import time
 from contextlib import ExitStack
 from pathlib import Path
 
+import numpy as np
 import pytest
 
+from nvflare.apis.dxo import DataKind, from_file
 from nvflare.apis.fl_constant import AdminCommandNames, SiteType, WorkspaceConstants
 from nvflare.apis.storage import WORKSPACE_ZIP
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -50,7 +53,7 @@ from nvflare.lighter.provisioner import Provisioner
 from nvflare.private.defs import CellChannel, RequestHeader
 from tests.peer_admin_test_utils import _write_json
 from tests.process_test_utils import OwnedProcesses
-from tests.task_audit_test_utils import RESULT_MARKER, TASK_MARKER
+from tests.task_audit_test_utils import MODEL_SOURCE_VALUE, RESULT_MARKER, TASK_MARKER
 
 
 def _task_details(record):
@@ -75,7 +78,10 @@ def _one_task_record(records, action, **identity):
 
 @pytest.mark.timeout(180)
 @pytest.mark.parametrize("with_relay", [False, True], ids=["direct", "relay"])
-def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
+def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay, monkeypatch):
+    # This test uses the default workspace layout so the locator can open
+    # the model saved by the preceding training workflow.
+    monkeypatch.delenv(WorkspaceConstants.ENV_VAR_RESULT_ROOT, raising=False)
     fed_port, admin_port, relay_port = get_open_ports(3)
     participants = [
         {"name": "localhost", "type": "server", "org": "test", "fed_learn_port": fed_port, "admin_port": admin_port},
@@ -125,6 +131,7 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         config.setdefault("class_allow_list", []).extend(
             [
                 "tests.task_audit_test_utils.TaskAuditJobTrainer",
+                "tests.task_audit_test_utils.TaskAuditModelValidator",
                 "tests.task_audit_test_utils.TaskAuditDataFilter",
                 "tests.task_audit_test_utils.TaskAuditResultFilter",
             ]
@@ -329,7 +336,42 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         shutil.copytree(Path(__file__).parents[1] / "data/jobs/hello-numpy-sag", job)
         config_path = job / "app/config/config_fed_server.json"
         config = json.loads(config_path.read_text())
+        model_source_name = "private-model-source-marker.npy"
+        model_output_dir = "private-model-output-marker"
+        model_output_name = "private-saved-model-marker.npy"
+        model_lookup_name = "private-model-lookup-marker"
+        model_source_dir = job / "app" / WorkspaceConstants.CUSTOM_FOLDER_NAME
+        model_source_dir.mkdir(exist_ok=True)
+        np.save(
+            model_source_dir / model_source_name, np.array([[MODEL_SOURCE_VALUE]], dtype=np.float32), allow_pickle=False
+        )
+        persistor = next(component for component in config["components"] if component["id"] == "persistor")
+        persistor["args"].update(
+            source_ckpt_file_full_name=model_source_name,
+            model_dir=model_output_dir,
+            model_name=model_output_name,
+            model=[[7.0]],
+        )
         config["workflows"][0]["args"].update(num_rounds=1, wait_time_after_min_received=0)
+        config["components"].append(
+            {
+                "id": "model_locator",
+                "path": "nvflare.app_common.np.np_model_locator.NPModelLocator",
+                "args": {"model_dir": model_output_dir, "model_name": {model_lookup_name: model_output_name}},
+            }
+        )
+        config["workflows"].append(
+            {
+                "id": "evaluate_saved_model",
+                "path": "nvflare.app_common.workflows.cross_site_model_eval.CrossSiteModelEval",
+                "args": {
+                    "model_locator_id": "model_locator",
+                    "submit_model_task_name": "",
+                    "wait_for_clients_timeout": 15,
+                    "validation_timeout": 15,
+                },
+            }
+        )
         children = tmp_path / "children"
         config["task_data_filters"] = [
             {"tasks": ["train"], "filters": [{"path": "tests.task_audit_test_utils.TaskAuditDataFilter"}]}
@@ -352,6 +394,18 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
             "path": "tests.task_audit_test_utils.TaskAuditJobTrainer",
             "args": {"directory": str(children)},
         }
+        config["components"].append(
+            {"id": "validation_learner", "path": "tests.task_audit_test_utils.TaskAuditModelValidator"}
+        )
+        config["executors"].append(
+            {
+                "tasks": [AppConstants.TASK_VALIDATION],
+                "executor": {
+                    "path": "nvflare.app_common.executors.model_learner_executor.ModelLearnerExecutor",
+                    "args": {"learner_id": "validation_learner"},
+                },
+            }
+        )
         config_path.write_text(json.dumps(config))
         job_id = admin.submit_job(str(job))
         for name in ("site-1", "site-2"):
@@ -390,6 +444,19 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         assert downloaded
         archived_workspace = Path(downloaded) / Path(WORKSPACE_ZIP).stem
         assert archived_workspace.is_dir(), downloaded
+        saved_models = list(archived_workspace.rglob(f"{model_output_dir}/{model_output_name}"))
+        assert len(saved_models) == 1, saved_models
+        # Each client adds one to the supplied weight. Both contributions have
+        # equal weight, so averaging preserves that increment.
+        expected_weight = MODEL_SOURCE_VALUE + 1
+        np.testing.assert_array_equal(np.load(saved_models[0], allow_pickle=False), [[expected_weight]])
+        for name in ("site-1", "site-2"):
+            assert json.loads((children / f"model-source-{name}.json").read_text()) == {"source_model_seen": True}
+            evaluations = list(archived_workspace.rglob(f"{name}_SRV_{model_lookup_name}"))
+            assert len(evaluations) == 1, evaluations
+            evaluation = from_file(str(evaluations[0]))
+            assert evaluation.data_kind == DataKind.METRICS
+            assert evaluation.data == {"accuracy": 1.0}
         job_audit_paths = {}
         for name in ("localhost", "site-1", "site-2"):
             site_name = SiteType.SERVER if name == "localhost" else name
@@ -412,10 +479,22 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
             except (FileNotFoundError, json.JSONDecodeError):
                 # A different process may be finishing its last append/flush.
                 return None
-            if not any(event.get("action") == "workflow.finalization.returned" for event in records["localhost"]):
+            if not any(
+                event.get("action") == "workflow.finalization.returned"
+                and _task_details(event).get("workflow") == "evaluate_saved_model"
+                for event in records["localhost"]
+            ):
                 return None
             if not all(
-                any(event.get("action") == "task.publication.received" for event in records[name])
+                any(
+                    event.get("action") == "task.publication.received" and _task_details(event).get("task") == "train"
+                    for event in records[name]
+                )
+                for name in ("site-1", "site-2")
+            ):
+                return None
+            if not all(
+                any(event.get("action") == "evaluation.execution.returned" for event in records[name])
                 for name in ("site-1", "site-2")
             ):
                 return None
@@ -427,7 +506,7 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
                 assert set(event) <= {"event_id", "reference", "timestamp", "user", "action", "job", "scope", "message"}
                 assert all(isinstance(value, str) for value in event.values()), event
                 assert event["timestamp"].endswith("+00:00"), event
-                if event.get("action", "").startswith(("task.", "workflow.")):
+                if event.get("action", "").startswith(("task.", "workflow.", "evaluation.")):
                     assert event["job"] == job_id, event
                     assert event["user"] == "unknown", event
                     serialized = json.dumps(event)
@@ -445,11 +524,85 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         records_by_site = {name: {event["event_id"]: event for event in events} for name, events in job_records.items()}
         for name, events in job_records.items():
             for event in events:
-                if event.get("action", "").startswith(("task.", "workflow.")) and event.get("reference"):
+                if event.get("action", "").startswith(("task.", "workflow.", "evaluation.")) and event.get("reference"):
                     assert event["reference"] in records_by_site[name], event
 
         server_job_audit = job_records["localhost"]
         server_by_id = records_by_site["localhost"]
+        model_records = [record for record in server_job_audit if record["action"].startswith("model.")]
+        for record in model_records:
+            assert record["job"] == job_id, record
+            assert record["user"] == "unknown", record
+            assert not record["action"].endswith((".error", ".stage_error", ".skipped")), record
+            if record.get("reference"):
+                assert record["reference"] in server_by_id, record
+            for forbidden in (
+                model_source_name,
+                model_output_dir,
+                model_output_name,
+                model_lookup_name,
+                str(MODEL_SOURCE_VALUE),
+                str(expected_weight),
+                str(tmp_path),
+            ):
+                assert forbidden not in record.get("message", ""), record
+        for operation, file_stage in (("load", "source_read"), ("save", "write")):
+            prefix = f"model.{operation}."
+            matching = [
+                record
+                for record in model_records
+                if record["action"] in {prefix + "started", prefix + "returned"}
+                or (
+                    record["action"] == prefix + "stage_returned"
+                    and f"stage={file_stage}" in record.get("message", "").split()
+                )
+            ]
+            assert [record["action"] for record in matching] == [
+                prefix + "started",
+                prefix + "stage_returned",
+                prefix + "returned",
+            ], model_records
+            if operation == "load":
+                assert "status=value_returned" in matching[-1].get("message", "").split(), matching[-1]
+        retrieval_records = [
+            (record["action"], record.get("message", ""))
+            for record in model_records
+            if record["action"].startswith("model.retrieve.")
+        ]
+        assert retrieval_records == [
+            ("model.retrieve.started", ""),
+            ("model.retrieve.stage_returned", "stage=file_read"),
+            ("model.retrieve.returned", "status=value_returned"),
+        ]
+        summary["model_audit_records"] = (
+            "verified training source, saved model, named retrieval, evaluation at both clients, and privacy"
+        )
+        server_evaluation = [event for event in server_job_audit if event["action"].startswith("evaluation.")]
+        for name in ("site-1", "site-2"):
+            client_job_audit = job_records[name]
+            assignment = _one_task_record(
+                client_job_audit, "task.assignment.received", task=AppConstants.TASK_VALIDATION
+            )
+            client_evaluation = [event for event in client_job_audit if event["action"].startswith("evaluation.")]
+            assert [(event["action"], event.get("message", "")) for event in client_evaluation] == [
+                ("evaluation.execution.started", ""),
+                ("evaluation.execution.stage_returned", "stage=learner"),
+                ("evaluation.execution.stage_returned", "stage=encode_reply"),
+                ("evaluation.execution.returned", "status=reply_prepared"),
+            ]
+            assert all(event["reference"] == assignment["reference"] for event in client_evaluation)
+            result = _one_task_record(
+                server_job_audit, "task.result.received", site=name, task=AppConstants.TASK_VALIDATION
+            )
+            handled = [event for event in server_evaluation if event.get("reference") == result["reference"]]
+            assert [(event["action"], event.get("message", "")) for event in handled] == [
+                ("evaluation.result.started", ""),
+                ("evaluation.result.stage_returned", "stage=store_result"),
+                ("evaluation.result.returned", "status=processed"),
+            ]
+        assert len(server_evaluation) == 6, server_evaluation
+        summary["evaluation_audit_records"] = "verified both clients' execution and the server's result handling"
+
         workflow_id = "scatter_and_gather"
         initialized = _one_task_record(server_job_audit, "workflow.execution.initialized", workflow=workflow_id)
         control = _one_task_record(server_job_audit, "workflow.control.returned", workflow=workflow_id)

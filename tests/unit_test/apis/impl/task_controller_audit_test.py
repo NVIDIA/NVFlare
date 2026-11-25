@@ -96,7 +96,7 @@ def test_actual_replies_and_callbacks_are_distinct_from_completion(setup):
     records = _records(path)
     assert [r["action"] for r in records] == [
         "task.auxiliary.prepared",
-        "task.auxiliary.dispatched",
+        "task.auxiliary.dispatch_attempted",
         "task.auxiliary.outcome_reported",
         "task.auxiliary.callback_returned",
         "task.auxiliary.callback_returned",
@@ -123,7 +123,7 @@ def test_mixed_remote_results_missing_reply_and_unrequested_reply(setup):
     assert actual["site-2"].get_return_code() == ReturnCode.ERROR
     assert actual["site-3"].get_return_code() == ReturnCode.ERROR
     assert actual["site-4"] is None
-    assert len(_actions(path, "prepared")) == len(_actions(path, "dispatched")) == 4
+    assert len(_actions(path, "prepared")) == len(_actions(path, "dispatch_attempted")) == 4
     reported = _actions(path, "outcome_reported")
     assert len(reported) == 3
     assert any("status=custom_return_code" in r["message"] for r in reported)
@@ -228,9 +228,11 @@ def test_transport_exception_is_rethrown_without_claiming_a_reply_or_replaying(s
         controller.broadcast_and_wait(task, ctx, targets=["site-1"])
     assert raised.value is failure
     engine.send_aux_request.assert_called_once()
-    assert len(_actions(path, "dispatched")) == 1
-    assert len(_actions(path, "handling_error")) == 1
-    assert not _actions(path, "outcome_reported")
+    assert [record["action"] for record in _records(path)] == [
+        "task.auxiliary.prepared",
+        "task.auxiliary.dispatch_attempted",
+        "task.auxiliary.handling_error",
+    ]
 
 
 @pytest.mark.parametrize("invalid", ["targets", "timeout"])
@@ -246,7 +248,7 @@ def test_setup_rejection_preserves_exception_and_omits_unapproved_target(setup, 
         )
     engine.send_aux_request.assert_not_called()
     assert len(_actions(path, "rejected")) == 1
-    assert not _actions(path, "dispatched")
+    assert not _actions(path, "dispatch_attempted")
 
 
 def test_no_callback_function_does_not_invent_callback_outcome(setup):

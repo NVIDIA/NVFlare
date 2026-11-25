@@ -21,6 +21,7 @@ from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, ModelName
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.sec import evaluation_audit, model_audit
 from nvflare.fuel.utils import fobs
 
 from .model_controller import ModelController
@@ -116,10 +117,18 @@ class CrossSiteEval(ModelController):
         for server_model_name in self._server_models:
             try:
                 if self.persistor:
-                    server_model_learnable = self.persistor.get_model(server_model_name, self.fl_ctx)
+                    persistor = self.persistor
+                    fl_ctx = self.fl_ctx
+                    with model_audit.operation("retrieve", fl_ctx, owner=persistor) as audit:
+                        server_model_learnable = audit.call(
+                            "implementation", persistor.get_model, server_model_name, fl_ctx
+                        )
+                        audit.returned(server_model_learnable)
                     server_model = FLModelUtils.from_model_learnable(server_model_learnable)
                 else:
-                    server_model = fobs.loadf(server_model_name)
+                    with model_audit.operation("retrieve", self.fl_ctx) as audit:
+                        server_model = audit.call("file_read", fobs.loadf, server_model_name)
+                        audit.returned(server_model)
             except Exception as e:
                 self.exception(f"Unable to load server model {server_model_name}: {e}")
             self._send_validation_task(server_model_name, server_model)
@@ -161,20 +170,22 @@ class CrossSiteEval(ModelController):
         )
 
     def _receive_val_result_cb(self, model: FLModel):
-        client_name = model.meta["client_name"]
-        model_owner = model.meta["props"].get(AppConstants.MODEL_OWNER, None)
+        with evaluation_audit.operation("result", self.fl_ctx) as audit:
+            client_name = model.meta["client_name"]
+            model_owner = model.meta["props"].get(AppConstants.MODEL_OWNER, None)
 
-        self.track_results(model_owner, client_name, model)
+            audit.call("track_result", self.track_results, model_owner, client_name, model)
 
-        file_path = os.path.join(self._cross_val_models_dir, client_name + "_" + model_owner)
-        fobs.dumpf(model, file_path)
+            file_path = os.path.join(self._cross_val_models_dir, client_name + "_" + model_owner)
+            audit.call("file_write", fobs.dumpf, model, file_path)
 
-        client_results = self._val_results.get(client_name, None)
-        if not client_results:
-            client_results = {}
-            self._val_results[client_name] = client_results
-        client_results[model_owner] = file_path
-        self.info(f"Saved validation result from client '{client_name}' on model '{model_owner}' in {file_path}")
+            client_results = self._val_results.get(client_name, None)
+            if not client_results:
+                client_results = {}
+                self._val_results[client_name] = client_results
+            client_results[model_owner] = file_path
+            self.info(f"Saved validation result from client '{client_name}' on model '{model_owner}' in {file_path}")
+            audit.record("returned", status="processed")
 
     def track_results(self, model_owner, data_client, val_results: FLModel):
         if not model_owner:
@@ -194,11 +205,15 @@ class CrossSiteEval(ModelController):
             self.error("Validation result not found.", fire_event=False)
 
     def save_results(self):
-        cross_val_res_dir = os.path.join(self.get_run_dir(), self._results_dir)
-        if not os.path.exists(cross_val_res_dir):
-            os.makedirs(cross_val_res_dir)
+        with evaluation_audit.operation("output", self.fl_ctx) as audit:
+            cross_val_res_dir = os.path.join(self.get_run_dir(), self._results_dir)
+            if not os.path.exists(cross_val_res_dir):
+                os.makedirs(cross_val_res_dir)
 
-        res_file_path = os.path.join(cross_val_res_dir, self._json_file_name)
-        self.info(f"saving validation result {self._json_val_results} to {res_file_path}")
-        with open(res_file_path, "w") as f:
-            f.write(json.dumps(self._json_val_results, indent=2))
+            res_file_path = os.path.join(cross_val_res_dir, self._json_file_name)
+            self.info(f"saving validation result {self._json_val_results} to {res_file_path}")
+            with open(res_file_path, "w") as f:
+                write_result = f.write
+                payload = audit.call("serialize_summary", json.dumps, self._json_val_results, indent=2)
+                audit.call("file_write", write_result, payload)
+            audit.record("returned")
