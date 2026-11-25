@@ -1,4 +1,4 @@
-nvflare>=2.9.0
+nvflare>=2.10.0
 torch
 torchvision
 pytorch_lightning

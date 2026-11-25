@@ -1,4 +1,4 @@
-nvflare[PT]>=2.9.0
+nvflare[PT]>=2.10.0
 numpy
 matplotlib
 torch
