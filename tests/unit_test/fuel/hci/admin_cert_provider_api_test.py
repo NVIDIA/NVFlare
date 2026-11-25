@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from threading import RLock
 from types import SimpleNamespace
 
 import pytest
@@ -177,6 +178,8 @@ def test_user_login_builds_command_after_identity_renewal(monkeypatch):
             return b"signature"
 
     api = object.__new__(AdminAPI)
+    api._cell_reconnect_lock = RLock()
+    api._cell_recovery_in_progress = False
     api.user_name = "alice@nvidia.com"
     api.client_key = "client.key"
     api.client_cert = "client.crt"
@@ -209,7 +212,8 @@ def test_user_login_builds_command_after_identity_renewal(monkeypatch):
     assert captured["headers"]["user_name"] == "bob@nvidia.com"
 
 
-def test_user_login_reconnects_when_cell_is_missing_without_another_renewal(monkeypatch):
+@pytest.mark.parametrize("reconnected", [False, True])
+def test_user_login_reconnects_when_cell_is_missing_or_registration_was_lost(monkeypatch, reconnected):
     class _FakeIdentityAsserter:
         cert_data = b"cert"
 
@@ -220,11 +224,22 @@ def test_user_login_reconnects_when_cell_is_missing_without_another_renewal(monk
             return b"signature"
 
     api = object.__new__(AdminAPI)
+    api._cell_reconnect_lock = RLock()
+    api._cell_recovery_in_progress = False
     api.user_name = "alice@nvidia.com"
     api.client_key = "client.key"
     api.client_cert = "client.crt"
     api.study = "default"
-    api.cell = None
+    from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
+    from nvflare.fuel.hci.client.api import _AdminCellReconnectMonitor
+
+    api.cell = object() if reconnected else None
+    api._cell_auth_monitor = _AdminCellReconnectMonitor()
+    peer = Endpoint("server")
+    peer.state = EndpointState.READY
+    if reconnected:
+        api._cell_auth_monitor.state_change(peer)
+    api._reset_cell = lambda: setattr(api, "cell", None)
     api.login_result = None
     connected = []
 

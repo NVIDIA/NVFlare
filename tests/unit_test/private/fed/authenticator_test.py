@@ -22,7 +22,8 @@ from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.signal import Signal
-from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, CellChannelTopic, MessageHeaderKey, MessagePropKey, ReturnCode
+from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 from nvflare.private.defs import CellMessageHeaderKeys
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, Authenticator, validate_auth_headers
@@ -95,8 +96,9 @@ def test_validate_auth_headers_rejects_registered_token_with_missing_origin_bind
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
 
 
-def test_validate_auth_headers_keeps_compatibility_when_origin_cannot_be_resolved():
-    assert _validate("site-b", lambda _client_name, _token: None) is None
+def test_validate_auth_headers_rejects_unresolved_origin():
+    reply = _validate("site-b", lambda _client_name, _token: None)
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
 
 
 def _make_bye_message(destination, to_cell=None):
@@ -148,3 +150,24 @@ def test_validate_auth_headers_does_not_bypass_bye_when_local_fqcn_unknown():
     reply = _validate_bye(destination="server", local_cell_fqcn=None)
 
     assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
+
+
+@pytest.mark.parametrize(
+    "local,peer,origin,accepted",
+    [
+        ("_admin_session", "server", "server", True),
+        ("relay-1", "server", "server.job", True),
+        ("relay-1.relay-2", "relay-1", "server.job", True),
+        ("relay-1", "relay-1.site-a", "server.job", False),
+        ("_admin_session", "site-a", "server", False),
+        ("server", "site-a", "server.job", False),
+        ("relay-1", "server", "site-a", False),
+    ],
+)
+def test_server_origin_without_bearer_headers_requires_actual_upstream(local, peer, origin, accepted):
+    message = Message({MessageHeaderKey.ORIGIN: origin})
+    message.set_prop(MessagePropKey.ENDPOINT, Endpoint(peer))
+    reply = validate_auth_headers(message, _TokenVerifier(), logging.getLogger(__name__), local_cell_fqcn=local)
+    assert (reply is None) is accepted
+    if not accepted:
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == ReturnCode.UNAUTHENTICATED
