@@ -156,6 +156,25 @@ class TestPOCCommands:
 
         assert my_env["PATH"].split(os.pathsep)[0] == os.path.dirname(sys.executable)
 
+    @pytest.mark.parametrize(
+        ("workspace", "executable", "error"),
+        [
+            ("/poc workspace", "/venv/python", "workspace path without whitespace"),
+            ("/poc#1", "/venv/python", "workspace path without '#'"),
+            ("/poc", "/my venv/python", "Python environment"),
+            ("/poc", "/venv#1/python", "Python environment"),
+        ],
+    )
+    def test_start_poc_rejects_unsupported_launch_paths(self, monkeypatch, workspace, executable, error):
+        project = {"participants": [{"name": "server"}, {"name": "admin"}]}
+        config = {SC.FLARE_SERVER: "server", SC.FLARE_PROJ_ADMIN: "admin"}
+        monkeypatch.setattr(sys, "executable", executable)
+        monkeypatch.setattr(poc_commands, "setup_service_config", lambda _: (project, config))
+        monkeypatch.setattr(poc_commands, "validate_poc_workspace", lambda *_: None)
+        monkeypatch.setattr(poc_commands, "_run_poc", lambda *a, **kw: pytest.fail("unexpected service launch"))
+        with pytest.raises(CLIException, match=error):
+            poc_commands._start_poc(workspace, [], services_list=["server"])
+
     def test_start_poc_admin_only_requires_running_server(self, monkeypatch, tmp_path):
         project_config = {
             "participants": [
@@ -193,6 +212,7 @@ class TestPOCCommands:
             SC.FLARE_OTHER_ADMINS: [],
             SC.IS_DOCKER_RUN: True,
         }
+        monkeypatch.setattr(sys, "executable", "/host venv#1/bin/python")
         container_names = {"server": "recipe-server", "site-1": "recipe-site-1"}
         run_calls = []
         monkeypatch.setattr(poc_commands, "setup_service_config", lambda _workspace: (project_config, service_config))

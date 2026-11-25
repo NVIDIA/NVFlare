@@ -1910,6 +1910,16 @@ def _start_poc(
 
     validate_services(project_config, services_list, excluded)
     validate_poc_workspace(poc_workspace, service_config, project_config)
+    workspace_path = os.path.abspath(poc_workspace)
+    if any(c.isspace() for c in workspace_path):
+        raise CLIException("POC startup requires a workspace path without whitespace. Set NVFLARE_POC_WORKSPACE.")
+    starts_server, clients = _get_started_readiness_participants(service_config, services_list, excluded)
+    if (starts_server or clients) and not service_config.get(SC.IS_DOCKER_RUN):
+        # The local server and client job launchers parse '#' as a comment and split on whitespace.
+        if "#" in workspace_path:
+            raise CLIException("Local POC jobs require a workspace path without '#'. Set NVFLARE_POC_WORKSPACE.")
+        if "#" in sys.executable or any(c.isspace() for c in sys.executable):
+            raise CLIException("Run the local POC from a Python environment whose path contains no whitespace or '#'.")
     _ensure_server_running_for_admin_console(project_config, service_config, services_list)
     docker_args = {}
     if docker_container_names:
