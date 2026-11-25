@@ -167,26 +167,6 @@ Pass the ``study`` parameter to :class:`PocEnv` when your POC deployment is prov
 
 If the POC deployment uses the default generated project with no ``studies:``, only the ``default`` study is valid.
 
-Resource reports by job start time
-----------------------------------
-
-To report whole-job resource usage for jobs started in October 2026:
-
-.. code-block:: shell
-
-    nvflare resources --study cancer-research --since 2026-10-01 --until 2026-11-01
-
-In a Python session for the same study, use
-``session.get_study_resources(since="2026-10-01", until="2026-11-01")``.
-Either bound can be omitted. Dates mean midnight UTC. Timestamps without a
-timezone use UTC, and explicit offsets are converted to UTC.
-
-The interval includes its start and excludes its end. A job started in October
-and finished in November contributes its entire recorded usage to October.
-Matching running jobs count toward coverage and contribute no totals. A bounded
-query skips jobs with a missing, invalid or timezone-ambiguous server start
-time. Submission and participant report times are never substituted.
-
 Study-Scoped Behavior
 =====================
 

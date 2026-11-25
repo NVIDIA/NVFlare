@@ -95,6 +95,36 @@ can be run:
    expiration. Re-export or reuse the original local job folder and submit it
    with current credentials instead.
 
+.. _flare_api_resource_utilization:
+
+Job Resources
+^^^^^^^^^^^^^
+Use ``Session.get_job_resources()`` to read a finalized job's
+``resource_summary``. Selecting a site also returns its ``participant_summary``.
+Use ``Session.get_study_resources()`` for job rows, coverage and totals across
+accessible jobs in the active study. Use the optional ``since`` and ``until`` keyword
+arguments to filter by job start time.
+
+.. code-block:: python
+
+    # one job's saved participant measurements
+    resources = sess.get_job_resources(job_id)
+
+    # one job, including a single participant's own report
+    resources = sess.get_job_resources(job_id, site="site-1")
+
+    # rollup across accessible retained jobs in the active study
+    study_resources = sess.get_study_resources()
+
+The study query applies the same per-job permission as ``get_job_resources``.
+Restricted jobs are absent from the rows, totals, and coverage counts. The
+server checks permission before reading a job's archive. An empty result means
+no accessible retained jobs match the query.
+
+See :ref:`resource_statistics` for the feature overview and measurement
+details, :ref:`resource_statistics_reports` for report fields and storage,
+and :ref:`resources_cli` for equivalent CLI commands.
+
 .. _flare_api_monitor_job:
 
 Monitor Job

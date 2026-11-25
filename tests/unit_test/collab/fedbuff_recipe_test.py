@@ -199,6 +199,8 @@ def test_planned_replay_binds_bases_before_physical_dispatch(tmp_path, physical_
         buffer_size=1,
     )
     runtime.assert_consumed()
+    runtime.finalize()
+    assert json.loads((runtime.trace_dir / "run.jsonl").read_text())["logical_trace_verified"] is True
     assignments = [json.loads(line) for line in (runtime.trace_dir / "assignments.jsonl").read_text().splitlines()]
     accepted = [json.loads(line) for line in (runtime.trace_dir / "accepted.jsonl").read_text().splitlines()]
     assert [item["base_version"] for item in assignments] == [0, 0, 1, 2]
@@ -223,11 +225,6 @@ def test_planned_replay_respects_explicit_physical_mapping(tmp_path):
 
 @pytest.mark.parametrize("physical_workers", [1, 2])
 def test_timed_plan_uses_virtual_events_independent_of_worker_pool(tmp_path, physical_workers):
-    profile = {
-        "download": {"distribution": "constant", "value": 0},
-        "train": {"distribution": "constant", "value": 0},
-        "upload": {"distribution": "constant", "value": 1},
-    }
     plan = {
         "format_version": 1,
         "async_execution": {
@@ -235,8 +232,7 @@ def test_timed_plan_uses_virtual_events_independent_of_worker_pool(tmp_path, phy
             "train_seeds": [11, 12, 13, 14],
             "timing": {
                 "starts": [0, 0, 2.1, 3.2],
-                "seed": 7,
-                "profiles": {name: profile for name in ("a", "b", "c", "d")},
+                "delays": [{"download": 0, "train": train, "upload": 1 - train} for train in (0, 0.5, 0, 0)],
                 "horizon": 10,
             },
         },
@@ -283,6 +279,32 @@ def test_timed_plan_stops_acceptance_at_horizon_and_drains_started_results(tmp_p
     assert not (tmp_path / "accepted.jsonl").exists()
 
 
+def test_transient_replay_keeps_a_base_until_its_last_planned_reservation(tmp_path):
+    delays = {"download": 0.25, "train": 0.5, "upload": 0.25}
+    plan = {
+        "format_version": 1,
+        "async_execution": {
+            "logical_sequence": ["a", "b"],
+            "timing": {"starts": [0, 2], "delays": [delays, delays], "horizon": 4},
+            "retain_artifacts": False,
+        },
+    }
+    observer = _Observer()
+    snapshot_between_assignments = []
+
+    def on_time(instant):
+        if instant == 2:
+            snapshot_between_assignments.extend(tmp_path.glob("work-*/models/00000000.pkl"))
+            assert not list(tmp_path.glob("work-*/results/*.pkl"))
+
+    observer.on_time = on_time
+    _execute(
+        observer, [_Client()], runtime=SimulationPlanRuntime(plan, tmp_path), num_rounds=1, concurrency=1, buffer_size=2
+    )
+    assert len(snapshot_between_assignments) == 1
+    assert not snapshot_between_assignments[0].exists()
+
+
 def test_planned_replay_rejects_repeated_active_logical_client(tmp_path):
     runtime = SimulationPlanRuntime(
         {
@@ -294,10 +316,78 @@ def test_planned_replay_rejects_repeated_active_logical_client(tmp_path):
         },
         tmp_path,
     )
-    with pytest.raises(ValueError, match="logical clients already active: \\['a'\\]"):
-        _execute(_Observer(), [_Client(), _Client()], runtime=runtime, num_rounds=3, concurrency=2, buffer_size=1)
-    assignments = [json.loads(line) for line in (tmp_path / "assignments.jsonl").read_text().splitlines()]
-    assert [entry["assignment_id"] for entry in assignments] == [0, 1]
+    clients = [_Client(), _Client()]
+    with pytest.raises(ValueError, match="preflight failed: logical clients already active: \\['a'\\]"):
+        _execute(_Observer(), clients, runtime=runtime, num_rounds=3, concurrency=2, buffer_size=1)
+    assert all(not client.assignments for client in clients)
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("scenario", ["success", "wrong_base", "client_failure", "publication_drift"])
+def test_ordered_plan_releases_client_at_train_and_validates_refill_base(tmp_path, monkeypatch, scenario):
+    steps = [
+        (0, 0, "start"),
+        (0, 1, "start"),
+        (0, 0, "download"),
+        (0, 1, "download"),
+        (0, 0, "train"),
+        (0, 1, "train"),
+        (1, 1, "upload"),
+        (1, 2, "start"),
+        (1, 2, "download"),
+        (1, 2, "train"),
+        (2, 0, "upload"),
+    ]
+    plan = {
+        "format_version": 1,
+        "async_execution": {
+            "logical_sequence": ["a", "b", "a"],
+            "base_versions": [0, 0, 0 if scenario == "wrong_base" else 1],
+            "timing": {
+                "horizon": 2,
+                "release_on_train": True,
+                "speculative": True,
+                "events": [
+                    {"virtual_time": time, "assignment_id": identity, "phase": phase} for time, identity, phase in steps
+                ],
+            },
+            "retain_artifacts": False,
+        },
+    }
+    runtime = SimulationPlanRuntime(plan, tmp_path)
+    saved_uploads = []
+    save_result = runtime.save_result
+
+    def record_result(identity, result):
+        saved_uploads.append(identity)
+        save_result(identity, result)
+
+    monkeypatch.setattr(runtime, "save_result", record_result)
+    client = _Client(failure=scenario == "client_failure")
+    observer = _Observer()
+    if scenario == "wrong_base":
+        with pytest.raises(ValueError, match="preflight failed: assignment 2 has base version 1; plan expects 0"):
+            _execute(observer, [client], runtime=runtime, num_rounds=2, concurrency=2)
+        assert not client.assignments
+        return
+    if scenario == "publication_drift":
+        monkeypatch.setattr(FedBuffTrainingCoordinator, "accept", lambda *args: False)
+    if scenario in ("client_failure", "publication_drift"):
+        match = "assignment 1 failed" if scenario == "client_failure" else "async execution differs from preflight"
+        with pytest.raises(RuntimeError, match=match):
+            _execute(observer, [client], runtime=runtime, num_rounds=2, concurrency=2)
+        assert [version for version, _ in observer.versions] == [0]
+        assert not list(tmp_path.glob("work-*"))
+        return
+
+    _execute(observer, [client], runtime=runtime, num_rounds=2, concurrency=2)
+    assert client.assignments == [(0, 0), (1, 0), (2, 1)]
+    assert saved_uploads == [1]
+    assert observer.finish_version == 1 and runtime.virtual_time == 2
+    accepted = json.loads((tmp_path / "accepted.jsonl").read_text())
+    preflight = [json.loads(line) for line in (tmp_path / "preflight.jsonl").read_text().splitlines()]
+    assert [row for row in preflight if row["trace"] == "accepted.jsonl"] == [{"trace": "accepted.jsonl", **accepted}]
+    assert not list(tmp_path.glob("work-*"))
 
 
 def test_optional_transform_runs_through_collab_recipe_workflow():
