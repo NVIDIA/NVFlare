@@ -297,8 +297,8 @@ def resolve_slurm_parent_executables(value: dict) -> dict:
             raise SlurmLauncherError(f"required Slurm executable '{name}' was not found on the parent runtime PATH")
         if configured is not None:
             _validate_absolute_path(configured, f"executables.{name}")
-        resolved = os.path.realpath(os.path.abspath(candidate))
-        if not os.path.isfile(resolved) or not os.access(resolved, os.X_OK):
+        # Check the original spelling so normalization cannot hide invalid directory suffixes.
+        if not os.path.isfile(candidate) or not os.access(candidate, os.X_OK):
             raise SlurmLauncherError(
                 f"required Slurm executable '{name}' is not an executable regular file on the parent runtime host: "
                 f"{candidate}"

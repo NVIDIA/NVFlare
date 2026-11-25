@@ -52,6 +52,19 @@ def test_parent_executable_rejects_broken_symlink(tmp_path):
         resolve_slurm_parent_executables({"sbatch": str(missing)})
 
 
+@pytest.mark.parametrize("name", ["sbatch", "squeue", "sacct", "scancel"])
+@pytest.mark.parametrize("suffix", ["/", "/."])
+def test_parent_executable_rejects_directory_suffix(tmp_path, name, suffix):
+    command = tmp_path / "command"
+    command.write_text("#!/bin/sh\nexit 0\n")
+    command.chmod(0o700)
+    executables = {key: str(command) for key in ("sbatch", "squeue", "sacct", "scancel")}
+    executables[name] += suffix
+
+    with pytest.raises(SlurmLauncherError, match="not an executable regular file"):
+        resolve_slurm_parent_executables(executables)
+
+
 def test_integer_rejects_boolean():
     with pytest.raises(SlurmLauncherError, match="must be an integer"):
         _require_int(True, "nodes")
