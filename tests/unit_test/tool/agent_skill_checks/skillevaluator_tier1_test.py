@@ -32,10 +32,9 @@ SKILL_DIRS = tuple(sorted(path.parent for path in (REPO_ROOT / "skills").glob("*
 # scanning a skill.
 assert SKILL_DIRS, f"no bundled skills discovered under {REPO_ROOT / 'skills'}"
 
-# The deterministic Tier 1 gate. ``security`` invokes SkillSpector, and
-# ``code-integrity`` invokes Bandit, Semgrep, and Gitleaks. LLM-backed checks
-# remain disabled so this suite never requires a provider key.
-TIER1_VALIDATE_CHECKS = "schema,security,pii,license,code-integrity,unicode,quality,lint"
+# The release branch keeps its SkillSpector and quality policies pinned. The code-integrity
+# evaluator fixes Bandit's path selection and also runs Semgrep, Gitleaks, and hygiene checks.
+TIER1_POLICY_CHECKS = "schema,security,pii,license,unicode,quality,lint"
 
 # Standalone Tier 1 commands that are deterministic without a provider key: pii-scan only
 # consults an LLM under --llm-verify, and the other two expose no LLM flags at all.
@@ -83,17 +82,29 @@ def test_tier1_dependency_install_policy_of_bundled_skills():
 
 
 @pytest.mark.parametrize("skill_dir", SKILL_DIRS, ids=lambda path: path.name)
-def test_skillevaluator_tier1_validate_of_bundled_skill(skill_dir, tmp_path):
+@pytest.mark.parametrize("checks", [TIER1_POLICY_CHECKS, "code-integrity"], ids=["policy", "code-integrity"])
+def test_skillevaluator_tier1_validate_of_bundled_skill(skill_dir, checks, tmp_path, monkeypatch):
     """Every bundled skill passes the keyless Tier 1 validation gate."""
     skillevaluator = _require_skillevaluator()
-
+    tier_args = []
+    if checks == "code-integrity":
+        integrity_cli = os.environ.get("NVFLARE_SKILL_CODE_INTEGRITY_CLI")
+        if not integrity_cli or not shutil.which(integrity_cli):
+            pytest.fail(
+                "Set NVFLARE_SKILL_CODE_INTEGRITY_CLI to the isolated SkillEvaluator 1.2.0 executable. "
+                "See the two evaluator installations in .github/workflows/premerge.yml."
+            )
+        skillevaluator = integrity_cli
+        monkeypatch.setenv("SKILLEVALUATOR_REQUIRE_SEMGREP", "1")
+        tier_args = ["--tiers", "1"]
     reports_dir = tmp_path / "reports"
     command = [
         skillevaluator,
         "validate",
         str(skill_dir),
         "--checks",
-        TIER1_VALIDATE_CHECKS,
+        checks,
+        *tier_args,
         "--no-llm",
         "--no-dedup",
         "-r",
@@ -125,11 +136,15 @@ def test_skillevaluator_tier1_validate_of_bundled_skill(skill_dir, tmp_path):
             f"{_failure_message(command, completed)}"
         )
 
-    quality = _quality_entry(report, skill_dir.name)
-    assert quality["overall_score"] >= QUALITY_SCORE_FLOOR, (
-        f"{skill_dir.name} quality score {quality['overall_score']} (grade {quality['grade']}) "
-        f"fell below the {QUALITY_SCORE_FLOOR} floor\n{_failure_message(command, completed)}"
-    )
+    if checks == "code-integrity":
+        passed = {result["validator"] for result in report["results"] if result["status"] == "passed"}
+        assert passed == {"Code Risk Analysis", "Secrets Detection", "Code Integrity & Hygiene"}, report["results"]
+    else:
+        quality = _quality_entry(report, skill_dir.name)
+        assert quality["overall_score"] >= QUALITY_SCORE_FLOOR, (
+            f"{skill_dir.name} quality score {quality['overall_score']} (grade {quality['grade']}) "
+            f"fell below the {QUALITY_SCORE_FLOOR} floor\n{_failure_message(command, completed)}"
+        )
 
 
 def _quality_entry(report, skill_name):
@@ -171,8 +186,8 @@ def _require_skillevaluator():
         if os.environ.get("NVFLARE_SKILL_TIER1_REQUIRED") == "true":
             pytest.fail("skillevaluator CLI is required for the selected Tier 1 skill security scan")
         pytest.skip(
-            "skillevaluator CLI not on PATH; run the isolated `uv tool install --python 3.13` command "
-            "from .github/workflows/premerge.yml to enable this check"
+            "skillevaluator CLI not on PATH; follow the Tier 1 scanner installations in "
+            ".github/workflows/premerge.yml, including NVFLARE_SKILL_CODE_INTEGRITY_CLI"
         )
     return skillevaluator
 

@@ -107,6 +107,13 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           uv tool install --python 3.13 \
             "skillevaluator[security] @ git+https://github.com/NVIDIA/SkillEvaluator.git@4975c97d49e3623eeab739248e52d83c4aa8f582"
+          # SkillEvaluator 1.2.0 includes the Bandit path fix (NVIDIA/SkillEvaluator#818).
+          # Isolate its code-integrity checks from the release branch's other Tier 1 policies.
+          integrity_env="$RUNNER_TEMP/skill-code-integrity"
+          uv venv --python 3.13 "$integrity_env"
+          uv pip install --python "$integrity_env/bin/python" \
+            "skillevaluator @ git+https://github.com/NVIDIA/SkillEvaluator.git@5625c2534bf266f810aea489ffbe69da0bb2645e"
+          echo "NVFLARE_SKILL_CODE_INTEGRITY_CLI=$integrity_env/bin/skillevaluator" >> "$GITHUB_ENV"
           uv tool install --python 3.13 "semgrep>=1,<2"
           uv tool install --python 3.13 \
             "skillspector @ git+https://github.com/NVIDIA/SkillSpector.git@fd25398d7aa99353d86237b9c260759351f0e644"
