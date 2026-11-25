@@ -71,6 +71,12 @@ def _make_fake_cifar10_cls(labels: np.ndarray):
             self.data = np.zeros((len(labels), 32, 32, 3), dtype=np.uint8)
             self.targets = labels.tolist()
 
+        def __len__(self):
+            return len(self.targets)
+
+        def __getitem__(self, index):
+            return self.data[index], self.targets[index]
+
     return _FakeCIFAR10
 
 
@@ -156,7 +162,7 @@ def _isolated_import(sys_path_dir: Path, stubs: dict):
     finally:
         sys.path[:] = saved_path
         for name in list(sys.modules):
-            if name not in saved_keys or name.startswith(("data.", "src.", "_test_cifar_")):
+            if name in stubs or name.startswith(("data.", "src.", "_test_cifar_")):
                 sys.modules.pop(name, None)
         for key, original in saved_modules.items():
             if original is not None:
@@ -173,20 +179,30 @@ def _load_module_from_path(module_name: str, file_path: Path):
     return module
 
 
+@contextmanager
 def _load_pt_cifar10_modules(labels: np.ndarray, use_real_torch: bool = False):
     fake_cifar10_cls = _make_fake_cifar10_cls(labels)
     stubs = {} if (use_real_torch and HAS_TORCH_DEPS) else _stub_torch_modules(fake_cifar10_cls)
 
     src_dir = REPO_ROOT / "examples/advanced/cifar10/pt/src"
-    with _isolated_import(src_dir, stubs):
-        if use_real_torch and HAS_TORCH_DEPS:
+    orig_cifar10 = None
+    if use_real_torch and HAS_TORCH_DEPS:
+        import torchvision
+
+        orig_cifar10 = getattr(torchvision.datasets, "CIFAR10", None)
+        torchvision.datasets.CIFAR10 = fake_cifar10_cls
+
+    try:
+        with _isolated_import(src_dir, stubs):
+            utils_mod = _load_module_from_path("_test_cifar_pt_utils", src_dir / "data/cifar10_data_utils.py")
+            utils_mod.load_cifar10_data = lambda: labels
+            split_mod = _load_module_from_path("_test_cifar_pt_split", src_dir / "data/cifar10_data_split.py")
+            yield split_mod, utils_mod
+    finally:
+        if orig_cifar10 is not None:
             import torchvision
 
-            torchvision.datasets.CIFAR10 = fake_cifar10_cls
-        utils_mod = _load_module_from_path("_test_cifar_pt_utils", src_dir / "data/cifar10_data_utils.py")
-        utils_mod.load_cifar10_data = lambda: labels
-        split_mod = _load_module_from_path("_test_cifar_pt_split", src_dir / "data/cifar10_data_split.py")
-        return split_mod, utils_mod
+            torchvision.datasets.CIFAR10 = orig_cifar10
 
 
 def _load_splitter(kind: str, labels: np.ndarray, load_counter: list):
@@ -202,9 +218,9 @@ def _load_splitter(kind: str, labels: np.ndarray, load_counter: list):
     fake_cifar10_cls = _make_fake_cifar10_cls(labels)
 
     if kind == "pt":
-        split_mod, _ = _load_pt_cifar10_modules(labels)
-        split_mod.load_cifar10_data = count_1d_labels
-        return split_mod
+        with _load_pt_cifar10_modules(labels) as (split_mod, _):
+            split_mod.load_cifar10_data = count_1d_labels
+            return split_mod
 
     if kind == "collab_pt":
         root = REPO_ROOT / "examples/advanced/collab/pt_cifar10"
@@ -317,38 +333,41 @@ def _run_splitter_to_dir(kind: str, mod, split_root: Path, num_sites: int, alpha
 def test_pt_split_export_and_loader_compatibility(tmp_path):
     labels = _make_ordered_labels(500)
     expected = dirichlet_label_partition(labels=labels, num_sites=4, alpha=0.5, seed=7)
-    split_mod, _ = _load_pt_cifar10_modules(labels)
+    with _load_pt_cifar10_modules(labels) as (split_mod, _):
+        split_dir = Path(split_mod.split_and_save(str(tmp_path / "cifar"), num_sites=4, alpha=0.5, seed=7))
+        summary = (split_dir / "summary.txt").read_text(encoding="utf-8")
+        assert "Number of clients: 4" in summary
+        assert "Dirichlet sampling parameter: 0.5" in summary
+        assert "Seed: 7" in summary
+        assert f"Partitioner: {PARTITIONER_ID}" in summary
 
-    split_dir = Path(split_mod.split_and_save(str(tmp_path / "cifar"), num_sites=4, alpha=0.5, seed=7))
-    summary = (split_dir / "summary.txt").read_text(encoding="utf-8")
-    assert "Number of clients: 4" in summary
-    assert "Dirichlet sampling parameter: 0.5" in summary
-    assert "Seed: 7" in summary
-    assert f"Partitioner: {PARTITIONER_ID}" in summary
+        collected = []
+        for site in range(4):
+            loaded = np.load(split_dir / f"site-{site + 1}.npy", allow_pickle=False)
+            assert loaded.dtype == np.int64
+            np.testing.assert_array_equal(loaded, expected.site_indices[site])
+            collected.extend(loaded.tolist())
+        assert sorted(collected) == list(range(len(labels)))
 
-    collected = []
-    for site in range(4):
-        loaded = np.load(split_dir / f"site-{site + 1}.npy", allow_pickle=False)
-        assert loaded.dtype == np.int64
-        np.testing.assert_array_equal(loaded, expected.site_indices[site])
-        collected.extend(loaded.tolist())
-    assert sorted(collected) == list(range(len(labels)))
-
-    splitter_dir = tmp_path / "component_split"
-    splitter = split_mod.Cifar10DataSplitter(split_dir=str(splitter_dir), num_sites=4, alpha=0.5, seed=7)
-    splitter.split(FLContext())
-    for site in range(4):
-        comp_loaded = np.load(splitter_dir / f"site-{site + 1}.npy", allow_pickle=False)
-        np.testing.assert_array_equal(comp_loaded, expected.site_indices[site])
+        splitter_dir = tmp_path / "component_split"
+        splitter = split_mod.Cifar10DataSplitter(split_dir=str(splitter_dir), num_sites=4, alpha=0.5, seed=7)
+        splitter.split(FLContext())
+        for site in range(4):
+            comp_loaded = np.load(splitter_dir / f"site-{site + 1}.npy", allow_pickle=False)
+            np.testing.assert_array_equal(comp_loaded, expected.site_indices[site])
 
     if HAS_TORCH_DEPS:
-        real_split_mod, real_utils_mod = _load_pt_cifar10_modules(labels, use_real_torch=True)
-        real_split_mod.load_cifar10_data = lambda: labels
-        real_dir = Path(real_split_mod.split_and_save(str(tmp_path / "real_pt"), num_sites=4, alpha=0.5, seed=7))
-        train_ds, valid_ds = real_utils_mod.create_datasets("site-1", str(real_dir))
-        assert len(train_ds) == len(expected.site_indices[0])
-        assert len(valid_ds) == len(labels)
-        np.testing.assert_array_equal(train_ds.target, labels[expected.site_indices[0]])
+        import torchvision
+
+        orig_cifar10 = torchvision.datasets.CIFAR10
+        with _load_pt_cifar10_modules(labels, use_real_torch=True) as (real_split_mod, real_utils_mod):
+            real_split_mod.load_cifar10_data = lambda: labels
+            real_dir = Path(real_split_mod.split_and_save(str(tmp_path / "real_pt"), num_sites=4, alpha=0.5, seed=7))
+            train_ds, valid_ds = real_utils_mod.create_datasets("site-1", str(real_dir))
+            assert len(train_ds) == len(expected.site_indices[0])
+            assert len(valid_ds) == len(labels)
+            np.testing.assert_array_equal(train_ds.target, labels[expected.site_indices[0]])
+        assert torchvision.datasets.CIFAR10 is orig_cifar10
     else:
         loaded_for_site_1 = np.load(splitter_dir / "site-1.npy", allow_pickle=False).tolist()
         assert loaded_for_site_1 == expected.site_indices[0].tolist()
@@ -473,3 +492,53 @@ def test_migrated_cifar10_splitters_do_not_call_numpy_global_dirichlet():
         }
         assert "dirichlet" not in called_attrs, f"Legacy dirichlet call remains in {file_path}"
         assert "nvflare.utils.data.partition" in source
+
+
+def test_interrupted_cache_upgrade_is_regenerated(tmp_path):
+    labels = _make_ordered_labels(200)
+    expected = dirichlet_label_partition(labels=labels, num_sites=4, alpha=0.5, seed=42)
+
+    # 1. Cifar10DataSplitter: simulate interrupted upgrade (corrupt site files, missing summary.txt)
+    split_dir = tmp_path / "interrupted_split"
+    split_dir.mkdir()
+    for site in range(1, 5):
+        np.save(split_dir / f"site-{site}.npy", np.array([-999], dtype=np.int64))
+
+    calls = [0]
+    pt_mod = _load_splitter("pt", labels, calls)
+    splitter = pt_mod.Cifar10DataSplitter(split_dir=str(split_dir), num_sites=4, alpha=0.5, seed=42)
+    splitter.split(FLContext())
+
+    assert calls[0] == 1
+    assert (split_dir / "summary.txt").exists()
+    for site in range(4):
+        loaded = np.load(split_dir / f"site-{site + 1}.npy", allow_pickle=False)
+        np.testing.assert_array_equal(loaded, expected.site_indices[site])
+
+    # 2. Job API create_data_splits: simulate interrupted upgrade
+    job_dir = tmp_path / "interrupted_job"
+    job_dir.mkdir()
+    for site in range(1, 5):
+        np.save(job_dir / f"site-{site}.npy", np.array([-999], dtype=np.int64))
+
+    job_calls = [0]
+    job_mod = _load_splitter("job_api_pt", labels, job_calls)
+    job_mod.create_data_splits(str(job_dir), num_sites=4, alpha=0.5, seed=42)
+    assert job_calls[0] >= 1
+    assert (job_dir / "summary.txt").exists()
+    for site in range(4):
+        loaded = np.load(job_dir / f"site-{site + 1}.npy", allow_pickle=False)
+        np.testing.assert_array_equal(loaded, expected.site_indices[site])
+
+
+def test_torch_remains_importable_after_isolated_import():
+    if not HAS_TORCH_DEPS:
+        pytest.skip("PyTorch is not installed")
+    import torch
+    import torchvision
+
+    labels = _make_ordered_labels(50)
+    _load_splitter("pt", labels, [0])
+    assert hasattr(torch, "tensor")
+    assert hasattr(torchvision, "datasets")
+    assert torchvision.datasets.CIFAR10 is not None

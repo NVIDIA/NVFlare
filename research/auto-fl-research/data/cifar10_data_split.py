@@ -76,6 +76,15 @@ def _write_split(split_dir, num_sites, alpha, seed):
     os.makedirs(split_dir, exist_ok=True)
 
     sum_file_name = os.path.join(split_dir, "summary.txt")
+    if os.path.isfile(sum_file_name):
+        try:
+            os.remove(sum_file_name)
+        except OSError:
+            pass
+
+    for site in range(num_sites):
+        np.save(_site_file_name(split_dir, site + 1), np.asarray(site_idx[site], dtype=np.int64))
+
     with open(sum_file_name, "w", encoding="utf-8") as sum_file:
         sum_file.write(f"Number of clients: {num_sites}\n")
         sum_file.write(f"Dirichlet sampling parameter: {alpha}\n")
@@ -83,9 +92,6 @@ def _write_split(split_dir, num_sites, alpha, seed):
         sum_file.write(f"Partitioner: {_PARTITIONER_ID}\n")
         sum_file.write("Class counts for each client:\n")
         sum_file.write(json.dumps(class_sum, indent=2))
-
-    for site in range(num_sites):
-        np.save(_site_file_name(split_dir, site + 1), np.asarray(site_idx[site], dtype=np.int64))
 
 
 def _write_split_atomically(split_dir, num_sites, alpha, seed):

@@ -131,6 +131,13 @@ class Cifar10DataSplitter(FLComponent):
             os.makedirs(self.split_dir)
             self.log_info(fl_ctx, f"Created directory: {self.split_dir}")
 
+        # Invalidate existing summary so an interrupted write cannot be reused
+        if os.path.isfile(sum_file_name):
+            try:
+                os.remove(sum_file_name)
+            except OSError:
+                pass
+
         self.log_info(
             fl_ctx,
             f"Partitioning CIFAR-10 dataset into {self.num_sites} sites with Dirichlet sampling under alpha "
@@ -138,12 +145,12 @@ class Cifar10DataSplitter(FLComponent):
         )
         site_idx, class_sum = partition_data(self.num_sites, self.alpha, self.seed)
 
-        _write_summary(sum_file_name, self.num_sites, self.alpha, self.seed, class_sum)
-        self.log_info(fl_ctx, f"Saved summary to: {sum_file_name}")
-
         for site, site_file_name in enumerate(site_file_names):
             np.save(site_file_name, np.asarray(site_idx[site], dtype=np.int64))
             self.log_info(fl_ctx, f"Saved site {site + 1} data ({len(site_idx[site])} samples) to: {site_file_name}")
+
+        _write_summary(sum_file_name, self.num_sites, self.alpha, self.seed, class_sum)
+        self.log_info(fl_ctx, f"Saved summary to: {sum_file_name}")
 
         self.log_info(fl_ctx, f"Split data saved to: {self.split_dir}")
 

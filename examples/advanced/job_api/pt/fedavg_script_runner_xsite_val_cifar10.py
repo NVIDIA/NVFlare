@@ -115,6 +115,13 @@ def create_data_splits(split_dir, num_sites, alpha, seed=0):
     print(f"Creating data splits at {split_dir}")
     os.makedirs(split_dir, exist_ok=True)
 
+    # Invalidate existing summary so an interrupted write cannot be reused
+    if os.path.isfile(sum_file_name):
+        try:
+            os.remove(sum_file_name)
+        except OSError:
+            pass
+
     # Partition the data
     site_idx = partition_data(num_sites, alpha, seed)
 
@@ -126,7 +133,14 @@ def create_data_splits(split_dir, num_sites, alpha, seed=0):
         class_counts = {int(k): int(np.sum(site_labels == k)) for k in range(10)}
         class_sum[site] = class_counts
 
-    # Write summary file
+    # Save site data files first
+    for site in range(num_sites):
+        site_name = f"site-{site + 1}"
+        site_file_name = os.path.join(split_dir, f"{site_name}.npy")
+        np.save(site_file_name, np.asarray(site_idx[site], dtype=np.int64))
+        print(f"Saved {site_name} data ({len(site_idx[site])} samples) to: {site_file_name}")
+
+    # Write summary file only after all site files are successfully written
     with open(sum_file_name, "w") as sum_file:
         sum_file.write(f"Number of clients: {num_sites}\n")
         sum_file.write(f"Dirichlet sampling parameter: {alpha}\n")
@@ -134,13 +148,6 @@ def create_data_splits(split_dir, num_sites, alpha, seed=0):
         sum_file.write(f"Partitioner: {_PARTITIONER_ID}\n")
         sum_file.write("Class counts for each client:\n")
         sum_file.write(json.dumps(class_sum, indent=2))
-
-    # Save site data files
-    for site in range(num_sites):
-        site_name = f"site-{site + 1}"
-        site_file_name = os.path.join(split_dir, f"{site_name}.npy")
-        np.save(site_file_name, np.asarray(site_idx[site], dtype=np.int64))
-        print(f"Saved {site_name} data ({len(site_idx[site])} samples) to: {site_file_name}")
 
     # Print summary
     print("\nClass distribution summary:")

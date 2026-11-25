@@ -1,4 +1,4 @@
-nvflare[HE]~=2.7.2rc
+nvflare[HE]>=2.9.0
 torch
 torchvision
 tensorboard
