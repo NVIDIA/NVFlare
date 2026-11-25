@@ -18,8 +18,10 @@ from unittest.mock import Mock
 
 import jwt
 import pytest
+import requests
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from nvflare.app_opt.confidential_computing import aci_authorizer
 from nvflare.app_opt.confidential_computing.aci_authorizer import ACIAuthorizer
 
 APPROVED_POLICY_HASH = "ab" * 32
@@ -140,3 +142,46 @@ def test_rejects_invalid_signature_for_approved_policy(authorizer, signing_key):
 
 def test_rejects_malformed_token(authorizer):
     assert authorizer.verify("not-an-attestation-token") is False
+
+
+@pytest.mark.parametrize("error_type", [requests.ConnectTimeout, requests.ReadTimeout])
+def test_generate_retries_timeout_then_returns_token(monkeypatch, error_type):
+    authorizer = ACIAuthorizer(expected_policy_hash=APPROVED_POLICY_HASH, retry_count=1)
+    post = Mock(side_effect=[error_type("sidecar stalled"), Mock(status_code=200, json=lambda: {"token": "evidence"})])
+    sleep = Mock()
+    monkeypatch.setattr(aci_authorizer.requests, "post", post)
+    monkeypatch.setattr(aci_authorizer, "time", SimpleNamespace(sleep=sleep))
+
+    assert authorizer.generate() == "evidence"
+
+    assert post.call_count == 2
+    for call in post.call_args_list:
+        assert call.args == ("http://localhost:8284/attest/maa",)
+        assert call.kwargs["timeout"] == (10.0, 60.0)
+        assert call.kwargs["headers"] == {"Content-Type": "application/json"}
+    sleep.assert_called_once_with(authorizer.retry_sleep)
+
+
+@pytest.mark.parametrize("error_type", [requests.ConnectTimeout, requests.ReadTimeout])
+@pytest.mark.parametrize("retry_count", [0, 2])
+def test_generate_returns_empty_token_after_timeouts_exhaust_retries(monkeypatch, error_type, retry_count):
+    authorizer = ACIAuthorizer(expected_policy_hash=APPROVED_POLICY_HASH, retry_count=retry_count)
+    post = Mock(side_effect=error_type("sidecar stalled"))
+    sleep = Mock()
+    monkeypatch.setattr(aci_authorizer.requests, "post", post)
+    monkeypatch.setattr(aci_authorizer, "time", SimpleNamespace(sleep=sleep))
+
+    assert authorizer.generate() == ""
+
+    assert post.call_count == retry_count + 1
+    assert sleep.call_count == retry_count
+    assert all(call.kwargs["timeout"] == (10.0, 60.0) for call in post.call_args_list)
+
+
+def test_generate_success_without_retry(monkeypatch):
+    post = Mock(return_value=Mock(status_code=200, json=lambda: {"token": "evidence"}))
+    monkeypatch.setattr(aci_authorizer.requests, "post", post)
+
+    assert ACIAuthorizer(expected_policy_hash=APPROVED_POLICY_HASH).generate() == "evidence"
+    assert post.call_count == 1
+    assert post.call_args.kwargs["timeout"] == (10.0, 60.0)

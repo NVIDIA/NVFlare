@@ -166,6 +166,24 @@ The JSON output shape and error codes defined here become the MCP tool schemas i
 
 ## Complete Command Inventory
 
+### `nvflare resources`
+
+Recorded resource statistics use a top-level command, separate from live
+`nvflare system resources`:
+
+```bash
+nvflare resources --job JOB_ID [--study STUDY_NAME] [--site SITE_NAME]
+nvflare resources --study STUDY_NAME
+nvflare resources --job JOB_ID --format json
+nvflare resources --schema
+```
+
+This read-only command uses the shared session, startup-kit selection, JSON
+success/error envelopes, and offline schema discovery. Run `nvflare resources --help`
+for the available selectors. Job totals and site details come from the same
+`resource_stats/resource_summary.json` file. See the
+[schema 1.0 archive layout](https://github.com/NVIDIA/NVFlare/blob/59614340accc4089e93f8f1f72be35ccf3646b0f/docs/design/resource_statistics_reporting.md#server-ledger-and-archive-publication).
+
 ### `nvflare job` (exists today — requires agent readiness updates)
 
 | Subcommand | Server? | Agent Readiness Status |

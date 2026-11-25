@@ -54,8 +54,7 @@ class ModelAggregator(Aggregator):
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         """called by ScatterAndGather"""
         self.fl_ctx = fl_ctx
-        self.accept_model(FLModelUtils.from_shareable(shareable, fl_ctx))
-        return True
+        return self.accept_model(FLModelUtils.from_shareable(shareable, fl_ctx)) is not False
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
         """called by ScatterAndGather"""

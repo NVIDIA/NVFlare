@@ -86,7 +86,9 @@ class SimulatorRunManager(RunManager):
         plan_path = os.path.join(workspace.get_root_dir(), "local", SIMULATION_PLAN_FILE)
         if os.path.isfile(plan_path):
             props[SIMULATION_PLAN_PROP] = SimulationPlanRuntime(
-                load_simulation_plan(plan_path), os.path.join(workspace.get_run_dir(job_id), "simulation")
+                load_simulation_plan(plan_path),
+                os.path.join(workspace.get_run_dir(job_id), "simulation"),
+                plan_path=plan_path,
             )
         return props
 

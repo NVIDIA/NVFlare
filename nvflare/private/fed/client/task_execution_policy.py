@@ -14,6 +14,7 @@
 
 """Site-owned selection and resource policy for disposable task execution."""
 
+import copy
 import importlib
 import os
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.task_execution import _timeout, reject_job_gpu_reservation, validate_task_resources
+from nvflare.private.fed.client.task_runtime import _prepare_docker_slurm_cj, _prepare_process_slurm_cj
 from nvflare.private.fed.task_worker.protocol import _require_payload_limit
 from nvflare.private.fed.task_worker.supervisor import TaskSupervisorOptions
 
@@ -56,10 +58,43 @@ _NATIVE_TASK_LAUNCHERS = {
     "k8s": ("nvflare.app_opt.task_launcher.k8s_launcher", "K8sTaskLauncher"),
     "slurm": ("nvflare.app_opt.job_launcher.slurm.task_launcher", "SlurmTaskLauncher"),
 }
-_NATIVE_JOB_LAUNCHERS = {
-    "k8s": ("nvflare.app_opt.job_launcher.k8s_launcher", "ClientK8sJobLauncher"),
-    "slurm": ("nvflare.app_opt.job_launcher.slurm.launcher", "ClientSlurmJobLauncher"),
+
+
+# CP composition is private. Class paths keep unused optional backends out of
+# the import graph; exact supported launcher types are validated by policy.
+_CJ_PREPARERS = {
+    (
+        "nvflare.app_common.job_launcher.client_process_launcher.ClientProcessJobLauncher",
+        "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+    ): _prepare_process_slurm_cj,
+    (
+        "nvflare.app_opt.job_launcher.docker_launcher.ClientDockerJobLauncher",
+        "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+    ): _prepare_docker_slurm_cj,
+    (
+        "nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher",
+        "nvflare.app_opt.job_launcher.slurm.task_launcher.SlurmTaskLauncher",
+    ): None,
+    (
+        "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
+        "nvflare.app_opt.task_launcher.k8s_launcher.K8sTaskLauncher",
+    ): None,
 }
+
+
+def _get_cj_preparer(task_launcher, job_launcher):
+    pairing = tuple(f"{type(item).__module__}.{type(item).__qualname__}" for item in (job_launcher, task_launcher))
+    if pairing not in _CJ_PREPARERS:
+        raise ValueError(f"unsupported client-job/task launcher pairing: {pairing}")
+    return _CJ_PREPARERS[pairing]
+
+
+def _prepare_cp_host_cj(task_launcher, job_launcher, job_meta, fl_ctx, *, launcher_config=None):
+    target = _get_cj_preparer(task_launcher, job_launcher)
+    if target is None:
+        # Existing native launchers retain their own ownership setup.
+        return None
+    return target(job_launcher, job_meta, fl_ctx, launcher_config=launcher_config)
 
 
 def _supported_native_launcher(launcher):
@@ -103,6 +138,7 @@ class TaskExecutionPolicy:
     poll_interval: float = 0.05
     max_payload_bytes: int | None = None
     finalization_timeout: float = 30.0
+    launcher_config: dict | None = None
 
     @classmethod
     def from_workspace(cls, workspace):
@@ -166,6 +202,7 @@ class TaskExecutionPolicy:
             raise ValueError("task execution requires a supported Kubernetes or Slurm TaskLauncher")
         return cls(
             launcher=launcher,
+            launcher_config=copy.deepcopy(launcher_config),
             artifact_cleanup=cleanup,
             worker_timeout=options.worker_timeout,
             settlement_timeout=options.settlement_timeout,
@@ -178,13 +215,6 @@ class TaskExecutionPolicy:
         # Native backend configuration, never the resident CJ's environment,
         # owns worker credentials, GPU visibility and application variables.
         return {}
-
-    def validate_job_launcher(self, launcher):
-        """Fail closed before starting a CJ on an incompatible site runtime."""
-        module_name, class_name = _NATIVE_JOB_LAUNCHERS[self.launcher.launch_mode]
-        expected = getattr(importlib.import_module(module_name), class_name)
-        if type(launcher) is not expected:
-            raise ValueError("task lifetime requires the site's supported Kubernetes or Slurm client-job launcher")
 
     def task_resources(self, meta, site_name):
         validate_task_resources(meta, site_name)

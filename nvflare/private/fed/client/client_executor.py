@@ -29,6 +29,7 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     ConnPropKey,
     FLContextKey,
+    JobConstants,
     ReservedKey,
     RunProcessKey,
     SystemConfigs,
@@ -45,8 +46,10 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
+from nvflare.job_config.defs import ExecutionLifetime
 from nvflare.job_config.task_execution import get_client_execution_lifetime
 from nvflare.private.defs import CellChannel, CellChannelTopic, JobOutcomeMsgKey, RequestHeader, new_cell_message
+from nvflare.private.fed.client.task_runtime import launch_task_job
 from nvflare.private.fed.resource_stats.collector import assemble_participant_summary
 from nvflare.private.fed.resource_stats.handoff import (
     canonical_json_bytes,
@@ -61,7 +64,6 @@ from nvflare.security.logging import secure_format_exception, secure_log_traceba
 from nvflare.utils.job_launcher_utils import has_cj_resource_spec, validate_cj_execution_lifetime
 
 from .client_status import ClientStatus, get_status_message
-from .task_execution_policy import TaskExecutionPolicy
 
 REPORTABLE_JOB_FAILURES = {
     ProcessExitCode.EXCEPTION: PROCESS_EXIT_REASON[ProcessExitCode.EXCEPTION],
@@ -409,6 +411,21 @@ class ClientExecutor(ABC):
         """
 
 
+def launch_job(launcher, job_meta, fl_ctx):
+    """Select the launch path from the deployed app's execution lifetime."""
+    workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+    if isinstance(workspace, Workspace):
+        config = (
+            ConfigService.load_config_dict(
+                workspace.get_client_app_config_file_path(job_meta[JobConstants.JOB_ID]), raise_exception=False
+            )
+            or {}
+        )
+        if get_client_execution_lifetime(config) == ExecutionLifetime.TASK:
+            return launch_task_job(launcher, job_meta, fl_ctx, workspace)
+    return launcher.launch_job(job_meta, fl_ctx)
+
+
 class JobExecutor(ClientExecutor):
     """Run the Client executor in a child process."""
 
@@ -503,8 +520,6 @@ class JobExecutor(ClientExecutor):
 
         fl_ctx.set_prop(FLContextKey.ALLOCATED_RESOURCES, allocated_resource, private=True, sticky=False)
         job_launcher: JobLauncherSpec = get_job_launcher(job_meta, fl_ctx)
-        if has_cj_resource_spec(job_meta, client.client_name):
-            TaskExecutionPolicy.from_workspace(workspace).validate_job_launcher(job_launcher)
 
         # prepare command args for the job process
         workspace_obj: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
@@ -728,7 +743,7 @@ class JobExecutor(ClientExecutor):
         fl_ctx.set_prop(FLContextKey.JOB_HANDLE_CALLBACK, register_handle, private=True, sticky=False)
         try:
             fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=False)
-            handle = restart.launcher.launch_job(copy.deepcopy(restart.meta), fl_ctx)
+            handle = launch_job(restart.launcher, copy.deepcopy(restart.meta), fl_ctx)
             if handle is None:
                 raise RuntimeError(f"job launcher returned no job handle for job '{job_id}'")
             register_handle(handle)

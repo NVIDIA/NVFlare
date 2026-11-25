@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from contextlib import nullcontext
 from threading import Lock
 from types import SimpleNamespace
@@ -33,6 +34,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.event import fire_event_to_components
+from nvflare.app_opt.confidential_computing.cc_manager import CC_INFO, CC_NAMESPACE, CC_TOKEN, CCManager
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import CellChannelTopic, MessageHeaderKey, MessagePropKey
@@ -112,6 +115,72 @@ def test_registration_event_receives_client_name_from_request(client_name):
 
     assert server.register_client(request) == "registration reply"
     server.engine.fire_event.assert_any_call(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=context)
+
+
+@pytest.mark.parametrize("stage", ["verification", "issuance"])
+@pytest.mark.parametrize("failure", [RuntimeError, TimeoutError])
+def test_registration_rejects_unexpected_cc_exceptions(stage, failure, caplog):
+    site = "cc-client"
+    context = FLContext()
+    context.set_prop(FLContextKey.SECURE_MODE, True)
+    manager = CCManager([], [], cc_enabled_sites=[site])
+    verifier = MagicMock()
+    verifier.verify_for_site.return_value = True
+    manager.cc_verifiers = {"test": verifier}
+    issuer = MagicMock()
+    manager.cc_issuers = {issuer: 3600}
+    if stage == "verification":
+        verifier.verify_for_site.side_effect = failure("sensitive-provider-detail")
+    else:
+        issuer.generate_with_retry.side_effect = failure("sensitive-provider-detail")
+
+    server = object.__new__(FederatedServer)
+    server.logger = logging.getLogger(__name__)
+    server.engine = MagicMock()
+    server.engine.new_context.return_value = nullcontext(context)
+    server.engine.fire_event.side_effect = lambda event, fl_ctx: fire_event_to_components(event, [manager], fl_ctx)
+    server._ready_for_registration = MagicMock(return_value=None)
+    server.reg_lock = Lock()
+    server.name_to_reg = {site: object()}
+    server.client_manager = MagicMock()
+    server.client_manager.authenticate.return_value = Client(site, "registration-token")
+    server.sign_auth_token = MagicMock(return_value="signature")
+    server.project_name = "test-project"
+    server.tokens = {}
+    server.admin_server = None
+    server.server_state = SimpleNamespace(ssid="test-session")
+
+    peer = FLContext()
+    peer.set_prop(CC_INFO, {site: [{CC_NAMESPACE: "test", CC_TOKEN: "test-evidence"}]})
+    payload = Shareable()
+    payload.set_peer_context(peer)
+    request = new_cell_message(
+        {
+            MessageHeaderKey.ORIGIN: site,
+            CellMessageHeaderKeys.CLIENT_NAME: site,
+            CellMessageHeaderKeys.CLIENT_TYPE: ClientType.REGULAR,
+        },
+        payload,
+    )
+
+    reply = server.register_client(request)
+
+    verifier.verify_for_site.assert_called_once_with("test-evidence", site)
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+    server.client_manager.authenticate.assert_not_called()
+    server.sign_auth_token.assert_not_called()
+    assert not server.tokens
+    if stage == "verification":
+        issuer.generate_with_retry.assert_not_called()
+        diagnostic = "CC verifier test"
+    else:
+        issuer.generate_with_retry.assert_called_once()
+        diagnostic = "CC token generation"
+    assert f"{diagnostic} raised {failure.__name__} for site {site}" in caplog.messages
+    for sensitive in ("sensitive-provider-detail", "test-evidence"):
+        assert sensitive not in caplog.text
+        assert sensitive not in str(reply.headers)
+        assert sensitive not in str(reply.payload)
 
 
 @pytest.fixture

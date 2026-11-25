@@ -26,7 +26,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets
 
-from nvflare.apis.simulation_plan import SIMULATION_PLAN_PROP
+from nvflare.apis.simulation_plan import ASYNC_EXECUTION, SIMULATION_PLAN_PROP
 from nvflare.collab import collab
 
 
@@ -104,7 +104,9 @@ class FedReviveObserver:
             json.dump(self.run_config, stream, indent=2)
         self.writer = SummaryWriter(log_dir=str(self.run_dir / "tensorboard"))
         self.history = []
-        self.simulated_time = 0.0 if self.run_config["arrival_mode"] == "simulated" else None
+        runtime = collab.fl_ctx.get_prop(SIMULATION_PLAN_PROP)
+        timing = runtime.plan[ASYNC_EXECUTION].get("timing") if runtime is not None else None
+        self.simulated_time = 0.0 if timing is not None else None
         self._eval_model = None
         self.test_loader = DataLoader(
             datasets.CIFAR10(root=self.data_root, train=False, download=False, transform=test_transform()),
