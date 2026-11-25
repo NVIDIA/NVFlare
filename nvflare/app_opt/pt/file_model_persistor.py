@@ -34,6 +34,7 @@ from nvflare.app_common.model_desc import ModelDescriptor
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
+from nvflare.fuel.sec import model_audit
 from nvflare.fuel.utils import fobs
 
 
@@ -256,6 +257,7 @@ class PTFileModelPersistor(ModelPersistor):
             Model: a Learnable/Model object
         """
         src_file_name = None
+        read_stage = "source_read"
         if self.source_ckpt_file_full_name:
             if os.path.isabs(self.source_ckpt_file_full_name):
                 ckpt_path = self.source_ckpt_file_full_name
@@ -275,12 +277,20 @@ class PTFileModelPersistor(ModelPersistor):
             src_file_name = ckpt_path
         elif self.ckpt_preload_path:
             src_file_name = self.ckpt_preload_path
+            read_stage = "preload_read"
 
         if src_file_name:
             try:
                 device = torch.device(self.load_device or ("cuda:0" if torch.cuda.is_available() else "cpu"))
                 self.log_info(fl_ctx, f"Loading checkpoint from {src_file_name} on device {device}")
-                data = torch.load(src_file_name, map_location=device, weights_only=self.load_weights_only)
+                data = model_audit.load_step(
+                    self,
+                    read_stage,
+                    torch.load,
+                    src_file_name,
+                    map_location=device,
+                    weights_only=self.load_weights_only,
+                )
                 # "checkpoint may contain 'model', 'optimizer', 'lr_scheduler', etc. or only contain model dict directly."
             except Exception:
                 self.log_exception(fl_ctx, "error loading checkpoint from {}".format(src_file_name))
@@ -295,7 +305,9 @@ class PTFileModelPersistor(ModelPersistor):
                 fire_event=False,
             )
             try:
-                data = self.model.state_dict() if self.model is not None else OrderedDict()
+                data = model_audit.load_step(
+                    self, "initialize", self.model.state_dict if self.model is not None else OrderedDict
+                )
             except Exception:
                 self.log_exception(fl_ctx, "error getting state_dict from model object")
                 self.system_panic(reason="cannot create state_dict from model object", fl_ctx=fl_ctx)
@@ -311,7 +323,11 @@ class PTFileModelPersistor(ModelPersistor):
 
     def _get_persistence_manager(self, fl_ctx: FLContext):
         if not self.persistence_manager:
-            self.load_model(fl_ctx)
+            if model_audit.saving(self):
+                with model_audit.operation("load", fl_ctx, owner=self) as audit:
+                    audit.returned(audit.call("implementation", self.load_model, fl_ctx))
+            else:
+                self.load_model(fl_ctx)
 
         return self.persistence_manager
 
@@ -319,11 +335,14 @@ class PTFileModelPersistor(ModelPersistor):
         if event == EventType.START_RUN:
             self._initialize(fl_ctx)
         elif event == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:
-            # save the current model as the best model, or the global best model if available
-            ml = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
-            if ml:
-                self._get_persistence_manager(fl_ctx).update(ml)
-            self.save_model_file(self._best_ckpt_save_path)
+            with model_audit.operation("best_save", fl_ctx, owner=self) as audit:
+                with audit.stage("implementation"):
+                    # Save the current model as the best model, or the global best model if available.
+                    ml = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+                    if ml:
+                        self._get_persistence_manager(fl_ctx).update(ml)
+                    self.save_model_file(self._best_ckpt_save_path)
+                audit.returned()
 
     def save_model_file(self, save_path: str):
         """Atomically save a PyTorch checkpoint.
@@ -348,13 +367,14 @@ class PTFileModelPersistor(ModelPersistor):
                 temp_path = candidate_path
                 if save_mode is not None:
                     os.chmod(temp_path, save_mode)
-                torch.save(save_dict, temp_file)
+                model_audit.save_step(self, "write", torch.save, save_dict, temp_file)
                 temp_file.flush()
                 os.fsync(temp_file.fileno())
 
-            os.replace(temp_path, save_path)
+            model_audit.save_step(self, "replace", os.replace, temp_path, save_path)
             temp_path = None
-            self._fsync_directory(save_dir)
+            with model_audit.static_save_step(self):
+                self._fsync_directory(save_dir)
         finally:
             if temp_path:
                 try:
@@ -370,7 +390,7 @@ class PTFileModelPersistor(ModelPersistor):
         directory_fd = None
         try:
             directory_fd = os.open(directory, os.O_RDONLY)
-            os.fsync(directory_fd)
+            model_audit.static_save_call("directory_sync", os.fsync, directory_fd)
         except OSError as e:
             if e.errno not in (errno.EACCES, errno.EBADF, errno.EINVAL, errno.ENOTSUP, errno.EPERM):
                 raise
@@ -416,7 +436,7 @@ class PTFileModelPersistor(ModelPersistor):
             model_inventory[tail] = ModelDescriptor(
                 name=self.source_ckpt_file_full_name,
                 location=self.source_ckpt_file_full_name,
-                model_format=self._get_persistence_manager(fl_ctx).get_persist_model_format(),
+                model_format=_get_inventory_model_format(self, fl_ctx),
                 props={"source": "initial_ckpt"},
             )
 
@@ -427,7 +447,7 @@ class PTFileModelPersistor(ModelPersistor):
             model_inventory[tail] = ModelDescriptor(
                 name=self.global_model_file_name,
                 location=location,
-                model_format=self._get_persistence_manager(fl_ctx).get_persist_model_format(),
+                model_format=_get_inventory_model_format(self, fl_ctx),
                 props={},
             )
 
@@ -437,8 +457,15 @@ class PTFileModelPersistor(ModelPersistor):
             model_inventory[tail] = ModelDescriptor(
                 name=self.best_global_model_file_name,
                 location=location,
-                model_format=self._get_persistence_manager(fl_ctx).get_persist_model_format(),
+                model_format=_get_inventory_model_format(self, fl_ctx),
                 props={},
             )
 
         return model_inventory
+
+
+def _get_inventory_model_format(persistor: PTFileModelPersistor, fl_ctx: FLContext):
+    # A named-model lookup can initialize its manager inside a custom save.
+    # Keep this lookup outside the enclosing training operation's file stages.
+    with model_audit.suspend_implementation():
+        return persistor._get_persistence_manager(fl_ctx).get_persist_model_format()
