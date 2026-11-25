@@ -78,34 +78,42 @@ def read_file(root: Path, relative: str) -> tuple[bytes, int]:
     return path.read_bytes(), 0o755 if mode & 0o111 else 0o644
 
 
+def verify_resource_inventory(
+    files: dict[str, tuple[bytes, int]], signature: str, expected: set[str], prefix: str = ""
+) -> int:
+    """Match the detached statement's relative paths and SHA-256 hashes to the package files."""
+    envelope = json.loads(files[signature][0])["dsseEnvelope"]
+    statement = json.loads(base64.b64decode(envelope["payload"], validate=True))
+    recorded = set()
+    for resource in statement["predicate"]["resources"]:
+        name = resource["name"]
+        path = PurePosixPath(name)
+        if not path.parts or path.is_absolute() or ".." in path.parts or "\\" in name or path.as_posix() != name:
+            raise ValueError(f"Invalid resource path in {signature}: {name}")
+        key = prefix + name
+        if key in recorded or key not in expected:
+            raise ValueError(f"Duplicate or unexpected resource in {signature}: {key}")
+        recorded.add(key)
+        if resource["algorithm"] != "sha256":
+            raise ValueError(f"Unsupported resource hash algorithm: {key}")
+        if hashlib.sha256(files[key][0]).hexdigest() != resource["digest"]:
+            raise ValueError(f"Signed resource hash mismatch in {signature}: {key}")
+    missing = expected - recorded
+    if missing:
+        raise ValueError(f"Files absent from the resource list in {signature}: {sorted(missing)}")
+    return len(recorded)
+
+
 def verify_resources(files: dict[str, tuple[bytes, int]]) -> int:
     """Compare every bundled skill file with its retained manifest resource list."""
     count = 0
     for skill in SKILLS:
         prefix = f"skills/{skill}/"
         signature = prefix + "skill.oms.sig"
-        envelope = json.loads(files[signature][0])["dsseEnvelope"]
-        statement = json.loads(base64.b64decode(envelope["payload"], validate=True))
-        recorded = set()
-        for resource in statement["predicate"]["resources"]:
-            name = resource["name"]
-            path = PurePosixPath(name)
-            if path.is_absolute() or ".." in path.parts or "\\" in name or path.as_posix() != name:
-                raise ValueError(f"Invalid resource path in {signature}: {name}")
-            key = prefix + name
-            if key in recorded or key == signature:
-                raise ValueError(f"Duplicate or self-referencing resource: {key}")
-            recorded.add(key)
-            if resource["algorithm"] != "sha256":
-                raise ValueError(f"Unsupported resource hash algorithm: {key}")
-            if key not in files or hashlib.sha256(files[key][0]).hexdigest() != resource["digest"]:
-                raise ValueError(f"Signed resource hash mismatch or missing file: {key}")
-        actual = {key for key in files if key.startswith(prefix) and key != signature}
-        if actual != recorded:
-            raise ValueError(f"Skill files absent from the resource list: {sorted(actual - recorded)}")
-        if prefix + "SKILL.md" not in recorded:
+        expected = {key for key in files if key.startswith(prefix) and key != signature}
+        if prefix + "SKILL.md" not in expected:
             raise ValueError(f"Missing SKILL.md resource: {skill}")
-        count += len(recorded)
+        count += verify_resource_inventory(files, signature, expected, prefix)
     return count
 
 
@@ -207,7 +215,7 @@ def read_bundle(package: Path) -> dict[str, tuple[bytes, int]]:
 
 
 def check_bundle(package: Path, expected: dict[str, tuple[bytes, int]]) -> dict[str, tuple[bytes, int]]:
-    """Check source parity; verification of retained evidence belongs to NVCARPS."""
+    """Check source parity and the whole-plugin resource inventory when present."""
     actual = read_bundle(package)
     missing = sorted(expected.keys() - actual.keys())
     extra = sorted(actual.keys() - expected.keys() - VERIFICATION_FILES)
@@ -216,6 +224,9 @@ def check_bundle(package: Path, expected: dict[str, tuple[bytes, int]]) -> dict[
         raise ValueError(
             f"Plugin bundle drift: missing={missing}, extra={extra}, changed={changed}. Rebuild with --sync."
         )
+    if PLUGIN_SIGNATURE in actual:
+        member_signatures = {f"skills/{skill}/skill.oms.sig" for skill in SKILLS}
+        verify_resource_inventory(actual, PLUGIN_SIGNATURE, actual.keys() - member_signatures - {PLUGIN_SIGNATURE})
     return actual
 
 

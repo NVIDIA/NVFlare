@@ -17,6 +17,7 @@
 
 """Exercise the committed plugin boundary without agents or optional SDK dependencies."""
 
+import base64
 import hashlib
 import json
 import stat
@@ -53,6 +54,26 @@ def bundle(tmp_path):
     return package, expected
 
 
+def resource_statement(files):
+    resources = [
+        {"name": name, "algorithm": "sha256", "digest": hashlib.sha256(data).hexdigest()}
+        for name, (data, _) in files.items()
+    ]
+    statement = json.dumps({"predicate": {"resources": resources}}).encode()
+    payload = base64.b64encode(statement).decode("ascii")
+    return json.dumps({"dsseEnvelope": {"payload": payload}}).encode()
+
+
+@pytest.fixture
+def signed_bundle(bundle):
+    package, expected = bundle
+    (package / "BENCHMARK.md").write_bytes(b"Checked benchmark\n")
+    signature = resource_statement(package_plugin.read_bundle(package))
+    (package / "plugin.oms.sig").write_bytes(signature)
+    (package / "plugin.oms.sig").chmod(0o644)
+    return package, expected, signature
+
+
 @pytest.mark.parametrize("mutation", ["content", "mode", "missing", "extra", "symlink", "directory-symlink"])
 def test_bundle_rejects_drift(bundle, tmp_path, mutation):
     package, expected = bundle
@@ -86,7 +107,7 @@ def test_source_change_requires_bundle_refresh(bundle):
 @pytest.mark.parametrize("evidence", sorted(package_plugin.VERIFICATION_FILES))
 def test_evidence_retained_but_blocks_changed_inputs(bundle, evidence):
     package, expected = bundle
-    payload = b"retained output bytes\n"
+    payload = resource_statement(expected) if evidence == "plugin.oms.sig" else b"retained output bytes\n"
     (package / evidence).write_bytes(payload)
     package_plugin.sync_bundle(package, expected)
     actual = package_plugin.check_bundle(package, expected)
@@ -126,11 +147,25 @@ def test_bundle_parent_cannot_be_symlink(tmp_path):
     assert not list(outside.iterdir())
 
 
-def test_archive_preserves_verification_outputs_and_records_their_hashes(bundle, tmp_path):
-    package, expected = bundle
-    signature = b"retained signature; no trust check performed by the packager\n"
-    (package / "plugin.oms.sig").write_bytes(signature)
-    (package / "plugin.oms.sig").chmod(0o644)
+@pytest.mark.parametrize(
+    "path,error", [("BENCHMARK.md", "Signed resource hash mismatch"), ("handoff-manifest.json", "Files absent")]
+)
+def test_signed_bundle_rejects_modified_or_unlisted_verification_output(signed_bundle, path, error):
+    package, expected, _ = signed_bundle
+    (package / path).write_bytes(b"unverified content\n")
+    with pytest.raises(ValueError, match=error):
+        package_plugin.check_bundle(package, expected)
+
+
+def test_signed_bundle_rejects_missing_verification_output(signed_bundle):
+    package, expected, _ = signed_bundle
+    (package / "BENCHMARK.md").unlink()
+    with pytest.raises(ValueError, match="unexpected resource.*BENCHMARK"):
+        package_plugin.check_bundle(package, expected)
+
+
+def test_archive_preserves_verification_outputs_and_records_their_hashes(signed_bundle, tmp_path):
+    package, expected, signature = signed_bundle
     files = package_plugin.check_bundle(package, expected)
     metadata = {"plugin": "demo", "version": "1.0.0", "plugin_signature_verified": False, "files": {}}
     output = tmp_path / "archive"
