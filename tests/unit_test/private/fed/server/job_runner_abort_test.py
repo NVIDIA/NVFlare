@@ -222,3 +222,62 @@ def test_start_failure_releases_pending_gpu_reservations(admission, monkeypatch,
     for site, manager in managers.items():
         enough, _ = manager.check_resources({"num_of_gpus": 2}, ctx)
         assert enough is (site not in allocated)
+
+
+@pytest.mark.parametrize(
+    "terminal_status",
+    [RunStatus.FINISHED_COMPLETED, RunStatus.FINISHED_ABORTED, RunStatus.FINISHED_EXECUTION_EXCEPTION],
+)
+def test_short_job_cannot_finish_before_running_status_is_persisted(admission, monkeypatch, terminal_status):
+    from nvflare.apis.fl_constant import RunProcessKey
+    from nvflare.fuel.common.exit_codes import ProcessExitCode
+
+    a = admission
+    writes, archived, pending_write_verdicts = [], [], []
+    # Drive completion passes at the fake store boundary; no background worker
+    # or transport is needed to exercise this startup/publication ordering.
+    monkeypatch.setattr(runner_module, "threading", SimpleNamespace(Thread=MagicMock()))
+    a.runner._save_workspace = MagicMock(side_effect=lambda *_: archived.append("job-1"))
+    a.runner.abort_client_run = MagicMock()
+    a.engine.client_manager.clients = {}
+
+    def complete_once():
+        a.runner.ask_to_stop = False
+        try:
+            with monkeypatch.context() as local:
+                local.setattr(runner_module, "time", SimpleNamespace(sleep=lambda _: a.runner.stop()))
+                JobRunner._job_complete_process(a.runner, a.engine)
+        finally:
+            a.runner.stop()
+
+    def short_job(**kwargs):
+        kwargs["job"].run_aborted = terminal_status == RunStatus.FINISHED_ABORTED
+        if terminal_status == RunStatus.FINISHED_EXECUTION_EXCEPTION:
+            a.engine.exception_run_processes["job-1"] = {
+                RunProcessKey.PROCESS_RETURN_CODE: ProcessExitCode.EXCEPTION,
+                RunProcessKey.PARTICIPANTS: {},
+            }
+        # The fake SJ has already exited: there is no run_processes entry.
+        assert not a.engine.run_processes
+
+    def persist(jid, status, _ctx):
+        if status == RunStatus.RUNNING:
+            # Simulate the completion thread progressing while this store write
+            # is pending. A premature terminal write must not be overwritten.
+            complete_once()
+            pending_write_verdicts.append(a.statuses[jid])
+        a.statuses[jid] = status.value
+        writes.append(status)
+
+    a.runner._start_run.side_effect = short_job
+    a.manager.set_status.side_effect = persist
+    a.runner.run(a.ctx)
+    complete_once()
+
+    assert pending_write_verdicts == [RunStatus.DISPATCHED]
+    assert writes == [RunStatus.DISPATCHED, RunStatus.RUNNING, terminal_status]
+    assert a.statuses["job-1"] == terminal_status
+    assert archived == ["job-1"]
+    assert not a.runner.running_jobs
+    assert not a.runner._finished_job_states
+    a.runner.log_error.assert_not_called()

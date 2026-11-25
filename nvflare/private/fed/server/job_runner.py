@@ -995,9 +995,11 @@ class JobRunner(FLComponent):
                                 # never launch a worker process, so mark them "disabled" instead of
                                 # letting them render as "missing" for a reason the server already knows.
                                 self.resource_stats.disable_clients(job_id, failed_clients)
+                            # Persist RUNNING before completion can select and publish a
+                            # terminal verdict for a server job that has already exited.
+                            job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
                             with self.lock:
                                 self.running_jobs[job_id] = ready_job
-                            job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
                             self.log_info(fl_ctx, f"Job: {job_id} started to run, status changed to RUNNING.")
                         except Exception as e:
                             startup_aborted = False
