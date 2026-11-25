@@ -33,7 +33,7 @@ from nvflare.apis.fl_constant import (
     TaskResultReceipt,
 )
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_exception import UnsafeJobError
+from nvflare.apis.fl_exception import NotReadyToEndRun, UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.task_launcher_spec import TaskExecutionInterrupted
@@ -1196,6 +1196,19 @@ class ClientRunner(TBI):
             # Readiness retries clear per-event exceptions; retain earlier shutdown failures.
             handler_errors = bool(fl_ctx.get_prop(FLContextKey.EXCEPTIONS))
             self.check_end_run_readiness(fl_ctx)
+            # A readiness timeout is advisory. Its control signal is not an END_RUN handler failure.
+            readiness_errors = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
+            if isinstance(readiness_errors, dict):
+                fl_ctx.set_prop(
+                    FLContextKey.EXCEPTIONS,
+                    {
+                        name: error
+                        for name, error in readiness_errors.items()
+                        if not isinstance(error, NotReadyToEndRun)
+                    },
+                    private=True,
+                    sticky=False,
+                )
 
             # now ready to end run
             self.fire_event(EventType.END_RUN, fl_ctx)

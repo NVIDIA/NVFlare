@@ -891,12 +891,15 @@ class SimulatorClientRunner(FLComponent):
             self.logger.error(f"Communication error with client {client.client_name}: {e}")
             return True, end_run_client
         finally:
-            self._cleanup_process(process)
+            if self._cleanup_process(process) is False and end_run_client != client.client_name:
+                # An unreaped worker must not be replaced, even if its task itself succeeded.
+                with lock:
+                    self.fatal_clients.add(client.client_name)
 
-    def _cleanup_process(self, process, timeout=5.0):
-        """Terminate and reap the worker, escalating to kill after the grace period."""
+    def _cleanup_process(self, process, timeout=5.0) -> bool:
+        """Terminate and reap the worker; report an unconfirmed exit after kill without masking its reply."""
         if not process or process.poll() is not None:
-            return  # Already dead or None
+            return True  # Already dead or None
 
         try:
             try:
@@ -905,8 +908,12 @@ class SimulatorClientRunner(FLComponent):
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            self.logger.warning(f"Simulator worker {process.pid} did not exit within {timeout} seconds after kill")
+            return False
         except (OSError, ProcessLookupError):
             pass  # Process already gone
+        return True
 
     def _get_new_sys_path(self):
         new_sys_path = []

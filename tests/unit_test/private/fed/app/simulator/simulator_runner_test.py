@@ -31,11 +31,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, RunnerTask, WorkspaceConstants
 from nvflare.apis.fl_context import FLContextManager
+from nvflare.apis.fl_exception import NotReadyToEndRun
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.signal import Signal
 from nvflare.apis.simulation_plan import SIMULATION_PLAN_PROP
 from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.fuel.utils import gpu_utils
+from nvflare.private.fed import tbi as tbi_module
 from nvflare.private.fed.app.simulator import simulator_runner as simulator_runner_module
 from nvflare.private.fed.app.simulator import simulator_worker
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
@@ -375,10 +377,43 @@ def test_worker_cleanup_reaps_after_kill_and_tolerates_exit_race(client_schedule
     if exit_before_kill:
         process.kill.side_effect = ProcessLookupError()
 
-    runner._cleanup_process(process)
+    assert runner._cleanup_process(process) is True
 
     methods = [call[0] for call in process.method_calls]
     assert methods == ["poll", "terminate", "wait", "kill"] + ([] if exit_before_kill else ["wait"])
+
+
+@pytest.mark.parametrize("shutdown_confirmed", [False, True])
+def test_post_kill_timeout_preserves_reply_and_does_not_reuse_client(client_task_boundary, shutdown_confirmed, caplog):
+    runner, clients, lock, client, process, conn = client_task_boundary
+    client.simulate_running = False
+    runner.run_client_index = -1
+    conn.recv.side_effect = [True, "site-1", False] if shutdown_confirmed else [False]
+    remaining = [Mock(), Mock()]
+    for candidate, connection in zip(clients[1:], remaining):
+        connection.recv.side_effect = [True, candidate.client_name, False]
+    runner._create_connection.side_effect = [conn, *remaining]
+    process.wait.side_effect = [
+        subprocess.TimeoutExpired("worker", 5),
+        subprocess.TimeoutExpired("worker", 5),
+        None,
+        None,
+    ]
+
+    runner.run_client_thread(2, None, lock, True)
+
+    assert "after kill" in caplog.text
+    assert runner.clients_finished_end_run == (
+        {"site-1", "site-2", "site-3"} if shutdown_confirmed else {"site-2", "site-3"}
+    )
+    assert runner.fatal_clients == (set() if shutdown_confirmed else {"site-1"})
+    launches = simulator_runner_module.popen_in_new_session.call_args_list
+    assert len(launches) == 3
+    assert [call.args[0][call.args[0].index("--client") + 1] for call in launches] == ["site-1", "site-2", "site-3"]
+    assert launches[1].args[0][launches[1].args[0].index("--task_name") + 1] == str(
+        RunnerTask.END_RUN if shutdown_confirmed else RunnerTask.TASK_EXEC
+    )
+    assert not any(c.simulate_running for c in clients)
 
 
 @pytest.mark.parametrize("extension", ["json", "conf", "yaml"])
@@ -799,20 +834,45 @@ class TestSimulatorRunner:
 
     @pytest.mark.parametrize("task_name", [RunnerTask.END_RUN, RunnerTask.TASK_EXEC])
     @pytest.mark.parametrize(
-        "failure_event", [None, EventType.ABORT_TASK, EventType.ABOUT_TO_END_RUN, EventType.END_RUN]
+        "failure_event",
+        [
+            None,
+            EventType.ABORT_TASK,
+            EventType.ABOUT_TO_END_RUN,
+            EventType.END_RUN,
+            "readiness-flag",
+            "readiness-exception",
+            "readiness-error",
+            "end-run-not-ready",
+        ],
     )
-    def test_worker_checks_actual_end_run_dispatch_context(self, task_name, failure_event):
+    def test_worker_checks_actual_end_run_dispatch_context(self, monkeypatch, task_name, failure_event):
+        events = []
+
         class Finalizer(FLComponent):
             def handle_event(self, event_type, fl_ctx):
+                events.append(event_type)
+                if event_type == EventType.CHECK_END_RUN_READINESS:
+                    if failure_event in ("readiness-flag", "readiness-error"):
+                        fl_ctx.set_prop(FLContextKey.NOT_READY_TO_END_RUN, True, private=True, sticky=False)
+                    if failure_event == "readiness-exception":
+                        raise NotReadyToEndRun("cleanup is not ready")
+                    if failure_event == "readiness-error":
+                        raise OSError("readiness handler failed")
                 if event_type == failure_event:
                     raise OSError("could not write final artifact")
+                if event_type == EventType.END_RUN and failure_event == "end-run-not-ready":
+                    raise NotReadyToEndRun("END_RUN handler did not finish")
 
+        clock = isolate_time(monkeypatch, tbi_module)
+        clock.time = Mock(side_effect=[0, 6])
         worker = simulator_worker.ClientTaskWorker()
         client_runner = ClientRunner.__new__(ClientRunner)
         FLComponent.__init__(client_runner)
         client_runner.running_tasks = {}
         client_runner.task_lock = threading.Lock()
         client_runner._run_abort_requested = True
+        client_runner.get_positive_float_var = lambda name, default: default
         client_runner.log_info = Mock()
         client_runner.log_debug = Mock()
         client_runner.fetch_and_run_one_task = Mock(return_value=(1.0, True))
@@ -835,13 +895,17 @@ class TestSimulatorRunner:
 
         _, stop_run, end_run_client, fatal_error = worker.do_one_task(client, Namespace(task_name=task_name))
 
-        handler_fails = failure_event is not None
+        handler_fails = failure_event not in (None, "readiness-flag", "readiness-exception")
         assert stop_run
         assert end_run_client == (None if handler_fails else "site-1")
         assert fatal_error is handler_fails
         assert not contexts[0].get_prop(FLContextKey.EXCEPTIONS)  # The worker's outer context cannot see the failure.
         # Readiness cleared earlier event errors, but they must still make the outcome fail.
-        assert bool(contexts[1].get_prop(FLContextKey.EXCEPTIONS)) is (failure_event == EventType.END_RUN)
+        assert bool(contexts[1].get_prop(FLContextKey.EXCEPTIONS)) is (
+            failure_event in (EventType.END_RUN, "readiness-error", "end-run-not-ready")
+        )
+        assert events.count(EventType.CHECK_END_RUN_READINESS) == 1
+        assert events.count(EventType.END_RUN) == 1
 
     def test_worker_create_connection_does_not_require_authkey(self):
         conn = Mock()
