@@ -105,9 +105,12 @@ def test_unsupported_container_metadata_is_rejected_before_import(container_stre
 def test_unsupported_container_fails_before_sending(container_stream):
     fl_ctx, _, _ = container_stream
 
-    with pytest.raises(ValueError, match="Unsupported container type"):
+    with pytest.raises(ValueError, match="Unsupported container type") as exc_info:
         ContainerStreamer.stream_container("container", "data", {}, ["receiver"], UserList([1]), fl_ctx)
 
+    assert "collections.UserList" in str(exc_info.value)
+    assert "Supported types: dict, list, set, collections.OrderedDict" in str(exc_info.value)
+    assert "pass dict(value) explicitly" in str(exc_info.value)
     fl_ctx.get_engine().stream_objects.assert_not_called()
 
 

@@ -26,13 +26,40 @@ The following implementations are included in NVFlare,
 * `ContainerStreamer` streams containers entry by entry. It supports `dict`, `list`, `set`, and `collections.OrderedDict`.
 * `FileStreamer`: This class is used to stream a file
 
-The top-level container type must exactly match one of the four supported types. For example, passing a
-`Counter` or `defaultdict` to `ContainerRetriever.add_container()` or `ContainerStreamer.stream_container()`
-raises `ValueError`. Use `dict(value)` to stream the entries and reconstruct any specialized behavior locally.
-The four supported types keep their wire names during a rolling upgrade. Update every server or client
-that receives container streams. A patched retriever reports `UNSUPPORTED_CONTAINER_TYPE` if an older
-sender streams an unsupported type. A custom streaming engine can enable this response by
-implementing `StreamableEngine.get_stream_peer_origin()` with the authenticated endpoint for the retrieval.
+The top-level container type must exactly match one of the four supported types. Passing a `defaultdict`,
+`Counter`, or another subclass to `ContainerRetriever.add_container()` or
+`ContainerStreamer.stream_container()` raises `ValueError`. The wire format carries the entries.
+The receiver chooses an approved constructor. Rebuilding a `defaultdict` with its missing-key behavior
+would also require choosing a default factory, so the application makes that choice locally.
+
+For example, update a job that registers a `defaultdict` as follows:
+
+```python
+from collections import defaultdict
+
+value = defaultdict(int, {"batch_1": 3})
+
+# Before (older sender)
+retriever.add_container("counts", value)
+
+# After (sender)
+retriever.add_container("counts", dict(value))
+
+# On the receiver, after a successful retrieval returns received_dict
+counts = defaultdict(int, received_dict)
+```
+
+`dict(value)` allocates one new top-level dictionary and reuses the existing keys and values, including
+tensors. It discards the default factory, `Counter` missing-key behavior, and any custom attributes.
+For a former `Counter`, use `collections.Counter(received_dict)` on the receiver. Restore any custom
+attributes your application needs there.
+
+The four supported types keep their wire names during a rolling upgrade. Patch every server or client
+that receives container streams. For an unsupported type from an older sender, a patched retriever
+returns `UNSUPPORTED_CONTAINER_TYPE` when it can match the rejection to the authenticated peer and
+retrieval. A custom engine can enable this response by implementing
+`StreamableEngine.get_stream_peer_origin()`. Without that origin, the retrieval can time out. Direct
+streaming reports a generic stream failure.
 
 Note that the container streamer split the stream by the top level entries. All the sub entries of a top entry are expected to be
 sent as a whole, therefore the memory is determined by the largest entry at top level.

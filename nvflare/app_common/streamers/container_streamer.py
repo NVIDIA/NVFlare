@@ -42,7 +42,11 @@ def _get_container_type(container: Any) -> str:
     container_class = type(container)
     container_type = get_class_name(container_class)
     if _CONTAINER_TYPES.get(container_type) is not container_class:
-        raise ValueError("Unsupported container type for streaming")
+        supported_types = ", ".join(_CONTAINER_TYPES)
+        raise ValueError(
+            f"Unsupported container type for streaming: {container_type}. Supported types: {supported_types}. "
+            "To stream the entries of a dictionary subclass, pass dict(value) explicitly."
+        )
     return container_type
 
 
