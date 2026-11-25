@@ -23,6 +23,7 @@ from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey,
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.model_desc import ModelDescriptor
 from nvflare.app_opt.tf.utils import flat_layer_weights_dict, unflat_layer_weights_dict
+from nvflare.fuel.sec import model_audit
 
 
 class TFModelPersistor(ModelPersistor):
@@ -227,7 +228,7 @@ class TFModelPersistor(ModelPersistor):
         try:
             if os.path.exists(location):
                 self.logger.info(f"Loading TensorFlow model from {location}")
-                self.model.load_weights(location)
+                model_audit.retrieve_step(self, "file_read", self.model.load_weights, location)
 
                 # build model if not built yet
                 if not self.model.built:

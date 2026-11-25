@@ -17,6 +17,7 @@ from typing import Dict
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.model_desc import ModelDescriptor
+from nvflare.fuel.sec import model_audit
 
 from .learnable_persistor import LearnablePersistor
 from .model import ModelLearnable
@@ -37,35 +38,43 @@ class ModelPersistor(LearnablePersistor, ABC):
         self.filter_id = filter_id
 
     def load(self, fl_ctx: FLContext) -> ModelLearnable:
-        learnable = self.load_model(fl_ctx)
-        if self.filter_id:
-            _filter = fl_ctx.get_engine().get_component(self.filter_id)
-            if not isinstance(_filter, PersistorFilter):
-                raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
-            learnable = _filter.process_post_load(learnable=learnable, fl_ctx=fl_ctx)
-        return learnable
+        with model_audit.operation("load", fl_ctx, owner=self) as audit:
+            learnable = audit.call("implementation", self.load_model, fl_ctx)
+            if self.filter_id:
+                with audit.stage("post_load_filter"):
+                    _filter = fl_ctx.get_engine().get_component(self.filter_id)
+                    if not isinstance(_filter, PersistorFilter):
+                        raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
+                    learnable = _filter.process_post_load(learnable=learnable, fl_ctx=fl_ctx)
+            return audit.returned(learnable)
 
     def save(self, learnable: ModelLearnable, fl_ctx: FLContext):
-        if self.filter_id:
-            _filter = fl_ctx.get_engine().get_component(self.filter_id)
-            if not isinstance(_filter, PersistorFilter):
-                raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
-            learnable = _filter.process_pre_save(learnable=learnable, fl_ctx=fl_ctx)
+        with model_audit.operation("save", fl_ctx, owner=self) as audit:
+            if self.filter_id:
+                with audit.stage("pre_save_filter"):
+                    _filter = fl_ctx.get_engine().get_component(self.filter_id)
+                    if not isinstance(_filter, PersistorFilter):
+                        raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
+                    learnable = _filter.process_pre_save(learnable=learnable, fl_ctx=fl_ctx)
 
-        self.save_model(learnable, fl_ctx)
+            audit.call("implementation", self.save_model, learnable, fl_ctx)
 
-        if self.filter_id:
-            _filter.process_post_save(learnable=learnable, fl_ctx=fl_ctx)
+            if self.filter_id:
+                with audit.stage("post_save_filter"):
+                    _filter.process_post_save(learnable=learnable, fl_ctx=fl_ctx)
+            audit.returned()
 
     def get(self, model_file: str, fl_ctx: FLContext) -> object:
-        learnable = self.get_model(model_file, fl_ctx)
+        with model_audit.operation("retrieve", fl_ctx, owner=self) as audit:
+            learnable = audit.call("implementation", self.get_model, model_file, fl_ctx)
 
-        if self.filter_id:
-            _filter = fl_ctx.get_engine().get_component(self.filter_id)
-            if not isinstance(_filter, PersistorFilter):
-                raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
-            learnable = _filter.process_post_get(learnable=learnable, fl_ctx=fl_ctx)
-        return learnable
+            if self.filter_id:
+                with audit.stage("post_get_filter"):
+                    _filter = fl_ctx.get_engine().get_component(self.filter_id)
+                    if not isinstance(_filter, PersistorFilter):
+                        raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
+                    learnable = _filter.process_post_get(learnable=learnable, fl_ctx=fl_ctx)
+            return audit.returned(learnable)
 
     @abstractmethod
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:

@@ -15,6 +15,7 @@
 """Unit tests for PTFileModelPersistor."""
 
 import errno
+import json
 import os
 import stat
 from unittest.mock import Mock
@@ -24,6 +25,7 @@ import pytest
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.fuel.sec.audit import Auditor, AuditService
 
 
 class TestPTFileModelPersistorInit:
@@ -409,3 +411,202 @@ class TestPTFileModelPersistorSave:
         if os.name != "nt":
             assert stat.S_IMODE(final_path.stat().st_mode) == 0o640
         assert list(tmp_path.glob(f".{final_path.name}.*.tmp")) == []
+
+
+@pytest.fixture
+def model_audit_records(tmp_path, monkeypatch):
+    path = tmp_path / "model-audit.jsonl"
+    auditor = Auditor(str(path))
+    monkeypatch.setattr(AuditService, "the_auditor", auditor)
+    try:
+        yield lambda: [json.loads(line) for line in path.read_text().splitlines()]
+    finally:
+        auditor.close()
+
+
+def _stage_outcomes(records, stage):
+    return [record["action"] for record in records if f"stage={stage}" in record.get("message", "").split()]
+
+
+@pytest.mark.parametrize("scenario", ["missing", "corrupt", "invalid_device", "read"])
+def test_pt_load_distinguishes_read_from_preparation(tmp_path, monkeypatch, model_audit_records, scenario):
+    torch = pytest.importorskip("torch")
+    from nvflare.app_common.abstract.model import ModelLearnableKey
+    from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+    source = tmp_path / "private-source.pt"
+    if scenario == "corrupt":
+        source.write_bytes(b"not a checkpoint")
+    elif scenario != "missing":
+        torch.save({"weight": torch.tensor([42.0])}, source)
+    persistor = PTFileModelPersistor(
+        source_ckpt_file_full_name=str(source),
+        load_device="invalid-device" if scenario == "invalid_device" else "cpu",
+    )
+    panic = Mock()
+    monkeypatch.setattr(persistor, "system_panic", panic)
+
+    result = persistor.load(FLContext())
+
+    records = model_audit_records()
+    if scenario == "read":
+        panic.assert_not_called()
+        assert result[ModelLearnableKey.WEIGHTS]["weight"].tolist() == [42.0]
+        assert _stage_outcomes(records, "source_read") == ["model.load.stage_returned"]
+    else:
+        panic.assert_called_once()
+        assert result is None
+        expected = ["model.load.stage_error"] if scenario == "corrupt" else []
+        assert _stage_outcomes(records, "source_read") == expected
+        assert "status=no_value" in records[-1]["message"].split()
+    assert records[-1]["action"] == "model.load.returned"
+    assert all("private-source" not in json.dumps(record) for record in records)
+
+
+@pytest.mark.parametrize("kind", ["save", "best_save"])
+def test_pt_save_lazy_initialization_has_one_separate_load(tmp_path, model_audit_records, kind):
+    torch = pytest.importorskip("torch")
+    from nvflare.app_common.abstract.model import make_model_learnable
+    from nvflare.app_common.app_event_type import AppEventType
+    from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+    persistor = PTFileModelPersistor()
+    destination = tmp_path / "private-checkpoint.pt"
+    fl_ctx = FLContext()
+    persistor._ckpt_save_path = str(destination)
+    persistor._best_ckpt_save_path = str(destination)
+    learned = make_model_learnable({"weight": torch.tensor([19.0])}, {})
+
+    if kind == "best_save":
+        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, learned, private=True, sticky=False)
+        persistor.handle_event(AppEventType.GLOBAL_BEST_MODEL_AVAILABLE, fl_ctx)
+    else:
+        persistor.save(learned, fl_ctx)
+
+    loaded = torch.load(destination, weights_only=True)
+    assert torch.equal(loaded["model"]["weight"], torch.tensor([19.0]))
+    records = model_audit_records()
+    assert [record["action"] for record in records if record["action"].endswith(".started")] == [
+        f"model.{kind}.started",
+        "model.load.started",
+    ]
+    assert _stage_outcomes(records, "initialize") == ["model.load.stage_returned"]
+    assert _stage_outcomes(records, "replace") == [f"model.{kind}.stage_returned"]
+    assert records[-1]["action"] == f"model.{kind}.returned"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="PyTorch checkpoint code skips directory synchronization on Windows")
+def test_pt_replacement_stays_recorded_after_directory_sync_error(tmp_path, monkeypatch, model_audit_records):
+    torch = pytest.importorskip("torch")
+    from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+    destination = tmp_path / "private-checkpoint.pt"
+    torch.save({"model": {"weight": torch.tensor([1.0])}}, destination)
+    persistor = PTFileModelPersistor()
+    persistor.persistence_manager = _PersistenceManager({"model": {"weight": torch.tensor([2.0])}})
+    persistor._ckpt_save_path = str(destination)
+    failure = OSError(errno.EIO, "private directory sync failure")
+    real_fsync = os.fsync
+
+    def sync(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise failure
+        return real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", sync)
+    model = object()
+    with pytest.raises(OSError) as caught:
+        persistor.save(model, FLContext())
+
+    assert caught.value is failure
+    assert persistor.persistence_manager.updated_model is model
+    assert torch.equal(torch.load(destination, weights_only=True)["model"]["weight"], torch.tensor([2.0]))
+    assert not list(tmp_path.glob(".*.tmp"))
+    records = model_audit_records()
+    stages = [record for record in records if record["action"].startswith("model.save.stage_")]
+    replace = next(record for record in stages if "stage=replace" in record.get("message", "").split())
+    failed_sync = next(record for record in stages if "stage=directory_sync" in record.get("message", "").split())
+    assert replace["action"] == "model.save.stage_returned"
+    assert failed_sync["action"] == "model.save.stage_error"
+    assert records.index(replace) < records.index(failed_sync) < len(records) - 1
+    assert records[-1]["action"] == "model.save.error"
+    assert all("private directory sync failure" not in json.dumps(record) for record in records)
+
+
+def test_pt_named_retrieval_inside_custom_save_does_not_audit_inventory_load(tmp_path, model_audit_records):
+    torch = pytest.importorskip("torch")
+    from nvflare.app_common.abstract.model import ModelLearnableKey
+    from nvflare.app_common.abstract.model_persistor import ModelPersistor
+    from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+    source = tmp_path / "private-inventory-model.pt"
+    torch.save({"weight": torch.tensor([19.0])}, source)
+    retrieval = PTFileModelPersistor(source_ckpt_file_full_name=str(source), load_device="cpu")
+    retrieval.log_dir = str(tmp_path)
+
+    class _SavingPersistor(ModelPersistor):
+        def load_model(self, fl_ctx):
+            raise NotImplementedError
+
+        def save_model(self, model, fl_ctx):
+            self.retrieved = retrieval.get_model(source.name, fl_ctx)
+
+    assert retrieval.persistence_manager is None
+    custom = _SavingPersistor()
+    custom.save(None, FLContext())
+
+    assert retrieval.persistence_manager is not None
+    assert custom.retrieved[ModelLearnableKey.WEIGHTS]["weight"].tolist() == [19.0]
+    assert [record["action"] for record in model_audit_records()] == [
+        "model.save.started",
+        "model.save.stage_returned",
+        "model.save.returned",
+    ]
+
+
+@pytest.mark.parametrize("scenario", ["read", "missing", "corrupt", "decode_error"])
+def test_pt_named_retrieval_observes_only_the_selected_file(tmp_path, model_audit_records, scenario):
+    torch = pytest.importorskip("torch")
+    from nvflare.app_common.abstract.model import ModelLearnableKey
+    from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
+
+    source = tmp_path / "private-source.pt"
+    torch.save({"source_weight": torch.tensor([17.0])}, source)
+    saved = tmp_path / "private-selected.pt"
+    if scenario == "corrupt":
+        saved.write_bytes(b"private-corrupt-checkpoint")
+    elif scenario == "decode_error":
+        torch.save(torch.tensor([21.0]), saved)
+    else:
+        torch.save(
+            {"model": {"private-weight": torch.tensor([621.0])}, "meta_props": {"tag": "private-metadata"}}, saved
+        )
+    persistor = PTFileModelPersistor(
+        source_ckpt_file_full_name=str(source), global_model_file_name=saved.name, load_device="cpu"
+    )
+    persistor.log_dir = str(tmp_path)
+    name = "private-missing.pt" if scenario == "missing" else saved.name
+
+    result = persistor.get(name, FLContext())
+
+    assert persistor.persistence_manager is not None
+    if scenario == "read":
+        assert result[ModelLearnableKey.WEIGHTS]["private-weight"].tolist() == [621.0]
+        assert result[ModelLearnableKey.META] == {"tag": "private-metadata"}
+    else:
+        assert result is None
+    expected_reads = {
+        "read": ["model.retrieve.stage_returned"],
+        "missing": [],
+        "corrupt": ["model.retrieve.stage_error"],
+        "decode_error": ["model.retrieve.stage_returned"],
+    }
+    records = model_audit_records()
+    assert _stage_outcomes(records, "file_read") == expected_reads[scenario]
+    assert all(record["action"].startswith("model.retrieve.") for record in records)
+    assert records[-1]["action"] == "model.retrieve.returned"
+    assert ("status=value_returned" if scenario == "read" else "status=no_value") in records[-1]["message"].split()
+    serialized_records = json.dumps(records)
+    assert "private-" not in serialized_records
+    assert str(tmp_path) not in serialized_records
+    assert all("621" not in record.get("message", "") for record in records)
