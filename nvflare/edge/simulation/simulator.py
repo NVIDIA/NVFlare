@@ -222,12 +222,12 @@ class Simulator:
                         selection_id = sid
                         if isinstance(resp.cookie, dict):
                             selection_id = resp.cookie.get(CookieKey.DEVICE_SELECTION_ID, sid)
+                        # Publish busy state before a fast worker can finish and clear it.
+                        with self.update_lock:
+                            self.busy_devices[did] = selection_id
                         self.worker_pool.submit(
                             self._do_learn, task_data=resp, device=device, selection_id=selection_id
                         )
-
-                        # mark the device to be busy and remove from device candidates for next cycle.
-                        self.busy_devices[did] = selection_id
                 elif resp.status == EdgeApiStatus.RETRY:
                     self.logger.info(f"Task request for device {did} returned RETRY status, will retry.")
                 elif resp.status == EdgeApiStatus.NO_JOB:
@@ -383,9 +383,15 @@ class Simulator:
         if resp and not isinstance(resp, ResultResponse):
             self.logger.error(f"received response must be ResultResponse but got {type(resp)}")
 
+        elif not resp or resp.status != EdgeApiStatus.OK:
+            self.logger.warning(
+                f"No successful result acknowledgment for device {device.device_id}, selection {selection_id}. "
+                "The task will not be repeated because its result may already have been accepted."
+            )
+
         device.state = DeviceState.IDLE
 
-        # put the device in used_devices
+        # Remember the attempted selection so an ambiguous POST is never retrained or replayed.
         with self.update_lock:
             self.busy_devices.pop(device.device_id, None)
             self.used_devices[device.device_id] = selection_id

@@ -142,6 +142,14 @@ if [ "${CUDA_VISIBLE_DEVICES+x}" = "x" ]; then
     GPU_ENV_ARGS=(-e "CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES")
 fi
 
+# Sites using Slurm task workers opt in to a second workspace view in CP.
+SHARED_WORKSPACE_ARGS=()
+if [ "@@NVFLARE_ROLE_LABEL@@" = "client" ] &&
+    [ "${NVFL_DOCKER_NATIVE_WORKSPACE:-0}" = "1" ] &&
+    [ "$HOST_WORKSPACE" != "@@NVFLARE_WORKSPACE_MOUNT_PATH@@" ]; then
+    SHARED_WORKSPACE_ARGS=(-v "$HOST_WORKSPACE:$HOST_WORKSPACE")
+fi
+
 docker "${DOCKER_CLI_ARGS[@]}" run --name "$CONTAINER_NAME" \
     "${GPU_ENV_ARGS[@]}" \
     --user "$(id -u):$(id -g)" \
@@ -149,6 +157,7 @@ docker "${DOCKER_CLI_ARGS[@]}" run --name "$CONTAINER_NAME" \
     --network "$NETWORK_NAME" \
     "${NETWORK_ALIAS_ARGS[@]}" \
 @@NVFLARE_NETWORK_ALIAS@@    -v "$HOST_WORKSPACE":@@NVFLARE_WORKSPACE_MOUNT_PATH@@ \
+    "${SHARED_WORKSPACE_ARGS[@]}" \
     --mount "type=bind,src=$DOCKER_SOCK,dst=/var/run/docker.sock" \
     -e NVFL_DOCKER_WORKSPACE="$HOST_WORKSPACE" \
     -e NVFL_DOCKER_NETWORK="$NETWORK_NAME" \

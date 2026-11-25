@@ -329,21 +329,89 @@ must fix name resolution or use exclusive-node policies compatible with their fa
 
 ## Disposable task allocations
 
-The same `ClientSlurmJobLauncher` selects resident or task-mode CJ launching from
-the deployed application lifetime. Task mode registers a CP owner before starting
-CJ and uses its independent coordinator resource budget. `SlurmTaskLauncher` is
-the CJ proxy for the per-assignment launch interface; its backend runs in CP.
+`client_executor.py` reads `execution_lifetime` from the deployed app. A job
+launcher starts the client job (CJ) in either mode. In task mode, the client
+parent (CP) sets up worker tracking before the CJ can request a worker.
 
-```text
-CP: ClientSlurmJobLauncher -> SlurmJobManager -> coordinator CJ allocation
-CJ: TaskWorkerExecutor -> TaskSupervisor -> SlurmTaskLauncher proxy
-                                              | job-scoped Cell requests
-CP: SlurmTaskService -> shared CP task control -> native task backend -> Slurm allocation + accounting
-worker: common task_worker_process (native scope) -> application
+```mermaid
+sequenceDiagram
+    participant S as Server
+    box Client parent (CP)
+        participant E as scheduler_cmds.py and client_engine.py
+        participant X as client_executor.py
+        participant R as task_runtime.py
+        participant T as CP task service
+        participant L as JobLauncher
+    end
+    participant C as Client job (CJ)
+
+    S->>E: START_JOB
+    E->>X: start_app()
+    X->>X: Select job launcher and read execution_lifetime
+
+    alt Job mode (default)
+        X->>L: launch_job()
+        L->>C: Start the resident CJ
+        L-->>X: Job handle
+    else Task mode
+        X->>R: launch_task_job()
+        Note over R: task_execution_policy.py loads site config and checks the launcher pairing
+        alt Process or Docker CJ with Slurm workers
+            Note over R: slurm/task_launcher.py binds the worker backend and resolves resources
+            R->>T: add_job() registers worker tracking in CP
+            R->>L: launch_job() with CP Cell name and job token in the CJ environment
+            L->>C: Start the CJ
+            L-->>R: Publish or return CJ handle
+            R->>T: attach_cj() records the handle for cleanup
+        else Native Slurm or Kubernetes CJ
+            R->>L: launch_job()
+            L->>T: Register worker tracking in CP
+            L->>C: Start the CJ allocation or pod
+            L-->>R: Job handle
+        end
+        R-->>X: Job handle
+    end
 ```
 
-The shared CP control lives in `nvflare/private/fed/task_worker/task_service.py`;
-only the scheduler-specific service and backend live under `app_opt`.
+When a task arrives, a resident CJ runs it through its configured executor. In
+Slurm task mode, the CJ asks CP to submit a separate worker allocation.
+
+```mermaid
+flowchart LR
+    SJ["Server job sends a task"]
+
+    subgraph JobMode["Job mode"]
+        Resident["CJ runs the task in its existing job runtime"]
+    end
+
+    subgraph CJ["Slurm task mode · CJ"]
+        Exec["TaskWorkerExecutor"]
+        Proxy["SlurmTaskLauncher proxy<br/>slurm/task_launcher.py"]
+        Cell["CJ Cell listener<br/>worker_listener_host"]
+        Exec --> Proxy
+    end
+
+    subgraph CP["Slurm task mode · CP"]
+        Service["SlurmTaskService<br/>Checks the token and tracks the attempt"]
+        Backend["_SlurmTaskBackend<br/>slurm/task_launcher.py"]
+        Service -->|"Launch worker"| Backend
+    end
+
+    SJ --> Resident
+    SJ --> Exec
+    Proxy -->|"Cell request to launch a worker"| Service
+    Backend -->|"sbatch"| Worker["task_worker_process<br/>Runs on a Slurm compute node"]
+    Worker -->|"Connects back for HELLO and metrics"| Cell
+    Exec -->|"Stages task input"| Artifacts["Shared workspace"]
+    Artifacts -->|"Worker reads task input"| Worker
+    Worker -->|"Writes result and completion"| Artifacts
+    Artifacts -->|"CJ reads the verified result"| Exec
+```
+
+The shared CP control lives in `nvflare/private/fed/task_worker/task_service.py`.
+Slurm's service, proxy, and backend live under `app_opt`. Compute nodes must be
+able to reach the CJ's Cell listener. Task inputs and results use the shared
+workspace.
 
 Application completion and native cleanup are independent. The common supervisor
 requires settlement by default. Slurm's parent-owned profile accepts a verified
@@ -351,21 +419,22 @@ immutable completion first, makes one bounded cleanup wait, and acknowledges the
 result to CP. The acknowledgement permits a new assignment but never marks the
 previous allocation settled. CP retains that allocation and its replay fence and
 requests cancellation when release is still unconfirmed. Missing completion or
-invalid payloads remain failures; cleanup uncertainty is a warning. Task-mode CJ
-recovery follows [client job recovery](client_job_recovery.md): a retryable worker
-loss exits CJ, and CP replaces it once every worker allocation has settled. The CJ handle preserves CJ outcome and bounds its join
-of background task cleanup; shutdown expiry does not fabricate resource release.
+invalid payloads remain failures; cleanup uncertainty is a warning. With native
+Slurm CJs, a retryable worker loss can trigger [client job recovery](client_job_recovery.md)
+after worker allocations settle. The Process and Docker CJ profiles disable CJ
+recovery. The CJ handle preserves the outcome and bounds its wait for background
+task cleanup.
 
 ### Backend contract
 
 * **Authority:** CP owns scheduler submission, observation and cancellation.
-  It registers a job-scoped Cell service before starting the CJ and gives
+  It registers each job with its task service before starting the CJ and gives
   that CJ a capability for its own staged worker requests. The service binds
   resources, executable and environment to trusted site policy. The CP backend
   accepts only staged common-worker requests; the batch script checks its
   allocation identity before starting the common worker. CJ requests
-  cannot supply scheduler commands or a different job's paths. The CJ still
-  requires its Slurm child marker and allocation ID; CP does not.
+  cannot supply scheduler commands or a different job's paths. A native Slurm
+  CJ requires its Slurm child marker and allocation ID.
   CP cleanup ownership survives CJ abort, allocation loss and an in-flight
   submission. The default CPU CJ supervises communication; task computation
   may use CPUs or GPUs in a separate allocation.

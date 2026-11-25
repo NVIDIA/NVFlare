@@ -27,6 +27,8 @@ EXCLUDED_ACTIONS = {
 
 
 class Auditor(object):
+    _admin_audit_noop = False
+
     def __init__(self, audit_file_name: str):
         """Writes audit events as JSONL records with UTC timestamps.
 
@@ -40,7 +42,9 @@ class Auditor(object):
         self.audit_file = open(audit_file_name, "a", encoding="utf-8")
         self._lock = threading.Lock()
 
-    def add_event(self, user: str, action: str, ref: str = "", msg: str = "") -> str:
+    def add_event(
+        self, user: str, action: str, ref: str = "", msg: str = "", *, job_id: str = "", scope_name: str = ""
+    ) -> str:
 
         if action in EXCLUDED_ACTIONS:
             return ""
@@ -59,6 +63,10 @@ class Auditor(object):
                 user=str(user),
                 action=str(action),
             )
+            if job_id:
+                record["job"] = str(job_id)
+            if scope_name:
+                record["scope"] = str(scope_name)
             if msg:
                 record["message"] = str(msg)
 
@@ -116,11 +124,15 @@ class AuditService(object):
             return AuditService.the_auditor
 
     @staticmethod
-    def add_event(user: str, action: str, ref: str = "", msg: str = "") -> str:
+    def add_event(
+        user: str, action: str, ref: str = "", msg: str = "", *, job_id: str = "", scope_name: str = ""
+    ) -> str:
         with AuditService._lock:
             auditor = AuditService.the_auditor
         if not auditor:
             return ""
+        if job_id or scope_name:
+            return auditor.add_event(user, action, ref, msg, job_id=job_id, scope_name=scope_name)
         return auditor.add_event(user, action, ref, msg)
 
     @staticmethod

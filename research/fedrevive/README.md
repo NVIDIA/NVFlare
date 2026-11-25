@@ -2,7 +2,10 @@
 
 This research project implements [FedRevive](https://arxiv.org/abs/2511.00655)
 with the NVIDIA FLARE Collab API. It targets the CIFAR-10 experiment in the
-paper and provides FedAvg, FedBuff, and FedRevive through one workflow.
+paper and provides FedAvg, FedBuff, and FedRevive through one entry point.
+
+See the [component migration notes](REFACTORING.md) for how the research
+workflow uses the shared FedBuff recipe, KD helpers, and reproducible SimEnv.
 
 FedRevive retains the ordinary parameter-space update from an asynchronous
 client and supplements stale updates with server-side data-free knowledge
@@ -17,21 +20,22 @@ It uses the model, data partition, runtime distributions, and training settings
 reported in the paper. It is intentionally separate from the other NVIDIA
 FLARE CIFAR-10 examples.
 
-The simulated-time scheduler in `server.py` is a controlled-experiment harness:
-it replays the paper's seeded delay schedules on a small physical worker pool
-so results do not depend on host speed. It is not the recommended deployment
-pattern for FedRevive. For real asynchronous training, start from
-[`pt_async_cifar10`](../../examples/advanced/collab/pt_async_cifar10/README.md)
-and reuse the aggregation and DFKD components from `fedrevive.py` and `dfkd.py`.
+The default `--arrival-mode simulated` generates the paper's seeded schedule
+before launching SimEnv. SimEnv preflights it with placeholder uploads, then
+executes and verifies its logical events on the physical worker pool.
+All arrival modes use the same `FedBuffRecipe` and FedRevive update transform.
+Use `--arrival-mode actual` for live arrivals or `--arrival-mode replay` to
+supply a saved or externally generated plan.
 
 CIFAR-100, FEMNIST, 20NewsGroups, DD-FedRevive, and AFL-DW are outside this
 initial contribution.
 
-The class-proportion source and generator interval are independent experiment
-options. `--class-proportion-source true-histogram` reads each client's
+`--class-proportion-source true-histogram` reads each client's
 prepared class histogram, while `--class-proportion-source estimated` derives
 it entirely on the server from ordinary model uploads. `--generation-interval`
 controls how many global model versions elapse between synthesis steps.
+`--synthesis-label-distribution` selects uniform targets or targets sampled from
+the mean of the buffered teachers' class proportions.
 
 ## Class-proportion estimation
 
@@ -45,14 +49,15 @@ also removes the prepared true proportions from its server-side manifest copy.
 
 The paper does not report the number of Gaussian probe inputs. This
 implementation uses 64, matching its reported synthesis batch size. One
-reusable probing model serves all 1,000 logical clients; persistent estimator
-state is only one ten-element sum and one count per observed client. Use
+reusable probing model serves all 1,000 logical clients. The shared probe uses a
+temporary model copy, and the estimator keeps one ten-element sum and one count
+per observed client. Use
 `--class-proportion-probe-count` to change the total for a sensitivity run;
 probes are forwarded in chunks of at most 64 so peak device memory remains
 bounded.
 
-The paper-main setting, and therefore the FedRevive default, uses estimated
-class proportions and `--generation-interval 10`. All settings use
+FedRevive defaults to estimated class proportions, uniform synthesis targets,
+and `--generation-interval 10`. All settings use
 $K_{synth}=2$, $K_{KD}=10$, and an eight-model teacher buffer ($c=8$).
 Distillation still occurs on every eligible stale arrival after warmup. Between
 synthesis steps, the bounded synthetic pool is reused.
@@ -64,20 +69,19 @@ paper experiment; real deployments use actual client arrivals directly.
 
 The server exposes three scheduling parameters:
 
-- `K` (`--num-active-jobs`) is the maximum number of concurrent client jobs.
-- `B` (`--buffer-size`) is the number of returned updates required to create a
+- Concurrency (`--concurrency`) is the maximum number of active assignments.
+  The legacy `--num-active-jobs` spelling is also accepted.
+- Buffer size (`--buffer-size`) is the number of returned updates required to create a
   new global model version.
-- `O` (`--min-open-slots`) is the number of open execution slots required
+- Minimum open slots (`--min-open-slots`) is the number of open execution slots required
   before the current global model is distributed to more clients.
 
 All returned models pass through the same update function. The client delta is
-computed against the exact model snapshot used by that assignment. By default,
-`--in-time` adds each accepted delta to a running sum and retains only that sum
-and a count. This is a storage optimization: the global model is still updated
-only after `B` contributions. Use `--no-in-time` to retain the individual
-deltas until that same boundary. The method presets are:
+computed against the exact model snapshot used by that assignment. The shared
+`FedBuffTrainingCoordinator` accumulates accepted deltas in a running sum and
+publishes only after `buffer_size` contributions. The method presets are:
 
-| Method | `K` | `B` | `O` | Server learning rate |
+| Method | Concurrency | Buffer size | Minimum open slots | Server learning rate |
 |---|---:|---:|---:|---:|
 | FedAvg | 100 | 100 | 100 | 1.4 |
 | FedBuff | 100 | 2 | 1 | 0.05 |
@@ -87,7 +91,7 @@ Thus, FedAvg waits for all 100 results before producing and redistributing the
 next global model; FedBuff immediately refills each open slot but creates a
 version every two arrivals; and FedRevive immediately refills the open slot
 and creates a version from each arrival. Explicit CLI overrides allow other
-`K/B/O` configurations.
+concurrency, buffer-size and refill configurations.
 
 The Collab calls are genuinely nonblocking. Physical sites perform PyTorch
 training while the server keeps other calls in flight. For reproducible runs,
@@ -107,82 +111,65 @@ and result correlation, and additional lifecycle bookkeeping. The resource
 controls below remain application logic rather than automatic CollabAPI
 behavior.
 
-### Resource controls
+### Composition and resource controls
 
-Replaying a deterministic logical arrival sequence creates a resource-control
-challenge: physical RPCs can finish out of order, and many active assignments
-can refer to old global versions. Keeping every completed client model and
-every assignment snapshot in RAM makes memory grow with logical concurrency
-and can eventually exhaust the host. The implementation therefore separates
-the logical experiment (`K`, seeded events, and staleness) from the bounded
-physical execution pool and moves waiting model state to disk.
+| Component | Responsibility |
+| --- | --- |
+| `nvflare.collab.fedbuff_recipe` | Shared assignment acceptance, buffered publication, Collab calls, one bounded receipt queue and lifecycle |
+| `update.py` | Optional `FedReviveUpdate`: proxies, shared teacher history, revival gates and delta blending |
+| `dfkd.py` | Conditional generator, optimized latent/embedding tensors, Reptile update, weighted per-teacher objectives and sampling |
+| `schedule_standard.py`, `schedule_shifted.py` | Paper planner and examples of log-normal and trace-based delay sampling |
+| `schedule_simple.py` | Minimal sampler with uniform delays for every phase |
+| `plot_plan.py` | Plot a saved plan and estimate peak temporary payload storage |
+| `SimEnv` with a replay plan | Explicit assignment and acceptance order or timing, with evidence in the run's `simulation/` directory |
+| `server.py` | Separate initial model loader, FedRevive model operations, and CIFAR evaluation/artifact observer |
 
-The number of physical Collab sites is an execution-pool setting and need not
-equal `K`. The simulator uses 2 sites by default: all `K=100` logical
-assignments are still created at the same simulated time, while idle physical
-workers execute pending assignments. Results are accepted only in simulated
-finish-time order. The physical-site count therefore bounds concurrent Collab
-RPCs. This host control does not change logical participation, snapshots,
-staleness, buffer boundaries, or simulated time. The server creates logical
-work in `FedReviveServer._dispatch_open_slots()`, maps it onto the bounded
-worker pool in `FedReviveServer._dispatch_pending_assignments()`, and recycles
-a worker in `FedReviveServer._record_physical_outcome()` without accepting that
-result ahead of its simulated upload event.
+Concurrency bounds active logical assignments. Physical sites bound concurrent
+training calls and the receipt queue. The paper plan keeps intermediate payloads
+on disk only while needed. Assignments share one base file per version. The
+runner releases it after its last planned consumer finishes and writes uploads
+to disk only when the plan calls for their acceptance. Each cached upload is
+removed after acceptance and its callbacks.
 
-Each physical worker multiplexes many logical clients. A logical client's
-prepared shard and runtime profile persist on disk, while the worker reuses a
-single model. Adam is recreated for every assignment. After returning the CPU
-model state, the worker moves its reusable model back to CPU, clears unused
-CUDA allocations, and returns freed model-transfer pages to the OS. Keeping the
-physical pool small bounds simulator processes, Collab call threads, dataset
-copies, and CUDA contexts without changing logical `K=100`.
-The launcher also fixes native BLAS/OpenMP pools to one thread per worker so
-sequential RPCs cannot accumulate idle native thread teams and their stacks.
-`FedReviveClient.initialize()` creates the reusable dataset and model;
-`FedReviveClient._logical_indices()` loads the selected logical shard; and
-`FedReviveClient.train()` discards per-assignment state, moves the model back to
-CPU, clears the CUDA cache, and calls `client._trim_process_memory()` around
-successive assignments to release allocator pages no longer used by the
-previous call.
+The observer retains experiment evidence:
 
-Returned client tensors are downloaded directly into a temporary offload
-directory inside the server run directory. The server keeps only lazy tensor
-references while a physically completed result waits for its seeded simulated
-upload event. It materializes that model only when the event becomes due, then
-deletes its files immediately. This preserves the seeded completion order
-without keeping all out-of-order client models in memory; the complete offload
-directory is also removed when the workflow exits or aborts. This applies to
-the sequence-following wait queue. Once accepted, FedAvg and FedBuff updates
-are folded into the in-time accumulator by default; FedRevive's eight-model
-teacher buffer remains separate algorithmic state. Specifically,
-`FedReviveServer._setup_tensor_disk_offload()` enables the lazy tensor store,
-`FedReviveServer._wait_for_next_event()` holds early results until logically
-due, and `FedReviveServer._process_outcome()` materializes and cleans up one
-accepted result at a time through `FedReviveServer._materialize_result()`;
-discarded results are cleaned through
-`FedReviveServer._release_outcome_result()`. `InTimeUpdateBuffer.add()` and
-`InTimeUpdateBuffer.aggregate()` maintain the running FedAvg/FedBuff accumulator.
+| Artifact | Contents |
+| --- | --- |
+| `run_config.json` | Resolved experiment options |
+| `dfkd_config.json` | Resolved synthesis/KD defaults when FedRevive is enabled |
+| `schedule.jsonl` | Dispatch/accept identities, versions and training seeds |
+| `updates.jsonl` | Validated upload metadata/metrics, including actual-arrival seeds and shards |
+| `revival.jsonl` | FedRevive gate decisions, blend weights and DFKD metrics |
+| `accuracy_history.json`, `results.json` | Centralized evaluations and final run summary |
+| `final_model/global_model.pt` | Final model |
+| `simulation/preflight.jsonl` | Expected logical assignments, phases, and acceptance/publication versions |
+| `simulation/phases.jsonl`, `simulation/accepted.jsonl` | Observed timed phases and acceptance events checked against preflight |
+| `simulation/run.jsonl` | Input plan SHA-256, final logical trace verification, and timing |
 
-Assignment base snapshots use a second, reference-counted disk cache. The
-arbitrary arrival schedule can leave many jobs based on older global versions,
-and each returned model must be differenced against its exact starting model.
-The server serializes each live global version once, memory-maps it only while
-dispatching or processing an update, and deletes it after the last assignment
-that references it. Thus pending and later-needed snapshots consume disk
-rather than anonymous RAM without changing staleness or update values. A fixed
-pool of result-watch threads likewise bounds nonblocking-call bookkeeping by
-the number of physical sites. Both temporary caches are removed at workflow
-shutdown; final models and experiment results are unaffected.
-`_SnapshotStore.retain()`, `_SnapshotStore.load()`, and
-`_SnapshotStore.release()` implement the snapshot lifecycle used by
-`FedReviveServer._dispatch_open_slots()`,
-`FedReviveServer._dispatch_pending_assignments()`, and
-`FedReviveServer._process_outcome()`. The bounded watcher pool is managed by
-`FedReviveServer._start_call_watchers()`,
-`FedReviveServer._consume_call_results()`, and
-`FedReviveServer._stop_call_watchers()`; `_SnapshotStore.cleanup()` and
-`FedReviveServer._clear_completed_outcomes()` cover normal shutdown and abort
-cleanup.
+The generated plan is saved under `server/local/simulation_plan.json` in
+the job workspace. Pass this file to `--simulation-plan` with a fresh
+workspace to replay the schedule.
+
+At the horizon the workflow releases bases for assignments that will never
+dispatch and releases the remaining bases as active calls finish. Normal
+shutdown, managed aborts, and handled failures remove temporary model files.
+A process killed before cleanup can leave temporary files in that run's directory.
+Before starting the simulator, the launcher rejects a job directory that
+already exists or is reserved by another run under the effective workspace root.
+Use a distinct `--workspace-root` for each repeat of the same method, including
+when changing arrival modes. If `NVFLARE_SIMULATOR_WORKSPACE_ROOT` is set, it
+selects the root instead. Exceptions stop training, and core cleanup ignores
+late callbacks.
+
+The shared teacher buffer owns CPU model snapshots. FedRevive owns client-level
+class proxies, including refreshing retained teachers after the second probe.
+`SyntheticPool.add` clones only new CPU images, and `SyntheticPool.sample_batch_indices`
+plans KD batches as indices. Images are stacked only when a batch is used.
+Ordinary KD uses the shared detached
+teacher loss. Synthesis retains teacher-input gradients, optimized latent and
+embedding tensors, raw-image pooling and repeated augmentation. The generic
+trainer's same-batch multi-teacher policy and generic synthesizer's fixed-latent
+policy are different; the corresponding FedRevive loops remain research code.
 
 ## FedRevive update
 
@@ -204,25 +191,22 @@ $$
 + \beta(\tau)\widetilde{\Delta}^{KD}_i.
 $$
 
-DFKD starts after model version 50 when the accepted update has nonzero
-staleness. Steps 1--3 occur when the model version is divisible by
-`--generation-interval`, while step 4 still occurs for every eligible update
-after the version-100 warmup. These version-50 and version-100 gates are part
-of the curve-producing experimental configuration but are not specified in the
-paper:
+DFKD becomes eligible when the current global model is at version 50 or
+later and the accepted update has nonzero staleness. Through current version
+100, the student delta is zero and the server applies the client delta with
+weight $1-\beta(\tau)$. These warmup thresholds are experiment settings.
 
-1. samples target labels from the mean class-proportion proxy of the buffered
-   teachers and adapts a fast copy of the persistent generator for two
-   synthesis steps;
-2. applies a Reptile update to the persistent generator;
-3. adds the best generated batch to a bounded 16,000-image pool; and
-4. after the version-100 warmup, trains a student for ten multi-teacher KD
-   iterations and returns its delta from the current global model.
-
-The mean-teacher target distribution is the setting used to produce these
-curves. It differs from the uniform synthesis-target description in Section
-2.2 of the paper; teacher-specific class proportions are still used separately
-when sampling the synthetic pool for multi-teacher KD.
+1. On eligible versions divisible by `--generation-interval`, draw synthesis
+   targets and adapt a fast copy of the persistent generator for two steps.
+   The synthesis loss weights each teacher by its class proportions, even when
+   target labels are uniform as described in Section 2.2 of the paper. The
+   adversarial loss starts at the 100th synthesis call.
+2. Apply a Reptile update to the persistent generator and add the best
+   generated batch to the bounded 16,000-image pool.
+3. After current version 100, plan ten batches per teacher using its class
+   proportions. Prefer distinct images within each class when the pool has
+   enough samples. Load one batch per teacher for each KD step and return the
+   trained student's delta from the current global model.
 
 All synthesis and KD work is server-side. No synthetic data is sent to clients.
 
@@ -311,9 +295,17 @@ requested population exceeds the available training examples.
 
 ## Run the experiments
 
+`set_seed` seeds Python, NumPy, and PyTorch on CPU and CUDA. The launcher uses
+`--setup-seed` before data preparation or job construction, and the server
+uses it to initialize the model and DFKD components. Once those components
+are built, `--run-seed` starts the server's training RNG before any client
+updates. It also seeds the simulated arrival sequence and the probe generator.
+Each client training call uses its assignment's own seed for shuffled batches
+and augmentation.
+
 Each method uses the same entry point and defaults to its table preset. The
-FedRevive defaults additionally select the paper-main estimated class
-proportions and generation interval of 10:
+FedRevive defaults additionally select estimated class proportions, uniform
+synthesis targets, and a generation interval of 10.
 
 ```bash
 python job.py --method fedavg \
@@ -329,12 +321,15 @@ python job.py --method fedrevive \
   --max-time 200 --setup-seed 10 --run-seed 10
 ```
 
-To run the true-histogram, every-version synthesis ablation:
+To run with true histograms, teacher-mean targets, and synthesis on every
+eligible version:
 
 ```bash
 python job.py --method fedrevive \
   --class-proportion-source true-histogram --generation-interval 1 \
+  --synthesis-label-distribution teacher-mean \
   --data-root /tmp/cifar10 --prepared-data-root /tmp/fedrevive/cifar10 \
+  --workspace-root /tmp/nvflare/fedrevive-true-histogram \
   --max-time 200 --setup-seed 10 --run-seed 10
 ```
 
@@ -346,34 +341,211 @@ python job.py --method fedbuff \
   --delay-schedule shifted \
   --data-root /tmp/cifar10 \
   --prepared-data-root /tmp/fedrevive/cifar10_shifted \
+  --workspace-root /tmp/nvflare/fedrevive-shifted \
   --max-time 100 --setup-seed 10 --run-seed 10
 
 python job.py --method fedrevive \
   --delay-schedule shifted \
   --data-root /tmp/cifar10 \
   --prepared-data-root /tmp/fedrevive/cifar10_shifted \
+  --workspace-root /tmp/nvflare/fedrevive-shifted \
   --max-time 100 --setup-seed 10 --run-seed 10
 ```
 
-Add `--class-proportion-source true-histogram --generation-interval 1` to the
-FedRevive command to run the corresponding ablation under the shifted delay
-schedule.
+For the shifted run with teacher-mean targets, use the same three options and
+`--workspace-root /tmp/nvflare/fedrevive-shifted-true-histogram`.
 
 A CUDA-capable GPU is recommended for both client training and FedRevive's
 server-side DFKD. Device selection defaults to `auto`; use `--client-device
 cpu` when GPU sharing is not appropriate. Use `--num-clients` to size the
-physical worker pool independently of logical `K`, and `--workspace-root` to
+physical worker pool independently of logical concurrency, and `--workspace-root` to
 select the output location.
 
 For a small functional test, reduce both the number of physical clients and
-`K`, and cap the number of versions:
+concurrency, and cap the number of versions:
 
 ```bash
 python job.py --method fedrevive \
-  --num-clients 2 --num-active-jobs 2 --buffer-size 1 --min-open-slots 1 \
+  --num-clients 2 --concurrency 2 --buffer-size 1 --min-open-slots 1 \
   --local-iterations 1 --max-model-versions 54 --max-time 1000 \
+  --workspace-root /tmp/nvflare/fedrevive-smoke \
   --eval-interval 54 --server-device cpu
 ```
+
+## Actual arrivals
+
+Use the production async recipe when host/RPC arrivals should determine acceptance:
+
+```bash
+python job.py --arrival-mode actual --method fedrevive \
+  --num-clients 2 --concurrency 2 --buffer-size 1 --min-open-slots 1 \
+  --workspace-root /tmp/nvflare/fedrevive-actual \
+  --num-rounds 120 --data-root /tmp/cifar10 \
+  --prepared-data-root /tmp/fedrevive/cifar10
+```
+
+Here concurrency cannot exceed the physical client count. Sites named `site-N` use prepared shard
+`client-(N-1)`; sites named `client-N` use that shard directly. Each site keeps
+its shard identity, and assignment-derived seeds are still applied. The core
+recipe supplies actual arrival order. `--num-rounds` counts global publications
+and also accepts the existing `--max-model-versions` spelling.
+`--max-time` and prepared delay profiles apply only to paper mode. Seeds
+alone do not make actual arrivals reproducible. This mode shares the algorithm
+components but does not reproduce the paper's logical participation schedule.
+
+## Replay a simulator plan
+
+Use replay mode to run the same recipe with a fixed sequence or a virtual timing
+plan supplied through `SimEnv`. For example, save this as `plan.json` after
+preparing the shards above:
+
+```json
+{
+  "format_version": 1,
+  "async_execution": {
+    "logical_sequence": ["client-0", "client-1", "client-1", "client-0"],
+    "arrival_sequence": [1, 0, 2, 3],
+    "train_seeds": [10000001, 10000002, 10000003, 10000004]
+  }
+}
+```
+
+```bash
+python job.py --arrival-mode replay --simulation-plan plan.json --method fedrevive \
+  --num-clients 1 --concurrency 2 --buffer-size 1 --num-rounds 4 \
+  --workspace-root /tmp/nvflare/fedrevive-replay \
+  --local-iterations 1 --client-device cpu --server-device cpu
+```
+
+Use prepared `client-N` names and supply one assignment per contribution in
+`num_rounds * buffer_size`. The logical sequence and acceptance order stay the
+same if you rerun with two physical clients and a fresh workspace. When a plan
+omits `train_seeds`, the client uses the existing seed derived from
+`--run-seed` and assignment ID. For timing plans and the evidence layout, see
+the [simulation guide](../../docs/user_guide/data_scientist_guide/reproducible_simulation.rst).
+
+The default paper planner emits ordered events with eligibility at training
+completion, so a logical client can start again while its earlier upload is
+pending. To replay that schedule, pass the saved plan with the same logical
+concurrency, buffer, refill and publication settings. For numerical replay, also
+keep the training configuration, including the server's `--run-seed`. The physical
+worker count can vary. Externally generated plans can use explicit per-assignment delays.
+
+### Generate standard and shifted plans offline
+
+From `research/fedrevive`, use the same prepared manifest and scheduling
+settings to compare the paper delays with a custom delay distribution.
+`schedule_shifted.py` reuses the standard scheduler with a delay callback.
+Its default is log-normal training with the same per-client mean and a log-scale
+standard deviation of 0.6. Download and upload use the paper distributions.
+
+```bash
+python schedule_standard.py /tmp/fedrevive/cifar10/manifest.json standard.json \
+  --num-rounds 4 --concurrency 2 --run-seed 10
+python schedule_shifted.py /tmp/fedrevive/cifar10/manifest.json shifted.json \
+  --num-rounds 4 --concurrency 2 --run-seed 10
+```
+
+Set `--train-lognormal-sigma` to change the spread, or pass `--delay-trace` to
+sample measured durations. Save the durations in `measured_delays.json` using
+the same virtual time unit as `--max-time`:
+
+```json
+{"download": [0.09, 0.12], "train": [0.8, 1.7, 3.2], "upload": [0.13, 0.21]}
+```
+
+```bash
+python schedule_shifted.py /tmp/fedrevive/cifar10/manifest.json trace.json \
+  --num-rounds 4 --concurrency 2 --run-seed 10 --delay-trace measured_delays.json
+```
+
+Each phase samples independently with replacement from its own list. Use
+explicit per-assignment delays if correlations between measured phases matter.
+Use the output JSON with the replay command above and the matching logical
+scheduling settings, including any overrides to `--buffer-size` and
+`--min-open-slots`. Use `plot_plan.py` to compare timelines before launch.
+
+For the paper's Figure 3 preset, run `schedule_standard.py` with the
+`cifar10_shifted/manifest.json` prepared for Figure 3. The standard planner
+reads either paper preset from its manifest and preserves the paper RNG stream.
+
+### Generate a custom paper schedule offline
+
+`schedule_simple.py` shows the smallest custom sampler. It draws each phase's
+delay uniformly between 0 and 1 virtual time units for every logical client.
+
+```bash
+python schedule_simple.py /tmp/fedrevive/cifar10/manifest.json simple.json \
+  --num-rounds 4 --concurrency 2 --run-seed 10
+```
+
+The callback below uses gamma-distributed training times with the mean from
+the input manifest. Save it as `schedule_custom.py` in `research/fedrevive` and
+run it with the same manifest and scheduling options.
+
+```python
+from schedule_standard import main, sample_paper_delay
+
+
+def custom_delay(assignment_id, logical_name, phase, profile, rng):
+    if phase == "train":
+        return float(rng.gamma(shape=2, scale=profile["train_mean"] / 2))
+    return sample_paper_delay(phase, profile, rng)
+
+
+if __name__ == "__main__":
+    main(delay_sampler=custom_delay)
+```
+
+The callback returns a finite nonnegative duration and receives a NumPy RNG
+derived from the run seed, assignment ID, and phase. For programmatic use, pass
+it directly to `make_simulation_plan()`. The generator uses the shared
+`FedBuffScheduleState` for reservations, refill limits, and publication counts.
+To change the participation policy, emit an ordered SimEnv plan from your own
+generator. SimEnv preflights the resulting JSON against the workflow before training.
+
+### Visualize a plan before running it
+
+For a small, runnable comparison that defines two delay policies, saves their
+plans, plots their timelines, and checks staleness, see the
+[simulation plan notebook](simulation_plan_tutorial.ipynb).
+
+Install the optional Matplotlib dependency and run this from `research/fedrevive`.
+
+```bash
+python -m pip install matplotlib
+python plot_plan.py plan.json plan.png --first-assignment 0 --limit 30
+```
+
+The chart shows virtual-time download, training, and upload phases for timed
+plans and acceptance positions for fixed plans. Faded spans show phases still
+open at the displayed plan boundary. Use `--first-assignment` to inspect later
+reservations by zero-based assignment ID. In Python, import
+`plot_simulation_plan` from `plot_plan` to get a Matplotlib figure from a plan
+dictionary or JSON path. Use SimEnv preflight to check feasibility against the
+configured recipe.
+
+Timed plans with explicit `base_versions` and `retain_artifacts: false` show a
+peak bound for temporary base and upload files over the full plan. The estimate
+assumes each accepted upload could be ready as soon as its assignment is
+reserved. Physical readiness can lower actual usage. For a size estimate, add
+`--base-mib` and `--upload-mib` with the sizes of one serialized base and one
+serialized upload. The estimate covers model payloads in the replay workspace.
+
+## Adapt the workflow to another image dataset
+
+1. Update `data.py` to prepare logical shards and class proportions for the
+   dataset, then wire the training and evaluation dataset constructors in
+   `client.py` and `server.py`. Keep shard names consistent with the manifest
+   and any replay plan.
+2. Update `model.py` and the model construction used by client training, server
+   evaluation, and DFKD together. Use the same parameter shapes across those
+   paths. If using the feature-statistics objective, expose the tracked
+   features from the model.
+3. Adjust the generator output shape, class count, probe input shape, and
+   synthetic-data transforms in `dfkd.py` and `update.py` to match the inputs
+   and labels used by the model. Run a short check through synthesis and KD
+   warmup before comparing experiments.
 
 ## Evaluation protocol
 
@@ -395,9 +567,10 @@ pool checkpoints, and TensorBoard events in the NVFlare run directory.
 
 ## Results
 
-The following raw curves come directly from centralized evaluations produced
-by the Collab workflow with seed 10. They are single-seed results rather than
-the paper's three-seed averages.
+Figures 1–3 show historical runs with seed 10 and the pre-migration Collab
+workflow. Both FedRevive configurations used teacher-mean synthesis targets
+and the earlier warmup and KD sampling rules. The paper reports averages over
+three seeds.
 
 ### Default delay schedule
 
@@ -430,10 +603,9 @@ condition for future runs.
 
 ### FedRevive configuration options
 
-Figure 3 compares the two FedRevive configurations shown in the run commands:
-the paper-main server-estimated class proportions using 64 Gaussian probes with
-synthesis every ten versions, and the true-histogram, every-version synthesis
-ablation.
+Figure 3 compares server-estimated class proportions using 64 Gaussian probes
+and synthesis every ten versions with true histograms and synthesis every
+eligible version.
 Both runs use seed 10 and the same 1,270 centralized evaluation points, model
 versions, and simulated arrival times.
 
@@ -448,6 +620,45 @@ The raw accuracy curves have a Pearson correlation of 0.9986 and a pointwise
 mean absolute difference of 0.0091. Thus, the lightweight estimated setting
 closely follows the true-histogram trajectory while avoiding client label
 statistics and reducing synthesis frequency.
+
+### FedRevive delay planner comparison
+
+We ran FedRevive for 1,200 publications with each offline planner. All three
+runs used the same CIFAR-10 shards, setup and run seed 10, two physical workers,
+and a logical concurrency limit of 100. The buffer size and refill threshold
+were both one. The server estimated class proportions with 64 probes and
+generated synthetic images every ten versions using teacher-mean targets.
+SimEnv verified the accepted updates against each run's own plan.
+
+![FedRevive test accuracy by publication and simulated time for the three delay planners](figs/planner_accuracy.png)
+
+| Planner | Phase delays | Simulated time | Wall time | Final accuracy |
+|---|---|---:|---:|---:|
+| [Standard](schedule_standard.py) | Paper defaults | 19.05 s | 56m 51s | 37.31% |
+| [Shifted](schedule_shifted.py) | Log-normal training delays ($\sigma=0.6$) | 19.45 s | 58m 07s | 32.65% |
+| [Simple](schedule_simple.py) | Uniform delays in all phases | 18.42 s | 57m 44s | 34.06% |
+
+Wall times were measured sequentially on one RTX 6000 Ada. The plan previews
+show assignments 100–111. Each full plan has a bound of 200 temporary payload
+files, or about 8.33 GiB. The estimate uses 42.65 MiB per serialized base or
+upload, rounded up from the run's payloads.
+
+<details>
+<summary>Plan timelines and temporary storage bounds</summary>
+
+**Standard planner**
+
+![Standard plan timeline and peak temporary payload estimate](figs/plan_standard.png)
+
+**Shifted planner**
+
+![Shifted plan timeline and peak temporary payload estimate](figs/plan_shifted.png)
+
+**Simple planner**
+
+![Simple plan timeline and peak temporary payload estimate](figs/plan_simple.png)
+
+</details>
 
 ## License
 
@@ -472,7 +683,12 @@ fedrevive/
 ├── data.py
 ├── model.py
 ├── client.py
-├── server.py
+├── server.py             # Model loader, operations, evaluation observer
+├── schedule_standard.py  # Standard paper planner and delay sampler
+├── schedule_shifted.py   # Log-normal and measured-delay examples
+├── schedule_simple.py    # Minimal uniform-delay example
+├── plot_plan.py          # Inspect a plan and its storage bound offline
+├── update.py             # Optional FedRevive update transform
 ├── fedrevive.py
 ├── dfkd.py
 ├── job.py

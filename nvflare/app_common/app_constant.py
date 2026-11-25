@@ -82,6 +82,7 @@ class AppConstants(object):
     METRICS_SELECTION_INFO = "metrics_selection_info"
     AGGREGATION_TRIGGERED = "_aggregation_triggered"
     AGGREGATION_ACCEPTED = "_aggregation_accepted"
+    NUM_REJECTED_RESULTS = "_num_rejected_results"
     TRAIN_SHAREABLE = "_train_shareable_"
     TRAINING_RESULT = "_training_result_"
     PROGRESS_OWNER = "_progress_owner_"

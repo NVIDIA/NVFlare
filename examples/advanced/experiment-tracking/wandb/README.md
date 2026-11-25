@@ -75,6 +75,21 @@ python3
 
 Provide your API key when prompted. Get your key from https://wandb.ai/authorize
 
+For a self-hosted backend, the receiving site's operator can set `WANDB_BASE_URL`
+before starting NVFlare. When it is unset, the receiver uses the operator's saved
+global W&B host, with the SDK's cloud endpoint as the final default. Jobs selecting
+another `wandb_args.settings.base_url` require that complete URL in `wandb_base_urls` in the receiver site's
+`local/resources.json` (or `resources.json.default` when the main file is absent):
+
+```json
+{"wandb_base_urls": ["https://tracking.example.org"]}
+```
+
+Apply the setting at the server or each client running a receiver. Job-local
+resources cannot grant approval. Only approve backends trusted with the site's
+W&B key and tracking data. Configure proxies in the site process environment;
+job settings cannot override proxies or disable TLS verification.
+
 ### 4. Run the Experiment
 
 **Server-side tracking** (default - centralized metrics):

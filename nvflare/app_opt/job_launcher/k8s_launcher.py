@@ -327,6 +327,7 @@ class K8sJobHandle(JobHandleSpec):
         self.pod_uid = None
         self.workspace_reservation = None
         self._termination_requested = False
+        self._shutdown_confirmed = False
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
         self.credential_secret_name = credential_secret_name
@@ -452,6 +453,12 @@ class K8sJobHandle(JobHandleSpec):
             statuses = getattr(getattr(pod, "status", None), "container_statuses", None)
             if not isinstance(statuses, (list, tuple)):
                 statuses = []
+            # An eviction is lost infrastructure whether or not the container's signal exit
+            # is visible yet. Only an exit code FLARE chose itself says more than that.
+            evicted = (
+                not self._termination_requested and getattr(getattr(pod, "status", None), "reason", None) == "Evicted"
+            )
+            exit_code = None
             for container_status in statuses:
                 if getattr(container_status, "name", None) != job_container_name:
                     continue
@@ -466,8 +473,12 @@ class K8sJobHandle(JobHandleSpec):
                 ):
                     self.terminal_return_code = exit_code
                 elif isinstance(exit_code, int) and exit_code != 0:
-                    self.terminal_return_code = JobReturnCode.EXECUTION_ERROR
+                    self.terminal_return_code = (
+                        ProcessExitCode.INFRASTRUCTURE_ERROR if evicted else JobReturnCode.EXECUTION_ERROR
+                    )
                 break
+            if evicted and exit_code is None and self.terminal_return_code is None:
+                self.terminal_return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
         self._release_job_resources()
 
     def poll(self):
@@ -488,20 +499,39 @@ class K8sJobHandle(JobHandleSpec):
         from kubernetes.client.rest import ApiException
 
         try:
-            return self.api_instance.read_namespaced_pod(name=self.pod_name, namespace=self.namespace)
+            pod = self.api_instance.read_namespaced_pod(name=self.pod_name, namespace=self.namespace)
         except ApiException as e:
             if getattr(e, "status", None) == 404:
-                self.logger.info(
-                    f"job {self.job_id} pod {self.pod_name} not found during querying; assuming terminated"
-                )
-                self.terminal_state = JobState.TERMINATED
-                self._release_job_resources()
+                self._record_missing_pod()
             else:
                 self.logger.warning(f"failed to query pod for job {self.job_id} pod {self.pod_name}: {e}")
             return None
         except Exception as e:
             self.logger.warning(f"unexpected error querying pod for job {self.job_id} pod {self.pod_name}: {e}")
             return None
+        self._record_shutdown_evidence(pod)
+        return pod
+
+    def _record_missing_pod(self):
+        self.terminal_state = JobState.TERMINATED
+        if self._termination_requested:
+            self.logger.info(f"job {self.job_id} pod {self.pod_name} not found after requested termination")
+        elif self.terminal_return_code is None:
+            # Only FLARE's own termination is an abort; any other removal is lost infrastructure.
+            self.terminal_return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
+            self.logger.warning(f"job {self.job_id} pod {self.pod_name} was removed outside FLARE")
+        self._release_job_resources()
+
+    def _record_shutdown_evidence(self, pod):
+        # A restartPolicy=Never Pod cannot leave confirmed container/sandbox shutdown,
+        # so evidence observed once remains valid after the Pod object is removed.
+        if self._shutdown_confirmed or not self.pod_uid:
+            return
+        if getattr(getattr(pod, "metadata", None), "uid", None) != self.pod_uid:
+            return
+        if getattr(pod, "spec", None) is None or getattr(pod, "status", None) is None:
+            return
+        self._shutdown_confirmed = pod_shutdown_confirmed(pod)
 
     def _query_phase(self):
         pod = self._query_pod()
@@ -718,23 +748,42 @@ class K8sJobHandle(JobHandleSpec):
         # default. A timeout never authorizes overlapping checkpoint writers.
         timeout = self.task_owner.backend.cleanup_timeout if self.task_owner is not None else 60.0
         deadline = time.monotonic() + timeout
-        while not self._termination_requested:
+        api_error_logged = False
+        # The bound covers the reads and sleeps too: evidence that arrives after it authorizes nothing.
+        while not self._termination_requested and (remaining := deadline - time.monotonic()) > 0:
             try:
                 pod = self.api_instance.read_namespaced_pod(
-                    name=self.pod_name, namespace=self.namespace, _request_timeout=10.0
+                    name=self.pod_name, namespace=self.namespace, _request_timeout=min(10.0, remaining)
                 )
                 if pod.metadata.uid != self.pod_uid or pod.status.reason in ("NodeLost", "Shutdown"):
                     return False
-                # The task owner's existing thread exits after all workers settle.
-                if pod_shutdown_confirmed(pod) and (self.task_owner is None or not self.task_owner.thread.is_alive()):
-                    return True
+                self._record_shutdown_evidence(pod)
+                pod_state_known = True
             except Exception as error:
-                self.logger.warning("cannot confirm CJ shutdown for recovery: %s", type(error).__name__)
-                return False
-            if time.monotonic() >= deadline:
-                self.logger.warning("CJ recovery cleanup timed out for job %s", self.job_id)
-                return False
-            time.sleep(POLL_INTERVAL)
+                pod_state_known = getattr(error, "status", None) == 404
+                if pod_state_known and not self._shutdown_confirmed:
+                    self.logger.warning(
+                        "CJ Pod %s was removed before its shutdown was observed; recovery is not authorized",
+                        self.pod_name,
+                    )
+                    return False
+                if not pod_state_known and not api_error_logged:
+                    # An unreachable API proves nothing either way: keep observing within the cleanup bound.
+                    self.logger.warning("cannot confirm CJ shutdown for recovery yet: %s", type(error).__name__)
+                    api_error_logged = True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            # The task owner's existing thread exits after all workers settle.
+            if (
+                pod_state_known
+                and self._shutdown_confirmed
+                and (self.task_owner is None or not self.task_owner.thread.is_alive())
+            ):
+                return True
+            time.sleep(min(POLL_INTERVAL, remaining))
+        if not self._termination_requested:
+            self.logger.warning("CJ recovery cleanup timed out for job %s", self.job_id)
         return False
 
 

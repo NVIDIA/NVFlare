@@ -68,6 +68,7 @@ from .streamer_base import (  # noqa: F401
     KEY_DATA,
     KEY_DATA_SIZE,
     KEY_EOF,
+    KEY_FILE_ID,
     KEY_FILE_NAME,
     KEY_HEARTBEAT,
     KEY_STREAM_DONE_CB,
@@ -159,6 +160,7 @@ class _LogChunkConsumer(BaseChunkConsumer):
         self._validate_chunk(data, data_size)
 
         if data and self._chunk_received_cb:
+            stream_ctx[KEY_FILE_ID] = shareable.get(KEY_FILE_ID)
             self._chunk_received_cb(data, stream_ctx, fl_ctx, **self._cb_kwargs)
 
         eof = shareable.get(KEY_EOF)
@@ -237,7 +239,9 @@ class _LogTailProducer(BaseChunkProducer):
         # tolerance) the stream tears down with a misleading ERROR log line
         # and no further bytes are streamed. Until we see the first OK reply
         # we treat an EXECUTION_EXCEPTION as a transient miss, roll the file
-        # offset back, and let produce() re-emit the same bytes.
+        # offset back, and ask stream_log() to restart the stream so that
+        # produce() re-emits the same bytes as the first message of a new one.
+        self.restart_stream = False
         self._first_ok_received = False
         self._bootstrap_miss_count = 0
         self._last_data_offset = None
@@ -291,13 +295,14 @@ class _LogTailProducer(BaseChunkProducer):
 
             # Read the next chunk from the current position.
             if self.file:
+                try:
+                    offset = self.file.tell()
+                except OSError:
+                    offset = None
                 # Record the pre-read offset so process_replies() can roll back
                 # if the first send hits a bootstrap miss on the receiver.
                 if not self._first_ok_received:
-                    try:
-                        self._last_data_offset = self.file.tell()
-                    except OSError:
-                        self._last_data_offset = None
+                    self._last_data_offset = offset
                 chunk = self.file.read(self.chunk_size)
                 if chunk:
                     self._draining = False  # new data arrived — reset drain state
@@ -307,6 +312,10 @@ class _LogTailProducer(BaseChunkProducer):
                     result[KEY_DATA] = chunk
                     result[KEY_DATA_SIZE] = len(chunk)
                     result[KEY_EOF] = False
+                    if offset == 0:
+                        # A receiver that already holds this file's start can tell
+                        # a replay of it from the start of a rotated-in file.
+                        result[KEY_FILE_ID] = self.inode
                     return result, self.chunk_timeout
 
             # No new data — drain completely before honouring stop/abort so we
@@ -366,9 +375,11 @@ class _LogTailProducer(BaseChunkProducer):
         # the job. Instead, until we see the first OK reply, treat a small number
         # of uniform EXECUTION_EXCEPTION replies as transient: roll the file
         # offset back so the bytes are re-emitted on the next produce(), log at
-        # debug, and keep the stream alive. After the retry budget is exhausted,
-        # or after the first OK reply, fall through to the base behavior so
-        # genuine receiver failures are still surfaced.
+        # debug, and end this stream so stream_log() starts a new one. A
+        # receiver that rejected the first message holds no stream to continue:
+        # it accepts the bytes only as the first message of a stream. After the
+        # retry budget is exhausted, or after the first OK reply, fall through
+        # to the base behavior so genuine receiver failures are still surfaced.
         if not self._first_ok_received and replies:
             transient = all(
                 reply.get_return_code(ReturnCode.OK) == ReturnCode.EXECUTION_EXCEPTION for reply in replies.values()
@@ -384,7 +395,11 @@ class _LogTailProducer(BaseChunkProducer):
                     f"transient bootstrap miss {self._bootstrap_miss_count}/{self._MAX_BOOTSTRAP_MISSES} "
                     f"on first chunk to {list(replies)}; rolling back and retrying"
                 )
-                return None  # keep producing — receiver should be ready by next send
+                # A rejected EOF was never delivered: the new stream drains the file and sends its own.
+                self.eof = False
+                self._draining = False
+                self.restart_stream = True
+                return False
 
         if replies and any(reply.get_return_code(ReturnCode.OK) == ReturnCode.OK for reply in replies.values()):
             self._first_ok_received = True
@@ -414,6 +429,7 @@ class LogStreamer(StreamerBase):
             chunk_received_cb: called for each received data chunk (heartbeats are
                 silently absorbed and never forwarded):
                 ``chunk_received_cb(data: bytes, stream_ctx: StreamContext, fl_ctx: FLContext, **cb_kwargs)``
+                During the call, :meth:`get_file_id` tells whether the chunk starts a sender file.
             stream_done_cb: called when the stream ends (normal EOF, engine abort, or
                 idle timeout); follows ``stream_done_cb_signature`` in
                 ``nvflare.apis.streaming``.  The ``stream_ctx`` passed to this callback
@@ -545,16 +561,22 @@ class LogStreamer(StreamerBase):
 
         producer = _LogTailProducer(file_name, chunk_size, chunk_timeout, poll_interval, stop_event, liveness_interval)
         try:
-            return engine.stream_objects(
-                channel=channel,
-                topic=topic,
-                stream_ctx=stream_ctx,
-                targets=targets,
-                producer=producer,
-                fl_ctx=fl_ctx,
-                optional=optional,
-                secure=secure,
-            )
+            while True:
+                producer.restart_stream = False
+                result = engine.stream_objects(
+                    channel=channel,
+                    topic=topic,
+                    stream_ctx=stream_ctx,
+                    targets=targets,
+                    producer=producer,
+                    fl_ctx=fl_ctx,
+                    optional=optional,
+                    secure=secure,
+                )
+                if not producer.restart_stream:
+                    return result
+                # Give the receiver time to become ready before the next attempt.
+                time.sleep(poll_interval)
         finally:
             producer.close()
 
@@ -571,3 +593,20 @@ class LogStreamer(StreamerBase):
         Returns: file base name string, or None
         """
         return stream_ctx.get(KEY_FILE_NAME)
+
+    @staticmethod
+    def get_file_id(stream_ctx: StreamContext):
+        """Get the id of the sender's file that the chunk being received starts.
+
+        Intended for use inside ``chunk_received_cb``. The sender tails its log
+        from the beginning and again after each rotation; a new stream whose
+        first chunk carries the id of the file a previous stream ended in is a
+        replay of that file.
+
+        Args:
+            stream_ctx: the stream context
+
+        Returns: the file id, or None when the chunk continues a file or the
+            sender does not report it
+        """
+        return stream_ctx.get(KEY_FILE_ID)

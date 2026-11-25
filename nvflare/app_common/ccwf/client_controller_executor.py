@@ -28,6 +28,7 @@ from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.ccwf.common import Constant, StatusReport, make_task_name, topic_for_end_workflow
+from nvflare.fuel.sec import task_audit
 from nvflare.fuel.utils.validation_utils import check_number_range
 from nvflare.security.logging import secure_format_exception
 
@@ -173,6 +174,7 @@ class ClientControllerExecutor(Executor):
         fl_ctx.set_prop(Constant.EXECUTOR, self, private=True, sticky=False)
         self.fire_event(Constant.EXECUTOR_INITIALIZED, fl_ctx)
 
+    @task_audit.collect_events
     def finalize(self, fl_ctx: FLContext):
         """Called to finalize the executor.
         Args:

@@ -37,6 +37,7 @@ from nvflare.app_common.ccwf.common import Constant, NumberMetricComparator, Res
 from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor, ExecutionMode
 from nvflare.app_common.utils.tensor_disk_offload_context import _TENSOR_DISK_OFFLOAD_ROOT_DIR
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.sec import task_audit
 from nvflare.fuel.utils.fobs import FOBSContextKey
 from nvflare.fuel.utils.validation_utils import (
     check_non_empty_str,
@@ -114,6 +115,7 @@ class Gatherer(FLComponent):
                 f"at round {self.current_best_round}",
             )
 
+    @task_audit.collect_events
     def gather(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> Shareable:
         with self.lock:
             try:
@@ -132,6 +134,7 @@ class Gatherer(FLComponent):
                     if client_status:
                         client_status.busy = False
 
+    @task_audit.collect_events
     def can_accept_submission(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> str:
         with self.perm_lock:
             if self.closed:
@@ -279,6 +282,7 @@ class Gatherer(FLComponent):
 
         return aggr_result
 
+    @task_audit.collect_events
     def is_done(self):
         # Keep the monitor responsive to shutdown while acceptance is busy.
         # reply_time alone does not mean acceptance and its event handlers finished.

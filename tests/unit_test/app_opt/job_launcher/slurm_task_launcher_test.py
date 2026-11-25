@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import sys
+import textwrap
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -885,3 +886,24 @@ def test_application_failure_takes_precedence_over_retryable_loss(backend):
     adapter.submit.side_effect = fail_then_submit
     with pytest.raises(RuntimeError, match="failed: ValueError"):
         TaskSupervisor().run(**arguments)
+
+
+def test_manual_cleanup_example_recovers_real_submission_names_without_a_journal(backend, monkeypatch, capsys):
+    launcher, adapter, request = backend
+    handle = launcher.launch_task(request)
+    argv = adapter.submit.call_args.args[0]
+    journal = Path(handle.job_dir, "scheduler.jsonl")
+    record = json.loads(journal.read_text().splitlines()[-1])
+    key = record["execution_id"].rsplit(":", 1)[-1]
+    assert Path(handle.job_dir).name != key
+    assert "--job-name=nvfl-task-" + key[:48] in argv
+    assert "--comment=nvfl-task:" + key in argv
+    journal.write_text("")
+
+    guide = Path(__file__).resolve().parents[4] / "docs/user_guide/admin_guide/deployment/slurm_task_launcher.rst"
+    marker = "      python - /path/to/control/identity.json <<'PY'\n"
+    example = textwrap.dedent(guide.read_text().split(marker, 1)[1].split("      PY", 1)[0])
+    monkeypatch.setattr(sys, "argv", ["-", str(Path(handle.job_dir, "identity.json"))])
+    capsys.readouterr()
+    exec(compile(example, str(guide), "exec"), {})
+    assert capsys.readouterr().out.splitlines() == ["name: nvfl-task-" + key[:48], "comment: nvfl-task:" + key]
