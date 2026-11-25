@@ -67,6 +67,7 @@ from nvflare.apis.storage import (
 from nvflare.apis.utils.job_submit_token import canonical_job_content_hash, validate_submit_token
 from nvflare.app_common.logging.constants import client_log_path, client_log_staging_root
 from nvflare.app_common.logging.log_staging import ClientLogStaging
+from nvflare.fuel.flare_api.api_spec import JobFinishing
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -1486,6 +1487,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                         conn.append_string(message)
                         conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
         except Exception as e:
+            if isinstance(e, JobFinishing):
+                audit_action, audit_reason = "job.abort.retry_required", "job_finishing"
+                message = str(e)
+                conn.append_error(message, meta=make_meta(MetaStatusValue.JOB_FINISHING, message))
+                return
             conn.append_error(
                 f"Exception occurred trying to abort job: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),

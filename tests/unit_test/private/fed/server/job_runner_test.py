@@ -31,6 +31,7 @@ from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
+from nvflare.fuel.flare_api.api_spec import JobFinishing
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.zip_utils import get_all_file_paths, zip_directory_to_file
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
@@ -1290,7 +1291,13 @@ def test_admin_abort_cannot_reopen_selected_completion_during_archival():
     job = SimpleNamespace(job_id="job-1", run_aborted=False, meta={})
     runner.running_jobs = {"job-1": job}
     abort_results = []
-    runner._save_workspace = MagicMock(side_effect=lambda *_: abort_results.append(runner.stop_run("job-1", ctx)))
+
+    def abort_during_archive(*_args):
+        with pytest.raises(JobFinishing) as error:
+            runner.stop_run("job-1", ctx)
+        abort_results.append(str(error.value))
+
+    runner._save_workspace = MagicMock(side_effect=abort_during_archive)
 
     with _patch_job_runner_sleep(lambda _: setattr(runner, "ask_to_stop", True)):
         runner._job_complete_process(engine)

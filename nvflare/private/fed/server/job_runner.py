@@ -45,6 +45,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import get_cert_common_name_from_file
+from nvflare.fuel.flare_api.api_spec import JobFinishing
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
@@ -1161,6 +1162,8 @@ class JobRunner(FLComponent):
             with engine.lock:
                 if from_client and not self._is_server_job_running(engine, job_id):
                     return ""
+                if job_id in self._finished_job_states:
+                    raise JobFinishing(f"Job {job_id} is already finishing.")
                 result = self._mark_run_aborted(job_id, fl_ctx, engine)
         if not result:
             # Record the accepted abort before a slow RPC can race SJ exit and

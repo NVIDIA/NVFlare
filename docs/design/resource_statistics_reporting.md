@@ -288,6 +288,15 @@ completed job or update its archive to incorporate a late report. Optional
 statistics can therefore be incomplete; any output required for workflow success
 must be confirmed before SJ completes.
 
+An abort received after verdict selection returns the distinct `job_finishing`
+admin response until archival and terminal publication complete. It is neither
+an accepted abort nor confirmation of a published terminal status. `Session.abort_job`
+retries this response within a 90-second budget measured from the call, allowing
+shutdown helpers to wait for publication while preserving the selected verdict.
+The budget does not cancel an in-flight transport request, which retains its own
+timeout. Persistent finishing raises `JobFinishing`; genuine abort errors are
+reported normally and do not authorize shutdown.
+
 At closure, each roster entry contains either an accepted value or a gap. An
 accepted entry contains `participant_name`, the original `reported_at`,
 server-owned `role` and `received_at`, optional `duration_seconds`,
