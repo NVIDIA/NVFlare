@@ -2,6 +2,7 @@ Slurm task execution
 ====================
 
 This guide is for site operators enabling disposable CPU or GPU workers.
+For the researcher workflow, see :ref:`task_execution`.
 Start with :ref:`slurm_job_launcher` for provisioning, parent placement,
 networking and ordinary job-lifetime execution. Both lifetimes use
 ``nvflare.app_opt.job_launcher.slurm.launcher.ClientSlurmJobLauncher``.

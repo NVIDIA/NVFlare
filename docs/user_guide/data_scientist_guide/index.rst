@@ -15,6 +15,7 @@ Data Scientist Guide
    job_recipe
    recipe_api
    available_recipes
+   task_execution
    recipe_metrics_artifacts
    reproducible_simulation
    ../timeout_troubleshooting

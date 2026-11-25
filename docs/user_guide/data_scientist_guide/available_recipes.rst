@@ -48,6 +48,9 @@ also support GPU training.
 Restarting workers adds overhead. The site backend manages CPU and GPU
 allocation independently of the recipe's lifetime choice.
 
+For site prerequisites, worker and coordinator budgets, checkpoint handling,
+and a submission walkthrough, see :ref:`task_execution`.
+
 The table below lists how to select task lifetime for the built-in recipe
 catalog. Names match ``nvflare recipe list``. For rows marked **Constructor**,
 pass ``execution_lifetime="task"`` to the recipe constructor. For rows marked
@@ -105,8 +108,9 @@ Export task-lifetime recipes with ``--export`` or ``recipe.export(...)`` and sub
 the exported job to sites configured for
 :doc:`Kubernetes <../admin_guide/deployment/kubernetes_task_launcher>` or
 :doc:`Slurm <../admin_guide/deployment/slurm_task_launcher>`.
-Local simulation and sites using the local Process or Docker launcher require
-job lifetime. Client API recipes in task mode must use in-process script
+Local simulation uses job lifetime. Process and Docker CJs can use Slurm
+workers when Site IT enables the corresponding Slurm task profile.
+Client API recipes in task mode must use in-process script
 execution (``launch_external_process=False``). Attach execution and custom or
 legacy Learner executors require job lifetime, as do Collab, Flower, PSI, and
 edge recipes.
