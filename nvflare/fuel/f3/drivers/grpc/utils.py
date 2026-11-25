@@ -28,6 +28,8 @@ from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
+_HAPPY_EYEBALLS_DELAY = 0.25
+
 
 def use_aio_grpc():
     configurator = CommConfigurator()
@@ -292,9 +294,13 @@ async def probe_grpc_peer_cert_aio(params: dict, options=None) -> bytes:
 
 async def _probe_async(context, host, port, target_name, proxy):
     if proxy:
-        reader, writer = await asyncio.open_connection(proxy[0], proxy[1], limit=8192)
+        reader, writer = await asyncio.open_connection(
+            proxy[0], proxy[1], limit=8192, happy_eyeballs_delay=_HAPPY_EYEBALLS_DELAY
+        )
     else:
-        reader, writer = await asyncio.open_connection(host, port, ssl=context, server_hostname=target_name)
+        reader, writer = await asyncio.open_connection(
+            host, port, ssl=context, server_hostname=target_name, happy_eyeballs_delay=_HAPPY_EYEBALLS_DELAY
+        )
     try:
         if proxy:
             writer.write(_proxy_request(host, port, proxy[2]))

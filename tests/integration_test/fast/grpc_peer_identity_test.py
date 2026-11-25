@@ -14,15 +14,17 @@
 
 """Live gRPC mTLS identity binding for both active driver implementations."""
 
+import asyncio
 import multiprocessing as mp
 import select
 import socket
 import socketserver
+import ssl
 import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 import grpc
@@ -34,7 +36,11 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
 from nvflare.fuel.f3.drivers.connector_info import Mode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.drivers.grpc.utils import get_grpc_client_credentials, probe_grpc_peer_cert
+from nvflare.fuel.f3.drivers.grpc.utils import (
+    get_grpc_client_credentials,
+    probe_grpc_peer_cert,
+    probe_grpc_peer_cert_aio,
+)
 from nvflare.fuel.f3.drivers.grpc_driver import GrpcDriver
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
@@ -273,6 +279,77 @@ def test_active_grpc_mtls_through_http_connect_proxy(scheme, proxy_mode, tmp_pat
         finally:
             stop_ev.set()
             stop_processes(server)
+
+
+@pytest.mark.parametrize("use_proxy", [False, True], ids=["direct", "connect-proxy"])
+def test_async_probe_tries_ipv4_while_ipv6_is_pending(tmp_path, monkeypatch, use_proxy):
+    pki = _write_pki(tmp_path, "server")
+    monkeypatch.delenv("no_grpc_proxy", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    dual_stack_host = "dual-stack.test"
+
+    async def probe(params, options):
+        loop = asyncio.get_running_loop()
+        getaddrinfo = loop.getaddrinfo
+        sock_connect = loop.sock_connect
+        ipv6_started = asyncio.Event()
+        ipv6_finished = asyncio.Event()
+
+        async def resolve(host, port, *args, **kwargs):
+            if host != dual_stack_host:
+                return await getaddrinfo(host, port, *args, **kwargs)
+            return [
+                (socket.AF_INET6, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("::1", port, 0, 0)),
+                (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("127.0.0.1", port)),
+            ]
+
+        async def connect(sock, address):
+            if sock.family == socket.AF_INET6:
+                ipv6_started.set()
+                try:
+                    await asyncio.Future()
+                finally:
+                    ipv6_finished.set()
+            else:
+                assert ipv6_started.is_set()
+                assert not ipv6_finished.is_set()
+                await sock_connect(sock, address)
+
+        monkeypatch.setattr(loop, "getaddrinfo", resolve)
+        monkeypatch.setattr(loop, "sock_connect", connect)
+        cert = await probe_grpc_peer_cert_aio(params, options)
+        assert ipv6_finished.is_set()
+        assert cert == ssl.PEM_cert_to_DER_cert(Path(pki["server.crt"]).read_text())
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        server = grpc.server(executor)
+        try:
+            credentials = grpc.ssl_server_credentials(
+                [(Path(pki["server.key"]).read_bytes(), Path(pki["server.crt"]).read_bytes())],
+                root_certificates=Path(pki["rootCA.pem"]).read_bytes(),
+                require_client_auth=True,
+            )
+            port = server.add_secure_port("127.0.0.1:0", credentials)
+            assert port
+            server.start()
+
+            with _http_proxy() if use_proxy else nullcontext() as proxy:
+                params = {
+                    DriverParams.HOST.value: "127.0.0.1" if use_proxy else dual_stack_host,
+                    DriverParams.PORT.value: port,
+                    DriverParams.CA_CERT.value: pki["rootCA.pem"],
+                    DriverParams.CLIENT_CERT.value: pki["client.crt"],
+                    DriverParams.CLIENT_KEY.value: pki["client.key"],
+                    DriverParams.CONNECT_TIMEOUT.value: 3.0,
+                }
+                proxy_url = f"http://{dual_stack_host}:{proxy.server_address[1]}" if proxy else ""
+                asyncio.run(
+                    probe(params, [("grpc.ssl_target_name_override", "localhost"), ("grpc.http_proxy", proxy_url)])
+                )
+                if proxy:
+                    assert proxy.connection_count == 1
+        finally:
+            assert server.stop(grace=0).wait(timeout=3)
 
 
 def test_stalled_grpc_certificate_probe_stops_with_connector(tmp_path, monkeypatch):
