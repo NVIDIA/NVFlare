@@ -15,6 +15,7 @@ import copy
 import json
 import math
 import os
+import shlex
 import shutil
 import threading
 import time
@@ -529,11 +530,8 @@ class JobExecutor(ClientExecutor):
         service = server_config[0].get("service", {})
         if not isinstance(service, dict):
             raise RuntimeError(f"expect server config data to be dict but got {type(service)}")
-        command_options = ""
-        for t in args.set:
-            command_options += " " + t
-        command_options += " print_conf=True"
         args.set.append("print_conf=True")
+        command_options = shlex.join(args.set)
         fl_ctx.remove_prop(FLContextKey.ARGS, force_removal=True)
         fl_ctx.set_prop(FLContextKey.ARGS, args, private=True, sticky=False)
 

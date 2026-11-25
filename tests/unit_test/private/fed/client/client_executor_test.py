@@ -14,6 +14,7 @@
 
 import importlib
 import json
+import shlex
 import shutil
 import threading
 from pathlib import Path
@@ -741,6 +742,30 @@ def _make_start_app_inputs(tmp_path, job_id="job-1"):
     fl_ctx = manager.new_context()
     fl_ctx.get_prop(FLContextKey.ARGS)  # Exercise a cached sticky parent value.
     return job_meta, workspace, client, fl_ctx
+
+
+def test_start_app_preserves_individual_set_values(tmp_path):
+    job_id = "job-1"
+    job_meta, workspace, client, fl_ctx = _make_start_app_inputs(tmp_path, job_id)
+    executor = JobExecutor(client=client, startup=workspace.get_startup_kit_dir())
+    launcher = MagicMock()
+    options = ["data_dir=/data/train set#1", "label=Alice's model", r"path=C:\data", "empty="]
+    with (
+        patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher),
+        patch.object(threading.Thread, "start", _skip_completion_monitor),
+    ):
+        executor.start_app(
+            client,
+            job_id,
+            job_meta,
+            SimpleNamespace(workspace=str(tmp_path), set=list(options)),
+            None,
+            None,
+            None,
+            fl_ctx,
+        )
+    job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
+    assert shlex.split(job_args[JobProcessArgs.OPTIONS][1], comments=False)[: len(options)] == options
 
 
 def test_start_app_pending_handle_operations_before_launcher_returns(tmp_path):

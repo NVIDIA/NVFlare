@@ -38,6 +38,7 @@ TESTS = (
     "tests/integration_test/fast/http_frame_size_test.py",
     "tests/integration_test/fast/job_cert_binding_live_test.py",
     "tests/integration_test/fast/lightning_step_sync_ddp_test.py",
+    "tests/integration_test/fast/launch_path_arguments_test.py",
     "tests/integration_test/fast/multicloud_source_test.py",
     "tests/integration_test/fast/openshift_scripts_test.py",
     "tests/integration_test/fast/harness_process_cleanup_test.py",

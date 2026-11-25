@@ -420,8 +420,8 @@ cc_authz: |
 fl_admin_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  mkdir -p $DIR/../transfer
-  python3 -m nvflare.fuel.hci.tools.admin -m $DIR/.. -s fed_admin.json "$@"
+  mkdir -p "$DIR/../transfer"
+  python3 -m nvflare.fuel.hci.tools.admin -m "$DIR/.." -s fed_admin.json "$@"
 
 log_config: |
   {
@@ -534,7 +534,7 @@ start_cln_sh: |
         echo "Only on-prem or azure or aws is currently supported."
     esac
   else
-    $DIR/sub_start.sh &
+    "$DIR/sub_start.sh" &
   fi
 
 start_svr_sh: |
@@ -569,7 +569,7 @@ start_svr_sh: |
         echo "Only on-prem or azure or aws is currently supported."
     esac
   else
-    $DIR/sub_start.sh &
+    "$DIR/sub_start.sh" &
   fi
 
 stop_fl_sh: |

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import json
+import shlex
 import tempfile
 import threading
 from pathlib import Path
@@ -69,7 +70,13 @@ def test_start_runner_process_uses_deployed_byoc_decision(
         job_meta[AppValidationKey.BYOC] = stored_byoc
     job = SimpleNamespace(job_id=job_id, meta=job_meta)
 
-    args = SimpleNamespace(set=["resource_launch_generation=stale"], workspace=str(tmp_path))
+    original_options = [
+        "resource_launch_generation=stale",
+        "data_dir=/data/train set#1",
+        "label=Alice's model",
+        r"path=C:\data",
+    ]
+    args = SimpleNamespace(set=list(original_options), workspace=str(tmp_path))
     cell = MagicMock()
     cell.get_internal_listener_url.return_value = "tcp://server:8002"
     cell.get_root_url_for_child.return_value = "tcp://server:8003"
@@ -129,7 +136,7 @@ def test_start_runner_process_uses_deployed_byoc_decision(
 
     assert context_manager.new_context().get_prop(FLContextKey.ARGS) is args
     assert fl_ctx.get_prop(FLContextKey.ARGS) is args
-    assert args.set == ["resource_launch_generation=stale"]
+    assert args.set == original_options
     if launch_failure:
         bound_job, generation = engine.job_runner.bind_server_resource_generation.call_args_list[0].args
         engine.job_runner.discard_server_resource_generation.assert_called_once_with(bound_job, generation)
@@ -147,6 +154,7 @@ def test_start_runner_process_uses_deployed_byoc_decision(
     thread_cls.return_value.start.assert_called_once()
     job_args = fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS)
     options = job_args[JobProcessArgs.OPTIONS][1]
+    assert shlex.split(options, comments=False)[:3] == original_options[1:]
     assert ("resource_prior_attempt_incomplete=True" in options) is restored_attempt
     bound_job, generation = engine.job_runner.bind_server_resource_generation.call_args.args
     assert bound_job == job_id

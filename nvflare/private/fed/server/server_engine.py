@@ -17,6 +17,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -311,17 +312,13 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         app_root = workspace_obj.get_app_dir(job_id)
         cell = server.cell
         server_state = server.server_state
-        command_options = ""
-        for t in args.set:
-            command_options += " " + t
-        command_options += f" restore_snapshot={restore_snapshot} print_conf=True"
         args.set.append("print_conf=True")
         args.set.append(f"restore_snapshot={restore_snapshot}")
         if restored_attempt:
             # Restoring a job does not always include a component snapshot. The
             # resource reporter still needs to know that an earlier process ran.
-            command_options += " resource_prior_attempt_incomplete=True"
             args.set.append("resource_prior_attempt_incomplete=True")
+        command_options = shlex.join(args.set)
 
         # create token and signature for SJ
         token = job_id  # use the run_number as the auth token
