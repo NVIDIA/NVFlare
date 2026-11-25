@@ -18,7 +18,16 @@ from nvflare.fuel.f3.endpoint import EndpointMonitor, EndpointState
 
 
 class NonRegularAuthRegistry(EndpointMonitor):
-    """Track active delegated tokens and preserve live bindings during renewal."""
+    """Tie admin and relay tokens to a live transport registration.
+
+    The origin check verifies that the sending peer may carry an FQCN. A
+    signature that also covered the FQCN would still validate an old token if
+    the server kept the same signing key. For example, a relay that reconnects
+    under its original name can carry that origin before it has registered
+    again. The old token would be usable on the replacement transport.
+    Retiring bindings on disconnect, endpoint replacement, or server restart
+    requires fresh registration before that transport can use a delegated token.
+    """
 
     def __init__(self, endpoint_lookup=None):
         self._endpoint_lookup = endpoint_lookup
