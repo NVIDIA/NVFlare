@@ -235,9 +235,12 @@ python job.py
 tensorboard --logdir=/tmp/nvflare/jobs/workdir/server/simulate_job/tb_events
 ```
 
-**MLflow**:
+**MLflow**: Locate `mlflow.db` in the job-result directory of the site
+running the receiver. Use the absolute path printed by `find` to open the UI.
+
 ```bash
-mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/server/simulate_job/mlruns
+find /tmp/nvflare/jobs/workdir -type f -name mlflow.db
+mlflow ui --backend-store-uri sqlite:////absolute/path/to/mlflow.db
 ```
 
 **Weights & Biases**:

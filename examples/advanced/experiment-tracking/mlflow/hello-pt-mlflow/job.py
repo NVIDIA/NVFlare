@@ -27,9 +27,7 @@ def define_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--n_clients", type=int, default=2)
     parser.add_argument("-w", "--work_dir", type=str, nargs="?", default=WORKSPACE)
-    parser.add_argument(
-        "-t", "--tracking_uri", type=str, nargs="?", default=f"file://{WORKSPACE}/server/simulate_job/mlruns"
-    )
+    parser.add_argument("-t", "--tracking_uri", type=str, nargs="?", help="Override the job-local SQLite backend")
     parser.add_argument("-l", "--log_config", type=str, default="concise")
 
     return parser.parse_args()
@@ -47,20 +45,18 @@ if __name__ == "__main__":
         train_script="client.py",
     )
 
-    # Add MLflow tracking
-    add_experiment_tracking(
-        recipe=recipe,
-        tracking_type="mlflow",
-        tracking_config={
-            "tracking_uri": args.tracking_uri,
-            "kw_args": {
-                "experiment_name": "nvflare-fedavg-experiment",
-                "run_name": "nvflare-fedavg-with-mlflow",
-                "experiment_tags": {"mlflow.note.content": "## **NVFlare FedAvg experiment with MLflow**"},
-                "run_tags": {"mlflow.note.content": "## Federated Experiment tracking with MLflow.\n"},
-            },
+    # Let the receiver choose its backend unless the caller supplies a URI.
+    tracking_config = {
+        "kw_args": {
+            "experiment_name": "nvflare-fedavg-experiment",
+            "run_name": "nvflare-fedavg-with-mlflow",
+            "experiment_tags": {"mlflow.note.content": "## **NVFlare FedAvg experiment with MLflow**"},
+            "run_tags": {"mlflow.note.content": "## Federated Experiment tracking with MLflow.\n"},
         },
-    )
+    }
+    if args.tracking_uri is not None:
+        tracking_config["tracking_uri"] = args.tracking_uri
+    add_experiment_tracking(recipe, "mlflow", tracking_config=tracking_config)
 
     env = SimEnv(num_clients=args.n_clients, workspace_root=args.work_dir, log_config=args.log_config)
     run = recipe.execute(env)

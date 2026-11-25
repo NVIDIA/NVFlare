@@ -32,7 +32,6 @@ add_experiment_tracking(
     recipe=recipe,
     tracking_type="mlflow",
     tracking_config={
-        "tracking_uri": "file:///tmp/nvflare/jobs/workdir/server/simulate_job/mlruns",
         "kw_args": {
             "experiment_name": "lightning-fedavg-experiment",
             "run_name": "lightning-run",
@@ -71,39 +70,26 @@ python job.py
 
 Optional arguments:
 ```bash
-python job.py -n 3 -t "file:///my/custom/mlruns" -l verbose
+python job.py -n 3 -l verbose
 ```
 
 - `-n, --n_clients`: Number of clients (default: 2)
-- `-t, --tracking_uri`: MLflow tracking URI
+- `-t, --tracking_uri`: Optional URI subject to the receiving site's backend policy. The default uses job-local SQLite.
 - `-w, --work_dir`: Working directory
 - `-l, --log_config`: Log level (concise/verbose)
 
-To export the Recipe job without running it:
-
-```bash
-python job.py --export --export-dir /tmp/nvflare/jobs
-```
-
----
-
 ## Accessing Results
 
-### View Logs
+The receiver creates `mlflow.db` in the server's job-result directory. Under
+the default workspace, locate the database and use its absolute path to launch
+the MLflow UI. If you changed the work directory, search there instead.
 
 ```bash
-tree /tmp/nvflare/jobs/workdir/server/simulate_job/mlruns/
+find /tmp/nvflare/jobs/workdir/fedavg_lightning_mlflow/server -type f -name mlflow.db
+mlflow ui --backend-store-uri sqlite:////absolute/path/to/mlflow.db
 ```
 
-### Launch MLflow UI
-
-```bash
-mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/server/simulate_job/mlruns/
-```
-
-Then open your browser to `http://localhost:5000`
-
----
+Open `http://localhost:5000` to view the recorded metrics.
 
 ## How Lightning Integration Works
 
