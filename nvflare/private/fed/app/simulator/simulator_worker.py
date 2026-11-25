@@ -91,7 +91,8 @@ class ClientTaskWorker(FLComponent):
                 self.fire_event(EventType.SWAP_IN, fl_ctx)
 
                 if args.task_name == RunnerTask.END_RUN:
-                    client_runner.end_run_events_sequence()
+                    if not client_runner.end_run_events_sequence():
+                        raise RuntimeError("END_RUN event handlers failed")
                     end_run_client = client.client_name
                     self.logger.info("Simulator END_RUN sequence.")
                     stop_run = True
@@ -108,7 +109,8 @@ class ClientTaskWorker(FLComponent):
 
                         # if any client got the END_RUN event, stop the simulator run.
                         if client_runner.run_abort_signal.triggered:
-                            client_runner.end_run_events_sequence()
+                            if not client_runner.end_run_events_sequence():
+                                raise RuntimeError("END_RUN event handlers failed")
                             end_run_client = client.client_name
                             stop_run = True
                             self.logger.info("End the Simulator run.")

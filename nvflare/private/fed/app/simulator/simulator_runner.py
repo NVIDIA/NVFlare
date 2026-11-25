@@ -755,7 +755,8 @@ class SimulatorClientRunner(FLComponent):
             if stop_run:
                 if not end_run_for_all:
                     return
-                task_name = RunnerTask.END_RUN
+                if end_run_client == client.client_name:
+                    task_name = RunnerTask.END_RUN
 
     def _client_available(self, client):
         return (
@@ -856,11 +857,15 @@ class SimulatorClientRunner(FLComponent):
                         return True, None
 
                     # the child process is in nvflare/private/fed/app/simulator/simulator_worker.py
-                    end_run_client = conn.recv()
-                    if conn.recv():
+                    reported_end_run_client = conn.recv()
+                    fatal_error = conn.recv()
+                    if fatal_error:
                         self.logger.error(f"Client {client.client_name} stopped due to FATAL_SYSTEM_ERROR")
                         with lock:
                             self.fatal_clients.add(client.client_name)
+                    else:
+                        # Commit the acknowledgment only after the entire reply has arrived.
+                        end_run_client = reported_end_run_client
 
                 # Only decide whether to keep this worker. Select its replacement after cleanup.
                 with lock:
