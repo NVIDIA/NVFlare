@@ -13,14 +13,17 @@
 # limitations under the License.
 
 import io
+import ntpath
 import os
 import shutil
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from zipfile import ZipFile
 
 import pytest
 
+from nvflare.fuel.utils import zip_utils
 from nvflare.fuel.utils.zip_utils import (
     get_all_file_paths,
     ls_zip_from_bytes,
@@ -28,6 +31,7 @@ from nvflare.fuel.utils.zip_utils import (
     remove_leading_dotdot,
     split_path,
     unzip_all_from_bytes,
+    unzip_all_from_file,
     unzip_single_file_from_bytes,
     zip_directory_to_bytes,
 )
@@ -175,6 +179,31 @@ class TestZipUtils:
         assert (output_dir / file_path).read_bytes() == b"payload"
         extracted = sorted(p.relative_to(output_dir).as_posix() for p in output_dir.rglob("*") if p.is_file())
         assert extracted == [file_path]
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX permits literal colons in filenames")
+    @pytest.mark.parametrize("mode", ["bytes", "file", "single"])
+    def test_extract_legacy_posix_archive_with_colon_in_name(self, tmp_path, mode):
+        member = "x:metrics.csv"
+        archive_path = tmp_path / "legacy.zip"
+        with ZipFile(archive_path, "w") as archive:
+            archive.writestr(member, b"accuracy,1.0")
+
+        output = tmp_path / "output"
+        output.mkdir()
+        if mode == "bytes":
+            unzip_all_from_bytes(archive_path.read_bytes(), str(output))
+        elif mode == "file":
+            unzip_all_from_file(str(archive_path), str(output))
+        else:
+            unzip_single_file_from_bytes(archive_path.read_bytes(), str(output), member)
+
+        assert (output / member).read_bytes() == b"accuracy,1.0"
+
+    @pytest.mark.parametrize("member", ["x:metrics.csv", "C:/metrics.csv"])
+    def test_extract_rejects_drive_prefix_on_windows(self, monkeypatch, member):
+        monkeypatch.setattr(zip_utils, "os", SimpleNamespace(path=ntpath))
+        with pytest.raises(ValueError, match="unsafe absolute path"):
+            zip_utils._validate_zip_entry_name(member, "C:/output")
 
     def test_unzip_single_file_can_extract_again(self, tmp_path):
         archive_bytes = io.BytesIO()

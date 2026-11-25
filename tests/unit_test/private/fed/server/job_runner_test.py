@@ -424,7 +424,8 @@ def test_save_workspace_stores_the_jobs_outputs_once_apart_from_the_rest(tmp_pat
 
 
 @pytest.mark.parametrize("split", [True, False])
-def test_workspace_download_archives_omit_symlinks(tmp_path, monkeypatch, split):
+@pytest.mark.parametrize("linked_credentials", [False, True])
+def test_workspace_download_archive_symlink_policy(tmp_path, monkeypatch, split, linked_credentials):
     job_id = "job-1"
     workspace_root = tmp_path / "workspace"
     (workspace_root / "startup").mkdir(parents=True)
@@ -445,6 +446,10 @@ def test_workspace_download_archives_omit_symlinks(tmp_path, monkeypatch, split)
     (run_dir / "external.txt").symlink_to(external / "sentinel.txt")
     (run_dir / "external_dir").symlink_to(external, target_is_directory=True)
     (run_dir / "latest.pt").symlink_to("model.pt")
+    if linked_credentials:
+        write_job_cert(str(run_dir), b"cert", b"key")
+        (run_dir / "job_cert").rename(run_dir / "private-identity")
+        (run_dir / "job_cert").symlink_to("private-identity", target_is_directory=True)
     # A configured job result directory is also an archive input. Its name must
     # be checked before a workspace getter can resolve it to another directory.
     unrelated = result_root / "unrelated"
@@ -463,6 +468,15 @@ def test_workspace_download_archives_omit_symlinks(tmp_path, monkeypatch, split)
         _deployed_job(job)
     monkeypatch.setattr(manager, "get_job", job.get_job)
     fl_ctx.get_engine.return_value.get_component.return_value = manager
+
+    if linked_credentials:
+        with pytest.raises(OSError, match="job_cert"):
+            runner._save_workspace(fl_ctx)
+        assert {"workspace", "outputs"}.isdisjoint(store.list_components_of_object(manager.job_uri(job_id)))
+        assert (run_dir / "job_cert").is_symlink()
+        assert (run_dir / "private-identity" / "job.key").read_bytes() == b"key"
+        assert (run_dir / "model.pt").read_bytes() == b"model"
+        return
 
     runner._save_workspace(fl_ctx)
 
@@ -773,13 +787,14 @@ def test_save_workspace_leaves_credentials_outside_a_symlink_untouched(tmp_path)
     write_job_cert(str(other_run), b"other-cert", b"other-key")
     (run_dir / "job_cert").symlink_to(other_run / "job_cert", target_is_directory=True)
     runner, fl_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
-    job_manager.save_workspace.return_value = "/store/job-1/workspace"
+    with pytest.raises(OSError, match="job_cert"):
+        runner._save_workspace(fl_ctx)
 
-    runner._save_workspace(fl_ctx)
-
+    job_manager.save_workspace.assert_not_called()
+    job_manager.save_job_outputs.assert_not_called()
     assert (other_run / "job_cert" / "job.crt").read_bytes() == b"other-cert"
     assert (other_run / "job_cert" / "job.key").read_bytes() == b"other-key"
-    assert not run_dir.exists()
+    assert (run_dir / "job_cert").is_symlink()
 
 
 def test_job_completion_reports_unsupported_archiving_without_retrying(tmp_path):

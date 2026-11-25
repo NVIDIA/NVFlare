@@ -431,8 +431,9 @@ Known limitations:
 - The filesystem store requires descriptor-relative, no-follow filesystem
   operations for workspace archives. When the platform lacks them, the server
   logs the unsupported-platform error and retains the workspace sources.
-- The job's credentials (`job_cert/`) are removed before archiving, as today,
-  and are never treated as outputs.
+- The server removes the job's credentials (`job_cert/`) before archiving.
+  If the credential directory is a symlink, the server retains the workspace
+  and stops publication of both archives.
 - The admin client unzips a downloaded archive only into a plain folder name
   from the server's reply, never a path.
 

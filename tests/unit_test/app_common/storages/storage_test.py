@@ -161,10 +161,11 @@ def test_write_multi_aborts_when_child_entry_metadata_is_unreadable(tmp_path, mo
     assert (child / "model.pt").read_bytes() == b"model"
 
 
-def test_write_multi_rejects_an_unsafe_member_before_publication(tmp_path):
+@pytest.mark.parametrize("name", ["\\metrics.csv", "x:metrics.csv"])
+def test_write_multi_rejects_an_unsafe_member_before_publication(tmp_path, name):
     source = tmp_path / "workspace"
     source.mkdir()
-    unsafe = source / "\\metrics.csv"
+    unsafe = source / name
     unsafe.write_bytes(b"metrics")
     (source / "model.pt").write_bytes(b"model")
     archive = tmp_path / "archive.zip"

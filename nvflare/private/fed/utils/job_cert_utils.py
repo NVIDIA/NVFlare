@@ -14,7 +14,6 @@
 
 import contextlib
 import datetime
-import errno
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
@@ -130,11 +129,10 @@ def remove_job_cert(run_dir: str) -> None:
         try:
             run_fd, _ = stack.enter_context(open_archive_entry(run_dir, directory=True))
             cert_fd, _ = stack.enter_context(open_archive_entry(JOB_CERT_DIR_NAME, dir_fd=run_fd, directory=True))
-        except OSError as exc:
-            # A missing directory or a symlink contains no credential owned by this run.
-            if exc.errno in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP):
-                return
-            raise
+        except FileNotFoundError:
+            return
+        # Any other open failure prevents safe removal. In particular, the
+        # target of a linked credential directory could also be an archive input.
         for name in (JOB_CERT_FILE_NAME, JOB_KEY_FILE_NAME):
             with contextlib.suppress(FileNotFoundError):
                 os.unlink(name, dir_fd=cert_fd)
