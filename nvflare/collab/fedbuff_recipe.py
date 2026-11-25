@@ -28,7 +28,7 @@ from nvflare.collab import collab
 from nvflare.collab.api import ContextKey
 from nvflare.collab.model_ops import ModelOps
 from nvflare.collab.recipe import CollabRecipe
-from nvflare.collab.replayable_execution import AsyncExecutionPort, run_async_execution
+from nvflare.collab.replayable_execution import AsyncExecutionAdapter, run_async_execution
 
 
 @dataclass(frozen=True)
@@ -524,7 +524,7 @@ class FedBuffWorkflow:
                 dispatch()  # Refill before observer evaluation/artifact work.
                 self._notify("on_model", coordinator.model, coordinator.version)
 
-    def _execution_port(self, coordinator, names, submit, receive):
+    def _execution_adapter(self, coordinator, names, submit, receive):
         """Expose algorithm decisions to the shared live/planned execution policy."""
         planning_state = None
         # A custom coordinator may define different reservation or publication rules.
@@ -536,7 +536,7 @@ class FedBuffWorkflow:
                 coordinator.buffer_size,
                 coordinator.min_open_slots,
             )
-        return AsyncExecutionPort(
+        return AsyncExecutionAdapter(
             state=coordinator,
             clients=names,
             contribution_budget=coordinator.num_rounds * coordinator.buffer_size,
@@ -577,7 +577,7 @@ class FedBuffWorkflow:
             cleanup.callback(coordinator.close)
             self._notify("on_model", coordinator.model, coordinator.version)
             with self._calls(names) as (submit, receive):
-                run_async_execution(self._execution_port(coordinator, names, submit, receive), collab.fl_ctx)
+                run_async_execution(self._execution_adapter(coordinator, names, submit, receive), collab.fl_ctx)
             self._notify("on_finish", coordinator.model, coordinator.version)
             return coordinator.model
 

@@ -304,7 +304,7 @@ class SimulationPlanRuntime:
         self._started_at = time.monotonic()
         self.virtual_time = None
         self._finalized = False
-        self._logical_trace_verified = False
+        self._logical_trace_verified = None  # Final verification has not run.
 
     def has_section(self, section: str) -> bool:
         return section in self.plan
