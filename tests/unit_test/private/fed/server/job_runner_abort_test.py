@@ -49,6 +49,9 @@ def admission(tmp_path, monkeypatch):
     engine.get_component.return_value = manager
     engine.job_def_manager = manager
     engine.job_runner = runner
+    engine.lock = threading.Lock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
     engine.server.server_state = HotState()
     job = SimpleNamespace(
         job_id="job-1",

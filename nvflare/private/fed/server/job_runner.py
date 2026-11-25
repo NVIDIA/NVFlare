@@ -45,8 +45,8 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.identity import get_cert_common_name_from_file
-from nvflare.fuel.flare_api.api_spec import JobFinishing
 from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.deprecated import warn_deprecated
 from nvflare.lighter.tool_consts import NVFLARE_SIG_FILE
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
@@ -129,6 +129,7 @@ def _get_active_job_participants(connected_clients: Dict[str, Client], participa
 
 class JobRunner(FLComponent):
     STARTING = object()
+    FINISHING = object()
 
     def __init__(self, workspace_root: str) -> None:
         super().__init__()
@@ -140,6 +141,12 @@ class JobRunner(FLComponent):
         self._server_resource_generations = {}
         self._pending_client_outcomes = {}
         self.resource_stats = ResourceStatsCoordinator()
+        application_config = ConfigService.get_section(SystemConfigs.APPLICATION_CONF)
+        if isinstance(application_config, dict) and ConfigVarName.CLIENT_OUTCOME_WAIT_TIMEOUT in application_config:
+            warn_deprecated(
+                "client_outcome_wait_timeout is deprecated and ignored; completion no longer waits for client reports.",
+                stacklevel=3,
+            )
         self.job_cert_valid_days = ConfigService.get_int_var(
             name=ConfigVarName.JOB_CERT_VALID_DAYS,
             conf=[SystemConfigs.STARTUP_CONF, SystemConfigs.RESOURCES_CONF],
@@ -705,6 +712,8 @@ class JobRunner(FLComponent):
         if run_process is None:
             return RunStatus.FINISHED_COMPLETED
 
+        if run_process.get(RunProcessKey.ABORT_REQUESTED):
+            return RunStatus.FINISHED_ABORTED
         finished = run_process.get(RunProcessKey.PROCESS_FINISHED, False)
         process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
         if process_return_code == ProcessExitCode.INFRASTRUCTURE_ERROR:
@@ -991,11 +1000,9 @@ class JobRunner(FLComponent):
                             job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
                             self.log_info(fl_ctx, f"Job: {job_id} started to run, status changed to RUNNING.")
                         except Exception as e:
+                            startup_aborted = False
                             if job_id:
-                                with self.lock:
-                                    if job_id in self.running_jobs:
-                                        del self.running_jobs[job_id]
-                                    self._pending_client_outcomes.pop(job_id, None)
+                                startup_aborted = self._discard_failed_start(job_id, engine)
                                 try:
                                     self._stop_run(job_id, fl_ctx)
                                 except Exception as stop_error:
@@ -1030,7 +1037,11 @@ class JobRunner(FLComponent):
                                 if self._check_job_status(
                                     job_manager, ready_job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx
                                 ):
-                                    job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
+                                    job_manager.set_status(
+                                        ready_job.job_id,
+                                        RunStatus.FINISHED_ABORTED if startup_aborted else RunStatus.FAILED_TO_RUN,
+                                        fl_ctx,
+                                    )
 
                             deploy_detail = fl_ctx.get_prop(FLContextKey.JOB_DEPLOY_DETAIL)
                             if deploy_detail:
@@ -1048,6 +1059,21 @@ class JobRunner(FLComponent):
             thread.join()
         else:
             self.log_error(fl_ctx, "There's no Job Manager defined. Won't be able to run the jobs.")
+
+    def _discard_failed_start(self, job_id, engine):
+        """Discard startup bookkeeping and prevent a late waiter from recreating it."""
+        with self.lock:
+            job = self.running_jobs.pop(job_id, None)
+            self._pending_client_outcomes.pop(job_id, None)
+            with engine.lock:
+                run_process = engine.run_processes.get(job_id)
+                exception = engine.exception_run_processes.pop(job_id, None)
+                aborted = bool(job and job.run_aborted) or bool(
+                    (exception or run_process or {}).get(RunProcessKey.ABORT_REQUESTED)
+                )
+                if run_process is not None:
+                    run_process[RunProcessKey.STARTUP_FAILED] = True
+                return aborted
 
     def abort_before_start(self, job_id: str, fl_ctx: FLContext):
         """Abort an unclaimed job; return its previous status or STARTING if startup is claimed."""
@@ -1154,6 +1180,7 @@ class JobRunner(FLComponent):
             run_process is not None
             and not run_process.get(RunProcessKey.PROCESS_FINISHED, False)
             and not run_process.get(RunProcessKey.PROCESS_EXITED, False)
+            and not run_process.get(RunProcessKey.STARTUP_FAILED, False)
         )
 
     def stop_run(self, job_id: str, fl_ctx: FLContext, *, from_client: bool = False):
@@ -1163,7 +1190,7 @@ class JobRunner(FLComponent):
                 if from_client and not self._is_server_job_running(engine, job_id):
                     return ""
                 if job_id in self._finished_job_states:
-                    raise JobFinishing(f"Job {job_id} is already finishing.")
+                    return self.FINISHING
                 result = self._mark_run_aborted(job_id, fl_ctx, engine)
         if not result:
             # Record the accepted abort before a slow RPC can race SJ exit and
@@ -1183,7 +1210,9 @@ class JobRunner(FLComponent):
             return f"Job {job_id} is already finishing."
         job = self.running_jobs.get(job_id)
         run_process = engine.run_processes.get(job_id)
-        if job is None and run_process is None:
+        if (job is None and run_process is None) or (
+            run_process is not None and run_process.get(RunProcessKey.STARTUP_FAILED)
+        ):
             self.log_info(fl_ctx, f"Job {job_id} is not running. It can not be stopped.")
             return f"Job {job_id} is not running."
         if job is not None:
@@ -1192,6 +1221,7 @@ class JobRunner(FLComponent):
             # The process exists before running_jobs registration. Preserve the
             # accepted abort there so a clean SJ exit cannot erase a startup abort.
             run_process = engine.exception_run_processes.get(job_id, run_process)
+            run_process[RunProcessKey.ABORT_REQUESTED] = True
             run_process[RunProcessKey.PROCESS_RETURN_CODE] = JobReturnCode.ABORTED
             engine.exception_run_processes[job_id] = run_process
         self.log_info(fl_ctx, f"Stop the job run: {job_id}")
@@ -1218,6 +1248,8 @@ class JobRunner(FLComponent):
                         run_process = engine.run_processes.get(job_id)
                     if run_process is None:
                         run_process = {RunProcessKey.PARTICIPANTS: {}}
+                    if run_process.get(RunProcessKey.STARTUP_FAILED) or run_process.get(RunProcessKey.ABORT_REQUESTED):
+                        return ""
                     existing_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
                     if existing_code != ProcessExitCode.INFRASTRUCTURE_ERROR and (
                         existing_code is None or process_return_code != JobReturnCode.ABORTED

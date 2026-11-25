@@ -816,3 +816,87 @@ def test_streamer_preconditions_and_shutdown():
     engine.run_manager = SimpleNamespace(object_streamer=MagicMock())
     engine.shutdown_streamer()
     engine.run_manager.object_streamer.shutdown.assert_called_once()
+
+
+@pytest.mark.parametrize("timeout", [5.0, 0.0])
+def test_blocked_child_command_does_not_block_authenticated_sj_failure(timeout):
+    from nvflare.apis.job_def import RunStatus
+    from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
+    from nvflare.private.defs import CellMessageHeaderKeys, new_cell_message
+    from nvflare.private.fed.server.fed_server import FederatedServer
+    from tests.timing_utils import WAIT_TIMEOUT, ThreadGroup
+
+    entered, release, reported = threading.Event(), threading.Event(), threading.Event()
+    info = {RunProcessKey.PARTICIPANTS: {}}
+    engine = _make_wait_engine(info, {})
+    server = object.__new__(FederatedServer)
+    server.engine = engine
+    server.cell = MagicMock()
+    engine.server = server
+
+    def blocked_rpc(**_kwargs):
+        entered.set()
+        release.wait()
+        return new_cell_message({}, "OK")
+
+    server.cell.send_request.side_effect = blocked_rpc
+    server.cell.fire_and_forget.side_effect = blocked_rpc
+    request = new_cell_message(
+        {
+            MessageHeaderKey.ORIGIN: "server.job-1",
+            MessageHeaderKey.TOPIC: ServerCommandNames.UPDATE_RUN_STATUS,
+            CellMessageHeaderKeys.JOB_ID: "job-1",
+        },
+        {"execution_error": True},
+    )
+    request.set_prop(MessagePropKey.ENDPOINT, SimpleNamespace(name="server.job-1"))
+
+    def report_and_exit():
+        reply = server._listen_command(request)
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == CellReturnCode.OK
+        engine.wait_for_complete("/tmp", "job-1", MagicMock())
+        reported.set()
+
+    with patch("nvflare.private.fed.server.server_engine.get_return_code", return_value=0):
+        with ThreadGroup(release) as workers:
+            workers.start(engine.send_command_to_child_runner_process, "job-1", "stats", {}, timeout)
+            assert entered.wait(WAIT_TIMEOUT)
+            workers.start(report_and_exit)
+            assert reported.wait(WAIT_TIMEOUT), "SJ failure reporting blocked behind command RPC"
+            assert not release.is_set()
+            assert "job-1" not in engine.run_processes
+            assert (
+                JobRunner._classify_finished_job_status(engine.exception_run_processes["job-1"])
+                == RunStatus.FINISHED_EXECUTION_EXCEPTION
+            )
+
+
+@pytest.mark.parametrize("return_code", [0, ProcessExitCode.EXCEPTION])
+def test_failed_start_waiter_does_not_recreate_exception_entry(return_code):
+    info = {RunProcessKey.PARTICIPANTS: {}, RunProcessKey.PROCESS_FINISHED: True}
+    engine = _make_wait_engine(info, {})
+    runner = JobRunner("/tmp")
+    runner._pending_client_outcomes["job-1"] = {"site-1"}
+    engine.exception_run_processes["job-1"] = info
+    info[RunProcessKey.ABORT_REQUESTED] = True
+    assert runner._discard_failed_start("job-1", engine)
+    assert not engine.exception_run_processes
+    assert not runner._pending_client_outcomes
+    with patch("nvflare.private.fed.server.server_engine.get_return_code", return_value=return_code):
+        engine.wait_for_complete("/tmp", "job-1", MagicMock())
+    assert not engine.exception_run_processes
+    assert not engine.run_processes
+
+
+def test_launcher_return_code_io_does_not_hold_engine_lock():
+    info = {RunProcessKey.PARTICIPANTS: {}, RunProcessKey.PROCESS_FINISHED: True}
+    engine = _make_wait_engine(info, {})
+
+    def read_return_code(*_args):
+        assert engine.lock.acquire(blocking=False), "launcher I/O holds lifecycle lock"
+        engine.lock.release()
+        return 0
+
+    with patch("nvflare.private.fed.server.server_engine.get_return_code", side_effect=read_return_code):
+        engine.wait_for_complete("/tmp", "job-1", MagicMock())
+    assert not engine.run_processes

@@ -19,7 +19,7 @@ from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import List, Optional
 
-from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection, TargetType
+from nvflare.fuel.flare_api.api_spec import JobFinishing, JobNotFound, NoConnection, TargetType
 from nvflare.fuel.flare_api.flare_api import Session
 
 
@@ -75,7 +75,13 @@ def shutdown_system_by_session(
     if len(active_job_ids) > 0:
         if verbose:
             print_human("Warning: current running jobs will be aborted")
-        abort_jobs(sess, active_job_ids)
+        try:
+            abort_jobs(sess, active_job_ids)
+        except JobFinishing as e:
+            raise JobFinishing(
+                "System shutdown was not sent because a job is still archiving or publishing its terminal status. "
+                "Wait for completion and retry shutdown. " + str(e)
+            ) from e
     if wait:
         if verbose:
             print_human("shutdown NVFLARE and wait for completion")

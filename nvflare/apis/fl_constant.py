@@ -408,6 +408,8 @@ class RunProcessKey:
     PARTICIPANTS = "_participants"
     PROCESS_FINISHED = "_process_finished"
     PROCESS_EXITED = "_process_exited"
+    ABORT_REQUESTED = "_abort_requested"
+    STARTUP_FAILED = "_startup_failed"
     PROCESS_EXE_ERROR = "_process_exe_error"
     PROCESS_RETURN_CODE = "_process_return_code"
 

@@ -440,3 +440,17 @@ def _isolate_module_clocks(monkeypatch):
         monkeypatch,
         "nvflare.recipe.session_mgr",
     )
+
+
+def test_abort_reports_pending_publication_and_closes(capsys):
+    from nvflare.fuel.flare_api.api_spec import JobFinishing
+
+    session = MagicMock()
+    session.abort_job.side_effect = JobFinishing("archiving")
+    manager = SessionManager({})
+    manager._get_session = MagicMock(return_value=session)
+    assert manager.abort_job("job-id") is None
+    output = capsys.readouterr().out
+    assert "completing archival" in output
+    assert "aborted successfully" not in output
+    session.close.assert_called_once_with()

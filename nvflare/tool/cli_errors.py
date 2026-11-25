@@ -115,6 +115,10 @@ _ERROR_REGISTRY: Dict[str, Dict[str, str]] = {
         "message": "Job '{job_id}' is not currently running.",
         "hint": "Use 'nvflare job list' to check job status.",
     },
+    "JOB_FINISHING": {
+        "message": "The job is completing archival and terminal publication.",
+        "hint": "Wait for the job's terminal status, then retry the command. Its selected outcome is unchanged.",
+    },
     "JOB_NOT_DONE": {
         "message": "Job '{job_id}' has not finished.",
         "hint": "Use 'nvflare job wait <job_id>' or 'nvflare job monitor <job_id>' before downloading results.",

@@ -138,7 +138,7 @@ def test_shutdown_waits_for_selected_verdict_publication(monkeypatch, tmp_path, 
         assert archive_entered.wait(WAIT_TIMEOUT)
         assert job.meta[JobMetaKey.STATUS] == RunStatus.RUNNING
         if stalled_archive:
-            with pytest.raises(JobFinishing):
+            with pytest.raises(JobFinishing, match="System shutdown was not sent.*still archiving"):
                 shutdown_system_by_session(session, wait=False, verbose=False)
             assert clock.monotonic() == 90
             assert not published.is_set()

@@ -147,6 +147,12 @@ server job exits, the parent archives the reports already received and records
 gaps without waiting for outstanding client reports, for every terminal outcome.
 Reports arriving after summary closure are rejected and cannot change the job
 verdict or its archived statistics. Scheduler-slot release follows archival.
+Client jobs normally exit after the server workflow ends and report statistics
+only after that exit. Thus routine successful jobs can archive with every client
+marked missing; client statistics should generally be treated as unavailable
+unless received before closure. This is an intentional consequence of immediate
+closure, not limited to delayed networks or unusual failures.
+
 The server atomically publishes
 `resource_stats/resource_summary.json` with each participant's measurements and
 original report timestamp stored once. Queries prefer WORKSPACE and consult

@@ -275,7 +275,14 @@ participants as gaps. Successful, failed and aborted jobs all proceed without
 waiting for client shutdown outcomes or outstanding resource reports. Terminal
 status and scheduler-slot release follow archival. The former 900-second
 client-outcome wait and 20-second failed-job statistics grace are removed;
-`client_outcome_wait_timeout` is retained as a deprecated name and has no effect.
+`client_outcome_wait_timeout` is retained as a deprecated name and has no effect;
+configuring it emits a warning once per server process.
+
+Client jobs normally exit after the server workflow ends and report statistics
+only after that exit. Thus routine successful jobs can archive with every client
+marked missing; client statistics should generally be treated as unavailable
+unless received before closure. This is an intentional consequence of immediate
+closure, not limited to delayed networks or unusual failures.
 
 SJ status reporting or observed process exit closes the authority of client
 terminal outcomes to change the workflow verdict. An administrative abort accepted
@@ -295,7 +302,10 @@ retries this response within a 90-second budget measured from the call, allowing
 shutdown helpers to wait for publication while preserving the selected verdict.
 The budget does not cancel an in-flight transport request, which retains its own
 timeout. Persistent finishing raises `JobFinishing`; genuine abort errors are
-reported normally and do not authorize shutdown.
+reported normally and do not authorize shutdown. The CLI reports persistent
+finishing as `JOB_FINISHING` with exit code 3. Shutdown reports that publication
+is pending and does not send shutdown; the operator must wait and retry. Recipe
+abort reports that completion is pending without claiming an accepted abort.
 
 At closure, each roster entry contains either an accepted value or a gap. An
 accepted entry contains `participant_name`, the original `reported_at`,
