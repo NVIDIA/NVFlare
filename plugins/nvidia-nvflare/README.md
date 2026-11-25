@@ -3,7 +3,7 @@
 `nvidia-nvflare` packages NVIDIA FLARE's existing agent skills for Agent Plugins,
 Codex, Claude Code, and Cursor. The proposed initial plugin version is `1.0.0`;
 it is independent of the NVFlare Python package and individual skill versions.
-This packaging candidate is not yet a signed or approved plugin release.
+This packaging candidate is not an approved plugin release.
 
 Verification CI generates the final Plugin Card and benchmark for the evaluated
 bundle. Preparation checks below do not establish NVIDIA Verified status.
@@ -79,13 +79,9 @@ examples; see [the scope and attribution policy](SKILLS-LICENSE.md).
 Both full license texts are included. Other NVFlare code and documentation retain
 their existing licensing, and third-party terms and attributions remain in force.
 
-The licensing update changes member metadata and source headers while preserving
-instructions, executable behavior, and evaluation tasks. Retained member cards,
-benchmarks, and signatures describe the earlier revision. The old signatures do
-not match the changed resources, and the old cards still show the earlier license.
-Regenerate those artifacts through the verification service before release.
-The package check and archive build reject the resource mismatch until refreshed
-member signatures are available. Do not edit signatures or suppress this check.
+The whole-plugin signature is `plugin.oms.sig` at the plugin root. Member
+signatures are stored as `skills/<name>/skill.oms.sig`. Verify each signature's
+certificate chain and covered file inventory against the package contents.
 
 ## Build and validate
 
@@ -162,9 +158,9 @@ all nine components, routing, and shared references. Record the host/model
 versions, archive digest, and outcomes. See the host references below and the
 retained check evidence for probes already completed.
 
-### Local evaluation and publication CI
+### Evaluation
 
-NVCARPS discovers five plugin cases in `evals/evals.json` by default. These
+The default evaluation suite contains five plugin cases in `evals/evals.json`. These
 cover a PyTorch FedAvg conversion, Lightning checkpoint evaluation, federated DICOM
 statistics, a request combining Hugging Face conversion and federated statistics,
 and an unrelated website request for which no NVFlare skill should activate.
@@ -206,85 +202,21 @@ synthetic chest X-ray DICOM file under `evals/files/fedstats-image-dicom-depende
 Both arms receive the same workspace-relative inputs and the member's original
 loader and histogram grading criteria.
 
-Use the current NVCARPS CLI, configured with model credentials outside the
-repository, and its supported local container runtime. The compute image also
-needs NVFlare and the frameworks exercised by the tasks; precheck does not check
-these application dependencies. Select the same compatible image for skill and
-baseline attempts.
+The compute image needs NVFlare and the frameworks exercised by the tasks.
+Select the same compatible image for skill and baseline attempts.
 
 The bundled `evals/config.json` declares Git/curl, read-only access to the
 sandbox's own `/proc` for NVFlare parent-process checks, and three Hugging Face
 Xet origins in addition to the managed destinations. These grants apply to
-both skill and baseline attempts when selected with `--allow-declared-access`;
-they do not mount the host's `/proc`. NVCARPS 1.3.1429 supplies the default CPU
-metadata permissions. Application dependencies belong in a compatible compute
-image selected by the operator, not in the task prompts.
+both skill and baseline attempts; they do not mount the host's `/proc`.
+Application dependencies belong in a compatible compute image selected by the
+operator, not in the task prompts.
 
-To authorize the additional Xet origins for runtime and Security grading,
-save this operator file outside the plugin as `/tmp/nvflare-operator.json`:
-
-```json
-{
-  "schema_version": 1,
-  "network": {
-    "allowed_origins": [
-      "https://cas-bridge.xethub.hf.co",
-      "https://cas-server.xethub.hf.co",
-      "https://transfer.xethub.hf.co"
-    ]
-  }
-}
-```
-
-Select an installed compatible compute image with `NVCARPS_EVAL_IMAGE`, then
-run from the repository root. The CLI discovers the bundled configuration
-automatically. Keep the operator file separate: passing the bundled file
-directly as `--config` in 1.3.1429 selects standalone defaults instead of the
-managed Codex/Claude, skill/baseline, and native-platform defaults.
-
-```bash
-nvcarps --version
-nvcarps plugin precheck plugins/nvidia-nvflare --evals \
-  --config /tmp/nvflare-operator.json --allow-declared-access
-nvcarps plugin eval plugins/nvidia-nvflare --readiness \
-  --config /tmp/nvflare-operator.json --allow-declared-access --json
-nvcarps plugin eval plugins/nvidia-nvflare \
-  --config /tmp/nvflare-operator.json --allow-declared-access \
-  --output /absolute/path/to/new-eval-output
-nvcarps plugin eval verify /path/printed/by/the/cli/eval-result.json
-```
-
-With NVCARPS 1.3.1430, the default suite schedules 20 attempts for five cases,
-two agents, and both plugin and baseline arms. To run all 107 cases against the
-same bundle, add the following binding to an operator config saved beside the
-`plugins/` directory. Both paths are relative to that config file.
-
-```json
-{
-  "target_bindings": [{
-    "target_relative_path": "plugins/nvidia-nvflare",
-    "dataset_path": "plugins/nvidia-nvflare/regression-evals.json"
-  }]
-}
-```
-
-Run `--readiness` with that config and confirm the expected 428 attempts.
+The default suite schedules 20 attempts for five cases, two agents, and both
+plugin and baseline arms.
 Inspect the plan, results, scores, security findings, and any capture or grading
 errors for the selected suite. A structurally valid result does not establish a pass.
-Submit the full `plugins/nvidia-nvflare/` directory to the verification playground
-with the complete unedited CLI export in one plugin-relative
-`.eval-results/<run-id>/` directory. This includes the result JSON, handoff
-manifest, canonical score, and HTML report. Keep the private raw run outside the
-submission for recovery. Never commit credentials or private logs.
-
-Playground CI verifies the submitted evidence against the plugin and produces
-`BENCHMARK.md`, the final Plugin Card, and the plugin signature. The product
-builder currently accepts the recognized verification files at the plugin root
-and flags a nested `.eval-results/` directory as extra content. Account for
-these two layouts when mirroring the verified release, and preserve the original
-signed files and evidence. Read the benchmark's verdict and publication checks. `PUBLISHABLE` and `PASS WITH WARNINGS` permit
-publication subject to repository review and approval requirements; `INCOMPLETE`
-and `NOT PUBLISHABLE` require resolution. Local results are self-assessed.
+Never commit credentials or private logs.
 Rebuild, re-evaluate, and re-sign after changing bundled inputs.
 
 Loading probes do not establish conversions or full workflow coverage. Retain
@@ -311,9 +243,7 @@ blocker. Do not edit signed resources or suppress findings to obtain a pass.
   negatives. A report labeling all four positive does not validate that distinction.
   The 107-case regression suite declares these expectations explicitly. Use the
   regression suite to check the Auto-FL report case routing.
-  The current `2.9` benchmark also retains a legacy internal container-image path;
-  regenerate this report through the evaluation service instead of manually
-  editing signed artifacts. Verify the final benchmark and card together.
+  Verify the final benchmark and card together.
 - [ ] Generate a Plugin Card and plugin-level signature for the exact final
   package. Existing per-skill signatures do not attest to the new manifests or
   the bundle as a whole. Verify the final published package against its attestation.

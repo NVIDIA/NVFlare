@@ -44,6 +44,7 @@ SKILLS = (
 MANIFESTS = ("plugin.json", ".claude-plugin/plugin.json", ".codex-plugin/plugin.json", ".cursor-plugin/plugin.json")
 IDENTITY_FIELDS = ("name", "version", "description", "author", "homepage", "repository", "license", "keywords")
 BUNDLE_PATH = Path("plugins/nvidia-nvflare")
+PLUGIN_SIGNATURE = "plugin.oms.sig"
 LIGHTNING_EVAL_CHECKPOINT = "evals/files/lightning-eval-only/litnet-eval.pt"
 DICOM_EVAL_DIR = "evals/files/fedstats-image-dicom-dependency"
 DICOM_EVAL_FILES = tuple(f"{DICOM_EVAL_DIR}/site-{site}/synthetic.dcm" for site in range(1, 4))
@@ -55,7 +56,7 @@ VERIFICATION_FILES = {
     "BENCHMARK.md",
     "plugin-card.json",
     "plugin-card.md",
-    "plugin.sig.oms",
+    PLUGIN_SIGNATURE,
 }
 
 
@@ -245,7 +246,7 @@ def write_bundle(output: Path, files: dict[str, tuple[bytes, int]], metadata: di
     package = output / metadata["plugin"]
     archive = output / f"{metadata['plugin']}-{metadata['version']}.zip"
     metadata["files"] = {path: hashlib.sha256(data).hexdigest() for path, (data, _) in sorted(files.items())}
-    metadata["plugin_signature_present"] = "plugin.sig.oms" in files
+    metadata["plugin_signature_present"] = PLUGIN_SIGNATURE in files
     write_package(package, files)
     with zipfile.ZipFile(archive, "x", compression=zipfile.ZIP_DEFLATED) as bundle:
         for relative, (data, mode) in sorted(files.items()):

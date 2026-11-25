@@ -98,9 +98,12 @@ def test_evidence_retained_but_blocks_changed_inputs(bundle, evidence):
     assert (package / evidence).read_bytes() == payload
 
 
-def test_verification_exceptions_apply_only_at_plugin_root(bundle):
+@pytest.mark.parametrize("path", ["skills/demo/eval-result.json", ".eval-results/eval-result.json", "plugin.sig.oms"])
+def test_unrecognized_verification_paths_rejected(bundle, path):
     package, expected = bundle
-    (package / "skills/demo/eval-result.json").write_text("unexpected member evidence")
+    target = package / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("unexpected verification file")
     with pytest.raises(ValueError, match="drift"):
         package_plugin.check_bundle(package, expected)
 
@@ -126,18 +129,18 @@ def test_bundle_parent_cannot_be_symlink(tmp_path):
 def test_archive_preserves_verification_outputs_and_records_their_hashes(bundle, tmp_path):
     package, expected = bundle
     signature = b"retained signature; no trust check performed by the packager\n"
-    (package / "plugin.sig.oms").write_bytes(signature)
-    (package / "plugin.sig.oms").chmod(0o644)
+    (package / "plugin.oms.sig").write_bytes(signature)
+    (package / "plugin.oms.sig").chmod(0o644)
     files = package_plugin.check_bundle(package, expected)
     metadata = {"plugin": "demo", "version": "1.0.0", "plugin_signature_verified": False, "files": {}}
     output = tmp_path / "archive"
     archive = package_plugin.write_bundle(output, files, metadata)
     with zipfile.ZipFile(archive) as zipped:
-        assert zipped.read("demo/plugin.sig.oms") == signature
-        assert stat.S_IMODE(zipped.getinfo("demo/plugin.sig.oms").external_attr >> 16) == 0o644
-    assert (output / "demo/plugin.sig.oms").read_bytes() == signature
+        assert zipped.read("demo/plugin.oms.sig") == signature
+        assert stat.S_IMODE(zipped.getinfo("demo/plugin.oms.sig").external_attr >> 16) == 0o644
+    assert (output / "demo/plugin.oms.sig").read_bytes() == signature
     recorded = json.loads((output / "build-metadata.json").read_text())
-    assert recorded["files"]["plugin.sig.oms"] == hashlib.sha256(signature).hexdigest()
+    assert recorded["files"]["plugin.oms.sig"] == hashlib.sha256(signature).hexdigest()
     assert set(recorded["files"]) == set(files)
     assert recorded["plugin_signature_present"] is True
     assert recorded["plugin_signature_verified"] is False
