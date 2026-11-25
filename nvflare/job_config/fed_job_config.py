@@ -33,8 +33,8 @@ from nvflare.job_config.task_execution import (
     get_client_execution_lifetime,
     prepare_task_execution,
     validate_task_resources,
-    validate_task_workflows,
 )
+from nvflare.job_config.task_workflows import validate_task_workflows
 from nvflare.private.fed.app.fl_conf import FL_PACKAGES
 from nvflare.private.fed.app.utils import kill_child_processes
 from nvflare.utils.job_launcher_utils import normalize_cj_resource_spec
@@ -162,9 +162,10 @@ class FedJobConfig:
             app.client_app and app.client_app.additional_params.get("execution_lifetime", "job") == "task"
             for app in self.fed_apps.values()
         ):
-            for app in self.fed_apps.values():
-                if app.server_app:
-                    validate_task_workflows(app.server_app.workflows)
+            for fed_app in self.fed_apps.values():
+                server_app = fed_app.server_app
+                if server_app is not None:
+                    validate_task_workflows(server_app)
 
         for site, app_name in self.deploy_map.items():
             app = self.fed_apps[app_name].client_app

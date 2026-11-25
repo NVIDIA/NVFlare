@@ -18,7 +18,9 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from nvflare.app_opt.pt.fedce import FedCEModelAggregator
 from nvflare.app_opt.pt.recipes.fedopt import FedOptRecipe
+from nvflare.client.config import ExchangeFormat
 from nvflare.job_config.task_execution import CLIENT_API_EXECUTOR_PATH, prepare_task_execution
 from nvflare.recipe import add_cross_site_evaluation, add_final_global_evaluation
 
@@ -66,6 +68,23 @@ def test_fedopt_constructor_exports_global_evaluation_with_existing_locator(tmp_
 def test_fedopt_constructor_rejects_invalid_lifetime():
     with pytest.raises(ValueError, match="execution_lifetime"):
         _recipe(execution_lifetime="resident")
+
+
+@pytest.mark.parametrize("selection", ["constructor", "common", "export_override"])
+def test_fedopt_with_fedce_rejects_task_lifetime_at_export(tmp_path, selection):
+    recipe = _recipe(
+        aggregator=FedCEModelAggregator(trainable_param_names=["weight", "bias"]),
+        server_expected_format=ExchangeFormat.PYTORCH,
+        execution_lifetime="task" if selection == "constructor" else "job",
+    )
+    export_kwargs = {}
+    if selection == "common":
+        recipe.add_client_config({"execution_lifetime": "task"})
+    elif selection == "export_override":
+        export_kwargs["client_exec_params"] = {"execution_lifetime": "task"}
+
+    with pytest.raises(ValueError, match="FedCE previous-model and score-history state.*use job lifetime"):
+        recipe.export(str(tmp_path), **export_kwargs)
 
 
 def test_fedopt_external_task_launch_remains_rejected(tmp_path):
