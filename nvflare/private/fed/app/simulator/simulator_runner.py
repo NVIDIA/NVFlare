@@ -685,8 +685,8 @@ class SimulatorClientRunner(FLComponent):
         self.kv_list = parse_vars(args.set)
         self.logging_config = os.path.join(self.args.workspace, "local", WorkspaceConstants.LOGGING_CONFIG)
 
-        self.clients_finished_end_run = []
-        self.fatal_clients = []
+        self.clients_finished_end_run = set()
+        self.fatal_clients = set()
 
     def run(self, gpu):
         try:
@@ -723,71 +723,46 @@ class SimulatorClientRunner(FLComponent):
             self.logger.warning(f"Exception happened to client{client.name} during shutdown ")
 
     def run_client_thread(self, num_of_threads, gpu, lock, end_run_for_all, timeout=60):
-        stop_run = False
-        interval = 1
-        client_to_run = None  # already reserved by do_one_task
-
-        try:
-            while not stop_run:
-                time.sleep(interval)
-                with lock:
-                    if not client_to_run:
-                        client = self.get_next_run_client(gpu)
-                    else:
-                        client = client_to_run
-                    client_to_run = None
-
-                if client is None:
-                    continue
-                try:
-                    stop_run, client_to_run, end_run_client = self.do_one_task(
-                        client, num_of_threads, gpu, lock, timeout=timeout
-                    )
-                    with lock:
-                        if end_run_client:
-                            self.clients_finished_end_run.append(end_run_client)
-                finally:
-                    with lock:
-                        client.simulate_running = False
-
-            if end_run_for_all:
-                self._end_run_clients(gpu, lock, num_of_threads, timeout)
-        except Exception as e:
-            self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
-        finally:
-            if client_to_run is not None:
-                with lock:
-                    client_to_run.simulate_running = False
-
-    def _end_run_clients(self, gpu, lock, num_of_threads, timeout):
-        """After the WF reaches the END_RUN, each running thread will try to pick up one of the remaining client
-        which has not run the END_RUN yet, then execute the END_RUN handler, until all the clients have done so.
-        These client END_RUN event handler only execute when "end_run_for_all" has been set.
-
-        Multiple client running threads will try to pick up the client from the same clients pool.
-
-        """
-        # Each thread only stop picking up the NOT-DONE client until all clients have run the END_RUN event.
-        while len(self.clients_finished_end_run) != len(self.federated_clients):
+        task_name = RunnerTask.TASK_EXEC
+        while True:
+            time.sleep(1)
             with lock:
-                end_run_client = self._pick_next_client()
-            if end_run_client:
-                try:
-                    self.do_one_task(
-                        end_run_client, num_of_threads, gpu, lock, timeout=timeout, task_name=RunnerTask.END_RUN
-                    )
-                finally:
-                    with lock:
-                        end_run_client.simulate_running = False
+                client = self.get_next_run_client(gpu)
+                if client is None and all(
+                    c.client_name in self.clients_finished_end_run or c.client_name in self.fatal_clients
+                    for c in self.federated_clients
+                ):
+                    return
+            if client is None:
+                continue
 
-    def _pick_next_client(self):
-        for client in self.federated_clients:
-            # Ensure the client has not run the END_RUN event
-            if client.client_name not in self.clients_finished_end_run and not client.simulate_running:
-                client.simulate_running = True
-                self.clients_finished_end_run.append(client.client_name)
-                return client
-        return None
+            stop_run, end_run_client = False, None
+            try:
+                stop_run, end_run_client = self.do_one_task(
+                    client, num_of_threads, gpu, lock, timeout=timeout, task_name=task_name
+                )
+            except Exception as e:
+                self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
+                stop_run = True
+            finally:
+                with lock:
+                    if end_run_client == client.client_name:
+                        self.clients_finished_end_run.add(client.client_name)
+                    elif stop_run:
+                        self.fatal_clients.add(client.client_name)
+                    client.simulate_running = False
+
+            if stop_run:
+                if not end_run_for_all:
+                    return
+                task_name = RunnerTask.END_RUN
+
+    def _client_available(self, client):
+        return (
+            not client.simulate_running
+            and client.client_name not in self.clients_finished_end_run
+            and client.client_name not in self.fatal_clients
+        )
 
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0, task_name=RunnerTask.TASK_EXEC):
         open_port = get_open_ports(1)[0]
@@ -849,19 +824,16 @@ class SimulatorClientRunner(FLComponent):
 
         process = popen_in_new_session(args, shell=False, env=new_env)
 
-        next_client = None
-        handoff = False
         end_run_client = None
         try:
             conn = self._create_connection(open_port, timeout=timeout)
 
-            self.build_ctx["client_name"] = client.client_name
             deploy_args = copy.deepcopy(self.deploy_args)
             deploy_args.workspace = os.path.join(deploy_args.workspace, client.client_name)
             data = {
                 SimulatorConstants.CLIENT_CONFIG: self.client_config,
                 SimulatorConstants.DEPLOY_ARGS: deploy_args,
-                SimulatorConstants.BUILD_CTX: self.build_ctx,
+                SimulatorConstants.BUILD_CTX: dict(self.build_ctx, client_name=client.client_name),
             }
             conn.send(data)
 
@@ -870,7 +842,7 @@ class SimulatorClientRunner(FLComponent):
                     self.logger.error(
                         f"Subprocess died for client {client.client_name}, exit code: {process.returncode}"
                     )
-                    return True, None, client.client_name
+                    return True, None
 
                 # the child process is in nvflare/private/fed/app/simulator/simulator_worker.py
                 stop_run = conn.recv()
@@ -881,53 +853,40 @@ class SimulatorClientRunner(FLComponent):
                         self.logger.error(
                             f"Subprocess died for client {client.client_name} before second recv, exit code: {process.returncode}"
                         )
-                        return True, None, client.client_name
+                        return True, None
 
                     # the child process is in nvflare/private/fed/app/simulator/simulator_worker.py
                     end_run_client = conn.recv()
                     if conn.recv():
                         self.logger.error(f"Client {client.client_name} stopped due to FATAL_SYSTEM_ERROR")
                         with lock:
-                            self.fatal_clients.append(client.client_name)
+                            self.fatal_clients.add(client.client_name)
 
-                next_client = None
-                if not stop_run:
-                    with lock:
-                        if num_of_threads != len(self.federated_clients):
-                            next_client = self.get_next_run_client(gpu) or client
-                        else:
-                            next_client = client
+                # Only decide whether to keep this worker. Select its replacement after cleanup.
+                with lock:
+                    continue_run = not stop_run and (
+                        num_of_threads == len(self.federated_clients)
+                        or not any(self._client_available(c) for c in self.federated_clients)
+                    )
 
                 # Check process health before sending
                 if process.poll() is not None:
                     self.logger.error(
                         f"Subprocess died for client {client.client_name} before send, exit code: {process.returncode}"
                     )
-                    return True, None, client.client_name
+                    return True, end_run_client
 
-                if not stop_run and next_client.client_name == client.client_name:
-                    conn.send(True)
-                else:
-                    conn.send(False)
+                conn.send(continue_run)
+                if not continue_run:
                     break
 
-            handoff = not stop_run
-            return stop_run, next_client, end_run_client
+            return stop_run, end_run_client
 
         except (EOFError, OSError, ConnectionError) as e:
             self.logger.error(f"Communication error with client {client.client_name}: {e}")
-            return True, None, client.client_name
+            return True, end_run_client
         finally:
-            # Clean up subprocess if it's still running
-            try:
-                self._cleanup_process(process)
-            except BaseException:
-                handoff = False
-                raise
-            finally:
-                if not handoff and next_client is not None and next_client is not client:
-                    with lock:
-                        next_client.simulate_running = False
+            self._cleanup_process(process)
 
     def _cleanup_process(self, process, timeout=5.0):
         """Terminate and reap the worker, escalating to kill after the grace period."""
@@ -973,7 +932,7 @@ class SimulatorClientRunner(FLComponent):
         for _ in self.federated_clients:
             self.run_client_index = (self.run_client_index + 1) % len(self.federated_clients)
             client = self.federated_clients[self.run_client_index]
-            if not client.simulate_running:
+            if self._client_available(client):
                 client.simulate_running = True
                 self.logger.info(f"Simulate Run client: {client.client_name} on GPU group: {gpu}")
                 return client

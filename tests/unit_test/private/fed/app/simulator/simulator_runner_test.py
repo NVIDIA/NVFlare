@@ -117,96 +117,153 @@ def test_client_selection_is_round_robin_and_can_reuse_a_released_client(client_
         assert all(client.simulate_running for client in clients)
 
 
-@pytest.mark.parametrize("fail_during_handoff", [False, True])
-def test_scheduler_retains_handoff_reservation_and_releases_it_on_error(
-    client_scheduler, monkeypatch, fail_during_handoff
-):
-    runner, clients, lock = client_scheduler
-    executed = []
-
-    def task(client, *args, **kwargs):
-        assert client.simulate_running
-        executed.append(client)
-        if len(executed) == 1:
-            with lock:
-                next_client = runner.get_next_run_client(None)
-            return False, next_client, None
-        return True, None, None
-
-    def between_tasks(_interval):
-        if executed:
-            assert not clients[0].simulate_running
-            assert clients[1].simulate_running
-            if fail_during_handoff:
-                raise RuntimeError("interrupted before the next worker")
-
-    monkeypatch.setattr(runner, "do_one_task", task)
-    simulator_runner_module.time.sleep.side_effect = between_tasks
-    runner.run_client_thread(2, None, lock, False)
-
-    assert executed == clients[: 1 if fail_during_handoff else 2]
-    assert not any(client.simulate_running for client in clients)
-
-
-@pytest.mark.parametrize("end_run", [False, True])
-def test_scheduler_releases_client_when_task_raises(client_scheduler, monkeypatch, end_run):
-    runner, clients, lock = client_scheduler
-    monkeypatch.setattr(runner, "do_one_task", Mock(side_effect=RuntimeError("worker failed")))
-    if end_run:
-        with pytest.raises(RuntimeError, match="worker failed"):
-            runner._end_run_clients(None, lock, 2, 60)
-    else:
-        runner.run_client_thread(2, None, lock, False)
-    assert not any(client.simulate_running for client in clients)
-
-
-def test_lookahead_client_stays_reserved_during_worker_cleanup(client_task_boundary, monkeypatch):
+def test_scheduler_selects_replacement_only_after_worker_cleanup(client_task_boundary, monkeypatch):
     runner, clients, lock, client, process, conn = client_task_boundary
-    clients[1].simulate_running = True
-    conn.recv.return_value = False
+    client.simulate_running = False
+    runner.run_client_index = -1
+    conn.recv.side_effect = [False, True, "site-2", False]
     cleaning, release = threading.Event(), threading.Event()
-    results = []
+    cleanups = []
 
     def cleanup(_process):
-        cleaning.set()
-        release.wait()
+        cleanups.append(_process)
+        if len(cleanups) == 1:
+            cleaning.set()
+            release.wait()
 
     monkeypatch.setattr(runner, "_cleanup_process", cleanup)
     with ThreadGroup(release) as workers:
-        workers.start(lambda: results.append(runner.do_one_task(client, 2, None, lock)))
+        workers.start(lambda: runner.run_client_thread(2, None, lock, False))
         assert cleaning.wait(5), "worker did not reach cleanup"
         with lock:
             assert client.simulate_running
-            assert clients[2].simulate_running
-            assert runner.get_next_run_client(None) is None
-    assert results == [(False, clients[2], None)]
-    assert conn.send.call_args.args == (False,)
+            assert not any(c.simulate_running for c in clients[1:])
+    assert len(cleanups) == 2
+    assert runner.clients_finished_end_run == {"site-2"}
+    assert not runner.fatal_clients
+    assert not any(c.simulate_running for c in clients)
 
 
-@pytest.mark.parametrize("failure", ["connection", "initial-send", "handoff-send", "worker-death"])
-def test_worker_failure_cleans_process_and_releases_unconsumed_lookahead(client_task_boundary, monkeypatch, failure):
+def test_parallel_workers_receive_independent_startup_identities(client_scheduler, monkeypatch):
+    runner, clients, lock = client_scheduler
+    runner.build_ctx = {"client_name": "template"}
+    process = Mock()
+    process.poll.return_value = None
+    connections = [Mock(), Mock()]
+    for client, conn in zip(clients, connections):
+        conn.recv.side_effect = [True, client.client_name, False]
+    sending, second_sent, release = threading.Event(), threading.Event(), threading.Event()
+    identities = {}
+
+    def send_first(data):
+        if isinstance(data, dict):
+            sending.set()
+            release.wait()
+            identities["site-1"] = data[simulator_runner_module.SimulatorConstants.BUILD_CTX]["client_name"]
+
+    def send_second(data):
+        if isinstance(data, dict):
+            identities["site-2"] = data[simulator_runner_module.SimulatorConstants.BUILD_CTX]["client_name"]
+            second_sent.set()
+
+    connections[0].send.side_effect = send_first
+    connections[1].send.side_effect = send_second
+    monkeypatch.setattr(simulator_runner_module, "get_open_ports", Mock(side_effect=[[10001], [10002]]))
+    monkeypatch.setattr(simulator_runner_module, "popen_in_new_session", Mock(return_value=process))
+    monkeypatch.setattr(runner, "_create_connection", lambda port, **kwargs: connections[port - 10001])
+    monkeypatch.setattr(runner, "_cleanup_process", Mock())
+    with lock:
+        first, second = runner.get_next_run_client(None), runner.get_next_run_client(None)
+    with ThreadGroup(release) as workers:
+        workers.start(lambda: runner.do_one_task(first, 3, None, lock))
+        assert sending.wait(5), "first worker did not reach its startup send"
+        workers.start(lambda: runner.do_one_task(second, 3, None, lock))
+        assert second_sent.wait(5), "second worker did not send its startup identity"
+    assert identities == {"site-1": "site-1", "site-2": "site-2"}
+    assert runner.build_ctx == {"client_name": "template"}
+
+
+def test_selection_excludes_finished_and_failed_clients(client_scheduler):
+    runner, clients, lock = client_scheduler
+    runner.clients_finished_end_run.add("site-1")
+    runner.fatal_clients.add("site-2")
+    with lock:
+        assert runner.get_next_run_client(None) is clients[2]
+        assert runner.get_next_run_client(None) is None
+    assert not clients[0].simulate_running
+    assert not clients[1].simulate_running
+
+
+def test_overlapping_schedulers_finish_each_client_once(client_scheduler, monkeypatch):
+    runner, clients, lock = client_scheduler
+    first_started, second_started, third_started = (threading.Event() for _ in range(3))
+    release_first, release_second = threading.Event(), threading.Event()
+    tasks = []
+
+    def task(client, *args, task_name, **kwargs):
+        tasks.append((client.client_name, task_name))
+        if client is clients[0]:
+            first_started.set()
+            release_first.wait()
+        elif client is clients[1]:
+            second_started.set()
+            release_second.wait()
+        else:
+            third_started.set()
+        return True, client.client_name
+
+    def between_tasks(_interval):
+        if third_started.is_set():
+            release_second.wait()
+
+    monkeypatch.setattr(runner, "do_one_task", task)
+    simulator_runner_module.time.sleep.side_effect = between_tasks
+    with ThreadGroup(release_first, release_second) as workers:
+        workers.start(lambda: runner.run_client_thread(2, None, lock, True))
+        assert first_started.wait(5), "first scheduler did not start"
+        workers.start(lambda: runner.run_client_thread(2, None, lock, True))
+        assert second_started.wait(5), "second scheduler did not start"
+        release_first.set()
+        assert third_started.wait(5), "remaining client did not receive END_RUN"
+        wait_for(lambda: runner.clients_finished_end_run == {"site-1", "site-3"})
+    assert tasks == [("site-1", RunnerTask.TASK_EXEC), ("site-2", RunnerTask.TASK_EXEC), ("site-3", RunnerTask.END_RUN)]
+    assert runner.clients_finished_end_run == {c.client_name for c in clients}
+    assert not runner.fatal_clients
+    assert not any(c.simulate_running for c in clients)
+
+
+@pytest.mark.parametrize("failure", ["connection", "initial-send", "worker-death"])
+def test_startup_failure_is_failed_not_completed_and_other_clients_end(client_task_boundary, failure):
     runner, clients, lock, client, process, conn = client_task_boundary
+    client.simulate_running = False
+    runner.run_client_index = -1
+    remaining = [Mock(), Mock()]
+    for candidate, connection in zip(clients[1:], remaining):
+        connection.recv.side_effect = [True, candidate.client_name, False]
     if failure == "connection":
-        runner._create_connection.side_effect = RuntimeError("handshake failed")
-    elif failure == "initial-send":
-        conn.send.side_effect = OSError("setup failed")
-    elif failure == "handoff-send":
-        conn.recv.return_value = False
-        conn.send.side_effect = [None, OSError("handoff failed")]
+        runner._create_connection.side_effect = [RuntimeError("handshake failed"), *remaining]
     else:
-        conn.recv.return_value = False
-        process.poll.side_effect = [None, 1, None]
+        runner._create_connection.side_effect = [conn, *remaining]
+        if failure == "initial-send":
+            conn.send.side_effect = BrokenPipeError("startup send failed")
+        else:
+            # First health check observes death; cleanup and later workers use the normal fake boundary.
+            process.poll.side_effect = [1, 1] + [None] * 10
+    runner.run_client_thread(2, None, lock, True)
+    assert runner.clients_finished_end_run == {"site-2", "site-3"}
+    assert runner.fatal_clients == {"site-1"}
+    conn.recv.assert_not_called()
+    assert not any(c.simulate_running for c in clients)
 
-    if failure == "connection":
-        with pytest.raises(RuntimeError, match="handshake failed"):
-            runner.do_one_task(client, 2, None, lock)
-    else:
-        assert runner.do_one_task(client, 2, None, lock) == (True, None, client.client_name)
 
-    process.terminate.assert_called_once()
-    process.wait.assert_called_once()
-    assert client.simulate_running  # The calling scheduler still owns the current client.
-    assert not any(candidate.simulate_running for candidate in clients[1:])
+@pytest.mark.parametrize("end_run_for_all", [False, True])
+def test_scheduler_releases_and_records_failed_task(client_scheduler, monkeypatch, end_run_for_all):
+    runner, clients, lock = client_scheduler
+    monkeypatch.setattr(runner, "do_one_task", Mock(side_effect=RuntimeError("worker failed")))
+    runner.run_client_thread(2, None, lock, end_run_for_all)
+    assert runner.fatal_clients == ({c.client_name for c in clients} if end_run_for_all else {"site-1"})
+    assert not runner.clients_finished_end_run
+    assert not any(c.simulate_running for c in clients)
 
 
 def test_busy_pool_keeps_current_worker_without_spinning(client_task_boundary):
@@ -214,9 +271,7 @@ def test_busy_pool_keeps_current_worker_without_spinning(client_task_boundary):
     for candidate in clients:
         candidate.simulate_running = True
     conn.recv.side_effect = [False, True, client.client_name, False]
-
-    assert runner.do_one_task(client, 2, None, lock) == (True, None, client.client_name)
-
+    assert runner.do_one_task(client, 2, None, lock) == (True, client.client_name)
     assert [call.args[0] for call in conn.send.call_args_list[1:]] == [True, False]
 
 
@@ -231,25 +286,13 @@ def test_scheduler_waits_for_a_client_to_be_released(client_scheduler, monkeypat
                 clients[0].simulate_running = False
 
     simulator_runner_module.time.sleep.side_effect = release_after_retry
-    task = Mock(return_value=(True, None, None))
+    task = Mock(return_value=(True, "site-1"))
     monkeypatch.setattr(runner, "do_one_task", task)
     runner.run_client_thread(2, None, lock, False)
-
     assert simulator_runner_module.time.sleep.call_count == 2
     assert task.call_args.args[0] is clients[0]
+    assert runner.clients_finished_end_run == {"site-1"}
     assert not clients[0].simulate_running
-
-
-def test_cleanup_error_releases_lookahead_before_handoff(client_task_boundary, monkeypatch):
-    runner, clients, lock, client, process, conn = client_task_boundary
-    conn.recv.return_value = False
-    monkeypatch.setattr(runner, "_cleanup_process", Mock(side_effect=RuntimeError("cleanup failed")))
-
-    with pytest.raises(RuntimeError, match="cleanup failed"):
-        runner.do_one_task(client, 2, None, lock)
-
-    assert client.simulate_running
-    assert not any(candidate.simulate_running for candidate in clients[1:])
 
 
 @pytest.mark.parametrize("exit_before_kill", [False, True])
@@ -660,7 +703,7 @@ class TestSimulatorRunner:
                 ):
                     runner.do_one_task(client, num_of_threads=0, gpu=None, lock=threading.Lock())
 
-        assert runner.fatal_clients == expected
+        assert runner.fatal_clients == set(expected)
 
     @pytest.mark.parametrize("task_name", [RunnerTask.END_RUN, RunnerTask.TASK_EXEC])
     def test_worker_reports_client_fatal_error(self, task_name):
@@ -677,9 +720,28 @@ class TestSimulatorRunner:
         }.get(key, default)
 
         with patch.object(worker, "fire_event"):
-            _, stop_run, _, fatal_error = worker.do_one_task(client, Namespace(task_name=task_name))
+            _, stop_run, end_run_client, fatal_error = worker.do_one_task(client, Namespace(task_name=task_name))
 
         assert stop_run
+        assert end_run_client == client.client_name
+        assert fatal_error
+
+    def test_worker_does_not_confirm_failed_end_run(self):
+        worker = simulator_worker.ClientTaskWorker()
+        client = MagicMock()
+        client.client_name = "site-1"
+        client_runner = Mock()
+        client_runner.end_run_events_sequence.side_effect = RuntimeError("END_RUN failed")
+        fl_ctx = client.run_manager.new_context.return_value.__enter__.return_value
+        fl_ctx.get_prop.return_value = client_runner
+
+        with patch.object(worker, "fire_event"):
+            _, stop_run, end_run_client, fatal_error = worker.do_one_task(
+                client, Namespace(task_name=RunnerTask.END_RUN)
+            )
+
+        assert stop_run
+        assert end_run_client is None
         assert fatal_error
 
     def test_worker_create_connection_does_not_require_authkey(self):
