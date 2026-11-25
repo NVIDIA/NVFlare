@@ -23,17 +23,30 @@ handoff and checks its launch-generation token. It never substitutes a surviving
 report from an earlier launch. Missing earlier observations mark the available
 subtotal partial. Scheduling retries without execution do not create a gap.
 
-If a job is aborted or the server job fails, cancellation starts immediately.
-After the server job exits, the server allows up to 20 seconds for outstanding
-client resource reports. A shorter ``client_outcome_wait_timeout`` or an earlier
-outcome deadline caps the wait. The server proceeds as soon as it has accepted
-reports from all expected clients other than those marked disabled.
+SJ terminal reporting or observed exit ends client authority to change the job
+verdict. After SJ exit, the server selects the verdict, closes the statistics
+summary with reports already received, and archives it before publishing final
+status and releasing the scheduler slot. Successful, failed and aborted jobs
+all proceed without waiting for client outcomes or outstanding statistics.
+Missing participants remain gaps; reports received after closure are rejected.
 
-Other jobs continue processing during the wait. When collection closes, the
-server archives the available reports, publishes the job's final status and
-releases its scheduler slot. A client without an accepted report has a gap,
-including for its startup capacity. Successful jobs use the usual client
-outcome timeout.
+Client jobs normally finish after the server workflow ends and send their
+statistics only after exiting. As a result, client statistics may be unavailable
+for all clients even on routine successful jobs. Do not rely on the archived
+summary containing client measurements. Outputs required for workflow success
+must be confirmed before the server job completes.
+
+The former 900-second outcome wait and 20-second statistics grace are removed.
+``client_outcome_wait_timeout`` is deprecated and ignored; configuring it emits
+a warning once per server process.
+
+An abort during archival preserves the selected verdict. The admin API retries
+while terminal publication is pending, for up to 90 seconds (an in-flight
+transport request retains its own timeout). If still pending, it raises
+``JobFinishing``. The CLI reports ``JOB_FINISHING`` with exit code 3. System
+shutdown reports that a job is still archiving and does not send shutdown;
+wait for terminal status and retry. This coordination does not wait for client
+reports or extend their authority over the verdict.
 
 Stored reports
 ==============

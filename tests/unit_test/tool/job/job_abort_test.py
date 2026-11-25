@@ -199,3 +199,18 @@ class TestJobAbort:
         args = parser.parse_args(["job123", "--force"])
         assert args.force is True
         assert args.job_id == "job123"
+
+    def test_abort_finishing_has_structured_retryable_result(self, capsys):
+        from nvflare.fuel.flare_api.api_spec import JobFinishing
+        from nvflare.tool.job.job_cli import cmd_job_abort
+
+        session = MagicMock()
+        session.abort_job.side_effect = JobFinishing("still archiving")
+        with patch("nvflare.tool.job.job_cli._get_session", return_value=session):
+            with pytest.raises(SystemExit) as caught:
+                cmd_job_abort(self._make_args(force=True))
+        assert caught.value.code == 3
+        envelope = json.loads(capsys.readouterr().out)
+        assert envelope["error_code"] == "JOB_FINISHING"
+        assert "retry" in envelope["hint"].lower()
+        session.close.assert_called_once()

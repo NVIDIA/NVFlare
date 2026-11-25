@@ -18,7 +18,7 @@ from unittest.mock import Mock, call
 
 import pytest
 
-from nvflare.fuel.flare_api.api_spec import AuthorizationError, InternalError
+from nvflare.fuel.flare_api.api_spec import AuthorizationError, InternalError, JobFinishing
 from nvflare.fuel.flare_api.flare_api import Session
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.proto import MetaStatusValue, ReplyKeyword
@@ -99,12 +99,67 @@ def test_abort_job_gives_up_after_the_retry_window(abort_session):
     assert session.api.do_command.call_count == 61
 
 
+def test_abort_job_waits_for_terminal_publication_after_finishing(abort_session):
+    session, clock, sleep = abort_session
+    session.api.do_command.side_effect = [
+        _reply(MetaStatusValue.JOB_FINISHING, "Archive publication is pending."),
+        _reply(MetaStatusValue.OK, "Already completed."),
+    ]
+
+    assert session.abort_job(JOB_ID) == "Already completed."
+
+    assert session.api.do_command.call_count == 2
+    sleep.assert_called_once_with(0.5)
+
+
+def test_abort_job_finishing_retry_has_a_fixed_budget(abort_session):
+    session, clock, sleep = abort_session
+    session.api.do_command.return_value = _reply(MetaStatusValue.JOB_FINISHING, "Archive publication is pending.")
+
+    with pytest.raises(JobFinishing, match="publication is pending"):
+        session.abort_job(JOB_ID)
+
+    assert clock.now == 90.0
+    assert session.api.do_command.call_count == 181
+    assert sleep.call_args_list == [call(0.5)] * 180
+
+
+def test_abort_job_finishing_budget_includes_prior_command_time(abort_session):
+    session, clock, sleep = abort_session
+
+    def slow_reply(*_args, **_kwargs):
+        clock.now += 31
+        return _reply(MetaStatusValue.JOB_FINISHING, "Still archiving.")
+
+    session.api.do_command.side_effect = slow_reply
+    with pytest.raises(JobFinishing, match="Still archiving"):
+        session.abort_job(JOB_ID)
+
+    assert session.api.do_command.call_count == 3
+    assert sleep.call_count == 2
+
+
+@pytest.mark.parametrize("status", [MetaStatusValue.INTERNAL_ERROR, MetaStatusValue.NOT_AUTHORIZED])
+def test_abort_job_finishing_retry_preserves_subsequent_real_errors(abort_session, status):
+    session, clock, sleep = abort_session
+    session.api.do_command.side_effect = [
+        _reply(MetaStatusValue.JOB_FINISHING, "Still archiving."),
+        _reply(status, "Actual failure."),
+    ]
+    expected = InternalError if status == MetaStatusValue.INTERNAL_ERROR else AuthorizationError
+    with pytest.raises(expected):
+        session.abort_job(JOB_ID)
+    assert session.api.do_command.call_count == 2
+    sleep.assert_called_once_with(0.5)
+
+
 @pytest.mark.parametrize(
     "status,info,exception",
     [
         (MetaStatusValue.ERROR, f"Job another-job {ReplyKeyword.JOB_STARTING_RETRY_ABORT}", InternalError),
         (MetaStatusValue.ERROR, "unrelated abort failure", InternalError),
         (MetaStatusValue.INTERNAL_ERROR, STARTING, InternalError),
+        (MetaStatusValue.INTERNAL_ERROR, "Archive publication is pending.", InternalError),
         (MetaStatusValue.NOT_AUTHORIZED, "not allowed", AuthorizationError),
     ],
 )

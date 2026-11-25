@@ -19,7 +19,7 @@ import tempfile
 import time
 from typing import Dict, Optional
 
-from nvflare.fuel.flare_api.api_spec import MonitorReturnCode
+from nvflare.fuel.flare_api.api_spec import JobFinishing, MonitorReturnCode
 from nvflare.fuel.flare_api.flare_api import Session, new_secure_session
 from nvflare.fuel.flare_api.job_status import job_status_outcome
 from nvflare.fuel.utils.job_secret_scanner import warn_on_potential_secrets_in_job_dir
@@ -183,11 +183,16 @@ class SessionManager:
             sess.close()
 
     def abort_job(self, job_id: str) -> None:
-        """Abort the running job."""
+        """Abort a running job, or report that an already-selected outcome is still publishing."""
         sess = self._get_session()
         try:
             msg = sess.abort_job(job_id)
             _print_output(f"Job {job_id} aborted successfully with message: {msg}")
+        except JobFinishing:
+            _print_output(
+                f"Job {job_id} is completing archival and terminal publication; no abort was applied. "
+                "Wait for its terminal status before stopping the system."
+            )
         finally:
             sess.close()
 

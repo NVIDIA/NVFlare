@@ -71,6 +71,10 @@ class JobNotDone(Exception):
     pass
 
 
+class JobFinishing(Exception):
+    """The job verdict is selected, but its terminal status is not yet published."""
+
+
 class InternalError(Exception):
     pass
 

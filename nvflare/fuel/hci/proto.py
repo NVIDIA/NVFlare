@@ -98,6 +98,7 @@ class MetaStatusValue(object):
     INVALID_JOB_DEFINITION = "invalid_job_def"
     INVALID_JOB_ID = "invalid_job_id"
     JOB_RUNNING = "job_running"
+    JOB_FINISHING = "job_finishing"
     JOB_NOT_RUNNING = "job_not_running"
     CLIENTS_RUNNING = "clients_running"
     NO_JOBS = "no_jobs"

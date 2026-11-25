@@ -97,7 +97,7 @@ def audit_records(tmp_path, monkeypatch):
 
 
 def make_engine(manager):
-    return SimpleNamespace(job_def_manager=manager, new_context=lambda: nullcontext(object()))
+    return SimpleNamespace(job_def_manager=manager, lock=Lock(), new_context=lambda: nullcontext(object()))
 
 
 def make_job(status=RunStatus.FINISHED_COMPLETED.value):

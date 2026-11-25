@@ -15,6 +15,8 @@
 import json
 import os
 from contextlib import nullcontext
+from threading import Lock
+from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock, call, patch
 
 import pytest
@@ -27,16 +29,19 @@ from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.app_common.job_schedulers.job_scheduler import DefaultJobScheduler
 from nvflare.fuel.common.exit_codes import ProcessExitCode
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.zip_utils import get_all_file_paths, zip_directory_to_file
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
+from nvflare.private.defs import CellMessageHeaderKeys, JobOutcomeMsgKey, new_cell_message
 from nvflare.private.fed.resource_stats.archive_reader import WorkspaceResourceStatsReader
 from nvflare.private.fed.resource_stats.handoff import terminal_handoff_path, write_terminal_handoff
+from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.job_runner import JobRunner, _FinishedJobState
 from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.utils.job_cert_utils import write_job_cert
 from tests.resource_stats_report_test_utils import _participant_summary
-from tests.timing_utils import ManualClock
 
 
 def _patch_job_runner_sleep(side_effect):
@@ -986,7 +991,7 @@ def test_get_finished_job_status_maps_aborted_launcher_return_code_to_finished_a
 
     assert status == RunStatus.FINISHED_ABORTED
     job_manager.set_status.assert_not_called()
-    runner.abort_client_run.assert_called_once_with("job-1", [], fl_ctx)
+    runner.abort_client_run.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -1021,7 +1026,7 @@ def test_get_finished_job_status_maps_failure_return_code(failure_code, expected
 
     assert status == expected_status
     job_manager.set_status.assert_not_called()
-    runner.abort_client_run.assert_called_once_with("job-1", [], fl_ctx)
+    runner.abort_client_run.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -1166,6 +1171,7 @@ def test_stop_run_does_not_publish_terminal_status_before_completion():
     runner._stop_run = MagicMock()
 
     fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value.run_processes = {}
 
     job = MagicMock()
     job.job_id = "job-1"
@@ -1176,8 +1182,128 @@ def test_stop_run_does_not_publish_terminal_status_before_completion():
 
     runner._stop_run.assert_called_once_with("job-1", fl_ctx)
     assert job.run_aborted is True
-    fl_ctx.get_engine.assert_not_called()
     runner.fire_event.assert_not_called()
+
+
+@pytest.mark.parametrize("dispatch_stage", ["client-abort", "server-abort"])
+def test_admin_abort_wins_clean_sj_exit_during_abort_dispatch(dispatch_stage):
+    runner = JobRunner("/tmp")
+    runner.log_info = MagicMock()
+    runner.log_debug = MagicMock()
+    runner.fire_event = MagicMock()
+    runner._save_workspace = MagicMock()
+    engine = MagicMock()
+    engine.lock = Lock()
+    client = SimpleNamespace(name="site-1")
+    engine.client_manager.clients = {"token-1": client}
+    engine.run_processes = {"job-1": {RunProcessKey.PARTICIPANTS: {"token-1": client}}}
+    engine.exception_run_processes = {}
+    ctx = FLContextManager(engine=engine).new_context()
+    engine.new_context.side_effect = lambda: nullcontext(ctx)
+    job = SimpleNamespace(job_id="job-1", run_aborted=False, meta={})
+    runner.running_jobs = {"job-1": job}
+    runner._pending_client_outcomes = {"job-1": {"site-1"}}
+
+    def finish_sj_during_rpc(*_args):
+        # These are synchronous fake RPC boundaries, not real workers. Verify
+        # dispatch holds neither lifecycle lock, then reproduce the exit ordering.
+        assert runner.lock.acquire(blocking=False)
+        runner.lock.release()
+        assert engine.lock.acquire(blocking=False)
+        engine.lock.release()
+        engine.run_processes.clear()
+        with _patch_job_runner_sleep(lambda _: setattr(runner, "ask_to_stop", True)):
+            runner._job_complete_process(engine)
+        return ""
+
+    runner.abort_client_run = MagicMock(side_effect=finish_sj_during_rpc if dispatch_stage == "client-abort" else None)
+    engine.abort_app_on_server.side_effect = finish_sj_during_rpc if dispatch_stage == "server-abort" else None
+    engine.abort_app_on_server.return_value = ""
+
+    assert runner.stop_run("job-1", ctx) == ""
+
+    engine.get_component.return_value.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, ctx)
+    assert "job-1" not in runner.running_jobs
+
+
+def test_unsafe_startup_abort_survives_registration_and_clean_sj_exit():
+    runner, ctx, engine, job, client_sites = _make_runner_inputs()
+    runner.abort_client_run = MagicMock()
+    job.run_aborted = False
+    engine.lock = Lock()
+    engine.run_processes = {"job-1": {RunProcessKey.PARTICIPANTS: {}}}
+    engine.exception_run_processes = {}
+    runner.log_debug = MagicMock()
+    runner._save_workspace = MagicMock()
+    engine.new_context.side_effect = lambda: nullcontext(ctx)
+    client = engine.get_job_clients.return_value["token-1"]
+    client.name = "site-1"
+    server = object.__new__(FederatedServer)
+    server.engine = engine
+    server.logger = MagicMock()
+    server.client_manager = MagicMock()
+    server.client_manager.clients = {"token-1": client}
+    server.client_manager.is_from_authorized_client.return_value = True
+    engine.job_runner = runner
+
+    def finish_startup_during_abort(*_args):
+        # Registration can finish while abort dispatch waits for its fake RPC.
+        # The SJ then exits cleanly; its accepted startup abort must survive.
+        with engine.lock:
+            engine.run_processes.clear()
+        with runner.lock:
+            runner.running_jobs["job-1"] = job
+
+    runner._stop_run = MagicMock(side_effect=finish_startup_during_abort)
+
+    def report_unsafe_while_start_replies_are_pending(*_args):
+        assert "job-1" not in runner.running_jobs
+        assert runner.is_client_outcome_pending("job-1", "site-1")
+        reply = server.process_job_outcome(
+            new_cell_message(
+                {CellMessageHeaderKeys.TOKEN: "token-1", MessageHeaderKey.ORIGIN: "site-1"},
+                {JobOutcomeMsgKey.JOB_ID: "job-1", JobOutcomeMsgKey.CODE: ProcessExitCode.UNSAFE_COMPONENT},
+            )
+        )
+        assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+        return [ClientReply("token-1", "site-1", None, Message(topic="start", body=""))]
+
+    engine.start_client_job.side_effect = report_unsafe_while_start_replies_are_pending
+    runner._start_run("job-1", job, client_sites, ctx)
+    assert not job.run_aborted  # Registration did not copy a flag onto the job object.
+    with _patch_job_runner_sleep(lambda _: setattr(runner, "ask_to_stop", True)):
+        runner._job_complete_process(engine)
+
+    engine.get_component.return_value.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, ctx)
+
+
+def test_admin_abort_cannot_reopen_selected_completion_during_archival():
+    runner = JobRunner("/tmp")
+    runner.log_debug = MagicMock()
+    runner.fire_event = MagicMock()
+    runner._stop_run = MagicMock()
+    engine = MagicMock()
+    engine.lock = Lock()
+    engine.run_processes = {}
+    engine.exception_run_processes = {}
+    ctx = FLContextManager(engine=engine).new_context()
+    engine.new_context.side_effect = lambda: nullcontext(ctx)
+    job = SimpleNamespace(job_id="job-1", run_aborted=False, meta={})
+    runner.running_jobs = {"job-1": job}
+    abort_results = []
+
+    def abort_during_archive(*_args):
+        abort_results.append(runner.stop_run("job-1", ctx))
+
+    runner._save_workspace = MagicMock(side_effect=abort_during_archive)
+
+    with _patch_job_runner_sleep(lambda _: setattr(runner, "ask_to_stop", True)):
+        runner._job_complete_process(engine)
+
+    assert abort_results == [runner.FINISHING]
+    assert not job.run_aborted
+    runner._stop_run.assert_not_called()
+    engine.get_component.return_value.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_COMPLETED, ctx)
 
 
 def test_stop_all_runs_logs_info_for_untracked_run_process():
@@ -1195,7 +1321,7 @@ def test_stop_all_runs_logs_info_for_untracked_run_process():
 
     runner._stop_run.assert_called_once_with("job-1", fl_ctx)
     assert runner.log_info.call_args_list == [
-        call(fl_ctx, "Job job-1 is not running. It can not be stopped."),
+        call(fl_ctx, "Stop the job run: job-1"),
         call(fl_ctx, "Stop all the running jobs."),
     ]
     assert runner.ask_to_stop is True
@@ -1205,6 +1331,7 @@ def test_mark_run_aborted_logs_info_when_job_not_running():
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     fl_ctx = MagicMock()
+    fl_ctx.get_engine.return_value.run_processes = {}
     runner.running_jobs = {}
 
     msg = runner.mark_run_aborted("job-1", fl_ctx)
@@ -1234,12 +1361,11 @@ def test_fail_run_ignores_job_already_finalized():
     assert "job-1" not in engine.exception_run_processes
 
 
-def test_fail_run_skips_outcome_wait_and_cancels_immediately():
+def test_fail_run_clears_pending_outcomes_and_cancels_immediately():
     runner = JobRunner(workspace_root="/tmp")
     runner.log_info = MagicMock()
     runner._stop_run = MagicMock()
     runner._pending_client_outcomes = {"job-1": {"site-1", "site-2"}}
-    runner._client_outcome_deadlines = {"job-1": 123.0}
 
     engine = MagicMock()
     engine.lock = MagicMock()
@@ -1257,81 +1383,48 @@ def test_fail_run_skips_outcome_wait_and_cancels_immediately():
     assert runner.fail_run("job-1", ProcessExitCode.EXCEPTION, fl_ctx) == ""
 
     assert "job-1" not in runner._pending_client_outcomes
-    assert runner._client_outcome_deadlines["job-1"] == 123.0  # A failure cannot extend an existing deadline.
     runner._stop_run.assert_called_once_with("job-1", fl_ctx)
 
 
-@pytest.mark.parametrize(
-    "failure, report_at, timeout, previous_deadline, finish_at",
-    [
-        ("server-exit", 7, 900, None, 7),
-        ("server-error", None, 900, None, 20),
-        ("user-abort", 0, 900, None, 0),
-        ("user-abort", 8, 900, None, 8),
-        ("launcher-abort", None, 3, None, 3),
-        ("server-exit", None, 900, 5, 5),
-        ("user-abort", None, 0, None, 0),
-    ],
-)
-def test_failed_jobs_archive_reports_until_complete_or_deadline(
-    tmp_path, failure, report_at, timeout, previous_deadline, finish_at
-):
+@pytest.mark.parametrize("failure", ["server-exit", "server-error", "user-abort", "launcher-abort"])
+@pytest.mark.parametrize("report_available", [False, True])
+def test_finished_jobs_archive_available_statistics_without_waiting(tmp_path, failure, report_available):
     run_dir = tmp_path / "job-1"
     archive = tmp_path / "workspace.zip"
     runner, completion_ctx, job_manager = _make_workspace_save_inputs(*([str(run_dir)] * 4))
     job_manager.save_workspace.side_effect = lambda jid, folders, ctx: zip_directory_to_file(folders[0], "", archive)
-    runner.client_outcome_wait_timeout = timeout
     runner.fire_event = MagicMock()
     runner.log_info = MagicMock()
-    clock = ManualClock(now=0)
-    runner.abort_client_run = MagicMock(side_effect=lambda *_: clock.advance(2))
+    runner.abort_client_run = MagicMock()
     runner._accept_server_resource_report = MagicMock()
     runner.resource_stats.start_job("job-1", ["site-1", "site-2", "never-launched"], run_dir)
     runner.resource_stats.disable_clients("job-1", ["never-launched"])
 
     def report(site):
         data = json.dumps(_participant_summary(participant_name=site)).encode()
-        assert runner.accept_client_resource_report("job-1", site, {"participant_summary": data}) == "accepted"
+        return runner.accept_client_resource_report("job-1", site, {"participant_summary": data})
 
-    report("site-2")
-    if report_at == 0:
-        report("site-1")
+    assert report("site-2") == "accepted"
+    if report_available:
+        assert report("site-1") == "accepted"
     engine = completion_ctx.get_engine.return_value
     engine.run_processes = {}
-    engine.client_manager.clients = {"token": MagicMock()}
-    engine.client_manager.clients["token"].name = "site-1"
-    failure_process = {RunProcessKey.PARTICIPANTS: engine.client_manager.clients}
+    engine.client_manager.clients = {}
+    failure_process = {RunProcessKey.PARTICIPANTS: {}}
     if failure == "server-error":
         failure_process.update({RunProcessKey.PROCESS_FINISHED: True, RunProcessKey.PROCESS_EXE_ERROR: True})
-    elif failure == "launcher-abort":
-        failure_process[RunProcessKey.PROCESS_RETURN_CODE] = JobReturnCode.ABORTED
     else:
-        failure_process[RunProcessKey.PROCESS_RETURN_CODE] = ProcessExitCode.EXCEPTION
+        failure_process[RunProcessKey.PROCESS_RETURN_CODE] = (
+            JobReturnCode.ABORTED if failure == "launcher-abort" else ProcessExitCode.EXCEPTION
+        )
     engine.exception_run_processes = {} if failure == "user-abort" else {"job-1": failure_process}
     engine.new_context.return_value = nullcontext(completion_ctx)
     runner.running_jobs = {"job-1": MagicMock(job_id="job-1", run_aborted=failure == "user-abort")}
-    if previous_deadline is not None:
-        runner._client_outcome_deadlines["job-1"] = previous_deadline
+    runner._pending_client_outcomes = {"job-1": {"site-1"}}
 
-    def poll(seconds):
-        assert seconds == 1.0
-        if failure != "user-abort":
-            runner.abort_client_run.assert_called_once_with("job-1", ["site-1"], completion_ctx)
-        if job_manager.set_status.called:
-            assert clock.monotonic() == finish_at
-            runner.ask_to_stop = True
-            return
-        assert clock.monotonic() < finish_at
-        assert not archive.exists()
-        runner.fire_event.assert_not_called()
-        clock.advance(seconds)
-        if clock.monotonic() == report_at:
-            report("site-1")
-
-    with patch(
-        "nvflare.private.fed.server.job_runner.time",
-        **{"sleep.side_effect": poll, "monotonic.side_effect": clock.monotonic},
-    ):
+    # One poll is sufficient even when the resource report is missing. The
+    # prior grace-period implementation fails this assertion without hanging.
+    with _patch_job_runner_sleep(lambda _: setattr(runner, "ask_to_stop", True)):
         runner._job_complete_process(engine)
 
     expected = (
@@ -1345,44 +1438,17 @@ def test_failed_jobs_archive_reports_until_complete_or_deadline(
     sites = {p["participant_name"]: p for p in summary["participants"]}
     assert sites["site-2"]["resource_utilization"] == _participant_summary()["resource_utilization"]
     assert sites["never-launched"]["status"] == "disabled"
-    if report_at is None:
-        assert sites["site-1"]["status"] == "missing"
-    else:
+    if report_available:
         assert sites["site-1"]["resource_utilization"] == _participant_summary()["resource_utilization"]
+    else:
+        assert sites["site-1"]["status"] == "missing"
+    frozen_archive = archive.read_bytes()
+    assert report("site-1") == "not_expected"
+    assert archive.read_bytes() == frozen_archive
     assert "job-1" not in runner.running_jobs
-    assert "job-1" not in runner._client_outcome_deadlines
 
 
-def test_job_complete_process_keeps_client_outcome_barrier_for_clean_unknown_return_code():
-    runner = JobRunner(workspace_root="/tmp")
-    runner.ask_to_stop = False
-
-    engine = MagicMock()
-    engine.run_processes = {}
-    engine.exception_run_processes = {
-        "job-1": {
-            RunProcessKey.PROCESS_RETURN_CODE: JobReturnCode.UNKNOWN,
-            RunProcessKey.PROCESS_FINISHED: True,
-            RunProcessKey.PROCESS_EXE_ERROR: False,
-        }
-    }
-    job_manager = MagicMock()
-    engine.get_component.return_value = job_manager
-
-    runner.running_jobs = {"job-1": MagicMock(job_id="job-1", run_aborted=False)}
-    runner._pending_client_outcomes = {"job-1": {"site-1"}}
-
-    def _stop_after_first_pass(_):
-        runner.ask_to_stop = True
-
-    with _patch_job_runner_sleep(_stop_after_first_pass):
-        runner._job_complete_process(engine)
-
-    job_manager.set_status.assert_not_called()
-    assert runner._pending_client_outcomes["job-1"] == {"site-1"}
-
-
-def test_aborted_launcher_without_statistics_finishes_while_another_job_waits(tmp_path):
+def test_aborted_launcher_and_missing_statistics_job_both_finish(tmp_path):
     runner = JobRunner(workspace_root="/tmp")
     runner.fire_event = MagicMock()
     runner.log_debug = MagicMock()
@@ -1420,55 +1486,67 @@ def test_aborted_launcher_without_statistics_finishes_while_another_job_waits(tm
     with _patch_job_runner_sleep(_stop_after_first_pass):
         runner._job_complete_process(engine)
 
-    runner._save_workspace.assert_called_once_with(completion_ctx, ANY, "job-1")
-    job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_ABORTED, completion_ctx)
-    assert runner.fire_event.call_args_list == [
-        call(EventType.JOB_ABORTED, completion_ctx),
-        call(EventType.JOB_COMPLETED, completion_ctx),
-    ]
-    engine.remove_exception_process.assert_called_once_with("job-1")
-    assert set(runner.running_jobs) == {"waiting"}
+    runner._save_workspace.assert_has_calls([call(completion_ctx, ANY, "waiting"), call(completion_ctx, ANY, "job-1")])
+    job_manager.set_status.assert_has_calls(
+        [
+            call("waiting", RunStatus.FINISHED_ABORTED, completion_ctx),
+            call("job-1", RunStatus.FINISHED_ABORTED, completion_ctx),
+        ]
+    )
+    assert not runner.running_jobs
 
 
-@patch("nvflare.private.fed.server.job_runner.ConfigService.get_float_var", return_value=2.0)
-def test_job_complete_process_finalizes_server_outcome_after_client_outcome_grace(mock_get_float):
+@pytest.mark.parametrize(
+    "server_process",
+    [
+        None,
+        {
+            RunProcessKey.PARTICIPANTS: {},
+            RunProcessKey.PROCESS_RETURN_CODE: JobReturnCode.UNKNOWN,
+            RunProcessKey.PROCESS_FINISHED: True,
+            RunProcessKey.PROCESS_EXE_ERROR: False,
+        },
+    ],
+    ids=["clean-exit", "explicit-success-unknown-launcher-code"],
+)
+@pytest.mark.parametrize("missing_resource_report", [False, True])
+def test_job_complete_process_publishes_success_without_waiting_for_client_outcomes(
+    tmp_path, server_process, missing_resource_report
+):
     runner = JobRunner(workspace_root="/tmp")
     runner.fire_event = MagicMock()
-    runner.logger = MagicMock()
+    runner.log_info = MagicMock()
     runner.log_debug = MagicMock()
     runner._save_workspace = MagicMock()
-    runner.ask_to_stop = False
+    runner.abort_client_run = MagicMock()
+    runner._accept_server_resource_report = MagicMock()
+    if missing_resource_report:
+        runner.resource_stats.start_job("job-1", ["site-1"], tmp_path)
+        assert runner.resource_stats.has_missing_client_reports("job-1")
 
     engine = MagicMock()
     engine.run_processes = {}
-    engine.exception_run_processes = {}
-    job_manager = MagicMock()
-    engine.get_component.return_value = job_manager
+    engine.exception_run_processes = {} if server_process is None else {"job-1": server_process}
+    engine.new_context.side_effect = lambda: nullcontext(completion_ctx)
+    job_manager = engine.get_component.return_value
     completion_ctx = MagicMock()
-    engine.new_context.return_value = nullcontext(completion_ctx)
-
-    job = MagicMock(job_id="job-1", run_aborted=False)
-    runner.running_jobs = {"job-1": job}
+    runner.running_jobs = {"job-1": MagicMock(job_id="job-1", run_aborted=False)}
     runner._pending_client_outcomes = {"job-1": {"site-1"}}
 
-    sleep_count = 0
+    def stop_after_first_pass(_):
+        runner.ask_to_stop = True
 
-    def _stop_after_second_pass(_):
-        nonlocal sleep_count
-        sleep_count += 1
-        if sleep_count == 2:
-            runner.ask_to_stop = True
-
-    with patch(
-        "nvflare.private.fed.server.job_runner.time",
-        **{"sleep.side_effect": _stop_after_second_pass, "monotonic.side_effect": [0.0, 2.0]},
-    ):
+    with _patch_job_runner_sleep(stop_after_first_pass):
         runner._job_complete_process(engine)
 
-    mock_get_float.assert_called_once()
     job_manager.set_status.assert_called_once_with("job-1", RunStatus.FINISHED_COMPLETED, completion_ctx)
-    assert "site-1" in runner.logger.warning.call_args[0][0]
-    assert "job-1" not in runner._client_outcome_deadlines
+    runner._save_workspace.assert_called_once_with(completion_ctx, ANY, "job-1")
+    assert "job-1" not in runner.running_jobs
+    assert "job-1" not in runner._pending_client_outcomes
+    if missing_resource_report:
+        summary = json.loads((tmp_path / "resource_stats" / "resource_summary.json").read_text())
+        site = next(p for p in summary["participants"] if p["participant_name"] == "site-1")
+        assert site["status"] == "missing"
 
 
 @pytest.mark.parametrize("failure", ["assembly", "serialization"])
@@ -2170,3 +2248,92 @@ def test_server_missing_generation_or_report_never_uses_old_or_unbound_file(tmp_
     assert server["resource_utilization"]["cpu_consumed"] == unavailable
     assert old_path.exists()
     assert diagnostic_path.exists()
+
+
+@pytest.mark.parametrize("failure_code", [ProcessExitCode.EXCEPTION, ProcessExitCode.INFRASTRUCTURE_ERROR])
+def test_accepted_startup_abort_survives_client_teardown_failure(failure_code):
+    runner, ctx, engine, job, _ = _make_runner_inputs()
+    engine.lock = Lock()
+    engine.run_processes = {"job-1": {RunProcessKey.PARTICIPANTS: {}}}
+    engine.exception_run_processes = {}
+    runner._stop_run = MagicMock()
+    assert not runner.running_jobs
+    assert runner.stop_run("job-1", ctx) == ""
+    runner.fail_run("job-1", failure_code, ctx, from_client=True)
+    info = engine.exception_run_processes["job-1"]
+    assert info[RunProcessKey.PROCESS_RETURN_CODE] == JobReturnCode.ABORTED
+    info[RunProcessKey.PROCESS_FINISHED] = True
+    runner.running_jobs["job-1"] = job
+    assert runner._classify_finished_job_status(info) == RunStatus.FINISHED_ABORTED
+
+
+@pytest.mark.parametrize("abort_requested", [True, False])
+def test_run_cleans_failed_start_before_registration(monkeypatch, abort_requested):
+    import nvflare.private.fed.server.job_runner as subject
+    from nvflare.private.fed.server.server_state import HotState
+
+    runner, ctx, engine, job, sites = _make_runner_inputs()
+    job.run_aborted = False
+    job.required_sites = ["site-1"]
+    engine.lock = Lock()
+    engine.run_processes = {"job-1": {RunProcessKey.PARTICIPANTS: {}}}
+    engine.exception_run_processes = {}
+    engine.server.server_state = HotState.__new__(HotState)
+    runner.log_debug = MagicMock()
+    runner.log_error = MagicMock()
+    runner.scheduler = MagicMock()
+    runner.scheduler.schedule_job.return_value = (job, sites)
+    runner._deploy_job = MagicMock(return_value=("job-1", []))
+    runner._check_job_status = MagicMock(
+        side_effect=lambda _mgr, _id, status, _ctx: status == RunStatus.FINISHED_ABORTED
+    )
+    runner._stop_run = MagicMock()
+    ctx.get_prop.return_value = None
+
+    def startup_timeout(*_args):
+        assert not runner.running_jobs
+        if abort_requested:
+            assert runner.stop_run("job-1", ctx) == ""
+        runner.ask_to_stop = True
+        return [ClientReply("token-1", "site-1", None, None)]
+
+    engine.start_client_job.side_effect = startup_timeout
+    monkeypatch.setattr(subject, "threading", SimpleNamespace(Thread=MagicMock()))
+    monkeypatch.setattr(
+        subject,
+        "time",
+        SimpleNamespace(sleep=MagicMock(side_effect=[None, AssertionError("unexpected scheduler retry")])),
+    )
+    monkeypatch.setattr(subject.ConfigService, "get_bool_var", lambda **_: True)
+    runner.run(ctx)
+
+    assert not runner.running_jobs
+    assert not runner._pending_client_outcomes
+    assert not engine.exception_run_processes
+    assert engine.run_processes["job-1"][RunProcessKey.STARTUP_FAILED]
+    engine.get_component.return_value.set_status.assert_any_call(
+        "job-1", RunStatus.FINISHED_ABORTED if abort_requested else RunStatus.FAILED_TO_RUN, ctx
+    )
+    runner.fail_run("job-1", ProcessExitCode.EXCEPTION, ctx, from_client=True)
+    assert not engine.exception_run_processes
+
+
+def test_removed_outcome_timeout_warns_once_only_when_configured(monkeypatch):
+    import warnings
+
+    import nvflare.fuel.utils.deprecated as deprecated_utils
+
+    monkeypatch.setattr(deprecated_utils, "_WARNED_DEPRECATION_MESSAGES", set())
+    with patch.object(ConfigService, "get_section", return_value={}):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            JobRunner("/tmp")
+        assert not caught
+    with patch.object(ConfigService, "get_section", return_value={ConfigVarName.CLIENT_OUTCOME_WAIT_TIMEOUT: 42}):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            JobRunner("/tmp")
+            JobRunner("/tmp")
+        assert len(caught) == 1
+        assert caught[0].category is DeprecationWarning
+        assert "deprecated and ignored" in str(caught[0].message)

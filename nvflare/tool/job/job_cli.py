@@ -881,7 +881,13 @@ def _print_job_meta_human(meta: dict, print_func):
 
 
 def cmd_job_abort(cmd_args):
-    from nvflare.fuel.flare_api.api_spec import AuthenticationError, JobNotFound, JobNotRunning, NoConnection
+    from nvflare.fuel.flare_api.api_spec import (
+        AuthenticationError,
+        JobFinishing,
+        JobNotFound,
+        JobNotRunning,
+        NoConnection,
+    )
     from nvflare.tool.cli_output import output_error, output_ok
     from nvflare.tool.cli_schema import handle_schema_flag
 
@@ -917,6 +923,9 @@ def cmd_job_abort(cmd_args):
             detail=f"searched study '{study}'",
             hint=_job_not_found_hint(study),
         )
+        return
+    except JobFinishing as e:
+        output_error("JOB_FINISHING", exit_code=3, job_id=cmd_args.job_id, detail=str(e))
         return
     except JobNotRunning:
         output_error(

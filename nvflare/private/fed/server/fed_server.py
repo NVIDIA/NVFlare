@@ -666,7 +666,7 @@ class FederatedServer(BaseServer):
             if not is_server_job:
                 return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED)
             execution_error = data.get("execution_error")
-            with self.lock:
+            with self.engine.lock:
                 run_process_info = self.engine.run_processes.get(job_id)
                 if run_process_info is not None:
                     if execution_error:
@@ -1050,13 +1050,15 @@ class FederatedServer(BaseServer):
             JobReturnCode.ABORTED,
         ):
             with self.engine.new_context() as fl_ctx:
-                self.logger.info(f"Failing job {job_id} due to reported failure from {client}: {reason}")
+                self.logger.info(
+                    f"Client {client_name} reported failure for job {job_id}: code={code}, reason={reason}"
+                )
                 failure_code = ProcessExitCode.EXCEPTION if code == ProcessExitCode.CONFIG_ERROR else code
-                job_runner.fail_run(job_id, failure_code, fl_ctx)
+                job_runner.fail_run(job_id, failure_code, fl_ctx, from_client=True)
         elif code == ProcessExitCode.UNSAFE_COMPONENT:
             with self.engine.new_context() as fl_ctx:
-                self.logger.info(f"Aborting job {job_id} due to reported failure from {client}: {reason}")
-                job_runner.stop_run(job_id, fl_ctx)
+                self.logger.info(f"Client {client_name} reported unsafe component for job {job_id}: {reason}")
+                job_runner.stop_run(job_id, fl_ctx, from_client=True)
         job_runner.resolve_client_outcome(job_id, client_name)
         return make_cellnet_reply(F3ReturnCode.OK, "", reply_payload)
 
@@ -1117,11 +1119,8 @@ class FederatedServer(BaseServer):
 
         client_jobs = set(client_jobs)
         outcome_jobs = self.engine.job_runner.get_client_outcome_jobs()
-        # Keep normally completed jobs alive until clients report their outcomes, but do not
-        # protect client jobs after the server job has already failed.
-        server_jobs = set(self.engine.run_processes.keys()).union(
-            {job_id for job_id in outcome_jobs if job_id not in self.engine.exception_run_processes}
-        )
+        # Client shutdown is cleanup once SJ exits, even if a terminal report is pending.
+        server_jobs = set(self.engine.run_processes)
         jobs_need_abort = list(client_jobs.difference(server_jobs))
 
         require_previous_report = ConfigService.get_bool_var(
@@ -1195,10 +1194,7 @@ class FederatedServer(BaseServer):
         job_runner = self.engine.job_runner
         if not job_runner.is_client_outcome_pending(job_id, client.name):
             return
-        if job_id not in self.engine.run_processes and job_id not in self.engine.exception_run_processes:
-            with self.engine.new_context() as fl_ctx:
-                self.logger.warning(f"Failing job {job_id}: terminal outcome unavailable from {client.name}: {reason}")
-                job_runner.fail_run(job_id, ProcessExitCode.INFRASTRUCTURE_ERROR, fl_ctx)
+        self.logger.info(f"Job {job_id}: terminal outcome unavailable from {client.name}: {reason}")
         job_runner.resolve_client_outcome(job_id, client.name)
 
     def notify_dead_client(self, client):

@@ -56,6 +56,7 @@ from .api_spec import (
     InvalidArgumentError,
     InvalidJobDefinition,
     InvalidTarget,
+    JobFinishing,
     JobInfo,
     JobNotDone,
     JobNotFound,
@@ -83,6 +84,7 @@ _CONNECTION_RETRY_COMMANDS = {AdminCommandNames.ABORT_JOB, AdminCommandNames.SHU
 _CONNECTION_RETRY_ATTEMPTS = 3
 _CONNECTION_RETRY_BACKOFF = 0.5
 _ABORT_STARTING_RETRY_SECS = 30.0
+_ABORT_FINISHING_RETRY_SECS = 90.0
 _ABORT_STARTING_RETRY_DELAY = 0.5
 
 
@@ -284,6 +286,8 @@ class Session(SessionSpec):
                 raise JobNotFound(f"no such job: {info}")
             elif cmd_status == MetaStatusValue.JOB_RUNNING:
                 raise JobNotDone(f"job {info} is still running")
+            elif cmd_status == MetaStatusValue.JOB_FINISHING:
+                raise JobFinishing(info)
             elif cmd_status == MetaStatusValue.JOB_NOT_RUNNING:
                 raise JobNotRunning(f"job {info} is not running")
             elif cmd_status == MetaStatusValue.CLIENTS_RUNNING:
@@ -641,15 +645,25 @@ class Session(SessionSpec):
         If the job is being executed, it will be aborted.
         If the job is still starting, the server asks the caller to retry; this method retries for up to
         30 seconds before raising the server's response.
+        If the verdict is selected but archival or terminal publication is pending, retry for up to
+        90 seconds from this call before raising JobFinishing. This does not change the selected verdict.
+        These are retry budgets; an in-flight transport request retains its own timeout.
 
         """
         self._validate_job_id(job_id)
         starting_error = f"{MetaStatusValue.ERROR}: Job {job_id} {ReplyKeyword.JOB_STARTING_RETRY_ABORT}"
-        deadline = time.monotonic() + _ABORT_STARTING_RETRY_SECS
+        started_at = time.monotonic()
+        deadline = started_at + _ABORT_STARTING_RETRY_SECS
+        finishing_deadline = started_at + _ABORT_FINISHING_RETRY_SECS
         while True:
             try:
                 result = self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
                 break
+            except JobFinishing:
+                remaining = finishing_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise
+                time.sleep(min(_ABORT_STARTING_RETRY_DELAY, remaining))
             except InternalError as e:
                 remaining = deadline - time.monotonic()
                 if str(e) != starting_error or remaining <= 0:

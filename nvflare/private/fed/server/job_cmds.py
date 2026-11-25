@@ -1477,6 +1477,11 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
                 else:
                     message = job_runner.stop_run(job_id, fl_ctx)
+                    if message is getattr(job_runner, "FINISHING", None) and message is not None:
+                        audit_action, audit_reason = "job.abort.retry_required", "job_finishing"
+                        message = f"Job {job_id} is already finishing."
+                        conn.append_error(message, meta=make_meta(MetaStatusValue.JOB_FINISHING, message))
+                        return
                     if message:
                         audit_action, audit_reason = "job.abort.error", "abort_request_failed"
                         conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, message))

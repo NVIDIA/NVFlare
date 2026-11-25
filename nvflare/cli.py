@@ -21,7 +21,7 @@ import traceback
 from nvflare.cli_exception import CLIException
 from nvflare.cli_unknown_cmd_exception import CLIUnknownCmdException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
-from nvflare.fuel.flare_api.api_spec import AuthenticationError, AuthorizationError, NoConnection
+from nvflare.fuel.flare_api.api_spec import AuthenticationError, AuthorizationError, JobFinishing, NoConnection
 from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
@@ -586,6 +586,10 @@ def run(prog_name):
             exit_code=2,
             detail=str(e),
         )
+    except JobFinishing as e:
+        from nvflare.tool.cli_output import output_error
+
+        output_error("JOB_FINISHING", exit_code=3, detail=str(e))
     except TimeoutError:
         from nvflare.tool.cli_output import output_error
 

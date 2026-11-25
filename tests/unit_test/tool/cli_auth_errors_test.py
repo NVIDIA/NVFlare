@@ -208,3 +208,23 @@ def test_run_routes_missing_handler_to_invalid_args_envelope(capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["error_code"] == "INVALID_ARGS"
     assert "unknown command: bogus" in payload["message"].lower()
+
+
+def test_run_reports_pending_shutdown_as_job_finishing(monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    from nvflare.fuel.flare_api.api_spec import JobFinishing
+
+    args = SimpleNamespace(format="json", connect_timeout=5.0, sub_command="poc", version=False)
+    handler = MagicMock(side_effect=JobFinishing("System shutdown was not sent; still archiving"))
+    monkeypatch.setattr(cli_mod, "parse_args", lambda *_: (MagicMock(), args, {}))
+    monkeypatch.setattr(cli_mod, "handlers", {"poc": handler})
+    monkeypatch.setattr(cli_output, "_output_format", "json")
+    monkeypatch.setattr(cli_output, "set_output_format", lambda *_: None)
+    monkeypatch.setattr(cli_output, "set_connect_timeout", lambda *_: None)
+    with pytest.raises(SystemExit) as caught:
+        cli_mod.run("nvflare")
+    assert caught.value.code == 3
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error_code"] == "JOB_FINISHING"
+    assert "shutdown was not sent" in payload["message"]

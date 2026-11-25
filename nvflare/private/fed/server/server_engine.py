@@ -231,6 +231,11 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
 
     def wait_for_complete(self, workspace, job_id, process):
         process.wait()
+        with self.lock:
+            run_process_info = self.run_processes.get(job_id)
+            if run_process_info is not None:
+                # Close client failure authority before cleanup or the status-report grace.
+                run_process_info[RunProcessKey.PROCESS_EXITED] = True
         # A killed or fail-fast job process skips its own tensor offload cleanup.
         leftover = glob.escape(os.path.join(tempfile.gettempdir(), server_root_dir_prefix(workspace, job_id))) + "*"
         for root_dir in glob.glob(leftover):
@@ -249,8 +254,14 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
                     self.logger.debug(f"Job:{job_id} UPDATE_RUN_STATUS didn't finish fast enough.")
                     break
                 time.sleep(0.1)
+            # Polling a launcher or reading its return-code file can block.
+            return_code = get_return_code(process, job_id, workspace, self.logger)
             with self.lock:
-                return_code = get_return_code(process, job_id, workspace, self.logger)
+                if run_process_info.get(RunProcessKey.STARTUP_FAILED):
+                    self.exception_run_processes.pop(job_id, None)
+                    self.run_processes.pop(job_id, None)
+                    self.engine_info.status = MachineStatus.STOPPED
+                    return
                 # if process exit but with Execution exception
                 if return_code and return_code != 0:
                     self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
@@ -999,32 +1010,30 @@ class ServerEngine(ServerEngineInternalSpec, StreamableEngine):
         self, job_id: str, command_name: str, command_data, timeout=5.0, optional=False
     ):
         with self.lock:
-            fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
-            request = new_cell_message({}, command_data)
-            if timeout <= 0.0:
-                self.server.cell.fire_and_forget(
-                    targets=fqcn,
-                    channel=CellChannel.SERVER_COMMAND,
-                    topic=command_name,
-                    message=request,
-                    optional=optional,
-                )
-                return None
-
-            return_data = self.server.cell.send_request(
-                target=fqcn,
+            cell = self.server.cell
+        fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+        request = new_cell_message({}, command_data)
+        # Network progress must not exclude SJ status updates or lifecycle decisions.
+        if timeout <= 0.0:
+            cell.fire_and_forget(
+                targets=fqcn,
                 channel=CellChannel.SERVER_COMMAND,
                 topic=command_name,
-                request=request,
-                timeout=timeout,
+                message=request,
                 optional=optional,
             )
-            rc = return_data.get_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
-            if rc == CellMsgReturnCode.OK:
-                result = return_data.payload
-            else:
-                result = None
-        return result
+            return None
+        reply = cell.send_request(
+            target=fqcn,
+            channel=CellChannel.SERVER_COMMAND,
+            topic=command_name,
+            request=request,
+            timeout=timeout,
+            optional=optional,
+        )
+        if reply.get_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK) == CellMsgReturnCode.OK:
+            return reply.payload
+        return None
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
         # Component snapshot persistence has been removed; keep this as a no-op
