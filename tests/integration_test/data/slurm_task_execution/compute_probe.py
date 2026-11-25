@@ -17,6 +17,7 @@
 import argparse
 import json
 import os
+import socket
 
 import torch
 
@@ -52,10 +53,13 @@ while flare.is_running():
     print(
         json.dumps(
             {
-                "event": "docker_task_compute",
+                "event": "task_compute",
                 "pid": os.getpid(),
+                "hostname": socket.gethostname(),
+                "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+                "cp_capability_present": "NVFLARE_SLURM_TASK_TOKEN" in os.environ,
                 "device": args.device,
-                "gpu_uuids": os.environ.get("NVIDIA_VISIBLE_DEVICES", ""),
+                "gpu_uuids": [str(torch.cuda.get_device_properties(index).uuid) for index in range(args.gpu_count)],
                 "gpu_count": args.gpu_count,
                 "checksum": checksum,
                 "peak_bytes": peak_bytes,
@@ -67,7 +71,7 @@ while flare.is_running():
     )
     flare.send(
         flare.FLModel(
-            params=model.params,
+            params={name: value + 1 for name, value in model.params.items()},
             metrics={
                 "gpu_count": args.gpu_count,
                 "checksum": checksum,

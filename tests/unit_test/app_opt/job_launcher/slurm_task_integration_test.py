@@ -30,8 +30,13 @@ from nvflare.apis.task_launcher_spec import TaskLauncherError
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.batch import _submission_argv
 from nvflare.app_opt.job_launcher.slurm.launcher import ClientSlurmJobLauncher
-from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, _SlurmTaskBackend
-from nvflare.app_opt.job_launcher.slurm.task_policy import CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH, task_resources
+from nvflare.app_opt.job_launcher.slurm.task_launcher import (
+    CJ_LAUNCHER_PATH,
+    TASK_LAUNCHER_PATH,
+    SlurmTaskLauncher,
+    _SlurmTaskBackend,
+    task_resources,
+)
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
 from nvflare.tool.deploy.deploy_common import SLURM_CLIENT_LAUNCHER
 from nvflare.utils.job_launcher_utils import get_resource_manager_spec, normalize_cj_resource_spec
