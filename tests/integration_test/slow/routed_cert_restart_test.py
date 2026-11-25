@@ -26,9 +26,10 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, serialize_pri_key
-from tests.timing_utils import PROCESS_STARTUP_TIMEOUT
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, stop_processes
 
-pytestmark = [pytest.mark.slow, pytest.mark.timeout(180)]
+_TEST_TIMEOUT = 180
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(_TEST_TIMEOUT)]
 _TARGET = "relay-1.site-1"
 _IDENTITIES = {"server": "server", "relay-1": "relay-1", _TARGET: "site-1"}
 
@@ -65,7 +66,9 @@ def _run_peer(fqcn, root_url, parent_url, credentials, ready, stop):
                 raise RuntimeError(f"{fqcn} did not connect to {upstream}")
             time.sleep(0.05)
         ready.put({"url": cell.get_internal_listener_url()})
-        stop.wait(60)
+        # The parent owns the peer lifetime. Bound the wait in case it disappears.
+        if not stop.wait(_TEST_TIMEOUT):
+            raise RuntimeError(f"{fqcn} did not receive a stop signal")
     except Exception:
         ready.put({"error": traceback.format_exc()})
         raise
@@ -117,8 +120,8 @@ def test_encrypted_requests_recover_after_routed_peer_key_replacement(tmp_path):
             target=_run_peer,
             args=(fqcn, None if parent_url else root_url, parent_url, creds, ready, stop),
         )
-        process.start()
         processes.append((process, stop))
+        process.start()
         try:
             result = ready.get(timeout=PROCESS_STARTUP_TIMEOUT)
         except Empty:
@@ -167,11 +170,10 @@ def test_encrypted_requests_recover_after_routed_peer_key_replacement(tmp_path):
         check_reply(request())
         assert connections == [("ready", "relay-1")]
     finally:
-        for process, stop in reversed(processes):
-            stop.set()
-            process.join(timeout=10)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=5)
-        server.stop()
+        try:
+            for _, stop in reversed(processes):
+                stop.set()
+            stop_processes(*(process for process, _ in reversed(processes)))
+        finally:
+            server.stop()
     assert all(process.exitcode == 0 for process, _ in processes)
