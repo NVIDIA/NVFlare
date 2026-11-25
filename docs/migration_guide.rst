@@ -69,8 +69,8 @@ Multi-process Executors Removed
 -------------------------------
 
 NVFlare 2.10 removes ``MultiProcessExecutor``, ``PTMultiProcessExecutor`` and their
-sub-worker runtime. Update jobs that import, subclass or configure either
-executor before upgrading to 2.10.
+sub-worker runtime without a prior deprecation release. Update jobs that
+import, subclass or configure either executor before upgrading to 2.10.
 
 For PyTorch DDP training, use the job-based Client API with
 ``launch_external_process=True`` and ``torchrun``. The
