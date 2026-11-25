@@ -20,7 +20,7 @@ import pytest
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.simulation_plan import SIMULATION_PLAN_PROP, SimulationPlanRuntime
 from nvflare.collab import FedBuffScheduleState
-from nvflare.collab.replayable_execution import AsyncExecutionPort, run_async_execution
+from nvflare.collab.replayable_execution import AsyncExecutionAdapter, run_async_execution
 
 
 class _CounterState:
@@ -60,7 +60,7 @@ class _CounterState:
 
 @pytest.mark.parametrize("retain_artifacts", [True, False])
 @pytest.mark.parametrize("finish_version", [1, 2])
-def test_generic_async_port_replays_non_fedbuff_algorithm(tmp_path, retain_artifacts, finish_version):
+def test_generic_async_adapter_replays_non_fedbuff_algorithm(tmp_path, retain_artifacts, finish_version):
     runtime = SimulationPlanRuntime(
         {
             "format_version": 1,
@@ -85,7 +85,7 @@ def test_generic_async_port_replays_non_fedbuff_algorithm(tmp_path, retain_artif
         assert assignment.base_model == 0
         accepted.append(assignment.assignment_id)
 
-    port = AsyncExecutionPort(
+    adapter = AsyncExecutionAdapter(
         state=state,
         clients=["site-1", "site-2"],
         contribution_budget=2,
@@ -96,7 +96,7 @@ def test_generic_async_port_replays_non_fedbuff_algorithm(tmp_path, retain_artif
         aborted=lambda: False,
         on_accept=on_accept,
     )
-    run_async_execution(port, fl_ctx)
+    run_async_execution(adapter, fl_ctx)
     runtime.assert_consumed()
     assert accepted == [1, 0][:finish_version]
     assert state.model == finish_version
@@ -143,7 +143,7 @@ def test_fixed_replay_drains_early_finish_before_releasing_bases(
         received.append(identity)
         return site, identity, result, error
 
-    port = AsyncExecutionPort(
+    adapter = AsyncExecutionAdapter(
         state=state,
         clients=[f"site-{index}" for index in range(physical_clients)],
         contribution_budget=2,
@@ -154,7 +154,7 @@ def test_fixed_replay_drains_early_finish_before_releasing_bases(
         aborted=lambda: False,
         on_accept=lambda assignment, version, site: accepted.append(assignment.assignment_id),
     )
-    run_async_execution(port, fl_ctx)
+    run_async_execution(adapter, fl_ctx)
     runtime.assert_consumed()
 
     assert accepted == [0] and state.version == 1
@@ -224,7 +224,7 @@ def test_ordered_replay_discards_failed_unaccepted_uploads(tmp_path, retain_arti
         return result
 
     state = make_state()
-    port = AsyncExecutionPort(
+    adapter = AsyncExecutionAdapter(
         state=state,
         clients=["site-1", "site-2"],
         contribution_budget=state.num_rounds,
@@ -235,7 +235,7 @@ def test_ordered_replay_discards_failed_unaccepted_uploads(tmp_path, retain_arti
         aborted=lambda: False,
         make_planning_state=make_state,
     )
-    run_async_execution(port, fl_ctx)
+    run_async_execution(adapter, fl_ctx)
     runtime.finalize()
     assert json.loads((tmp_path / "run.jsonl").read_text())["logical_trace_verified"] is True
     assert json.loads((tmp_path / "accepted.jsonl").read_text())["assignment_id"] == 0
@@ -247,9 +247,117 @@ def test_ordered_replay_discards_failed_unaccepted_uploads(tmp_path, retain_arti
     assert not list(tmp_path.glob("work-*"))
 
 
-def test_generic_async_port_uses_live_path_without_plan():
+@pytest.mark.parametrize("retain_artifacts", [True, False])
+@pytest.mark.parametrize("result_order", [(1, 0), (0, 1)], ids=["before-acceptance", "during-drain"])
+def test_start_time_replay_discards_failed_unaccepted_upload(tmp_path, caplog, retain_artifacts, result_order):
+    runtime = SimulationPlanRuntime(
+        {
+            "format_version": 1,
+            "async_execution": {
+                "logical_sequence": ["a", "b"],
+                "timing": {
+                    "starts": [0, 0],
+                    "delays": [
+                        {"download": 0, "train": 0, "upload": 1},
+                        {"download": 0, "train": 0, "upload": 3},
+                    ],
+                    "horizon": 2,
+                },
+                "retain_artifacts": retain_artifacts,
+            },
+        },
+        tmp_path,
+    )
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(SIMULATION_PLAN_PROP, runtime)
+    submissions = {}
+    remaining = iter(result_order)
+
+    def make_state():
+        return FedBuffScheduleState(num_rounds=2, concurrency=2, buffer_size=1, min_open_slots=1)
+
+    def submit(site, assignment, **kwargs):
+        submissions[assignment.assignment_id] = (site, assignment)
+
+    def receive():
+        identity = next(remaining)
+        site, assignment = submissions[identity]
+        assert assignment.base_model is None  # Keep the shared base until the call returns.
+        return (site, identity, 1, None) if identity == 0 else (site, identity, None, "failed")
+
+    state = make_state()
+    adapter = AsyncExecutionAdapter(
+        state=state,
+        clients=["site-1", "site-2"],
+        contribution_budget=2,
+        submit=submit,
+        receive=receive,
+        live_run=lambda: None,
+        normalize=lambda result, assignment: result,
+        aborted=lambda: False,
+        make_planning_state=make_state,
+    )
+    run_async_execution(adapter, fl_ctx)
+    runtime.finalize()
+    assert json.loads((tmp_path / "run.jsonl").read_text())["logical_trace_verified"] is True
+    assert [json.loads(line)["assignment_id"] for line in (tmp_path / "accepted.jsonl").read_text().splitlines()] == [0]
+    assert state.version == 1 and runtime.virtual_time == 2
+    assert sorted(path.name for path in (tmp_path / "results").glob("*.pkl")) == (
+        ["00000000.pkl"] if retain_artifacts else []
+    )
+    assert not list(tmp_path.glob("work-*"))
+    assert "Discarding failed assignment 1 outside the planned acceptances" in caplog.text
+
+
+def test_temporary_artifacts_are_removed_after_planned_abort(tmp_path):
+    runtime = SimulationPlanRuntime(
+        {
+            "format_version": 1,
+            "async_execution": {
+                "logical_sequence": ["a"],
+                "timing": {
+                    "starts": [0],
+                    "delays": [{"download": 0, "train": 0, "upload": 1}],
+                    "horizon": 2,
+                },
+                "retain_artifacts": False,
+            },
+        },
+        tmp_path,
+    )
+    fl_ctx = FLContext()
+    fl_ctx.set_prop(SIMULATION_PLAN_PROP, runtime)
+    aborted = [False]
+
+    def make_state():
+        return FedBuffScheduleState(num_rounds=1, concurrency=1, buffer_size=1, min_open_slots=1)
+
+    def submit(site, assignment, **kwargs):
+        assert assignment.base_model is None
+        aborted[0] = True
+
+    adapter = AsyncExecutionAdapter(
+        state=make_state(),
+        clients=["site-1"],
+        contribution_budget=1,
+        submit=submit,
+        receive=lambda: None,
+        live_run=lambda: None,
+        normalize=lambda result, assignment: result,
+        aborted=lambda: aborted[0],
+        make_planning_state=make_state,
+    )
+    with pytest.raises(RuntimeError, match="planned async workflow aborted"):
+        run_async_execution(adapter, fl_ctx)
+    runtime.finalize()
+    assert json.loads((tmp_path / "run.jsonl").read_text())["logical_trace_verified"] is None
+    assert not list(tmp_path.glob("work-*"))
+    assert not (tmp_path / "models").exists()
+
+
+def test_generic_async_adapter_uses_live_path_without_plan():
     called = []
-    port = AsyncExecutionPort(
+    adapter = AsyncExecutionAdapter(
         state=_CounterState(),
         clients=["site-1"],
         contribution_budget=2,
@@ -259,5 +367,5 @@ def test_generic_async_port_uses_live_path_without_plan():
         normalize=lambda result, assignment: result,
         aborted=lambda: False,
     )
-    run_async_execution(port, FLContext())
+    run_async_execution(adapter, FLContext())
     assert called == ["live"]

@@ -22,7 +22,7 @@ The :github_nvflare_link:`runnable NumPy example
 
 The :github_nvflare_link:`CIFAR-10 replay example
 <examples/advanced/collab/pt_async_cifar10_reproducible>` uses the same
-``FedBuffRecipe`` and simulator port with a seeded PyTorch trainer and
+``FedBuffRecipe`` and shared execution adapter with a seeded PyTorch trainer and
 logical CIFAR data shards. It resets client optimizer and loader state per
 assignment so a logical client's result does not depend on its physical worker.
 
@@ -38,7 +38,7 @@ supplies only the simulator. The equivalent import path is:
    run = recipe.execute(SimEnv(num_clients=2, reprod=True, plan=make_plan(10)))
 
 ``FedBuffRecipe`` consumes an ``async_execution`` plan through its shared
-execution port. ``logical_sequence`` names assignments in reservation order.
+execution adapter. ``logical_sequence`` names assignments in reservation order.
 ``arrival_sequence`` lists assignment IDs in acceptance order, independent of
 physical completion order:
 
@@ -130,6 +130,9 @@ reuses that planner to generate log-normal training delays or sample measured
 durations. The :github_nvflare_link:`uniform delay example <research/fedrevive/schedule_simple.py>`
 shows a minimal custom sampler. Custom samplers receive an assignment- and
 phase-specific RNG.
+The :github_nvflare_link:`simulation plan notebook
+<research/fedrevive/simulation_plan_tutorial.ipynb>` compares baseline and
+custom delay timelines and inspects their staleness before training.
 
 Evidence and Limits
 -------------------
@@ -139,9 +142,11 @@ same reservation and acceptance rules using placeholder uploads and a version
 counter. Invalid capacity, client eligibility, and base-version expectations
 fail before any client trains. Actual logical events are checked against the
 preflight during execution. Physical dispatch order can vary with the worker pool.
-In ordered replay, a failed call aborts the run if preflight requires its
-upload for acceptance. Other call failures are logged and their uploads
-discarded, regardless of when they arrive.
+For timed plans with preflight, a failed call aborts the run if its upload is
+required for acceptance. Other call failures are logged and discarded,
+including failures that arrive after the horizon. For timed plans without
+preflight, the runner cannot determine which calls are unneeded, so a failed
+call aborts.
 
 The reusable input is saved at ``<workspace>/<job>/server/local/simulation_plan.json``.
 The run directory ``<workspace>/<job>/server/simulate_job/simulation/`` contains
@@ -152,7 +157,9 @@ to check completeness and order against the preflight derived from the input
 plan. It also checks that the server's saved copy of the input plan still matches
 what was loaded at launch. A mismatch fails the run. ``run.jsonl`` records
 ``logical_trace_verified``, the normalized input's ``plan_sha256``, wall seconds,
-and virtual time. By default, ``models/`` and ``results/`` retain intermediate payloads.
+and virtual time. Verification is ``true`` when it passes, ``false`` when it
+was attempted and failed, and ``null`` when final verification did not run.
+By default, ``models/`` and ``results/`` retain intermediate payloads.
 Set ``async_execution.retain_artifacts`` to false to keep the traces and reclaim
 temporary payloads after use. With preflight, the runner saves uploads only for
 planned acceptances and reuses each version's base until its last planned
@@ -168,7 +175,7 @@ restart checkpoints.
 
 ``SimulationPlanRuntime`` supplies plan claiming, trace writing, model/result
 storage and unused-plan checks. ``PlannedAsyncEvents`` supplies virtual events.
-For another asynchronous Collab workflow, import ``AsyncExecutionPort`` and
+For another asynchronous Collab workflow, import ``AsyncExecutionAdapter`` and
 ``run_async_execution`` from ``nvflare.collab.replayable_execution``. Supply
 the algorithm's state, its existing live loop, Collab submit/receive calls,
 result normalization and optional event callbacks:
@@ -176,9 +183,9 @@ result normalization and optional event callbacks:
 .. code-block:: python
 
    from nvflare.collab import collab
-   from nvflare.collab.replayable_execution import AsyncExecutionPort, run_async_execution
+   from nvflare.collab.replayable_execution import AsyncExecutionAdapter, run_async_execution
 
-   port = AsyncExecutionPort(
+   adapter = AsyncExecutionAdapter(
        state=coordinator,
        clients=physical_clients,
        contribution_budget=max_contributions,
@@ -189,7 +196,7 @@ result normalization and optional event callbacks:
        aborted=lambda: collab.is_aborted,
        on_publish=notify_model,
    )
-   run_async_execution(port, fl_ctx)
+   run_async_execution(adapter, fl_ctx)
 
 The state exposes ``model``, ``version``, ``active``, ``available_slots``,
 ``finished``, ``reserve(names, metadata, factory)`` and
@@ -197,11 +204,11 @@ The state exposes ``model``, ``version``, ``active``, ``available_slots``,
 model. ``reserve`` must assign sequential IDs starting at zero and return every
 requested assignment. An assignment exposes ``assignment_id``,
 ``logical_name``, ``base_version``, ``metadata`` and its immutable base model.
-The port can supply ``make_assignment`` when the algorithm needs a different
+The adapter can supply ``make_assignment`` when the algorithm needs a different
 assignment class; that factory receives the stored base path instead of an
 in-memory model. ``submit(site, assignment, **kwargs)`` schedules a physical
 call; ``receive()`` returns ``(site, assignment_id, result, error)``.
-``FedBuffWorkflow`` is one implementation of this port. Provide
+``FedBuffWorkflow`` constructs this adapter. Provide
 ``make_planning_state`` to enable preflight and ordered timing. This callback
 returns a fresh state with the same reservation and publication rules using
 only logical state. Its ``accept`` receives a placeholder result. A workflow
