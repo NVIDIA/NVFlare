@@ -16,7 +16,7 @@
 
 Real provisioning, server, enrollment, client entry points and admin login; separate
 processes/CWDs on a shared host filesystem (no OS user or mount isolation).
-The existing one-round job also verifies actual task/workflow audit observations;
+The existing one-round job also verifies task, workflow and model audit observations;
 controlled component suites cover execution failures, duplicate/late results, and
 abort semantics without adding another federation startup here.
 """
@@ -31,6 +31,7 @@ import time
 from contextlib import ExitStack
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from nvflare.apis.fl_constant import AdminCommandNames, SiteType, WorkspaceConstants
@@ -50,7 +51,7 @@ from nvflare.lighter.provisioner import Provisioner
 from nvflare.private.defs import CellChannel, RequestHeader
 from tests.peer_admin_test_utils import _write_json
 from tests.process_test_utils import OwnedProcesses
-from tests.task_audit_test_utils import RESULT_MARKER, TASK_MARKER
+from tests.task_audit_test_utils import MODEL_SOURCE_VALUE, RESULT_MARKER, TASK_MARKER
 
 
 def _task_details(record):
@@ -281,11 +282,16 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         ]
         if with_relay:
             cases.append({"name": "forge_server_origin", "forge_origin": True})
+        boundary_log = tmp_path / ("relay-1.log" if with_relay else "localhost.log")
+        origin_rejection_log = "rejected message: origin does not belong to sending peer"
+        before_initial_rejections = boundary_log.read_text().count(origin_rejection_log)
         _write_json(evidence["site-1"] / "request.json", cases)
         result_path = evidence["site-1"] / "results.json"
         wait_for(result_path.exists)
         results = json.loads(result_path.read_text())
         assert isinstance(results, list), results
+        if with_relay:
+            assert boundary_log.read_text().count(origin_rejection_log) >= before_initial_rejections + 1
         destination_records = [
             json.loads(line) for line in (evidence["site-2"] / "received.jsonl").read_text().splitlines()
         ]
@@ -314,7 +320,6 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
             "admin_read": "passed",
             "startup": ready,
         }
-        boundary_log = tmp_path / ("relay-1.log" if with_relay else "localhost.log")
         assert "missing auth token" in boundary_log.read_text()
         assert results[2]["rc"] == ReturnCode.TIMEOUT, results[2]
         summary["missing_token_rejected_by_production_filter"] = True
@@ -329,6 +334,19 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         shutil.copytree(Path(__file__).parents[1] / "data/jobs/hello-numpy-sag", job)
         config_path = job / "app/config/config_fed_server.json"
         config = json.loads(config_path.read_text())
+        model_source_name = "private-model-source-marker.npy"
+        model_output_dir = "private-model-output-marker"
+        model_source_dir = job / "app" / WorkspaceConstants.CUSTOM_FOLDER_NAME
+        model_source_dir.mkdir(exist_ok=True)
+        np.save(
+            model_source_dir / model_source_name, np.array([[MODEL_SOURCE_VALUE]], dtype=np.float32), allow_pickle=False
+        )
+        persistor = next(component for component in config["components"] if component["id"] == "persistor")
+        persistor["args"].update(
+            source_ckpt_file_full_name=model_source_name,
+            model_dir=model_output_dir,
+            model=[[7.0]],
+        )
         config["workflows"][0]["args"].update(num_rounds=1, wait_time_after_min_received=0)
         children = tmp_path / "children"
         config["task_data_filters"] = [
@@ -369,10 +387,18 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         for case in job_cases:
             case.update(channel=CellChannel.CLIENT_COMMAND, topic=AdminCommandNames.SHOW_ERRORS, target=target)
         result_path.unlink()
+        before_rejections = boundary_log.read_text().count(origin_rejection_log)
         _write_json(evidence["site-1"] / "request.json", job_cases)
         wait_for(result_path.exists)
         job_results = json.loads(result_path.read_text())
-        assert all(r["rc"] == ReturnCode.UNAUTHENTICATED for r in job_results), job_results
+        assert job_results[0]["rc"] == ReturnCode.UNAUTHENTICATED, job_results
+        if with_relay:
+            # Forged origins stop at the relay's incoming auth filter before
+            # CellNet can generate a protocol reply. Prove the production gate
+            # rejected both attempts rather than accepting arbitrary timeouts.
+            assert all(r["rc"] == ReturnCode.TIMEOUT for r in job_results[1:]), job_results
+            assert boundary_log.read_text().count(origin_rejection_log) >= before_rejections + 2
+        assert all("private-job-error-marker" not in json.dumps(r) for r in job_results)
         assert "private-job-error-marker" in json.dumps(admin.show_errors(job_id, "client", ["site-2"]))
         summary["job_commands"] = job_results
         children.joinpath("release").write_text("finish")
@@ -390,6 +416,14 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         assert downloaded
         archived_workspace = Path(downloaded) / Path(WORKSPACE_ZIP).stem
         assert archived_workspace.is_dir(), downloaded
+        saved_models = list(archived_workspace.rglob(f"{model_output_dir}/server.npy"))
+        assert len(saved_models) == 1, saved_models
+        # Each client adds one to the supplied weight. Both contributions have
+        # equal weight, so averaging preserves that increment.
+        expected_weight = MODEL_SOURCE_VALUE + 1
+        np.testing.assert_array_equal(np.load(saved_models[0], allow_pickle=False), [[expected_weight]])
+        for name in ("site-1", "site-2"):
+            assert json.loads((children / f"model-source-{name}.json").read_text()) == {"source_model_seen": True}
         job_audit_paths = {}
         for name in ("localhost", "site-1", "site-2"):
             site_name = SiteType.SERVER if name == "localhost" else name
@@ -450,6 +484,40 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
 
         server_job_audit = job_records["localhost"]
         server_by_id = records_by_site["localhost"]
+        model_records = [record for record in server_job_audit if record["action"].startswith("model.")]
+        for record in model_records:
+            assert record["job"] == job_id, record
+            assert record["user"] == "unknown", record
+            assert not record["action"].endswith((".error", ".stage_error", ".skipped")), record
+            if record.get("reference"):
+                assert record["reference"] in server_by_id, record
+            for forbidden in (
+                model_source_name,
+                model_output_dir,
+                str(MODEL_SOURCE_VALUE),
+                str(expected_weight),
+                str(tmp_path),
+            ):
+                assert forbidden not in record.get("message", ""), record
+        for operation, file_stage in (("load", "source_read"), ("save", "write")):
+            prefix = f"model.{operation}."
+            matching = [
+                record
+                for record in model_records
+                if record["action"] in {prefix + "started", prefix + "returned"}
+                or (
+                    record["action"] == prefix + "stage_returned"
+                    and f"stage={file_stage}" in record.get("message", "").split()
+                )
+            ]
+            assert [record["action"] for record in matching] == [
+                prefix + "started",
+                prefix + "stage_returned",
+                prefix + "returned",
+            ], model_records
+            if operation == "load":
+                assert "status=value_returned" in matching[-1].get("message", "").split(), matching[-1]
+        summary["model_audit_records"] = "verified source consumption, saved model, and private model data exclusion"
         workflow_id = "scatter_and_gather"
         initialized = _one_task_record(server_job_audit, "workflow.execution.initialized", workflow=workflow_id)
         control = _one_task_record(server_job_audit, "workflow.control.returned", workflow=workflow_id)
@@ -554,6 +622,6 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
             r["rc"] == ReturnCode.OK and r["body"] == "request must originate from server" for r in results[:2]
         ), results
         if with_relay:
-            assert results[-1]["rc"] == ReturnCode.UNAUTHENTICATED, results[-1]
-            assert results[-1]["origin"] == "relay-1"
+            assert results[-1]["rc"] == ReturnCode.TIMEOUT, results[-1]
+            assert results[-1]["origin"] is None
             assert not any(r["origin"] == "server" and r["topic"] == "sys.shell" for r in destination_records)

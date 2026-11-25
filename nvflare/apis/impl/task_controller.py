@@ -190,7 +190,7 @@ class TaskController(FLComponent, ControllerSpec):
 
         for site in audit_sites:
             self._audit_direct("task.auxiliary.prepared", audit_context, site=site)
-            self._audit_direct("task.auxiliary.dispatched", audit_context, site=site)
+            self._audit_direct("task.auxiliary.dispatch_attempted", audit_context, site=site)
         replies = engine.send_aux_request(
             targets=targets,
             topic=ReservedTopic.DO_TASK,

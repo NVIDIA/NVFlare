@@ -26,6 +26,7 @@ from nvflare.app_common.model_desc import ModelDescriptor
 from nvflare.app_common.np.constants import NPConstants
 from nvflare.app_common.np.utils import load_numpy_model
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
+from nvflare.fuel.sec import model_audit
 from nvflare.security.logging import secure_format_exception
 
 
@@ -95,15 +96,18 @@ class NPFileModelPersistor(ModelPersistor):
         if not os.path.exists(model_root_dir):
             os.makedirs(model_root_dir)
 
-        np.save(model_path, model_learnable[ModelLearnableKey.WEIGHTS][NPConstants.NUMPY_KEY])
+        model_audit.save_step(
+            self, "write", np.save, model_path, model_learnable[ModelLearnableKey.WEIGHTS][NPConstants.NUMPY_KEY]
+        )
         self.log_info(fl_ctx, f"Saved numpy model to: {model_path}")
         self.log_info(fl_ctx, f"Model: {model_learnable}")
 
     def handle_event(self, event: str, fl_ctx: FLContext):
         if event == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE:
-            # save the current model as the best model!
-            model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
-            self._save(fl_ctx, model, self.best_global_model_file_name)
+            with model_audit.operation("best_save", fl_ctx, owner=self) as audit:
+                model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+                audit.call("implementation", self._save, fl_ctx, model, self.best_global_model_file_name)
+                audit.returned()
 
     def _model_file_path(self, fl_ctx: FLContext, file_name):
         run_dir = _get_run_dir(fl_ctx)

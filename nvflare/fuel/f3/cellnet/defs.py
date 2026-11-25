@@ -67,6 +67,7 @@ class ReturnReason:
 class MessagePropKey:
 
     ENDPOINT = CELLNET_PREFIX + "endpoint"
+    CONNECTION = CELLNET_PREFIX + "connection"
     COMMON_NAME = CELLNET_PREFIX + "common_name"
     FUTURES = CELLNET_PREFIX + "futures"
 

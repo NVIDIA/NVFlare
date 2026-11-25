@@ -114,10 +114,22 @@ before committing new versions.
 #### Signing your work
 NVIDIA FLARE enforces the [Developer Certificate of Origin](https://developercertificate.org/) (DCO) on all pull requests.
 
-For a detailed guide on signing commits, please see [Signing commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits) from GitHub.
+Sign off each commit with `git commit -s`.
+
+```bash
+git commit -s -m "Describe the change"
+```
+
+Git uses your configured name and email address to append a line like this to the commit message.
+
+```text
+Signed-off-by: Your Name <you@example.com>
+```
 
 #### Commit signature verification
 NVIDIA FLARE enforces commit signature verification, a security feature provided by GitHub. Developers are required to setup GPG keys as described in [Commit Signature Verification](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification#gpg-commit-signature-verification).
+
+For a detailed guide on signing commits, please see [Signing commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits) from GitHub.
 
 Full text of the DCO:
 ```

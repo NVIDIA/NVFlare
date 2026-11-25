@@ -29,6 +29,8 @@ from nvflare.edge.web.models.task_request import TaskRequest
 from nvflare.edge.web.models.task_response import TaskResponse
 from nvflare.edge.web.models.user_info import UserInfo
 
+_RESULT_CONNECT_ATTEMPTS = 3
+
 
 class FegApi:
     def __init__(self, endpoint: str, device_info: DeviceInfo, user_info: UserInfo):
@@ -72,15 +74,19 @@ class FegApi:
         if report.cookie:
             body[EdgeProtoKey.COOKIE] = report.cookie
 
-        return self._do_post(
-            clazz=ResultResponse,
-            url=urljoin(self.endpoint, "result"),
-            params={
-                EdgeProtoKey.JOB_ID: report.job_id,
-                EdgeProtoKey.TASK_ID: report.task_id,
-            },
-            body=body,
-        )
+        # Requests guarantees a ConnectTimeout can be retried. A read timeout
+        # can occur after the server accepts the result, so leave it to the caller.
+        for attempt in range(_RESULT_CONNECT_ATTEMPTS):
+            try:
+                return self._do_post(
+                    clazz=ResultResponse,
+                    url=urljoin(self.endpoint, "result"),
+                    params={EdgeProtoKey.JOB_ID: report.job_id, EdgeProtoKey.TASK_ID: report.task_id},
+                    body=body,
+                )
+            except requests.ConnectTimeout:
+                if attempt == _RESULT_CONNECT_ATTEMPTS - 1:
+                    raise
 
     def get_selection(self, request: SelectionRequest) -> SelectionResponse:
         return self._do_post(
@@ -91,7 +97,7 @@ class FegApi:
         )
 
     def _do_post(self, clazz, url, params, body):
-        response = requests.post(url, params=params, json=body, headers=self.common_headers)
+        response = requests.post(url, params=params, json=body, headers=self.common_headers, timeout=(10.0, 60.0))
         code = response.status_code
         if code == 200:
             return clazz(**response.json())

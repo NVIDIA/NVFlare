@@ -17,10 +17,13 @@ import pytest
 torch = pytest.importorskip("torch")
 
 from nvflare.apis.dxo import DataKind
+from nvflare.app_common.executors.client_api_executor import ClientAPIExecutor
+from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 from nvflare.app_opt.pt.fedce import FedCEModelAggregator
 from nvflare.app_opt.pt.recipes.fedavg import FedAvgRecipe
 from nvflare.app_opt.pt.recipes.fedce import FedCERecipe
 from nvflare.client.config import ExchangeFormat, TransferType
+from nvflare.job_config.api import FedJob
 from nvflare.recipe import set_per_site_config
 
 
@@ -62,3 +65,17 @@ def test_fedce_aggregator_cannot_bypass_task_guard_through_fedavg(tmp_path, subc
     )
     with pytest.raises(ValueError, match="FedCE previous-model and score-history state.*use job lifetime"):
         recipe.export(str(tmp_path / "export"))
+
+
+def test_custom_scatter_and_gather_with_direct_fedce_rejects_task_lifetime(tmp_path):
+    class DirectAggregatorWorkflow(ScatterAndGather):
+        def __init__(self, aggregator):
+            super().__init__()
+            self.aggregator = aggregator
+
+    job = FedJob(name="direct-fedce", execution_lifetime="task")
+    job.to_server(DirectAggregatorWorkflow(FedCEModelAggregator()))
+    job.to_clients(ClientAPIExecutor(execution_mode="in_process", task_script_path="train.py"))
+
+    with pytest.raises(ValueError, match="FedCE previous-model and score-history state.*use job lifetime"):
+        job.export_job(str(tmp_path))

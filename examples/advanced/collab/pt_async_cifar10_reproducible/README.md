@@ -2,7 +2,7 @@
 
 This companion to [asynchronous CIFAR-10](../pt_async_cifar10/README.md)
 trains the same ModerateCNN on Dirichlet CIFAR-10 shards with a standard
-`FedBuffRecipe`. The shared execution port in `FedBuffWorkflow` exposes
+`FedBuffRecipe`. The shared execution adapter in `FedBuffWorkflow` exposes
 reservation, acceptance, and publication to the simulator. This example
 supplies the fixed-order or timed plan only to `SimEnv`; the exported recipe
 has no replay arguments or simulator branches.

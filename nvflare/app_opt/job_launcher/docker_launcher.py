@@ -11,14 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import logging
 import os
 import posixpath
 import re
+import socket
 import threading
 import time
 import uuid
 from abc import abstractmethod
+from decimal import Decimal
 from urllib.parse import urlsplit, urlunsplit
 
 try:
@@ -41,7 +44,14 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.apis.job_launcher_spec import JobHandleSpec, JobLauncherSpec, JobProcessArgs, JobReturnCode, add_launcher
+from nvflare.apis.job_launcher_spec import (
+    JobHandleSpec,
+    JobLauncherSpec,
+    JobProcessArgs,
+    JobReturnCode,
+    add_launcher,
+    publish_job_handle,
+)
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
@@ -55,18 +65,36 @@ from nvflare.app_opt.job_launcher.study_runtime import (
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.file_driver import SCHEME as SHARED_FILE_SCHEME
 from nvflare.fuel.f3.drivers.file_driver import parse_file_url
+from nvflare.private.fed.client.task_runtime import JobLaunchOptions, get_job_launch_options
 from nvflare.private.fed.utils.job_cert_utils import job_startup_files, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     DOCKER_JOB_CONTAINER_KWARGS,
+    get_cj_resource_spec,
     get_client_job_args,
     get_credential_env,
     get_job_launcher_spec,
     get_portable_resource_spec,
     get_server_job_args,
+    has_cj_resource_spec,
     portable_memory_to_bytes,
     resolve_site_resource_spec,
     validate_docker_job_launcher_spec,
 )
+
+
+def docker_cj_limits(job_meta, site):
+    requested = get_cj_resource_spec(job_meta, site)
+    if requested.get("num_of_gpus", 0) or requested.get("mem_per_gpu_in_GiB", 0):
+        raise ValueError("CP host Docker CJ must be CPU-only; request GPUs for tasks")
+    limits = {}
+    if "num_of_cpus" in requested:
+        cpu = int(Decimal(str(requested["num_of_cpus"])) * 1_000_000_000)
+        if cpu < 1:
+            raise ValueError("CP host Docker CJ requires at least one nanocpu")
+        limits["nano_cpus"] = cpu
+    if "memory" in requested:
+        limits["mem_limit"] = portable_memory_to_bytes(requested["memory"])
+    return limits
 
 
 # Docker container status strings
@@ -90,6 +118,18 @@ _RESERVED_WORKSPACE_CHILD_NAMES = {
 # Site-level defaults and study docker_kwargs additionally reserve "image": jobs select
 # their image through docker_spec["image"], so it must not trip the job-spec warning.
 _RESERVED_DEFAULT_KWARGS = RESERVED_DOCKER_KWARGS
+
+
+def _docker_create_may_have_succeeded(error):
+    if isinstance(error, docker.errors.ImageNotFound):
+        return False
+    if isinstance(error, docker.errors.APIError) and error.response is not None:
+        request = error.response.request
+        # The SDK also inspects the container after a successful POST. An
+        # error from that GET says nothing about whether Docker created it.
+        if request is not None and request.method == "POST" and error.status_code in (400, 401, 403, 404, 409):
+            return False
+    return True
 
 
 def _is_gpu_request(request):
@@ -120,7 +160,7 @@ def _get_gpu_request(docker_spec, resource_spec, container_kwargs):
 
 
 def _rewrite_parent_url(job_args: dict, site_name: str, secure_mode: bool = False) -> tuple[dict, str | None]:
-    """Rewrite a parent URL to Docker DNS while preserving its transport security."""
+    """Validate parent transport/security, then select the owning Docker CP."""
     entry = job_args.get(JobProcessArgs.PARENT_URL)
     if not entry:
         return job_args, None
@@ -233,6 +273,7 @@ class DockerJobHandle(JobHandleSpec):
         timeout: int = 30,
         container=None,
         watch_exit: bool = True,
+        create_pending: bool = False,
     ):
         super().__init__()
         self.container_id = container_id
@@ -242,6 +283,7 @@ class DockerJobHandle(JobHandleSpec):
         self.terminal_state: JobReturnCode = None  # set once, never cleared
         self.logger = logging.getLogger(self.__class__.__name__)
         self._state_lock = threading.Lock()
+        self._create_absence_deadline = time.monotonic() + docker_client.api.timeout if create_pending else None
         self._exit_watch_done = threading.Event()
         self._exit_watcher = None
         self._terminating = False
@@ -306,6 +348,36 @@ class DockerJobHandle(JobHandleSpec):
         finally:
             self._exit_watch_done.set()
 
+    def _lookup_container(self):
+        with self._state_lock:
+            identity, deadline = self.container_id, self._create_absence_deadline
+        # An inspect can overtake the timed-out create. Take the time before
+        # the request so a slow reply cannot turn an early 404 into evidence.
+        after_create_window = deadline is not None and time.monotonic() >= deadline
+        try:
+            container = self.docker_client.containers.get(identity)
+        except docker.errors.NotFound:
+            if deadline is None:
+                raise
+            if after_create_window:
+                with self._state_lock:
+                    # Another lookup may already have observed the container.
+                    # In that case, subsequent reconciliation uses its ID.
+                    if self._create_absence_deadline is None or self.terminal_state is not None:
+                        return None
+                    self.terminal_state = JobReturnCode.ABORTED
+                self.logger.warning(
+                    "Docker coordinator %s not found after the create reconciliation window. "
+                    "Releasing the job. Remove the stopped container by name if it appears later.",
+                    self.container_name,
+                )
+            return None
+        if deadline is not None:
+            with self._state_lock:
+                self.container_id = container.id
+                self._create_absence_deadline = None
+        return container
+
     def _get_container(self):
         """Query Docker for the current container object.
 
@@ -313,7 +385,7 @@ class DockerJobHandle(JobHandleSpec):
         when no exit watcher can still provide the container's final exit code.
         """
         try:
-            return self.docker_client.containers.get(self.container_id)
+            return self._lookup_container()
         except docker.errors.NotFound:
             self.logger.info(f"container {self.container_name} not found")
             if self._exit_watcher is None or self._exit_watch_done.is_set():
@@ -334,6 +406,9 @@ class DockerJobHandle(JobHandleSpec):
         self._exit_confirmed = True
         exit_code = container.attrs.get("State", {}).get("ExitCode", 1)
         return _exit_code_to_return_code(exit_code)
+
+    def _is_cleanup_complete(self):
+        return self.poll() != JobReturnCode.UNKNOWN
 
     def can_restart(self):
         return self._exit_confirmed and not self._is_terminating()
@@ -388,7 +463,13 @@ class DockerJobHandle(JobHandleSpec):
         if self._get_terminal_state() is None:
             self._set_terminating()
         try:
-            container = self.docker_client.containers.get(self.container_id)
+            container = self._lookup_container()
+            if container is None:
+                return
+            if container.status == DockerStatus.CREATED:
+                container.remove(force=True)
+                self._set_terminal_state(JobReturnCode.ABORTED)
+                return
             container.stop(timeout=0)
             self._set_terminal_state(JobReturnCode.ABORTED)
             container.remove(force=True)
@@ -477,6 +558,7 @@ class DockerJobLauncher(JobLauncherSpec):
         default_job_container_kwargs: dict = None,
         default_job_env: dict = None,
         default_python_path: str = None,
+        default_image: str = None,
     ):
         """
         Args:
@@ -497,14 +579,16 @@ class DockerJobLauncher(JobLauncherSpec):
                                           Note: "volumes", "mounts", "network", "environment", "command",
                                           "name", "detach", "auto_remove", "user", "working_dir", and "image"
                                           are controlled by the launcher and cannot be overridden here; a site
-                                          default job image belongs in studies.<study>.container.image in
-                                          local/study_runtime.yaml.
+                                          default job image belongs in default_image, or in
+                                          studies.<study>.container.image in local/study_runtime.yaml.
             default_job_env: site-level default environment variables injected into every job
                              container launched by this site. Useful for site/runtime-specific
                              settings such as NCCL workarounds. Launcher-controlled variables
                              like USER, HOME, and PYTHONPATH still take precedence.
             default_python_path: Default Python executable path inside job containers. Jobs can override
                                  it with launcher_spec[site]["docker"]["python_path"].
+            default_image: Site fallback image when neither the job nor its study selects an image.
+                           CP-host task coordinators use this image independently of worker images.
         """
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -530,6 +614,9 @@ class DockerJobLauncher(JobLauncherSpec):
         self.default_job_container_kwargs = default_job_container_kwargs
         self.default_job_env = default_job_env or {}
 
+        if default_image is not None and (not isinstance(default_image, str) or not default_image.strip()):
+            raise ValueError("default_image must be a non-empty string")
+        self.default_image = default_image
         self._docker_client = None
 
     def _resolve_study_runtime(self, study):
@@ -586,6 +673,8 @@ class DockerJobLauncher(JobLauncherSpec):
         return self._docker_client
 
     def launch_job(self, job_meta: dict, fl_ctx: FLContext) -> JobHandleSpec:
+        options = get_job_launch_options(fl_ctx)
+        workspace_mount = options.workspace_mount or self.WORKSPACE_MOUNT
         job_id = job_meta.get(JobConstants.JOB_ID)
         if not job_id:
             raise RuntimeError("missing JOB_ID in job_meta")
@@ -622,10 +711,12 @@ class DockerJobLauncher(JobLauncherSpec):
         # A replacement can start before Docker auto-removes the exited container.
         container_name = _sanitize_container_name(f"{site_name}-{job_id}-{uuid.uuid4().hex}")
         study = job_meta.get(JobMetaKey.STUDY.value)
-        study_runtime = self._resolve_study_runtime(study)
+        study_runtime = self._resolve_study_runtime(study) if options.apply_study_runtime else None
         if not job_image and study_runtime is not None:
             # job-supplied image wins; the study's container.image is the site default
             job_image = study_runtime.container_image
+        if not job_image:
+            job_image = self.default_image
         if not job_image:
             raise RuntimeError(
                 f"DockerJobLauncher is configured for site '{site_name}' but no job image "
@@ -633,7 +724,8 @@ class DockerJobLauncher(JobLauncherSpec):
                 f"Set launcher_spec['{site_name}']['docker']['image'] (preferred), "
                 f"launcher_spec['default']['docker']['image'] (shared default), "
                 f"resource_spec['{site_name}']['docker']['image'] (legacy), "
-                f"or studies.<study>.container.image in local/study_runtime.yaml (site default)."
+                f"studies.<study>.container.image in local/study_runtime.yaml (study default), "
+                f"or the launcher's default_image (site fallback)."
             )
 
         workspace = self.workspace
@@ -647,9 +739,25 @@ class DockerJobLauncher(JobLauncherSpec):
         # from the original PARENT_URL in job_args. This avoids baking parent_url into
         # resources.json at provision time.
         job_args, file_parent_dir = _rewrite_parent_url(
-            job_args, site_name, secure_mode=fl_ctx.get_prop(FLContextKey.SECURE_MODE, False)
+            job_args,
+            site_name,
+            secure_mode=fl_ctx.get_prop(FLContextKey.SECURE_MODE, False),
         )
-        if file_parent_dir and file_parent_dir.startswith(self.WORKSPACE_MOUNT):
+        if options.workspace_mount:
+            # CP retains its Docker workspace; native task workers and their
+            # coordinator share the canonical host path instead.
+            job_args = dict(job_args)
+            parent_workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT).get_root_dir()
+            for key in (JobProcessArgs.WORKSPACE, JobProcessArgs.STARTUP_DIR):
+                if key in job_args:
+                    flag, path = job_args[key]
+                    if os.path.commonpath((parent_workspace, path)) != parent_workspace:
+                        raise ValueError("Docker job path is outside the parent workspace")
+                    job_args[key] = (
+                        flag,
+                        os.path.normpath(os.path.join(workspace_mount, os.path.relpath(path, parent_workspace))),
+                    )
+        if file_parent_dir and file_parent_dir.startswith(workspace_mount):
             raise ValueError(f"shared-file parent directory {file_parent_dir} overlaps the container workspace mount")
 
         module_args = self.get_module_args(job_args)
@@ -686,7 +794,7 @@ class DockerJobLauncher(JobLauncherSpec):
         # Pass USER and HOME so libraries that call getpass.getuser() or os.path.expanduser("~")
         # don't fall back to pwd.getpwuid() — which fails when the host UID has no /etc/passwd entry.
         environment = {
-            **self.default_job_env,
+            **(self.default_job_env if options.environment is None else options.environment),
             **site_env,
             "USER": os.environ.get("USER", "nvflare"),
             "HOME": os.environ.get("HOME", "/tmp"),
@@ -697,10 +805,10 @@ class DockerJobLauncher(JobLauncherSpec):
             python_paths = []
             app_custom_folder = workspace_obj.get_app_custom_dir(job_id)
             if app_custom_folder:
-                python_paths.append(app_custom_folder.replace(workspace, self.WORKSPACE_MOUNT, 1))
+                python_paths.append(app_custom_folder.replace(workspace_obj.get_root_dir(), workspace_mount, 1))
             site_custom_folder = workspace_obj.get_site_custom_dir()
             if site_custom_folder and os.path.isdir(site_custom_folder):
-                python_paths.append(site_custom_folder.replace(workspace, self.WORKSPACE_MOUNT, 1))
+                python_paths.append(site_custom_folder.replace(workspace_obj.get_root_dir(), workspace_mount, 1))
             if python_paths:
                 environment["PYTHONPATH"] = os.pathsep.join(python_paths)
 
@@ -710,7 +818,12 @@ class DockerJobLauncher(JobLauncherSpec):
         # Site-level defaults (default_job_container_kwargs) are merged in; job-level takes precedence on conflict.
         job_container_kwargs = {k: docker_spec[k] for k in DOCKER_JOB_CONTAINER_KWARGS if k in docker_spec}
         study_docker_kwargs = study_runtime.docker_kwargs if study_runtime is not None else {}
-        merged_container_kwargs = {**self.default_job_container_kwargs, **study_docker_kwargs, **job_container_kwargs}
+        defaults = self.default_job_container_kwargs if options.container_kwargs is None else options.container_kwargs
+        merged_container_kwargs = {
+            **defaults,
+            **study_docker_kwargs,
+            **job_container_kwargs,
+        }
 
         # Job counts override study and site GPU defaults. Passthrough clients and
         # servers retain Docker's device selection; managed clients use reserved IDs.
@@ -751,9 +864,9 @@ class DockerJobLauncher(JobLauncherSpec):
             workspace, WorkspaceConstants.STARTUP_FOLDER_NAME, allow_reserved=True
         )
         host_local_dir = _safe_workspace_child_path(workspace, WorkspaceConstants.SITE_FOLDER_NAME, allow_reserved=True)
-        container_job_workspace = posixpath.join(self.WORKSPACE_MOUNT, job_workspace_name)
-        container_startup_dir = posixpath.join(self.WORKSPACE_MOUNT, WorkspaceConstants.STARTUP_FOLDER_NAME)
-        container_local_dir = posixpath.join(self.WORKSPACE_MOUNT, WorkspaceConstants.SITE_FOLDER_NAME)
+        container_job_workspace = posixpath.join(workspace_mount, job_workspace_name)
+        container_startup_dir = posixpath.join(workspace_mount, WorkspaceConstants.STARTUP_FOLDER_NAME)
+        container_local_dir = posixpath.join(workspace_mount, WorkspaceConstants.SITE_FOLDER_NAME)
         # Dataset sources are host paths for Docker (bind sources go to the daemon API);
         # each dataset is mounted at /data/<study>/<dataset>.
         data_mounts = study_runtime.datasets if study_runtime is not None else []
@@ -773,6 +886,8 @@ class DockerJobLauncher(JobLauncherSpec):
         require_job_cert(fl_ctx, workspace_obj.get_run_dir(job_id))
 
         docker_client = self._get_docker_client()
+        creating = False
+        container = None
         try:
             # bind the kit file by file: site private keys never enter the job container;
             # the job credential arrives through the read-write job workspace bind
@@ -787,7 +902,7 @@ class DockerJobLauncher(JobLauncherSpec):
             ]
             mounts = [
                 docker.types.Mount(
-                    target=self.WORKSPACE_MOUNT,
+                    target=workspace_mount,
                     source=None,
                     type="tmpfs",
                     read_only=False,
@@ -826,11 +941,10 @@ class DockerJobLauncher(JobLauncherSpec):
                             read_only=True,
                         )
                     )
-            container = docker_client.containers.run(
-                job_image,
+            launch_args = dict(
                 command=command,
                 name=container_name,
-                network=self.network,
+                network=merged_container_kwargs.pop("network", self.network),
                 detach=True,
                 auto_remove=True,
                 environment=environment if environment else None,
@@ -842,10 +956,44 @@ class DockerJobLauncher(JobLauncherSpec):
                 user=f"{os.getuid()}:{os.getgid()}",
                 **merged_container_kwargs,
             )
-        except docker.errors.ImageNotFound:
-            raise RuntimeError(f"image '{job_image}' not found for job {job_id}")
-        except docker.errors.APIError as e:
-            raise RuntimeError(f"error creating container for job {job_id}: {e}")
+            if options.publish_failed_launch_handle:
+                # A failed start can be reconciled by ID. A lost create reply
+                # has only the generated name and needs different absence rules.
+                creating = True
+                try:
+                    container = docker_client.containers.create(job_image, **launch_args)
+                except docker.errors.ImageNotFound:
+                    creating = False
+                    docker_client.images.pull(job_image, platform=launch_args.get("platform"))
+                    creating = True
+                    container = docker_client.containers.create(job_image, **launch_args)
+                creating = False
+                container.start()
+            else:
+                container = docker_client.containers.run(job_image, **launch_args)
+        except Exception as e:
+            if options.publish_failed_launch_handle and (
+                container is not None or (creating and _docker_create_may_have_succeeded(e))
+            ):
+                try:
+                    publish_job_handle(
+                        DockerJobHandle(
+                            container_id=container_name if container is None else container.id,
+                            container_name=container_name,
+                            docker_client=docker_client,
+                            timeout=self.timeout,
+                            watch_exit=False,
+                            create_pending=container is None,
+                        ),
+                        fl_ctx,
+                    )
+                except Exception:
+                    self.logger.exception("Error publishing cleanup handle for container %s", container_name)
+            if isinstance(e, docker.errors.ImageNotFound):
+                raise RuntimeError(f"image '{job_image}' not found for job {job_id}") from e
+            if isinstance(e, docker.errors.APIError):
+                raise RuntimeError(f"error creating container for job {job_id}: {e}") from e
+            raise
 
         job_handle = DockerJobHandle(
             container_id=container.id,
@@ -855,6 +1003,7 @@ class DockerJobLauncher(JobLauncherSpec):
             container=container,
             watch_exit=True,
         )
+        publish_job_handle(job_handle, fl_ctx)
 
         try:
             if not job_handle.enter_states([DockerStatus.RUNNING]):
@@ -876,6 +1025,9 @@ class DockerJobLauncher(JobLauncherSpec):
                     return
                 meta = fl_ctx.get_prop(FLContextKey.JOB_META) or {}
                 site = fl_ctx.get_identity_name()
+                if has_cj_resource_spec(meta, site):
+                    get_cj_resource_spec(meta, site)
+                    return
                 study_runtime = self._resolve_study_runtime(meta.get(JobMetaKey.STUDY.value))
                 kwargs = {**self.default_job_container_kwargs, **(study_runtime.docker_kwargs if study_runtime else {})}
                 request = _get_gpu_request(
@@ -908,6 +1060,93 @@ class DockerJobLauncher(JobLauncherSpec):
 
 
 class ClientDockerJobLauncher(DockerJobLauncher):
+    def launch_job(self, job_meta, fl_ctx):
+        options = get_job_launch_options(fl_ctx)
+        if options.workspace_mount is not None:
+            # CP has already bound workers to the original compute metadata.
+            # This physical coordinator uses only site image and launch options.
+            job_meta = copy.deepcopy(job_meta)
+            site = fl_ctx.get_identity_name()
+            job_meta[JobMetaKey.RESOURCE_SPEC.value] = {}
+            job_meta[JobMetaKey.CJ_RESOURCE_SPEC.value] = {site: {}}
+            job_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value] = {site: {"docker": {}}}
+        return super().launch_job(job_meta, fl_ctx)
+
+    def _validate_task_coordinator_profile(self, workspace_path, *, network):
+        if (
+            self.workspace != workspace_path
+            or self.workspace != os.path.realpath(self.workspace)
+            or network in (None, "host", "bridge", "none")
+            or not self.default_image
+        ):
+            raise ValueError(
+                "Docker task profile requires a canonical shared workspace, a user-defined CP network and default_image"
+            )
+
+    def _task_coordinator_options(self, job_meta, fl_ctx):
+        from nvflare.private.fed.client.task_execution_policy import GPU_ENVIRONMENT_NAMES
+
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        site = fl_ctx.get_identity_name()
+        if os.getuid() == 0:
+            raise ValueError("Docker task profile requires a Docker CP with a nonroot UID")
+        self._validate_task_coordinator_profile(self.workspace, network=self.network)
+        try:
+            shared_workspace = os.path.samefile(self.workspace, workspace.get_root_dir())
+        except OSError:
+            shared_workspace = False
+        if (
+            os.environ.get("NVFL_DOCKER_WORKSPACE") != self.workspace
+            or workspace.get_root_dir() != self.WORKSPACE_MOUNT
+            or not shared_workspace
+        ):
+            raise ValueError("Docker task profile requires Docker CP with internal and native shared workspace mounts")
+        # Federation images target other runtimes. This coordinator uses the
+        # site's image; explicit per-site/legacy Docker overrides are rejected.
+        docker_meta = copy.deepcopy(job_meta)
+        docker_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value] = docker_meta.get(JobMetaKey.JOB_LAUNCHER_SPEC.value) or {}
+        docker_meta[JobMetaKey.JOB_LAUNCHER_SPEC.value].setdefault("default", {}).pop("docker", None)
+        if get_job_launcher_spec(docker_meta, site, "docker"):
+            raise ValueError("CP host Docker CJ uses site-owned settings; job Docker options are unsupported")
+        parent = (fl_ctx.get_prop(FLContextKey.JOB_PROCESS_ARGS) or {}).get(JobProcessArgs.PARENT_URL)
+        if not isinstance(parent, (tuple, list)) or len(parent) != 2:
+            raise ValueError("CP host Docker CJ requires a TCP or mTLS TCP parent connection")
+        parent_url = urlsplit(str(parent[1]))
+        if parent_url.scheme not in ("tcp", "stcp") or not parent_url.hostname or not parent_url.port:
+            raise ValueError("CP host Docker CJ requires a TCP or mTLS TCP parent connection with host and port")
+        limits = docker_cj_limits(job_meta, site)
+        client = self._get_docker_client()
+        info = client.info()
+        if client.api.base_url != "http+docker://localhost" or not all(
+            info.get(key) is True for key in ("MemoryLimit", "CpuCfsPeriod", "CpuCfsQuota")
+        ):
+            raise ValueError("CP host Docker daemon must be local and enforce Linux CPU/memory limits")
+        parent_container = client.containers.get(socket.gethostname())
+        if not any(
+            mount.get("Source") == self.workspace and mount.get("Destination") == self.WORKSPACE_MOUNT
+            for mount in parent_container.attrs.get("Mounts", ())
+        ):
+            raise ValueError("Docker task profile requires the owning CP container's workspace mount")
+        parent_address = (
+            parent_container.attrs.get("NetworkSettings", {}).get("Networks", {}).get(self.network, {}).get("IPAddress")
+        )
+        if not parent_address:
+            raise ValueError("Docker CP must have an address on its configured network")
+        environment = dict(self.default_job_env)
+        environment.update({name: "void" if name == "NVIDIA_VISIBLE_DEVICES" else "" for name in GPU_ENVIRONMENT_NAMES})
+        return JobLaunchOptions(
+            environment=environment,
+            apply_study_runtime=False,
+            workspace_mount=self.workspace,
+            container_kwargs={
+                **limits,
+                "cap_drop": ["ALL"],
+                "security_opt": ["no-new-privileges:true"],
+                "network": "host",
+                "extra_hosts": {site: parent_address},
+            },
+        )
+
     def get_module_args(self, job_args: dict) -> dict:
         return _job_args_dict(job_args, get_client_job_args(include_exe_module=False, include_set_options=False))
 

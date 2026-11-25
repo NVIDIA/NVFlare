@@ -29,6 +29,7 @@ TESTS = (
     "tests/integration_test/fast/cell_session_mtls_test.py",
     "tests/integration_test/fast/concurrent_cleanup_test.py",
     "tests/integration_test/fast/dashboard_kit_test.py",
+    "tests/integration_test/fast/docker_parent_workspace_test.py",
     "tests/integration_test/fast/download_parallel_test.py",
     "tests/integration_test/fast/f3_rx_cleanup_lifecycle_test.py",
     "tests/integration_test/fast/fedbuff_optional_import_test.py",
