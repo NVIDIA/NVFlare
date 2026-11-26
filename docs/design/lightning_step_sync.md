@@ -309,7 +309,7 @@ The run must leave `fit()` as if it had not happened. Around `val_loop.run()` th
 
 | State | Why |
 | --- | --- |
-| CPU and current CUDA RNG (`torch.random.fork_rng`), Python `random` and NumPy RNG state | creating the val DataLoader iterator draws a seed from the global torch RNG, and user validation code may draw from the others; without the restore, dropout masks and shuffling change from the next batch on |
+| CPU and current CUDA RNG (`torch.random.fork_rng`), Python `random`, NumPy RNG state, and explicit DataLoader/sampler `torch.Generator`s | creating the val DataLoader iterator draws from the global torch RNG or an explicit `generator`, and user validation code may draw from the others; without the restore, dropout masks and shuffling (including shared generators) change from the next batch on |
 | `trainer.callbacks` without `Checkpoint`, `EarlyStopping` and `WeightAveraging` | the first two act on every `on_validation_end` during fit (their only guards are `sanity_checking` and `state.fn`); `WeightAveraging` and `EMAWeightAveraging` swap in the averaged weights at `on_validation_epoch_start`, so the run would score them instead of the received model |
 | `_logger_connector.log_metrics` replaced by a no-op | `log_eval_end_metrics` and step-level logging would send the global-model metrics to the loggers under the in-fit names. The loggers themselves stay on the trainer, so `self.logger.experiment` keeps working in validation hooks |
 | `_callback_metrics` (cleared, then restored), `_logged_metrics`, `_progress_bar_metrics` | the result holds only this run's metrics, and the trainer's metrics stay those of the last in-fit validation |

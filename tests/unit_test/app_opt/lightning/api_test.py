@@ -2564,14 +2564,15 @@ def _fit_dropout_net_with_in_fit_checks(tmp_path, config):
     module, logger, events = DropoutNet(), CSVLogger(tmp_path / "logs"), []
     checkpoint = pl.callbacks.ModelCheckpoint(monitor="val_loss", dirpath=tmp_path / "ckpt", save_top_k=1)
     early_stopping = EarlyStopping(monitor="val_loss", patience=100)
+    shared_generator = torch.Generator().manual_seed(123)
     trainer = _fit_with_step_sync(
-        _FakeFlare(_train_tasks(4)),
+        _FakeFlare(_train_tasks(6)),
         module,
-        DataLoader(_loader(8).dataset, batch_size=1, shuffle=True),
+        DataLoader(_loader(8).dataset, batch_size=1, shuffle=True, generator=shared_generator),
         sync_every_n_steps=2,
-        val_loader=_loader(2),
+        val_loader=DataLoader(_loader(2).dataset, batch_size=2, generator=shared_generator),
         config=config,
-        max_epochs=1,
+        max_epochs=2,
         val_check_interval=3,
         logger=logger,
         log_every_n_steps=1,
@@ -2598,7 +2599,87 @@ def test_step_sync_global_model_validation_leaves_training_and_in_fit_validation
     other_callbacks_see_both = with_eval.pop("validations")
     in_fit_only = without.pop("validations")
     assert with_eval == without
-    assert other_callbacks_see_both == in_fit_only + 4
+    assert other_callbacks_see_both == in_fit_only + 6
+
+
+def test_step_sync_global_model_validation_preserves_datamodule_sampler_generators():
+    val_dataset = _loader(4).dataset
+    sampler_gen = torch.Generator().manual_seed(321)
+    expected_state = sampler_gen.get_state()
+
+    class _GeneratorDataModule(pl.LightningDataModule):
+        def train_dataloader(self):
+            return _loader(6)
+
+        def val_dataloader(self):
+            return [
+                DataLoader(
+                    val_dataset,
+                    batch_size=2,
+                    sampler=torch.utils.data.RandomSampler(val_dataset, generator=sampler_gen),
+                )
+            ]
+
+    with _flare(_FakeFlare(_train_tasks(2)), config=_TRAIN_WITH_EVAL):
+        trainer = _pl_trainer(max_epochs=1, check_val_every_n_epoch=None, val_check_interval=100)
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.fit(RecordingNet(), datamodule=_GeneratorDataModule())
+
+    assert torch.equal(sampler_gen.get_state(), expected_state)
+
+
+def test_step_sync_global_model_validation_excludes_lightning_pytorch_callbacks(tmp_path):
+    lp = pytest.importorskip("lightning.pytorch")
+
+    class NativeLightningNet(lp.LightningModule):
+        def __init__(self):
+            super().__init__()
+            self.fc = torch.nn.Linear(2, 2)
+
+        def training_step(self, batch, batch_idx):
+            inputs, labels = batch
+            loss = F.cross_entropy(self.fc(inputs), labels)
+            self.log("train_loss", loss)
+            return loss
+
+        def validation_step(self, batch, batch_idx):
+            inputs, labels = batch
+            loss = F.cross_entropy(self.fc(inputs), labels)
+            self.log("val_loss", loss, on_step=False, on_epoch=True)
+            return loss
+
+        def configure_optimizers(self):
+            return torch.optim.SGD(self.parameters(), lr=0.1)
+
+    tasks = [("train", _distinct_round_model(r)) for r in range(3)]
+    fake = _FakeFlare(tasks)
+    val_inputs, val_labels = _loader(2).dataset.tensors
+    checkpoint = lp.callbacks.ModelCheckpoint(monitor="val_loss", dirpath=tmp_path)
+    early_stopping = lp.callbacks.EarlyStopping(monitor="val_loss", patience=100, strict=False)
+    callbacks = [checkpoint, early_stopping]
+    if hasattr(lp.callbacks, "WeightAveraging"):
+        callbacks.append(lp.callbacks.WeightAveraging())
+
+    with _flare(fake, config=_TRAIN_WITH_EVAL):
+        trainer = lp.Trainer(
+            max_epochs=1,
+            check_val_every_n_epoch=None,
+            val_check_interval=100,
+            logger=False,
+            enable_checkpointing=True,
+            enable_progress_bar=False,
+            enable_model_summary=False,
+            callbacks=callbacks,
+        )
+        lightning_patch(trainer, sync_every_n_steps=2)
+        trainer.fit(NativeLightningNet(), _loader(8), val_dataloaders=_loader(2))
+
+    assert fake.steps() == [2, 2, 2]
+    assert checkpoint.best_model_score is None
+    assert early_stopping.wait_count == 0
+    for (_, global_model), sent in zip(tasks, fake.sent):
+        logits = val_inputs @ global_model.params["fc.weight"].T
+        assert sent.metrics["val_loss"] == pytest.approx(F.cross_entropy(logits, val_labels).item())
 
 
 @pytest.mark.skipif(not hasattr(pl.callbacks, "WeightAveraging"), reason="requires Lightning WeightAveraging")

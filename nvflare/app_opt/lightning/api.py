@@ -16,6 +16,7 @@ import copy
 import dataclasses
 import logging
 import random
+import sys
 from collections import defaultdict
 from typing import Dict, Optional
 
@@ -48,9 +49,16 @@ from .algorithm import _AlgorithmHandlerManager
 from .callbacks import RestoreState
 
 FL_META_KEY = "__fl_meta__"
-_GLOBAL_EVAL_EXCLUDED_CALLBACKS = tuple(
-    cls for cls in (Checkpoint, EarlyStopping, getattr(pl.callbacks, "WeightAveraging", None)) if cls is not None
-)
+
+
+def _excluded_global_eval_callbacks():
+    excluded = [Checkpoint, EarlyStopping, getattr(pl.callbacks, "WeightAveraging", None)]
+    lp_callbacks = sys.modules.get("lightning.pytorch.callbacks")
+    if lp_callbacks is not None:
+        excluded.extend(
+            getattr(lp_callbacks, name, None) for name in ("Checkpoint", "EarlyStopping", "WeightAveraging")
+        )
+    return tuple(cls for cls in excluded if cls is not None)
 
 
 def patch(
@@ -622,6 +630,35 @@ class _StepSyncFLCallback(_FLCallbackBase):
         }
 
 
+def _collect_dataloader_generators(source, states=None):
+    if states is None:
+        states = {}
+    if source is None:
+        return states
+    flattened = getattr(source, "flattened", None)
+    if isinstance(flattened, (list, tuple)):
+        for item in flattened:
+            _collect_dataloader_generators(item, states)
+    elif isinstance(source, (list, tuple)):
+        for item in source:
+            _collect_dataloader_generators(item, states)
+    elif isinstance(source, dict):
+        for item in source.values():
+            _collect_dataloader_generators(item, states)
+    else:
+        batch_sampler = getattr(source, "batch_sampler", None)
+        for owner in (
+            source,
+            getattr(source, "sampler", None),
+            batch_sampler,
+            getattr(batch_sampler, "sampler", None),
+        ):
+            gen = getattr(owner, "generator", None)
+            if isinstance(gen, torch.Generator) and id(gen) not in states:
+                states[id(gen)] = (gen, gen.get_state())
+    return states
+
+
 def _validate_in_fit(trainer) -> Dict[str, Tensor]:
     """Run the fit validation loop on the current weights and return its metrics, leaving the fit state unchanged."""
     loop = trainer.fit_loop.epoch_loop.val_loop
@@ -635,14 +672,17 @@ def _validate_in_fit(trainer) -> Dict[str, Tensor]:
     has_run, seen_batches = loop._has_run, defaultdict(int, loop._seen_batches_per_dataloader)
     log_metrics_override = vars(connector).get("log_metrics")
     python_rng, numpy_rng = random.getstate(), np.random.get_state()
+    dl_generators = _collect_dataloader_generators(trainer.train_dataloader)
     rng_devices = [torch.cuda.current_device()] if torch.cuda.is_available() and torch.cuda.is_initialized() else []
-    trainer.callbacks = [cb for cb in callbacks if not isinstance(cb, _GLOBAL_EVAL_EXCLUDED_CALLBACKS)]
+    trainer.callbacks = [cb for cb in callbacks if not isinstance(cb, _excluded_global_eval_callbacks())]
     connector.log_metrics = lambda *args, **kwargs: None
     connector._callback_metrics = {}
     trainer.validating = True
     try:
         if loop._data_source.is_defined():
             with torch.random.fork_rng(devices=rng_devices):
+                loop.setup_data()
+                _collect_dataloader_generators(loop._combined_loader, dl_generators)
                 loop.run()
         metrics = dict(connector.callback_metrics)
         if not metrics:
@@ -671,6 +711,8 @@ def _validate_in_fit(trainer) -> Dict[str, Tensor]:
         loop._has_run, loop._seen_batches_per_dataloader = has_run, seen_batches
         random.setstate(python_rng)
         np.random.set_state(numpy_rng)
+        for gen, state in dl_generators.values():
+            gen.set_state(state)
 
 
 def _skip_rest_of_epoch(pl_module):
