@@ -165,7 +165,7 @@ class ProcessJobLauncher(JobLauncherSpec):
         workspace_obj = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         job_id = job_meta.get(JobConstants.JOB_ID)
         command = self.get_command(job_meta, fl_ctx)
-        argv = shlex.split(command, True)
+        argv = shlex.split(command, comments=False)
 
         # Use the spawn_process utility which handles the choice between posix_spawn and subprocess
         process_adapter = spawn_process(argv, new_env)

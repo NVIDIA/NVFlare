@@ -141,6 +141,39 @@ def _build_fl_ctx(workspace):
     return fl_ctx
 
 
+@pytest.mark.parametrize("launcher_class", [ClientProcessJobLauncher, ServerProcessJobLauncher])
+@pytest.mark.parametrize(
+    "executable, workspace_name",
+    [
+        ("venv space/python", "workspace"),
+        ("venv#hash/python", "workspace"),
+        ("venv space#hash/python", "workspace"),
+        ("venv/python", "workspace space"),
+        ("venv/python", "workspace#hash"),
+        ("venv's/python", "workspace space#hash'quote"),
+    ],
+)
+def test_generated_job_command_preserves_launch_arguments(
+    tmp_path, monkeypatch, launcher_class, executable, workspace_name
+):
+    executable = str(tmp_path / executable)
+    workspace = tmp_path / workspace_name
+    options = ["data_dir=/data/train set#1", "label=Alice's model", r"path=C:\data\train", "empty="]
+    context = _build_fl_ctx(DummyWorkspace(workspace))
+    context.set_prop(
+        FLContextKey.JOB_PROCESS_ARGS,
+        {
+            JobProcessArgs.EXE_MODULE: ("-m", "probe.worker"),
+            JobProcessArgs.WORKSPACE: ("-m", str(workspace)),
+            JobProcessArgs.OPTIONS: ("--set", shlex.join(options)),
+        },
+    )
+    monkeypatch.setattr(sys, "executable", executable)
+    with mock.patch("nvflare.app_common.job_launcher.process_launcher.spawn_process") as spawn:
+        launcher_class().launch_job({JobConstants.JOB_ID: "job-1"}, context)
+    assert spawn.call_args.args[0] == [executable, "-m", "probe.worker", "-m", str(workspace), "--set", *options]
+
+
 def _write_runtime(tmp_path, studies):
     local = tmp_path / "local"
     local.mkdir(exist_ok=True)

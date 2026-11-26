@@ -18,6 +18,7 @@ import io
 import json
 import os
 import random
+import shlex
 import shutil
 import socket
 import subprocess
@@ -174,20 +175,22 @@ def get_service_command(
             if service_dir in admin_dirs:
                 cmd = get_stop_cmd(prod_dir, service_dir)
             else:
-                cmd = f"docker stop {docker_container_name or service_dir}"
+                cmd = shlex.join(["docker", "stop", docker_container_name or service_dir])
 
     else:
         raise CLIException(f"unknown cmd_type: {cmd_type}")
 
-    if cmd_type == SC.CMD_START and study and service_dir in admin_dirs and cmd.endswith("fl_admin.sh"):
-        cmd = f"{cmd} --study {study}"
+    if cmd_type == SC.CMD_START:
+        cmd = shlex.quote(cmd)
+        if study and service_dir in admin_dirs:
+            cmd = f"{cmd} --study {shlex.quote(study)}"
     return cmd
 
 
 def get_stop_cmd(poc_workspace: str, service_dir_name: str):
     service_dir = os.path.join(poc_workspace, service_dir_name)
     stop_file = os.path.join(service_dir, "shutdown.fl")
-    return f"touch {stop_file}"
+    return shlex.join(["touch", stop_file])
 
 
 def get_nvflare_home() -> Optional[str]:
@@ -2270,7 +2273,7 @@ def prepare_env(
 
 
 def _poc_service_console_log(cmd_path: str) -> str:
-    cmd = cmd_path.split(" ")[0]
+    cmd = shlex.split(cmd_path, comments=False)[0]
     startup_dir = os.path.dirname(os.path.abspath(cmd))
     service_dir = os.path.dirname(startup_dir)
     return os.path.join(service_dir, POC_SERVICE_CONSOLE_LOG)
@@ -2315,14 +2318,14 @@ def async_process(
     with open(console_log, "a", buffering=1) as output:
         output.write(f"\n--- nvflare poc start {time.asctime()} ---\n")
         if my_env:
-            subprocess.Popen(cmd_path.split(" "), env=my_env, stdout=output, stderr=subprocess.STDOUT)
+            subprocess.Popen(shlex.split(cmd_path, comments=False), env=my_env, stdout=output, stderr=subprocess.STDOUT)
         else:
-            subprocess.Popen(cmd_path.split(" "), stdout=output, stderr=subprocess.STDOUT)
+            subprocess.Popen(shlex.split(cmd_path, comments=False), stdout=output, stderr=subprocess.STDOUT)
 
 
 def sync_process(service_name, cmd_path):
     my_env = _env_with_cli_python_path()
-    completed = subprocess.run(cmd_path.split(" "), env=my_env)
+    completed = subprocess.run(shlex.split(cmd_path, comments=False), env=my_env)
     if completed.returncode != 0:
         raise PocServiceStartError(f"service '{service_name}' exited with code {completed.returncode}: {cmd_path}")
 
@@ -2330,7 +2333,7 @@ def sync_process(service_name, cmd_path):
 def _run_stop_command(service_name: str, cmd_path: str, timeout: float):
     try:
         completed = subprocess.run(
-            cmd_path.split(" "),
+            shlex.split(cmd_path, comments=False),
             env=_docker_cli_env(),
             capture_output=True,
             text=True,

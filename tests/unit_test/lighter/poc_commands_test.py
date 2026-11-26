@@ -15,6 +15,7 @@ import collections
 import copy
 import json
 import os
+import shlex
 import socket
 import subprocess
 import sys
@@ -156,6 +157,66 @@ class TestPOCCommands:
 
         assert my_env["PATH"].split(os.pathsep)[0] == os.path.dirname(sys.executable)
 
+    @pytest.mark.parametrize(
+        ("workspace", "project_name", "executable"),
+        [
+            ("poc workspace", "demo", "/venv/python"),
+            ("poc#1", "demo", "/venv/python"),
+            ("poc", "my proj", "/venv/python"),
+            ("poc", "my#proj", "/venv/python"),
+            ("poc", "demo", "/my venv/python"),
+            ("poc", "demo", "/venv#1/python"),
+        ],
+    )
+    def test_start_poc_accepts_launch_paths(self, tmp_path, monkeypatch, workspace, project_name, executable):
+        workspace = tmp_path / workspace
+        prod_dir = workspace / project_name / "prod_07"
+        for participant in ("server", "admin"):
+            (prod_dir / participant).mkdir(parents=True)
+        project = {
+            "name": project_name,
+            "participants": [
+                {"name": "server", "type": "server"},
+                {"name": "admin", "type": "admin", "role": "project_admin"},
+            ],
+        }
+        (workspace / "project.yml").write_text(yaml.safe_dump(project))
+        monkeypatch.setattr(sys, "executable", executable)
+        launches = []
+        monkeypatch.setattr(poc_commands, "_run_poc", lambda *args, **kwargs: launches.append((args, kwargs)))
+        poc_commands._start_poc(str(workspace), [], services_list=["server"])
+        assert launches[0][0][:2] == (SC.CMD_START, str(workspace))
+        assert launches[0][1]["services_list"] == ["server"]
+
+    @pytest.mark.parametrize("path_name", ["poc space", "poc#hash", "poc space#hash", "poc'quote"])
+    @pytest.mark.parametrize("boundary", ["async", "sync", "stop"])
+    def test_service_launch_preserves_subprocess_arguments(self, tmp_path, monkeypatch, path_name, boundary):
+        prod = tmp_path / path_name
+        config = {SC.FLARE_PROJ_ADMIN: "admin", SC.FLARE_OTHER_ADMINS: []}
+        calls = []
+
+        def run(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return subprocess.CompletedProcess(argv, 0)
+
+        monkeypatch.setattr(poc_commands.subprocess, "run", run)
+        monkeypatch.setattr(poc_commands.subprocess, "Popen", run)
+        if boundary == "async":
+            command = get_service_command(SC.CMD_START, str(prod), "server", config)
+            poc_commands.async_process("server", command, [], config)
+            assert calls[0][0] == [str(prod / "server/startup/start.sh")]
+            assert calls[0][1]["stdout"].name == str(prod / "server/poc_console.log")
+        elif boundary == "sync":
+            study = "study with space#hash'quote"
+            command = get_service_command(SC.CMD_START, str(prod), "admin", config, study=study)
+            poc_commands.sync_process("admin", command)
+            assert calls[0][0] == [str(prod / "admin/startup/fl_admin.sh"), "--study", study]
+        else:
+            command = get_service_command(SC.CMD_STOP, str(prod), "server", config)
+            poc_commands._run_stop_command("server", command, timeout=10)
+            assert calls[0][0] == ["touch", str(prod / "server/shutdown.fl")]
+        assert shlex.split(command, comments=False) == calls[0][0]
+
     def test_start_poc_admin_only_requires_running_server(self, monkeypatch, tmp_path):
         project_config = {
             "participants": [
@@ -193,6 +254,7 @@ class TestPOCCommands:
             SC.FLARE_OTHER_ADMINS: [],
             SC.IS_DOCKER_RUN: True,
         }
+        monkeypatch.setattr(sys, "executable", "/host venv#1/bin/python")
         container_names = {"server": "recipe-server", "site-1": "recipe-site-1"}
         run_calls = []
         monkeypatch.setattr(poc_commands, "setup_service_config", lambda _workspace: (project_config, service_config))
