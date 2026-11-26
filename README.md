@@ -25,6 +25,7 @@ site keeps control of its data and local execution.
 [![pyversion](https://img.shields.io/pypi/pyversions/nvflare.svg)](https://badge.fury.io/py/nvflare)
 [![downloads](https://static.pepy.tech/badge/nvflare)](https://pepy.tech/project/nvflare)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NVIDIA/NVFlare)
+[![NVIDIA Verified Plugin](https://img.shields.io/badge/NVIDIA-Verified%20Plugin-76B900?style=flat&logo=nvidia&logoColor=white)](https://github.com/NVIDIA/skills#plugin-catalog)
 
 ## What is NVIDIA FLARE?
 
@@ -96,6 +97,30 @@ Continue with the [Quick Start for main](https://nvflare.readthedocs.io/en/main/
 and inspect its results. If you use a released package, select its version in the documentation and follow the
 matching example README for dependencies, commands, and troubleshooting. The `nvflare examples` command requires
 NVFLARE 2.10.0 or later, or a development installation from `main`.
+
+## Install the NVIDIA Verified Plugin
+
+The `nvidia-nvflare` plugin bundles nine skills for working with NVIDIA FLARE. Use it to convert a training script
+into a federated job, compute federated statistics, or diagnose a failed run.
+
+**Claude Code** — Run these commands in a Claude Code session.
+
+```text
+/plugin marketplace add NVIDIA/skills
+/plugin install nvidia-nvflare@nvidia-official
+```
+
+**Codex** — Run these commands in your terminal.
+
+```bash
+codex plugin marketplace add NVIDIA/skills
+codex plugin add nvidia-nvflare@nvidia-official
+```
+
+**Cursor** — Install `nvidia-nvflare` from the [Cursor Marketplace](https://cursor.com/marketplace) or add the
+`NVIDIA/skills` marketplace in Cursor.
+
+See the [NVIDIA Skills documentation](https://docs.nvidia.com/skills) for more about verified plugins.
 
 ## Choose your path
 
