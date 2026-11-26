@@ -53,6 +53,7 @@ from nvflare.utils.job_launcher_utils import refresh_custom_dir_import_path
 
 from .artifacts import ArtifactReference, FileTaskArtifactStore, TaskCompletion
 from .cell_session import CellWorkerTransport
+from .config_vars import CJ_EXECUTOR_ARGS, resolve_worker_config_env
 from .protocol import WorkerBootstrap, _load_json, _thaw_json, read_bootstrap
 from .runtime import TaskRuntime
 
@@ -164,7 +165,9 @@ def _build_executor(config):
     executor = (
         None
         if config.get("disabled") is True
-        else instantiate_class(_class_path(config), task_constructor_args(config))
+        else instantiate_class(
+            _class_path(config), resolve_worker_config_env(task_constructor_args(config), exclude=CJ_EXECUTOR_ARGS)
+        )
     )
     if not isinstance(executor, Executor):
         raise TypeError(f"worker executor config built {type(executor)} instead of Executor")
@@ -194,7 +197,7 @@ def _execute(
             component = (
                 None
                 if spec.get("disabled") is True
-                else instantiate_class(_class_path(spec), task_constructor_args(spec))
+                else instantiate_class(_class_path(spec), resolve_worker_config_env(task_constructor_args(spec)))
             )
             if not isinstance(component, Statistics):
                 raise TypeError(f"statistics generator {spec['id']!r} must implement Statistics")

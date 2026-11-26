@@ -89,7 +89,7 @@ def _ensure_manifest_containers(spec: dict) -> list[dict]:
     return containers
 
 
-def _prepare_pod_manifest_template(pod_manifest_template: dict) -> dict:
+def prepare_pod_manifest_template(pod_manifest_template: dict) -> dict:
     if not isinstance(pod_manifest_template, dict):
         raise ValueError("pod manifest template must be a dictionary.")
     kind = pod_manifest_template.get("kind")
@@ -102,6 +102,17 @@ def _prepare_pod_manifest_template(pod_manifest_template: dict) -> dict:
     spec = ensure_manifest_mapping(pod_manifest, "spec", "pod manifest spec")
     _ensure_manifest_containers(spec)
     return pod_manifest
+
+
+def validate_isolated_pod(spec: dict, profile: str):
+    """Check the Pod shape common to persistent client jobs and task workers."""
+    if (
+        len(spec["containers"]) != 1
+        or spec.get("initContainers")
+        or spec.get("ephemeralContainers")
+        or any(spec.get(name) for name in ("hostPID", "hostIPC", "hostNetwork"))
+    ):
+        raise ValueError(f"the {profile} profile requires one isolated container")
 
 
 def _merge_named_items(template_items, job_items, label: str) -> list:
@@ -160,7 +171,7 @@ def build_pod_manifest(job_config, python_path, pod_manifest_template=None, *, p
     job_config = copy.deepcopy(job_config)
     uses_template = pod_manifest_template is not None
     if uses_template:
-        manifest = _prepare_pod_manifest_template(pod_manifest_template)
+        manifest = prepare_pod_manifest_template(pod_manifest_template)
         spec = manifest["spec"]
         container = _select_job_container(
             spec["containers"], job_config.get("container_name"), job_config.get("require_main_container", False)

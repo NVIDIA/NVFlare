@@ -84,7 +84,9 @@ The schema is common across launchers but values are launcher-specific (`source`
 `secret_env.*.source`: Secret name vs parent environment variable; `pod_template`: K8s-only; `slurm`: Slurm-only).
 A file is authored per deployment, not portable across launcher types.
 
-Inline `pod_template` example — pinning a study to H100 nodes needs only this file:
+This inline `pod_template` uses H100 as an example of a node label. Use the labels and taints
+for the node pool you want. For task mode, put these fields in the Pod spec of the
+study's `worker_pod_template`.
 
 ```yaml
 format_version: 2
@@ -174,6 +176,13 @@ Kubernetes:
 - `pod_template`: inline mapping or path relative to `local/`; becomes the study's base manifest. Templates mark
   the main container with the `nvflare_job` sentinel; the launcher renames it to the per-job generated name
   (`container-<job-id>`).
+- In task mode, datasets, env, Secret references, and `container.image` apply to the worker. The worker falls
+  back to the site task launcher's image and uses the worker launcher's configured Python path in either image.
+  The CJ prefers its job image and falls back to the study image. It keeps its own `pod_template`.
+- `worker_pod_template`: optional Kubernetes Pod manifest, inline or relative to `local/`, for a task worker.
+  The site configures worker placement, Pod metadata, and image pulls independently of the CJ. Both use the
+  persistent-Pod isolation checks. The worker launcher supplies its finalizer, attempt identity, command,
+  security settings, environment and volumes, and Kubernetes strictly validates the generated Pod.
 - `docker_kwargs`: hard error (Docker-only).
 
 Docker:
@@ -236,8 +245,8 @@ Merge order (later wins):
 
 ## Future: Image Enforce Mode
 
-For Docker and Kubernetes, `container.image` (implemented) is the site default job image; resolution is
-job-supplied image → study `container.image` → error. FLARE-3027 tracks the follow-up enforce/pin mode for those
+For Docker and for Kubernetes job and CJ pods, `container.image` is the site default;
+resolution is job-supplied image → study `container.image` → error. FLARE-3027 tracks the follow-up enforce/pin mode for those
 launchers. Slurm follows the same override principle, with an additional site launcher fallback:
 job-supplied image → study `container.image` → site `job_launcher.image` → error for a container backend.
 Job-supplied images use the existing BYOC authorization on all three container launchers.
@@ -260,8 +269,8 @@ local/study_data.yaml present (alone or with v2) → hard error
   failure classification already fails the job fast (`CreateContainerConfigError`, `FailedMount`).
 - Migration is wholesale: move all studies to `study_runtime.yaml`, delete `study_data.yaml` and remove the
   `study_data_pvc_file_path` launcher arg, which the K8s launcher no longer accepts (see the 2.10 migration guide).
-- Workspace transfer: job workspace downloads exclude `study_runtime.yaml` plus any path-form `pod_template` files,
-  read from this one well-known YAML. The `resources.json`-scraping exclusion logic is deleted.
+- Workspace transfer: job workspace downloads exclude `study_runtime.yaml` and files referenced by
+  `pod_template` or `worker_pod_template`. The `resources.json`-scraping exclusion logic is deleted.
 - `nvflare deploy prepare` generates a commented `study_runtime.yaml` template in new kits. POC
   Docker provisioning writes its data mapping into `study_runtime.yaml`. The file travels with the startup kit's
   `local/`.

@@ -3781,15 +3781,7 @@ def _exited_cj(handle, sandbox_down=True, exit_code=137):
     )
 
 
-@pytest.mark.parametrize("lifetime", ["job", "task"])
-@pytest.mark.parametrize("extension", ["json", "json.default"])
-@pytest.mark.parametrize("budgets", ["defaults", "native_compute", "portable_compute", "cj_gpu"])
-@pytest.mark.parametrize("create_status, cleanup_status", [(None, None), (403, None), (500, None), (None, 503)])
-def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
-    tmp_path, monkeypatch, lifetime, extension, budgets, create_status, cleanup_status
-):
-    if lifetime == "task" and _k8s_quantity is None:
-        pytest.skip("Kubernetes quantity parser is required for the task backend binding")
+def _setup_cp_submission(tmp_path, monkeypatch, lifetime, extension="json"):
     (tmp_path / "startup").mkdir()
     (tmp_path / "local").mkdir()
     config = tmp_path / _TASK_JOB_ID / f"app_{_TASK_SITE}" / "config"
@@ -3837,6 +3829,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
                         "args": {
                             "namespace": "site",
                             "image": "site/worker",
+                            "environment": {"DATASET_DIR": "/fallback", "API_TOKEN": "fallback"},
                             "workspace_root": "/var/tmp/nvflare/workspace",
                             "workspace_pvc": "existing-pvc",
                             "worker_service_account": "task-no-api",
@@ -3851,10 +3844,6 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
     launcher._prepare_workspace_subpath = Mock(wraps=launcher._prepare_workspace_subpath)
     api = launcher.core_v1 = Mock()
     api.create_namespaced_pod.return_value.metadata.uid = "cj-uid-1"
-    if create_status:
-        from kubernetes.client.rest import ApiException
-
-        api.create_namespaced_pod.side_effect = ApiException(status=create_status)
     api.read_namespaced_pod.return_value = SimpleNamespace(status=SimpleNamespace(phase="Running"))
     launcher.startup_secret_name = "federation-a.site-1"
     launcher._ensure_job_credential_secret = Mock(return_value="cj-credentials")
@@ -3863,6 +3852,39 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
         JobConstants.JOB_ID: _TASK_JOB_ID,
         "launcher_spec": {_TASK_SITE: {"k8s": {"image": "site/image", "num_of_gpus": 2}}},
     }
+    return launcher, fl_ctx, meta, pvc_root
+
+
+def _launch_cp_job(launcher, meta, fl_ctx):
+    # Import the actual target explicitly; this test also runs without collecting task-service tests.
+    from nvflare.app_opt.task_launcher import k8s_task_service
+
+    with (
+        patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager") as transfer,
+        patch.object(k8s_task_service, "K8sTaskService") as service,
+    ):
+        transfer.get_or_create.return_value.owner_fqcn = "site-parent"
+        transfer.get_or_create.return_value.add_job.return_value = "transfer-token"
+        service.get_or_create.return_value.add_job.return_value.lock = __import__("threading").Lock()
+        handle = launcher.launch_job(meta, fl_ctx)
+    return handle, service, transfer
+
+
+@pytest.mark.parametrize("lifetime", ["job", "task"])
+@pytest.mark.parametrize("extension", ["json", "json.default"])
+@pytest.mark.parametrize("budgets", ["defaults", "native_compute", "portable_compute", "cj_gpu"])
+@pytest.mark.parametrize("create_status, cleanup_status", [(None, None), (403, None), (500, None), (None, 503)])
+def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
+    tmp_path, monkeypatch, lifetime, extension, budgets, create_status, cleanup_status
+):
+    if lifetime == "task" and _k8s_quantity is None:
+        pytest.skip("Kubernetes quantity parser is required for the task backend binding")
+    launcher, fl_ctx, meta, pvc_root = _setup_cp_submission(tmp_path, monkeypatch, lifetime, extension)
+    api = launcher.core_v1
+    if create_status:
+        from kubernetes.client.rest import ApiException
+
+        api.create_namespaced_pod.side_effect = ApiException(status=create_status)
     if budgets != "defaults":
         if budgets == "portable_compute":
             meta["resource_spec"] = {"@default": {"num_of_cpus": 2, "memory": "4Gi", "num_of_gpus": 2}}
@@ -3877,17 +3899,7 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
             }
             normalize_cj_resource_spec(meta, {_TASK_SITE})
 
-    # Import the actual target explicitly; this test also runs without collecting task-service tests.
-    from nvflare.app_opt.task_launcher import k8s_task_service
-
-    with (
-        patch("nvflare.app_opt.job_launcher.k8s_launcher.WorkspaceTransferManager") as transfer,
-        patch.object(k8s_task_service, "K8sTaskService") as service,
-    ):
-        transfer.get_or_create.return_value.owner_fqcn = "site-parent"
-        transfer.get_or_create.return_value.add_job.return_value = "transfer-token"
-        service.get_or_create.return_value.add_job.return_value.lock = __import__("threading").Lock()
-        handle = launcher.launch_job(meta, fl_ctx)
+    handle, service, transfer = _launch_cp_job(launcher, meta, fl_ctx)
     manifest = api.create_namespaced_pod.call_args.kwargs["body"]
     assert handle.get_manifest() == manifest
     if create_status:
@@ -3993,6 +4005,223 @@ def test_cp_submission_uses_shared_jobs_pvc_for_both_lifetimes(
     with pytest.raises(ValueError, match="already exists"):
         launcher._prepare_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
     assert (job_dir / "committed-checkpoint").read_bytes() == b"persist across CJ deletion"
+
+
+@pytest.mark.parametrize("lifetime, cj_image_override", [("job", True), ("task", True), ("task", False)])
+def test_cp_routes_study_runtime_to_the_pod_running_training(
+    tmp_path, monkeypatch, caplog, lifetime, cj_image_override
+):
+    from nvflare.apis.task_launcher_spec import TaskLaunchRequest
+    from nvflare.app_opt.task_launcher.k8s_launcher import SETTLEMENT_FINALIZER, WORKER_MODULE
+    from nvflare.private.fed.task_worker.config_vars import ENV_WORKER_CONFIG_VARS
+    from nvflare.private.fed.task_worker.protocol import TaskAttemptIdentity, WorkerBootstrap, write_bootstrap
+    from tests.k8s_task_test_utils import PodApi
+
+    if lifetime == "task" and _k8s_quantity is None:
+        pytest.skip("Kubernetes quantity parser is required for the task backend binding")
+    launcher, fl_ctx, meta, _ = _setup_cp_submission(tmp_path, monkeypatch, lifetime)
+    if not cj_image_override:
+        del meta["launcher_spec"][_TASK_SITE]["k8s"]["image"]
+    meta[JobMetaKey.STUDY.value] = "study-a"
+    (tmp_path / "local" / "study_runtime.yaml").write_text(
+        """
+format_version: 2
+studies:
+  study-a:
+    container: {image: site/study-worker}
+    datasets:
+      training: {source: training-pvc, mode: ro}
+      output: {source: output-pvc, mode: rw}
+    env:
+      DATASET_DIR: /data/study-a/training
+      "LABEL$(DATASET_DIR)": custom-label
+    secret_env:
+      API_TOKEN: {source: study-auth, key: token}
+    secret_mounts:
+      bundle:
+        source: study-files
+        mount_path: /run/study
+        items: {ca.pem: trust.pem}
+    pod_template:
+      spec:
+        nodeSelector: {pool: coordinators}
+        containers: [{name: nvflare_job}]
+    worker_pod_template: worker.yaml
+"""
+    )
+    (tmp_path / "local" / "worker.yaml").write_text(
+        """
+apiVersion: v1
+kind: Pod
+metadata:
+  name: unused-name
+  namespace: wrong-namespace
+  finalizers: [example.com/template-finalizer]
+  labels: {workload: training, nvflare.nvidia.com/attempt: unused-attempt}
+  annotations:
+    example.com/monitor: "true"
+    nvflare.nvidia.com/task-identity: unused-identity
+spec:
+  nodeSelector: {pool: gpu}
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 1
+          preference:
+            matchExpressions: [{key: capacity, operator: In, values: [spot]}]
+  tolerations: [{key: gpu, operator: Exists, effect: NoSchedule}]
+  priorityClassName: training
+  imagePullSecrets: [{name: training-registry}]
+  restartPolicy: Always
+  automountServiceAccountToken: true
+  serviceAccountName: unused-account
+  containers:
+    - name: template
+      image: unused-image
+      command: [unused-command]
+      workingDir: /unused-directory
+      ports: [{name: metrics, containerPort: 9090}]
+      securityContext: {privileged: true}
+"""
+    )
+    with caplog.at_level("INFO", logger=launcher.logger.name):
+        handle, service, _ = _launch_cp_job(launcher, meta, fl_ctx)
+    cj_spec = handle.pod_manifest["spec"]
+    cj = cj_spec["containers"][0]
+    assert cj_spec["nodeSelector"] == {"pool": "coordinators"}
+    assert "affinity" not in cj_spec and "tolerations" not in cj_spec
+    assert "workload" not in handle.pod_manifest["metadata"].get("labels", {})
+    assert cj["image"] == ("site/image" if cj_image_override else "site/study-worker")
+    assert ("Using study image site/study-worker for the task-mode CJ" in caplog.text) == (not cj_image_override)
+
+    if lifetime == "task":
+        assert {v["name"] for v in cj_spec["volumes"]} == {"workspace-job", "startup-kit"}
+        assert {m["name"] for m in cj["volumeMounts"]} == {"workspace-job", "startup-kit"}
+        cj_env = {e["name"]: e for e in cj["env"]}
+        assert set(cj_env).isdisjoint({"DATASET_DIR", "API_TOKEN"})
+        deferred_names = cj_env[ENV_WORKER_CONFIG_VARS]["value"]
+        assert "$(" not in deferred_names
+        assert json.loads(deferred_names) == ["DATASET_DIR", "LABEL$(DATASET_DIR)"]
+        backend = service.get_or_create.return_value.add_job.call_args.args[0]
+        api = backend.core_v1 = PodApi()
+        identity = TaskAttemptIdentity(_TASK_JOB_ID, _TASK_SITE, "task", "train", "attempt")
+        cwd = backend.workspace_root
+        bootstrap = WorkerBootstrap(identity, cwd + "/artifacts", cwd, {"path": "unused.Compute"})
+        os.mkdir(os.path.join(backend.storage_root, "artifacts"))
+        write_bootstrap(os.path.join(backend.storage_root, "bootstrap.json"), bootstrap)
+        request = TaskLaunchRequest(
+            identity.job_id,
+            identity.site_name,
+            identity.task_id,
+            identity.attempt_id,
+            ("/cj/python", "-m", WORKER_MODULE, "--bootstrap", cwd + "/bootstrap.json", "--parent_pid", "123"),
+            cwd=cwd,
+        )
+        backend.launch_task(request)
+        spec = api.manifest["spec"]
+        container = spec["containers"][0]
+        assert len(spec["containers"]) == 1
+        assert {"hostNetwork", "hostPID", "hostIPC", "initContainers", "ephemeralContainers"}.isdisjoint(spec)
+        assert spec["restartPolicy"] == "Never"
+        assert spec["automountServiceAccountToken"] is False
+        assert spec["serviceAccountName"] == "task-no-api"
+        metadata = api.manifest["metadata"]
+        assert metadata["name"].startswith("nvft-")
+        assert metadata["namespace"] == "site"
+        assert metadata["finalizers"] == [SETTLEMENT_FINALIZER]
+        assert metadata["labels"]["workload"] == "training"
+        assert metadata["labels"]["nvflare.nvidia.com/attempt"] != "unused-attempt"
+        assert metadata["annotations"]["example.com/monitor"] == "true"
+        assert json.loads(metadata["annotations"]["nvflare.nvidia.com/task-identity"]) == list(request.identity)
+        assert container["command"] == ["/usr/local/bin/python"]
+        assert container["workingDir"] == cwd
+        assert container["ports"] == [{"name": "metrics", "containerPort": 9090}]
+        assert not container["securityContext"].get("privileged")
+        assert spec["priorityClassName"] == "training"
+        assert spec["imagePullSecrets"] == [{"name": "training-registry"}]
+        subpath = job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)
+        assert {m["mountPath"]: m["subPath"] for m in container["volumeMounts"] if m["name"] == "workspace"} == {
+            cwd: subpath,
+            cwd + "/local": subpath + "/local",
+        }
+        assert container["image"] == "site/study-worker"
+        assert {"name": ENV_WORKER_CONFIG_VARS, "value": deferred_names} in container["env"]
+        assert spec["nodeSelector"] == {"pool": "gpu"}
+        preference = spec["affinity"]["nodeAffinity"]["preferredDuringSchedulingIgnoredDuringExecution"][0]
+        assert preference["preference"]["matchExpressions"] == [
+            {"key": "capacity", "operator": "In", "values": ["spot"]}
+        ]
+        assert spec["tolerations"] == [{"key": "gpu", "operator": "Exists", "effect": "NoSchedule"}]
+    else:
+        spec, container = cj_spec, cj
+        service.get_or_create.assert_not_called()
+
+    volumes = {v["name"]: v for v in spec["volumes"]}
+    mounts = {m["mountPath"]: m for m in container["volumeMounts"]}
+    for name, read_only in (("training", True), ("output", False)):
+        mount = mounts[f"/data/study-a/{name}"]
+        assert mount["readOnly"] is read_only
+        claim = {"claimName": f"{name}-pvc"}
+        if lifetime == "task" and read_only:
+            claim["readOnly"] = True
+        assert volumes[mount["name"]]["persistentVolumeClaim"] == claim
+    secret_mount = mounts["/run/study"]
+    assert secret_mount["readOnly"] is True
+    assert volumes[secret_mount["name"]]["secret"] == {
+        "secretName": "study-files",
+        "items": [{"key": "ca.pem", "path": "trust.pem"}],
+    }
+    assert {"name": "DATASET_DIR", "value": "/data/study-a/training"} in container["env"]
+    assert [e for e in container["env"] if e["name"] == "API_TOKEN"] == [
+        {"name": "API_TOKEN", "valueFrom": {"secretKeyRef": {"name": "study-auth", "key": "token"}}}
+    ]
+
+
+@pytest.mark.parametrize(
+    "study_config, error",
+    [
+        ("datasets: {training: {source: existing-pvc, mode: ro}}", "jobs PVC"),
+        (
+            f"secret_mounts: {{bundle: {{source: data, mount_path: /{os.path.realpath('/var/tmp/nvflare/workspace/local')}}}}}",
+            "overlaps the worker workspace",
+        ),
+        ("secret_env: {NVIDIA_VISIBLE_DEVICES: {source: config, key: gpu}}", "reserved names"),
+        ("worker_pod_template: {spec: {hostNetwork: true}}", "one isolated container"),
+        ("worker_pod_template: {spec: {containers: [{}, {}]}}", "one isolated container"),
+        ("worker_pod_template: {spec: {containers: [{env: {}}]}}", "cannot configure spec.containers[0].env"),
+        (
+            "worker_pod_template: {metadata: {annotations: "
+            "{container.apparmor.security.beta.kubernetes.io/nvflare-task: unconfined}}}",
+            "cannot configure legacy security annotations",
+        ),
+        (
+            "worker_pod_template: {spec: {containers: [{ports: [{containerPort: 9090, hostPort: 9090}]}]}}",
+            "cannot publish ports on the host",
+        ),
+        (
+            "worker_pod_template: {spec: {volumes: [{name: extra, persistentVolumeClaim: {claimName: existing-pvc}}]}}",
+            "cannot configure spec.volumes",
+        ),
+        (
+            "worker_pod_template: {spec: {containers: [{volumeMounts: [{name: workspace, mountPath: /elsewhere}]}]}}",
+            "cannot configure spec.containers[0].volumeMounts",
+        ),
+    ],
+)
+def test_invalid_study_worker_settings_prevent_cj_submission(tmp_path, monkeypatch, caplog, study_config, error):
+    launcher, fl_ctx, meta, pvc_root = _setup_cp_submission(tmp_path, monkeypatch, "task")
+    meta[JobMetaKey.STUDY.value] = "study-a"
+    (tmp_path / "local" / "study_runtime.yaml").write_text(
+        f"format_version: 2\nstudies:\n  study-a:\n    {study_config}\n"
+    )
+
+    handle, service, _ = _launch_cp_job(launcher, meta, fl_ctx)
+    assert handle.terminal_return_code == JobReturnCode.EXCEPTION
+    assert error in caplog.text
+    launcher.core_v1.delete_namespaced_secret.assert_called_once_with(name="cj-credentials", namespace="site")
+    service.get_or_create.assert_not_called()
+    launcher.core_v1.create_namespaced_pod.assert_not_called()
+    assert not (pvc_root / job_workspace_subpath(_TASK_JOB_ID, _TASK_SITE)).exists()
 
 
 def _initialized_cj(tmp_path):

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import re
 
 from nvflare.apis.executor import Executor
@@ -23,8 +24,10 @@ from nvflare.client.decomposers import register_framework_decomposers
 from nvflare.fuel.data_event.utils import get_scope_property
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.fuel.utils.json_scanner import Node
+from nvflare.fuel.utils.json_scanner import JsonScanner, Node
+from nvflare.fuel.utils.wfconf import resolve_var_refs
 from nvflare.job_config.task_execution import CLIENT_API_EXECUTOR_PATH, prepare_task_execution, task_constructor_args
+from nvflare.private.fed.task_worker.config_vars import CJ_EXECUTOR_ARGS, worker_config_env_names
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
 
@@ -57,6 +60,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         self.task_execution = None
         self.task_policy = None
         self._worker_config_paths = ()
+        self._worker_config = None
 
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
@@ -115,10 +119,51 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         self.current_exe = None
         self._default_task_fetch_interval = 0.5
 
+    def _resolve_config_vars(self, all_vars):
+        names = worker_config_env_names() if self.config_data.get("execution_lifetime") == "task" else ()
+        if names:
+            # Resolve a worker view from the original config so references inside
+            # named definitions and templates survive, even if CJ defines the same env name.
+            worker_vars = copy.deepcopy(all_vars)
+            for name in names:
+                worker_vars.setdefault(f"${name}", "{$" + name + "}")
+            self._worker_config = copy.deepcopy(self.config_data)
+            resolve_var_refs(JsonScanner(self._worker_config, self.config_files), worker_vars)
+        super()._resolve_config_vars(all_vars)
+
+    def _use_worker_config_args(self):
+        # Keep structural fields and shared codecs resolved on CJ. Only replace
+        # constructor arguments of the components that actually run on workers.
+        def worker_spec(resident, deferred, exclude=()):
+            # References can share dictionaries with resident components.
+            spec = copy.deepcopy(resident)
+            args = task_constructor_args(spec)
+            args.update({key: value for key, value in task_constructor_args(deferred).items() if key not in exclude})
+            return spec
+
+        self.config_data["executors"] = [
+            {**resident, "executor": worker_spec(resident["executor"], deferred["executor"], CJ_EXECUTOR_ARGS)}
+            for resident, deferred in zip(self.config_data["executors"], self._worker_config["executors"])
+        ]
+        components = self.config_data.get("components")
+        if components is not None:
+            self.config_data["components"] = [
+                (
+                    worker_spec(resident, deferred)
+                    if resident["id"] in self.task_execution.compute_component_ids
+                    else resident
+                )
+                for resident, deferred in zip(components, self._worker_config["components"])
+            ]
+        self._worker_config = None
+
     def start_config(self, config_ctx: ConfigContext):
         self.task_execution = prepare_task_execution(self.config_data)
         if self.task_execution is None:
             return
+        if self._worker_config is not None:
+            self._use_worker_config_args()
+            self.task_execution = prepare_task_execution(self.config_data)
         worker_paths = [
             (f"components.#{index}", component)
             for index, component in enumerate(self.config_data.get("components", []), 1)

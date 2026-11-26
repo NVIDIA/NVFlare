@@ -288,7 +288,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
             all_vars.update(self.sys_vars)
 
         # resolve var references
-        resolve_var_refs(self.json_scanner, all_vars)
+        self._resolve_config_vars(all_vars)
 
         self.start_config(self.config_ctx)
 
@@ -299,6 +299,9 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
 
         # finalize configuration
         self.finalize_config(self.config_ctx)
+
+    def _resolve_config_vars(self, all_vars):
+        resolve_var_refs(self.json_scanner, all_vars)
 
     def configure(self):
         try:
