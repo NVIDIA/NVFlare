@@ -214,8 +214,11 @@ class _LoginReplyProcessor(ReplyProcessor):
 class _CmdListReplyProcessor(ReplyProcessor):
     """Reply processor to register available commands after getting back a table of commands from the server."""
 
+    def __init__(self, command_register: CommandRegister):
+        self.command_register = command_register
+        self.received = False
+
     def process_table(self, ctx: CommandContext, table: Table):
-        api = ctx.get_api()
         for i in range(len(table.rows)):
             if i == 0:
                 # this is header
@@ -240,7 +243,7 @@ class _CmdListReplyProcessor(ReplyProcessor):
             # if confirm == 'auth' and not client.require_login:
             # the user is not authenticated - skip this command
             # continue
-            api.server_cmd_reg.add_command(
+            self.command_register.add_command(
                 scope_name=scope,
                 cmd_name=cmd_name,
                 desc=desc,
@@ -253,7 +256,7 @@ class _CmdListReplyProcessor(ReplyProcessor):
                 map_client_cmd=True,
             )
 
-        api.server_cmd_received = True
+        self.received = True
 
 
 class _AdminCellReconnectMonitor(EndpointMonitor):
@@ -374,7 +377,6 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         self.server_cmd_reg = CommandRegister(app_ctx=self)
         self.client_cmd_reg = CommandRegister(app_ctx=self)
-        self.server_cmd_received = False
 
         self.all_cmds = []
         self.cmd_modules = cmd_modules
@@ -762,17 +764,16 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         if self.cell:
             self.cell.stop()
 
-    def _get_command_list_from_server(self) -> bool:
-        self.server_cmd_received = False
-        self.server_execute(InternalCommands.GET_CMD_LIST, _CmdListReplyProcessor())
-        if not self.server_cmd_received:
-            return False
-        return True
+    def _get_command_list_from_server(self) -> Optional[CommandRegister]:
+        command_register = CommandRegister(app_ctx=self)
+        processor = _CmdListReplyProcessor(command_register)
+        self.server_execute(InternalCommands.GET_CMD_LIST, processor)
+        return command_register if processor.received else None
 
     def _after_login(self) -> dict:
-        self.server_cmd_reg = CommandRegister(app_ctx=self)
-        result = self._get_command_list_from_server()
-        if not result:
+        # Preserve command lookup for retries until a new table is ready.
+        server_cmd_reg = self._get_command_list_from_server()
+        if not server_cmd_reg:
             return {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
                 ResultKey.DETAILS: "Can't fetch command list from server.",
@@ -781,8 +782,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         # prepare client modules
         # we may have additional dynamically created cmd modules based on server commands
         extra_module_specs = []
-        if self.server_cmd_reg.mapped_cmds:
-            for c in self.server_cmd_reg.mapped_cmds:
+        if server_cmd_reg.mapped_cmds:
+            for c in server_cmd_reg.mapped_cmds:
                 for m in self.cmd_modules:
                     new_module_spec = m.generate_module_spec(c)
                     if new_module_spec is not None:
@@ -790,11 +791,12 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         self.client_cmd_reg = CommandRegister(app_ctx=self)
         self.all_cmds.clear()
-        self.server_cmd_reg.finalize(self.register_command)
+        server_cmd_reg.finalize(self.register_command)
         self._load_client_cmds_from_modules(self.cmd_modules)
         if extra_module_specs:
             self._load_client_cmds_from_module_specs(extra_module_specs)
         self.client_cmd_reg.finalize(self.register_command)
+        self.server_cmd_reg = server_cmd_reg
         self.server_sess_active = True
         return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "Login success"}
 
