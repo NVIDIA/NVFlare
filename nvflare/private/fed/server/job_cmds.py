@@ -1470,21 +1470,28 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     conn.append_string(message)
                     conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
                     return
-                elif job_status and job_status.startswith("FINISHED:"):
-                    audit_action, audit_reason = "job.abort.unchanged", "already_finished"
-                    message = f"Job for {job_id} is already completed."
-                    conn.append_string(message)
-                    conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
-                else:
-                    message = job_runner.stop_run(job_id, fl_ctx)
-                    if message:
-                        audit_action, audit_reason = "job.abort.error", "abort_request_failed"
-                        conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, message))
-                    else:
+                if not (job_status or "").startswith("FINISHED:"):
+                    error = job_runner.stop_run(job_id, fl_ctx)
+                    if not error:
                         audit_action, audit_reason = "job.abort.requested", "abort_requested"
                         message = "Abort signal has been sent to the server app."
                         conn.append_string(message)
                         conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
+                        return
+
+                    # Completion publishes the final status before removing the running job.
+                    if job_status == RunStatus.RUNNING:
+                        job = engine.job_def_manager.get_job(job_id, fl_ctx)
+                        job_status = job.meta.get(JobMetaKey.STATUS) if job else None
+                    if not (job_status or "").startswith("FINISHED:"):
+                        audit_action, audit_reason = "job.abort.error", "abort_request_failed"
+                        conn.append_error(error, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, error))
+                        return
+
+                audit_action, audit_reason = "job.abort.unchanged", "already_finished"
+                message = f"Job for {job_id} is already completed."
+                conn.append_string(message)
+                conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
         except Exception as e:
             conn.append_error(
                 f"Exception occurred trying to abort job: {secure_format_exception(e)}",

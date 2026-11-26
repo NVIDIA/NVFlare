@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Union
 
 import grpc
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
 from nvflare.fuel.f3.comm_error import CommError
@@ -36,7 +37,13 @@ from .base_driver import BaseDriver
 from .driver_params import DriverCap, DriverParams
 from .grpc.qq import QQ
 from .grpc.streamer_pb2 import Frame
-from .grpc.utils import get_grpc_client_credentials, get_grpc_server_credentials, use_aio_grpc
+from .grpc.utils import (
+    PendingProbeSockets,
+    get_grpc_client_credentials,
+    get_grpc_server_credentials,
+    probe_grpc_peer_cert,
+    use_aio_grpc,
+)
 from .net_utils import MAX_FRAME_SIZE, get_address, get_tcp_urls, ssl_required
 
 GRPC_DEFAULT_OPTIONS = [
@@ -211,6 +218,7 @@ class GrpcDriver(BaseDriver):
         self.setup_grpc_env_var()
 
         self.server = None
+        self.pending_probes = PendingProbeSockets()
         self.closing = False
         self.max_workers = 100
         self.options = GRPC_DEFAULT_OPTIONS
@@ -257,9 +265,16 @@ class GrpcDriver(BaseDriver):
         try:
             secure = ssl_required(params)
             if secure:
+                peer_cert = None
+                if (
+                    params.get(DriverParams.CONNECTION_SECURITY.value, ConnectionSecurity.MTLS)
+                    == ConnectionSecurity.MTLS
+                ):
+                    peer_cert = probe_grpc_peer_cert(params, self.options, self.pending_probes)
+                    Connection.record_peer(conn_props, peer_cert, secure=True)
                 self.logger.debug("CLIENT: creating secure channel")
                 channel = grpc.secure_channel(
-                    address, options=self.options, credentials=get_grpc_client_credentials(params)
+                    address, options=self.options, credentials=get_grpc_client_credentials(params, peer_cert=peer_cert)
                 )
                 self.logger.info(f"created secure channel at {address}")
             else:
@@ -295,6 +310,7 @@ class GrpcDriver(BaseDriver):
 
     def shutdown(self):
         self.stop_connection_admission()
+        self.pending_probes.cancel()
         if self.closing:
             return
         self.closing = True

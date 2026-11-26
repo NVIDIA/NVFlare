@@ -30,6 +30,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.ccwf.common import Constant, ResultType, StatusReport, make_task_name, topic_for_end_workflow
+from nvflare.fuel.sec import task_audit
 from nvflare.fuel.utils.validation_utils import check_non_empty_str, check_number_range, check_positive_number
 from nvflare.security.logging import secure_format_traceback
 
@@ -224,6 +225,7 @@ class ClientSideController(Executor, TaskController):
         fl_ctx.set_prop(Constant.EXECUTOR, self, private=True, sticky=False)
         self.fire_event(Constant.EXECUTOR_INITIALIZED, fl_ctx)
 
+    @task_audit.collect_events
     def finalize(self, fl_ctx: FLContext):
         """Called to finalize the executor.
 
@@ -428,6 +430,7 @@ class ClientSideController(Executor, TaskController):
             fl_ctx.set_prop(FLContextKey.RUN_ABORT_REQUESTED, False, private=True, sticky=False)
         self.fire_event(EventType.ABORT_TASK, fl_ctx)
 
+    @task_audit.collect_events
     def set_learn_task(self, task_data: Shareable, fl_ctx: FLContext) -> bool:
         with self.learn_task_lock:
             task_data.set_header(AppConstants.NUM_ROUNDS, self.get_config_prop(AppConstants.NUM_ROUNDS))

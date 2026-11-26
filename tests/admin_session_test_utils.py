@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import uuid
-from types import SimpleNamespace
 
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
+from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.private.defs import ADMIN_TRANSPORT_TOKEN_PREFIX, CellMessageHeaderKeys
@@ -33,7 +33,7 @@ def register_admin_transport(
             CellMessageHeaderKeys.CLIENT_NAME: user,
         }
     )
-    request.set_prop(MessagePropKey.ENDPOINT, SimpleNamespace(name=origin))
+    request.set_prop(MessagePropKey.ENDPOINT, Endpoint(origin))
     if connection is None:
         request.set_prop(MessagePropKey.PEER_CERT_FINGERPRINT, fingerprint)
     else:

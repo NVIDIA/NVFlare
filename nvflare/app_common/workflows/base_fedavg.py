@@ -13,10 +13,11 @@
 # limitations under the License.
 
 import math
+from threading import Lock
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.fl_constant import FLMetaKey
-from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.aggregators.weighted_aggregation_helper import (
     AggregationStatsKey,
@@ -99,9 +100,66 @@ def _get_num_steps_weight(result: FLModel) -> float:
         weight = float(value)
     except (TypeError, ValueError, OverflowError):
         return 1.0
+    if weight == 0:
+        return 0.0
     if not math.isfinite(weight) or weight <= 0:
         return 1.0
     return weight
+
+
+def _is_zero_step_result(result: FLModel) -> bool:
+    return _get_num_steps_weight(result) == 0.0
+
+
+def _release_params(result: FLModel):
+    if not isinstance(result.params, dict):
+        return
+    for value in result.params.values():
+        release = getattr(value, "release", None)
+        if callable(release):
+            release()
+
+
+def _without_zero_step_results(results: List[FLModel], on_skip=None) -> List[FLModel]:
+    kept = []
+    for result in results:
+        if not _is_zero_step_result(result):
+            kept.append(result)
+            continue
+        if on_skip:
+            on_skip(result)
+        _release_params(result)
+    return kept
+
+
+class _UnchangedModelResult(FLModel):
+    pass
+
+
+def _keeps_model(aggr_result) -> bool:
+    return type(aggr_result) is _UnchangedModelResult
+
+
+_TASK_REPLY_COUNT = "_fedavg_task_reply_count"
+
+
+class _ReplyCountedResults(list):
+    def __init__(self, results, reply_count: int):
+        super().__init__(results)
+        self.reply_count = reply_count
+
+
+def _make_unchanged_model_result(current_round) -> FLModel:
+    return _UnchangedModelResult(
+        params={},
+        params_type=ParamsType.DIFF,
+        current_round=current_round,
+        meta={
+            "nr_aggregated": 0,
+            "current_round": current_round,
+            AppConstants.METRICS_AGGREGATION_INFO: make_fedavg_metrics_aggregation_info(),
+        },
+    )
 
 
 def _aggregate_fl_model_metrics(results: List[FLModel]) -> Optional[Dict[str, Any]]:
@@ -113,6 +171,8 @@ def _aggregate_fl_model_metrics(results: List[FLModel]) -> Optional[Dict[str, An
     """
     aggr_metrics_helper = WeightedAggregationHelper()
     for _result in results:
+        if _is_zero_step_result(_result):
+            continue
         if _result.metrics is None:
             return None
         aggregatable = filter_aggregatable_metrics(_result.metrics)
@@ -174,6 +234,31 @@ class BaseFedAvg(ModelController):
         self.memory_gc_rounds = memory_gc_rounds
 
         self.current_round = None
+        self._reply_count = 0
+        self._reply_lock = Lock()
+        self._task_reply_count = None
+
+    def _prepare_task(self, data, task_name, timeout, callback):
+        task = super()._prepare_task(data=data, task_name=task_name, timeout=timeout, callback=callback)
+        self._task_reply_count = [0]
+        task.set_prop(_TASK_REPLY_COUNT, self._task_reply_count)
+        return task
+
+    def _process_result(self, client_task, fl_ctx) -> None:
+        with self._reply_lock:
+            self._reply_count += 1
+            task_reply_count = client_task.task.get_prop(_TASK_REPLY_COUNT)
+            if task_reply_count is not None:
+                task_reply_count[0] += 1
+        super()._process_result(client_task, fl_ctx)
+
+    def send_model_and_wait(self, *args, **kwargs) -> List[FLModel]:
+        self._task_reply_count = None
+        results = super().send_model_and_wait(*args, **kwargs)
+        with self._reply_lock:
+            reply_count = self._task_reply_count[0] if self._task_reply_count else 0
+            self._task_reply_count = None
+        return _ReplyCountedResults(results, reply_count)
 
     def _maybe_cleanup_memory(self):
         """Perform memory cleanup if configured (every N rounds based on memory_gc_rounds)."""
@@ -204,6 +289,10 @@ class BaseFedAvg(ModelController):
         """
         if not results:
             raise ValueError("received empty results for aggregation.")
+        kept_results = _without_zero_step_results(results)
+        if not kept_results:
+            return _make_unchanged_model_result(results[0].current_round)
+        results = kept_results
 
         aggr_helper = WeightedAggregationHelper()
         for _result in results:
@@ -246,6 +335,20 @@ class BaseFedAvg(ModelController):
         if self.fl_ctx:
             self._set_ctx_prop_preserving_attrs(fl_ctx=self.fl_ctx, key=AppConstants.AGGREGATION_STATS, value=None)
         self.event(AppEventType.BEFORE_AGGREGATION)
+        reply_count = results.reply_count if isinstance(results, _ReplyCountedResults) else 0
+        kept_results = self._drop_zero_step_results(results)
+        if results and not kept_results:
+            if reply_count > len(results):
+                raise RuntimeError("no accepted contributions to aggregate")
+            self.warning(f"All results reported 0 steps at round {self.current_round}, keeping the global model.")
+            aggr_result = _make_unchanged_model_result(self.current_round)
+            self._publish_zero_contribution_stats()
+            self._results = []
+            self.fire_event_with_data(
+                AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggr_result
+            )
+            return aggr_result
+        results = kept_results
         self._check_results(results)
 
         if not aggregate_fn:
@@ -283,6 +386,20 @@ class BaseFedAvg(ModelController):
 
         return aggr_result
 
+    def _publish_zero_contribution_stats(self):
+        if self.fl_ctx:
+            aggr_stats = compute_key_match_stats({})
+            aggr_stats[AggregationStatsKey.ROUND] = self.current_round
+            self.fl_ctx.set_prop(AppConstants.AGGREGATION_STATS, aggr_stats, private=True, sticky=False)
+
+    def _drop_zero_step_results(self, results: List[FLModel]) -> List[FLModel]:
+        return _without_zero_step_results(
+            results,
+            on_skip=lambda result: self.warning(
+                f"Skipping result from client {_get_client_name(result)} at round {self.current_round}: 0 steps."
+            ),
+        )
+
     def _set_metrics_aggregation_info(self, aggr_result: FLModel):
         if not isinstance(aggr_result, FLModel):
             return
@@ -309,6 +426,9 @@ class BaseFedAvg(ModelController):
         Returns: None.
 
         """
+        if _keeps_model(aggr_result):
+            return model
+
         self.event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE)
 
         model = FLModelUtils.update_model(model, aggr_result)

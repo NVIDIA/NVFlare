@@ -61,7 +61,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.sec.admin_cert import admin_cert_expiry
-from nvflare.fuel.sec.authn import add_authentication_headers
+from nvflare.fuel.sec.authn import add_authentication_headers, is_message_origin_trusted, strip_authentication_headers
 from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
@@ -79,6 +79,7 @@ from nvflare.private.defs import (
 )
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN, validate_auth_headers
 from nvflare.private.fed.resource_stats.coordinator import RESOURCE_REPORT_NOT_PROVIDED, RESOURCE_REPORT_SERVER_ERROR
+from nvflare.private.fed.server.auth_registry import NonRegularAuthRegistry
 from nvflare.private.fed.server.cred_keeper import CredKeeper
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -428,6 +429,9 @@ class FederatedServer(BaseServer):
 
         self.reg_lock = threading.Lock()
         self.name_to_reg = {}
+        self._non_regular_auth_clients = NonRegularAuthRegistry(
+            lambda name: self.cell.core_cell.communicator.find_endpoint(name)
+        )
         self.cred_keeper = CredKeeper()
 
         # Tracks per-job which client tokens have been positively observed running the job.
@@ -492,8 +496,10 @@ class FederatedServer(BaseServer):
         reg_checker.start()
 
     def _add_auth_headers(self, message: Message):
-        """Add auth headers to the messages sent by the server to itself.
-        This is such that no one can fake a message to pretend it's from the server to the server.
+        """Authenticate parent/server-job traffic without exporting server credentials.
+
+        Downstream clients, admins and relays authenticate server traffic through
+        their established upstream transport instead of a reusable bearer token.
         Args:
             message: the message for which to add the headers
         Returns: None
@@ -502,6 +508,9 @@ class FederatedServer(BaseServer):
         dest = message.get_header(MessageHeaderKey.DESTINATION)
         channel = message.get_header(MessageHeaderKey.CHANNEL)
         topic = message.get_header(MessageHeaderKey.TOPIC)
+        if dest != FQCN.ROOT_SERVER and not FQCN.is_ancestor(FQCN.ROOT_SERVER, dest or ""):
+            strip_authentication_headers(message)
+            return
         if not self.my_own_token_signature:
             self.my_own_token_signature = self.sign_auth_token(self.my_own_auth_client_name, self.my_own_token)
 
@@ -511,7 +520,15 @@ class FederatedServer(BaseServer):
         self.logger.debug(f"added auth headers:  {origin=} {dest=} {channel=} {topic=}")
 
     def _strip_peer_transit_headers(self, message: Message):
-        if not message.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False):
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        destination = message.get_header(MessageHeaderKey.DESTINATION)
+        server_to_client = (
+            isinstance(origin, str)
+            and FQCN.is_ancestor(FQCN.ROOT_SERVER, origin)
+            and destination != FQCN.ROOT_SERVER
+            and not FQCN.is_ancestor(FQCN.ROOT_SERVER, destination or "")
+        )
+        if not server_to_client and not message.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False):
             return
 
         # Cross-client requests and replies authenticate at the server boundary,
@@ -525,7 +542,8 @@ class FederatedServer(BaseServer):
             CellMessageHeaderKeys.SSID,
         ]:
             message.remove_header(key)
-        message.remove_header(MessageHeaderKey.CONN_URL)
+        if message.get_header(MessageHeaderKey.SERVER_TRANSIT_REQUIRED, False):
+            message.remove_header(MessageHeaderKey.CONN_URL)
 
     def _validate_auth_headers(self, message: Message):
         """Validate auth headers from messages that go through the server.
@@ -541,24 +559,16 @@ class FederatedServer(BaseServer):
         token_verifier = TokenVerifier(id_asserter.cert)
         local_fqcn = self.cell.get_fqcn() if getattr(self, "cell", None) else None
 
-        reply = validate_auth_headers(
-            message=message,
-            token_verifier=token_verifier,
-            logger=self.logger,
-            client_fqcn_resolver=lambda name, token: self._resolve_client_fqcn_for_auth(
-                name, token, message.get_header(MessageHeaderKey.ORIGIN), message.get_prop(MessagePropKey.ENDPOINT)
-            ),
-            local_cell_fqcn=local_fqcn,
-        )
-        if reply:
-            return reply
+        if local_fqcn is None or not is_message_origin_trusted(message, local_fqcn):
+            self.logger.warning("rejected message: origin does not belong to sending peer")
+            return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, error="origin does not belong to sending peer")
 
         channel = message.get_header(MessageHeaderKey.CHANNEL)
         topic = message.get_header(MessageHeaderKey.TOPIC)
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         peer = message.get_prop(MessagePropKey.ENDPOINT)
         destination = message.get_header(MessageHeaderKey.DESTINATION)
-        is_local = local_fqcn is not None and destination == local_fqcn
+        is_local = destination == local_fqcn
         is_stream_data = channel == STREAM_CHANNEL and topic == STREAM_DATA_TOPIC
         application_channel = message.get_header(StreamHeaderKey.CHANNEL) if is_stream_data else channel
         is_registration = channel == CellChannel.SERVER_MAIN and topic in (
@@ -567,7 +577,8 @@ class FederatedServer(BaseServer):
         )
         is_goodbye = channel == CellChannel.CELLNET and topic == CellChannelTopic.Bye and is_local
         peer_name = getattr(peer, "name", None)
-        direct_admin = is_local and origin == peer_name and is_valid_admin_client_name(origin)
+        direct_admin_origin = origin == peer_name and is_valid_admin_client_name(origin)
+        direct_admin = is_local and direct_admin_origin
         direct_hci = direct_admin and application_channel == CellChannel.HCI
         admin_origin = is_valid_admin_client_name(origin) or is_valid_admin_client_name(peer_name)
         # Legacy signatures authenticate the concatenation. Check that same
@@ -579,6 +590,33 @@ class FederatedServer(BaseServer):
             and isinstance(token, str)
             and private_defs.ADMIN_TRANSPORT_TOKEN_PREFIX in client_name + token
         )
+
+        def resolve_origin(name, token):
+            result = self._resolve_client_fqcn_for_auth(name, token, origin, peer)
+            if (
+                not result
+                and channel == CellChannel.SERVER_MAIN
+                and topic == CellChannelTopic.HEART_BEAT
+                and FQCN.split(origin)[-1] == name
+                and name not in (FQCN.ROOT_SERVER, private_defs.AUTH_CLIENT_NAME_FOR_SJ)
+            ):
+                # A signed parent-site heartbeat can restore a lost registration.
+                # It cannot authorize job traffic or any other application channel.
+                return origin
+            return result
+
+        # Direct admin tokens are authenticated by their signature here and
+        # bound to the transport grant or pinned reply peer below.
+        reply = validate_auth_headers(
+            message=message,
+            token_verifier=token_verifier,
+            logger=self.logger,
+            client_fqcn_resolver=None if direct_admin_origin and admin_token else resolve_origin,
+            local_cell_fqcn=local_fqcn,
+        )
+        if reply:
+            return reply
+
         registered_client = self.client_manager.clients.get(token) if admin_origin and isinstance(token, str) else None
         regular_origin = registered_client is not None and registered_client.name == client_name
         if is_goodbye and admin_origin:
@@ -627,15 +665,17 @@ class FederatedServer(BaseServer):
         client = self.client_manager.clients.get(token)
         if client and client.name == client_name:
             return client.get_fqcn() or MISSING_CLIENT_FQCN
+        registry = getattr(self, "_non_regular_auth_clients", None)
+        delegated = registry.resolve(client_name, token) if registry else None
+        if delegated:
+            return delegated
         if client_name == private_defs.AUTH_CLIENT_NAME_FOR_SJ:
             # Bind both the job runner and its workspace bootstrap to the signed job ID.
             bootstrap = FQCN.join([FQCN.ROOT_SERVER, workspace_transfer_cell_name(token)])
             if origin == bootstrap:
                 return bootstrap
             return f"{FQCN.ROOT_SERVER}.{token}"
-        # Admin registrations are checked separately against server-held grants.
-        # Lost client registrations still use their existing handlers.
-        return None
+        return MISSING_CLIENT_FQCN
 
     def sign_auth_token(self, client_name: str, token: str):
         id_asserter = self._get_id_asserter()
@@ -953,6 +993,14 @@ class FederatedServer(BaseServer):
 
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
+                    if client_type not in (ClientType.REGULAR, ClientType.ADMIN):
+                        client.token = self._non_regular_auth_clients.register(
+                            client.name, client.token, client.get_fqcn(), request.get_prop(MessagePropKey.ENDPOINT)
+                        )
+                        if not client.token:
+                            return make_cellnet_reply(
+                                rc=F3ReturnCode.UNAUTHENTICATED, error="registration transport is no longer active"
+                            )
                     accepted_site_config = client.get_site_config()
                     if accepted_site_config:
                         self.logger.info(
@@ -1379,6 +1427,7 @@ class FederatedServer(BaseServer):
 
         core_cell = self.cell.core_cell
         if secure_train:
+            core_cell.communicator.register_monitor(self._non_regular_auth_clients)
             core_cell.add_incoming_filter(
                 channel="*",
                 topic="*",

@@ -67,6 +67,7 @@ class ReturnReason:
 class MessagePropKey:
 
     ENDPOINT = CELLNET_PREFIX + "endpoint"
+    CONNECTION = CELLNET_PREFIX + "connection"
     COMMON_NAME = CELLNET_PREFIX + "common_name"
     CONNECTION = CELLNET_PREFIX + "connection"
     PEER_CERT_FINGERPRINT = CELLNET_PREFIX + "peer_cert_fingerprint"

@@ -47,6 +47,7 @@ from nvflare.fuel.f3.cellnet.identity import (
     get_cert_common_name_from_file,
     get_param,
     is_mtls_config,
+    is_unverified_inbound_connection,
     load_job_ca_cert,
 )
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
@@ -2087,6 +2088,7 @@ class CoreCell(MessageReceiver, EndpointMonitor):
 
         self.logger.debug(f"{self.my_info.fqcn}: received message: {message.headers}")
         message.set_prop(MessagePropKey.ENDPOINT, endpoint)
+        message.set_prop(MessagePropKey.CONNECTION, connection)
 
         if connection:
             message.set_prop(MessagePropKey.CONNECTION, connection)
@@ -2135,13 +2137,16 @@ class CoreCell(MessageReceiver, EndpointMonitor):
         if msg_type == MessageType.REQ:
             reply = None
             reply_target = origin
-            from_upstream = endpoint.name == FQCN.ROOT_SERVER or (
-                self.my_info.gen > 1 and endpoint.name == FQCN.get_parent(self.my_info.fqcn)
+            upstream_peer = self.my_info.fqcn != FQCN.ROOT_SERVER and (
+                endpoint.name == FQCN.ROOT_SERVER
+                or (self.my_info.gen > 1 and endpoint.name == FQCN.get_parent(self.my_info.fqcn))
             )
-            if (
-                channel == CellChannel.SERVER_PARENT_LISTENER
-                or (channel == CellChannel.CLIENT_COMMAND and not from_upstream)
-            ) and (FQCN.validate(origin) or (origin != endpoint.name and not FQCN.is_ancestor(endpoint.name, origin))):
+            unverified_upstream = upstream_peer and is_unverified_inbound_connection(connection)
+            from_upstream = upstream_peer and not unverified_upstream
+            if unverified_upstream or (
+                (channel == CellChannel.SERVER_PARENT_LISTENER or not from_upstream)
+                and (FQCN.validate(origin) or (origin != endpoint.name and not FQCN.is_ancestor(endpoint.name, origin)))
+            ):
                 # Check each hop before forwarding: a job child must not claim a sibling job or the server.
                 reply = make_reply(ReturnCode.UNAUTHENTICATED, "origin does not belong to sending peer")
                 reply_target = endpoint.name

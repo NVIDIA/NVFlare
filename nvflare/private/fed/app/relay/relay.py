@@ -18,6 +18,7 @@ import logging
 import os
 import sys
 import threading
+import time
 
 from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, ReservedKey, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
@@ -25,13 +26,20 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import SSL_ROOT_CERT, enhance_credential_info
+from nvflare.fuel.f3.endpoint import EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.sec.authn import add_authentication_headers, add_server_path_reply_authentication_headers
+from nvflare.fuel.sec.authn import (
+    add_authentication_headers,
+    add_server_path_reply_authentication_headers,
+    is_message_origin_trusted,
+)
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService, search_file
 from nvflare.fuel.utils.log_utils import configure_logging
@@ -53,8 +61,10 @@ class CellnetMonitor:
         self.stop_event.set()
 
 
-class _RelayAuth:
-    def __init__(self, authenticator, shared_fl_ctx, auth_result, stop_event, logger):
+class _RelayAuth(EndpointMonitor):
+    REGISTRATION_INTERVAL = 60.0
+
+    def __init__(self, authenticator, shared_fl_ctx, auth_result, stop_event, logger, parent_fqcn=FQCN.ROOT_SERVER):
         self.authenticator = authenticator
         # Recovery is bounded independently of startup authentication retries.
         self.authenticator.timeout = 5.0
@@ -63,6 +73,16 @@ class _RelayAuth:
         self.stop_event = stop_event
         self.logger = logger
         self.refresh_needed = threading.Event()
+        self.registration_needed = threading.Event()
+        self.parent_fqcn = parent_fqcn
+        self.next_registration = time.monotonic() + self.REGISTRATION_INTERVAL
+
+    def state_change(self, endpoint):
+        if endpoint.name in (FQCN.ROOT_SERVER, self.parent_fqcn) and endpoint.state == EndpointState.READY:
+            # Even a same-key server restart loses nonregular registrations.
+            # Never authenticate on the transport callback thread.
+            self.registration_needed.set()
+            self.refresh_needed.set()
 
     def add_request_headers(self, message):
         add_authentication_headers(message, self.authenticator.client_name, *self.auth_result[:3])
@@ -79,24 +99,42 @@ class _RelayAuth:
         return result
 
     def refresh(self):
-        if not self.refresh_needed.is_set() or self.stop_event.is_set():
+        if self.stop_event.is_set():
+            return
+        if time.monotonic() >= self.next_registration:
+            # A nested relay's parent can stay connected across root restarts.
+            # Renew independently of local endpoint notifications or key changes.
+            self.registration_needed.set()
+            self.refresh_needed.set()
+        if not self.refresh_needed.is_set():
             return
         self.refresh_needed.clear()
+        registration_needed = self.registration_needed.is_set()
+        self.registration_needed.clear()
         try:
             _, verifier = self.authenticator.challenge_server()
             if verifier is None or self.stop_event.is_set():
+                if registration_needed and not self.stop_event.is_set():
+                    self.registration_needed.set()
+                    self.refresh_needed.set()
                 return
-            if verifier.verify(self.authenticator.client_name, *self.auth_result[:2], log_error=False):
-                return  # Same-key outages do not require a replacement token.
+            if not registration_needed and verifier.verify(
+                self.authenticator.client_name, *self.auth_result[:2], log_error=False
+            ):
+                return
             auth_result = self.authenticator.authenticate(self.shared_fl_ctx, Signal())
             if self.stop_event.is_set():
                 return
             self.auth_result = auth_result
-            self.logger.info("Refreshed relay authentication after server key replacement")
+            self.next_registration = time.monotonic() + self.REGISTRATION_INTERVAL
+            self.logger.info("Refreshed relay authentication after server reconnect or key replacement")
         except Exception:
             # Keep the last authenticated state; a later rejected message can
             # request another bounded attempt. Never log credential material.
             self.logger.warning("Could not refresh relay server authentication")
+            if registration_needed and not self.stop_event.is_set():
+                self.registration_needed.set()
+                self.refresh_needed.set()
 
 
 class _ConfigKey:
@@ -261,7 +299,8 @@ def main(args):
         if not isinstance(token_verifier, TokenVerifier):
             raise RuntimeError(f"expect token_verifier to be TokenVerifier but got {type(token_verifier)}")
 
-        relay_auth = _RelayAuth(authenticator, shared_fl_ctx, auth_result, stop_event, logger)
+        relay_auth = _RelayAuth(authenticator, shared_fl_ctx, auth_result, stop_event, logger, parent_fqcn)
+        cell.core_cell.communicator.register_monitor(relay_auth)
         cell.core_cell.add_outgoing_request_filter(channel="*", topic="*", cb=relay_auth.add_request_headers)
         cell.core_cell.add_outgoing_reply_filter(channel="*", topic="*", cb=relay_auth.add_reply_headers)
         cell.core_cell.add_incoming_filter(
@@ -295,6 +334,9 @@ def _validate_auth_headers(
         core_cell: relay CoreCell used to verify a post-server message's actual upstream endpoint
     Returns:
     """
+    if core_cell and not is_message_origin_trusted(message, local_cell_fqcn, allow_unverified_client=True):
+        logger.warning("rejected message: origin does not belong to sending peer")
+        return make_reply(ReturnCode.UNAUTHENTICATED, "origin does not belong to sending peer")
     if core_cell and core_cell.is_server_transit_return(message):
         logger.debug("accepting sanitized server-transit message from configured upstream parent")
         return None

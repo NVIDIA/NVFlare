@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
+import json
+
 import pytest
 
 from nvflare.apis.simulation_plan import (
     ASYNC_EXECUTION,
     PlannedAsyncEvents,
     SimulationPlanRuntime,
+    load_simulation_plan,
     validate_simulation_plan,
 )
 
@@ -53,6 +57,42 @@ def test_plan_runtime_requires_claim_and_finalizes_once(tmp_path):
     runtime.finalize()
     runtime.finalize()
     assert len((tmp_path / "run.jsonl").read_text().splitlines()) == 1
+    assert json.loads((tmp_path / "run.jsonl").read_text())["logical_trace_verified"] is None
+
+
+@pytest.mark.parametrize("change", [None, "missing", "extra", "record", "plan"])
+def test_final_verification_reads_saved_plan_and_log(tmp_path, change):
+    plan = {"format_version": 1, ASYNC_EXECUTION: {"logical_sequence": ["a"], "arrival_sequence": [0]}}
+    plan_path = tmp_path / "simulation_plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    runtime = SimulationPlanRuntime(load_simulation_plan(plan_path), tmp_path, plan_path=plan_path)
+    record = {"assignment_id": 0, "logical_name": "a"}
+    expected = [("assignments.jsonl", record)]
+    if change != "missing":
+        runtime.trace("assignments.jsonl", {**record, "logical_name": "b"} if change == "record" else record)
+    if change == "extra":
+        runtime.trace("accepted.jsonl", record)
+
+    if change is None:
+        runtime.verify_preflight(expected)
+    else:
+        if change == "plan":
+            plan[ASYNC_EXECUTION]["logical_sequence"] = ["b"]
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        error = {
+            "missing": "differs from preflight at assignments.jsonl:1",
+            "record": "differs from preflight at assignments.jsonl:1",
+            "extra": "differs from preflight at accepted.jsonl:1",
+            "plan": "saved simulation plan differs from the plan used at launch",
+        }[change]
+        with pytest.raises(RuntimeError, match=error):
+            runtime.verify_preflight(expected)
+
+    runtime.finalize()
+    report = json.loads((tmp_path / "run.jsonl").read_text(encoding="utf-8"))
+    canonical_plan = b'{"async_execution":{"arrival_sequence":[0],"logical_sequence":["a"]},"format_version":1}'
+    assert report["plan_sha256"] == hashlib.sha256(canonical_plan).hexdigest()
+    assert report["logical_trace_verified"] == (change is None)
 
 
 def test_seeded_virtual_events_and_horizon_are_deterministic():
@@ -76,4 +116,36 @@ def test_seeded_virtual_events_and_horizon_are_deterministic():
         validate_simulation_plan(plan)
     plan["async_execution"]["timing"]["profiles"]["b"]["train"] = {"distribution": ["constant"], "value": 1}
     with pytest.raises(ValueError, match="unsupported delay"):
+        validate_simulation_plan(plan)
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        ("phase", "unexpected phase"),
+        ("start", "ordered starts must reserve sequential assignment IDs"),
+        ("horizon", "at most one final phase at or beyond the horizon"),
+    ],
+)
+def test_ordered_plan_rejects_invalid_event_sequences(change, error):
+    events = [
+        {"virtual_time": 0, "assignment_id": 0, "phase": "start"},
+        {"virtual_time": 0, "assignment_id": 1, "phase": "start"},
+        {"virtual_time": 1, "assignment_id": 0, "phase": "download"},
+        {"virtual_time": 1, "assignment_id": 0, "phase": "train"},
+        {"virtual_time": 2, "assignment_id": 0, "phase": "upload"},
+        {"virtual_time": 3, "assignment_id": 1, "phase": "download"},
+    ]
+    plan = {
+        "format_version": 1,
+        ASYNC_EXECUTION: {"logical_sequence": ["a", "b"], "timing": {"events": events, "horizon": 3}},
+    }
+    assert validate_simulation_plan(plan)[ASYNC_EXECUTION]["timing"]["events"][-1] == events[-1]
+    if change == "phase":
+        events[2]["phase"] = "train"
+    elif change == "start":
+        events[0]["assignment_id"] = 1
+    else:
+        events.append({"virtual_time": 3, "assignment_id": 1, "phase": "train"})
+    with pytest.raises(ValueError, match=error):
         validate_simulation_plan(plan)

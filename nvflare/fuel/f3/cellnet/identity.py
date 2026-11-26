@@ -21,6 +21,7 @@ from cryptography.x509.oid import NameOID
 from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.apis.job_def import is_valid_job_id
 from nvflare.fuel.f3.cellnet.fqcn import CLIENT_API_ATTACH_LEAF_PREFIX, FQCN
+from nvflare.fuel.f3.drivers.connector_info import Mode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import SECURE_SCHEMES
 from nvflare.fuel.sec.cert_uri import CELL_URI_KIND, JOB_URI_KIND, cert_uri_values
@@ -122,6 +123,13 @@ def is_mtls_config(credentials: dict, secure: bool) -> bool:
 
     conn_security = get_param(credentials, DriverParams.CONNECTION_SECURITY, ConnectionSecurity.MTLS)
     return conn_security == ConnectionSecurity.MTLS
+
+
+def is_unverified_inbound_connection(connection) -> bool:
+    """Whether a listener accepted a connection without authenticating its peer."""
+    return bool(
+        connection and connection.connector.mode == Mode.PASSIVE and not is_mtls_connection(connection.connector.params)
+    )
 
 
 def is_admin_listener(params: dict) -> bool:

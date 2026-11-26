@@ -6,7 +6,7 @@ small NumPy models so replay can be checked without downloading a dataset or
 installing PyTorch.
 
 `job.py` constructs an ordinary `FedBuffRecipe`. Its workflow has no simulation
-arguments or branches: the shared async execution port in `FedBuffWorkflow`
+arguments or branches: the shared async execution adapter in `FedBuffWorkflow`
 connects assignment reservation, accepted results, and model publication to
 the simulator. `make_plan()` supplies fixed acceptance order or virtual timing
 only to `SimEnv`. The same recipe can execute in `ProdEnv` with live arrivals.

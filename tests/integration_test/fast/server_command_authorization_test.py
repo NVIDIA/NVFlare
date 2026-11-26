@@ -27,9 +27,11 @@ import pytest
 import yaml
 
 import nvflare
+from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.flare_api.api_spec import AuthorizationError
 from nvflare.fuel.flare_api.flare_api import new_secure_session
+from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.job_config.api import FedJob
 from nvflare.lighter.prov_utils import prepare_builders
@@ -50,11 +52,12 @@ def wait_for(check, description, timeout=60):
 
 
 @pytest.fixture(
-    params=[(False, "mtls"), (True, "mtls"), (False, "tls"), (True, "tls")],
-    ids=["direct-mtls", "relay-mtls", "direct-tls", "relay-tls"],
+    params=[(0, "mtls"), (1, "mtls"), (2, "mtls"), (0, "tls"), (1, "tls"), (2, "tls"), (0, "mtls", True)],
+    ids=["direct-mtls", "relay-mtls", "nested-mtls", "direct-tls", "relay-tls", "nested-tls", "adhoc-mtls"],
 )
 def federation(tmp_path, monkeypatch, request):
-    via_relay, connection_security = request.param
+    via_relay, connection_security = request.param[:2]
+    adhoc = len(request.param) == 3
     repo = Path(__file__).resolve().parents[3]
     monkeypatch.syspath_prepend(str(repo / "tests/integration_test/data/server_command"))
     module = importlib.import_module("control_job")
@@ -78,33 +81,45 @@ def federation(tmp_path, monkeypatch, request):
                 "default_host": "localhost",
                 "connection_security": connection_security,
             }
+    for depth in range(1, via_relay + 1):
+        relay = {
+            "name": f"relay-{depth}",
+            "type": "relay",
+            "org": "nvidia",
+            "listening_host": {
+                "scheme": "stcp",
+                "default_host": "localhost",
+                "port": get_open_ports(1)[0],
+                "connection_security": connection_security,
+            },
+        }
+        if depth > 1:
+            relay["connect_to"] = {"name": f"relay-{depth - 1}", "connection_security": connection_security}
+        project["participants"].append(relay)
     if via_relay:
-        project["participants"].append(
-            {
-                "name": "relay-1",
-                "type": "relay",
-                "org": "nvidia",
-                "listening_host": {
-                    "scheme": "stcp",
-                    "default_host": "localhost",
-                    "port": get_open_ports(1)[0],
-                    "connection_security": connection_security,
-                },
-            }
-        )
-        project["participants"][1]["connect_to"] = {"name": "relay-1", "connection_security": connection_security}
+        project["participants"][1]["connect_to"] = {
+            "name": f"relay-{via_relay}",
+            "connection_security": connection_security,
+        }
     Provisioner(str(tmp_path), prepare_builders(project)).provision(prepare_project(project))
     kits = tmp_path / project["name"] / "prod_00"
     for name in ["localhost", "site-1", "site-2"]:
-        internal = json.loads((kits / name / "local/comm_config.json").read_text())["internal"]
+        comm_path = kits / name / "local/comm_config.json"
+        comm_config = json.loads(comm_path.read_text())
+        if adhoc:
+            comm_config["allow_adhoc_conns"] = True
+            comm_config["adhoc"] = {"scheme": "stcp", "resources": {"connection_security": "mtls"}}
+            comm_path.write_text(json.dumps(comm_config))
+        internal = comm_config["internal"]
         assert internal["scheme"] == "stcp"
         assert internal["resources"]["connection_security"] == connection_security
     update_storage_locations(str(kits / "localhost/local"), str(tmp_path))
     processes, streams, sessions = OwnedProcesses(), [], []
+    server_process = None
+    server_launch = None
     try:
         sites = [("localhost", "server")]
-        if via_relay:
-            sites.append(("relay-1", "relay"))
+        sites.extend((f"relay-{depth}", "relay") for depth in range(1, via_relay + 1))
         sites.extend([("site-1", "client"), ("site-2", "client")])
         for name, kind in sites:
             workspace = kits / name
@@ -126,7 +141,10 @@ def federation(tmp_path, monkeypatch, request):
             ]
             if kind == "client":
                 command.append(f"uid={name}")
-            processes.start(command, cwd=workspace, env=env, stdout=stream, stderr=subprocess.STDOUT)
+            process = processes.start(command, cwd=workspace, env=env, stdout=stream, stderr=subprocess.STDOUT)
+            if kind == "server":
+                server_process = process
+                server_launch = (command, workspace, stream)
         for name in ["victim@test.org", "attacker@test.org"]:
             sessions.append(
                 new_secure_session(name, str(kits / name), timeout=45, command_timeout=15, auto_login_max_tries=1)
@@ -134,7 +152,14 @@ def federation(tmp_path, monkeypatch, request):
             processes.callbacks.append(sessions[-1].close)
         victim, attacker = sessions
         wait_for(lambda: len(victim.get_system_info().client_info) == 2, "two enrolled clients")
-        yield kits, module, victim, attacker, via_relay
+
+        def restart_server():
+            server_process.terminate()
+            server_process.wait(timeout=15)
+            command, workspace, stream = server_launch
+            processes.start(command, cwd=workspace, env=env, stdout=stream, stderr=subprocess.STDOUT)
+
+        yield kits, module, victim, attacker, via_relay, restart_server, adhoc
     finally:
         try:
             processes.close()
@@ -147,6 +172,8 @@ def submit(kits, module, session, name, site, victim=""):
     job = FedJob(name=name, min_clients=1)
     job.to(module.ControlController(victim=victim), "server")
     job.to(module.ControlExecutor(), site, tasks=["attack" if victim else "hold"])
+    if name == "victim":
+        job.to(module.ControlExecutor(), "site-1", tasks=["hold"])
     path = kits.parent / "exports" / name
     job.export_job(str(path))
     return session.submit_job(str(path / name))
@@ -168,11 +195,24 @@ def runner_aborted(result_dir):
     return any("asked to abort - triggered abort_signal" in p.read_text() for p in result_dir.rglob("log.txt"))
 
 
+def nested_relay_peers(session):
+    reply = session.do_command("cellnet.peers relay-1.relay-2")
+    text = json.dumps(reply)
+    return "relay-1.relay-2.site-1" in text and "Total Agents:" in text
+
+
 @pytest.mark.timeout(300)
-def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
-    kits, module, victim_session, attacker_session, via_relay = federation
+def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path, monkeypatch):
+    kits, module, victim_session, attacker_session, via_relay, restart_server, adhoc = federation
+    if via_relay == 2:
+        assert nested_relay_peers(victim_session), "nested relay must answer root's NetAgent query before restart"
     victim = submit(kits, module, victim_session, "victim", "site-2")
     run = holding(kits, victim, victim_session)
+    peer_run = holding(kits, victim, victim_session, "site-1")
+    if adhoc:
+        assert json.loads((run / "adhoc_auth.json").read_text()) == {"request_no_auth": True, "reply_no_auth": True}
+    local_calls_before = json.loads((peer_run / "collab_calls.json").read_text())
+    assert sorted(json.loads((run / "collab_calls.json").read_text())) == ["server", "site-1"]
     evidence = {
         "source": str(Path(nvflare.__file__).resolve()),
         "victim_job": victim,
@@ -195,19 +235,22 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     attack_file = kits / "site-1" / attacker / "attack.json"
     wait_for(attack_file.exists, "attack reply")
     attack = json.loads(attack_file.read_text())
+    assert attack["local_collab_replay_rc"] != ReturnCode.OK
+    assert json.loads((peer_run / "collab_calls.json").read_text()) == local_calls_before
     evidence["attack"] = attack
     assert str(Path(attack["source"]).resolve()) == evidence["source"]
-    assert attack["origin"] == f"{'relay-1.' if via_relay else ''}site-1.{attacker}"
-    assert ("relay-1" in attack["parent_reply_route"]) is via_relay
+    relay_prefix = "".join(f"relay-{depth}." for depth in range(1, via_relay + 1))
+    assert attack["origin"] == f"{relay_prefix}site-1.{attacker}"
+    assert ("relay-1" in attack["parent_reply_route"]) is bool(via_relay)
     assert attack["target"] == f"server.{victim}"
     assert victim != attacker
     wait_for(lambda: status(attacker_session, attacker) == "FINISHED:COMPLETED", "attacker task/update completion")
     attacker_result = Path(attacker_session.download_job_result(attacker))
     evidence["forged_origin"] = json.loads(next(attacker_result.rglob("forged_origin.json")).read_text())
     assert evidence["forged_origin"]["sender"] == f"server.{attacker}"
-    rejection = "auth token for client server_job is bound to origin <missing>, not message origin server"
+    rejection = "rejected message: origin does not belong to sending peer"
     evidence["forged_origin_rejected"] = rejection in (kits / "localhost/log.txt").read_text()
-    rejection = "auth token for client server is bound to origin <missing>, not message origin server"
+    rejection = "rejected message: origin does not belong to sending peer"
     evidence["server_credential_replay_rejected"] = rejection in (kits / "localhost/log.txt").read_text()
     if (
         attack["rc"] == ReturnCode.AUTHENTICATION_ERROR
@@ -215,7 +258,9 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
         and evidence["server_credential_replay_rejected"]
     ):
         assert status(victim_session, victim) == "RUNNING"
+        assert sorted(json.loads((run / "collab_calls.json").read_text())) == ["server", "site-1"]
         (run / "release").touch()
+        (peer_run / "release").touch()
     evidence["after"] = wait_for(
         lambda: (s if (s := status(victim_session, victim)).startswith("FINISHED:") else None), "victim terminal state"
     )
@@ -239,12 +284,42 @@ def test_enrolled_job_cannot_control_another_server_job(federation, tmp_path):
     assert evidence["authorized_abort"] == "FINISHED:ABORTED"
     assert evidence["authorized_runner_aborted"] is True
     assert attack["rc"] == ReturnCode.AUTHENTICATION_ERROR
+    assert attack["collab_replay_rc"] != ReturnCode.OK
     assert evidence["forged_origin_rejected"] is True
     assert evidence["server_credential_replay_rejected"] is True
     assert evidence["runner_aborted"] is False
     assert evidence["after"] == "FINISHED:COMPLETED"
     received = json.loads(next(result_dir.rglob("received.json")).read_text())
     assert received["job"] == victim and received["aborted"] is False
+    # Drop the live transport without restarting the server. The next ordinary
+    # command must reauthenticate and log in without an explicit try_connect.
+    old_cell = victim_session.api.cell
+    reconnect = victim_session.api._cell_auth_monitor.reconnected
+    old_cell.core_cell.communicator.remove_endpoint("server")
+    wait_for(reconnect.is_set, "admin reconnection after transport loss")
+    # Registration and CERT_LOGIN succeed, but simulate one missing command-list
+    # reply. An ordinary retry must recover even with the new monitor unset and
+    # server_sess_active false, without another transport READY event.
+    with monkeypatch.context() as patcher:
+        patcher.setattr(victim_session.api, "_get_command_list_from_server", lambda: False)
+        failed = victim_session.api.do_command(f"{AdminCommandNames.CHECK_STATUS} server")
+        assert failed["status"] == APIStatus.ERROR_RUNTIME
+    assert not victim_session.api.server_sess_active
+    assert not victim_session.api._cell_auth_monitor.reconnected.is_set()
+    assert len(victim_session.get_system_info().client_info) == 2
+    assert victim_session.api.cell is not old_cell
+    # Same-key restart loses server-side token registrations. Existing admin
+    # sessions must recover from the ordinary command path without explicit login.
+    restart_server()
+    wait_for(lambda: victim_session.api._cell_auth_monitor.reconnected.is_set(), "admin transport reconnection")
+    wait_for(
+        lambda: len(victim_session.get_system_info().client_info) == 2,
+        "client/relay recovery after restart",
+        timeout=90,
+    )
+    if via_relay == 2:
+        # Its parent never disconnects, so recovery must not rely on READY events.
+        wait_for(lambda: nested_relay_peers(victim_session), "nested relay NetAgent recovery", timeout=90)
 
 
 @pytest.mark.timeout(40)

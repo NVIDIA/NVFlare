@@ -563,7 +563,7 @@ def main():
             params = {"model." + k: v for k, v in raw.items()}
             meta = (
                 {"NUM_STEPS_CURRENT_ROUND": args.max_steps}
-                if args.max_steps is not None
+                if args.max_steps is not None and args.max_steps > 0
                 else {"NUM_TRAIN_EPOCHS_CURRENT_ROUND": args.num_train_epochs}
             )
             output_model = flare.FLModel(

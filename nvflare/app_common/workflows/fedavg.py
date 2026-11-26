@@ -33,6 +33,7 @@ from nvflare.app_common.utils.fedprox_utils import normalize_fedprox_mu, set_fed
 from nvflare.app_common.utils.file_utils import resolve_path_under_root
 from nvflare.app_common.utils.math_utils import parse_compare_criteria
 from nvflare.app_common.utils.tensor_disk_offload_context import cleanup_tensor_disk_offload, setup_tensor_disk_offload
+from nvflare.fuel.sec import model_audit
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.log_utils import center_message
 
@@ -40,6 +41,10 @@ from .base_fedavg import (
     BaseFedAvg,
     _get_client_name,
     _get_num_steps_weight,
+    _is_zero_step_result,
+    _keeps_model,
+    _make_unchanged_model_result,
+    _release_params,
     make_fedavg_metrics_aggregation_info,
     make_key_metric_info_from_stop_condition,
 )
@@ -61,6 +66,10 @@ class FedAvg(BaseFedAvg):
     metric shapes are incompatible, and continues with accepted clients. A round with no
     accepted contributions fails without updating or saving. Errors during accumulation
     still fail the round because they may have partially changed its state.
+    ``NUM_STEPS_CURRENT_ROUND`` is the number of optimizer steps a client completed this round:
+    a positive value is its weight, a missing or ``None`` value (count unknown) gets weight 1, and
+    ``0`` skips the result, including its metrics. If every received reply reports ``0``, the global
+    model is kept unchanged and not saved, and the round counts as one without improvement for ``patience``.
 
     Supports custom aggregators via the ModelAggregator interface.
 
@@ -156,6 +165,7 @@ class FedAvg(BaseFedAvg):
         self._warned_metric_keys: Set[str] = set()  # warn at most once per key (across clients/rounds)
         self._received_count: int = 0
         self._expected_count: int = 0
+        self._zero_step_count: int = 0
         self._params_type = None  # Only store params_type, not full result
         self._site_metric_weights: Dict[str, Dict[str, Any]] = {}
 
@@ -180,12 +190,15 @@ class FedAvg(BaseFedAvg):
 
             # Load initial model - prefer model if provided, else use persistor
             if self.model is not None:
-                if isinstance(self.model, FLModel):
-                    model = self.model
-                else:
-                    # Assume dict of params
-                    model = FLModel(params=self.model)
-                self.info("Using provided model")
+                with model_audit.operation("load", self.fl_ctx, owner=self) as audit:
+                    with audit.stage("initialize", reason="configured_model"):
+                        if isinstance(self.model, FLModel):
+                            model = self.model
+                        else:
+                            # Assume dict of params
+                            model = FLModel(params=self.model)
+                    self.info("Using provided model")
+                    audit.returned(model)
             else:
                 model = self.load_model()
 
@@ -217,6 +230,8 @@ class FedAvg(BaseFedAvg):
                 # Shared state for both aggregator types
                 self._received_count = 0
                 self._expected_count = len(clients)
+                self._zero_step_count = 0
+                self._reply_count = 0
                 self._params_type = None
                 self._site_metric_weights = {}
 
@@ -268,6 +283,15 @@ class FedAvg(BaseFedAvg):
                     AppEventType.AFTER_AGGREGATION, self.fl_ctx, AppConstants.AGGREGATION_RESULT, aggregate_results
                 )
 
+                if _keeps_model(aggregate_results):
+                    if self.stop_condition:
+                        self.num_fl_rounds_without_improvement += 1
+                        if self.patience and self.patience <= self.num_fl_rounds_without_improvement:
+                            self.info(f"Exceeded the number of FL rounds ({self.patience}) without improvements")
+                            break
+                    self._maybe_cleanup_memory()
+                    continue
+
                 model = self.update_model(model, aggregate_results)
 
                 # Early stopping: check if current model is better
@@ -300,12 +324,17 @@ class FedAvg(BaseFedAvg):
 
     def _aggregate_one_result(self, result: FLModel) -> bool:
         """Callback: aggregate ONE client result immediately (InTime aggregation)."""
+        client_name = _get_client_name(result)
+        if _is_zero_step_result(result):
+            self.warning(f"Skipping result from client {client_name} at round {self.current_round}: 0 steps.")
+            self._zero_step_count += 1
+            _release_params(result)
+            return False
+
         if not result.params:
-            client_name = _get_client_name(result)
             self.warning(f"Empty result from client {client_name}, skipping.")
             return False
 
-        client_name = _get_client_name(result)
         if self.aggregator:
             # Use custom aggregator
             self.aggregator.accept_model(result)
@@ -373,8 +402,15 @@ class FedAvg(BaseFedAvg):
         self.info(f"Aggregated {self._received_count}/{self._expected_count} results")
         return True
 
+    def _all_results_zero_step(self) -> bool:
+        return self._zero_step_count > 0 and self._zero_step_count == self._reply_count
+
     def _get_aggregated_result(self) -> FLModel:
         """Get the final aggregated result after all clients have responded."""
+        if self._all_results_zero_step():
+            self.warning(f"All results reported 0 steps at round {self.current_round}, keeping the global model.")
+            self._publish_zero_contribution_stats()
+            return _make_unchanged_model_result(self.current_round)
         if self.aggregator:
             # Use custom aggregator
             result: FLModel = self.aggregator.aggregate_model()
@@ -519,20 +555,28 @@ class FedAvg(BaseFedAvg):
         if self.persistor:
             # Use persistor (parent class behavior)
             return super().load_model()
-        elif self.save_filename:
-            # Try to load from file
-            filepath = resolve_path_under_root(
-                self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
-            )
-            if os.path.exists(filepath):
-                self.info(f"Loading model from {filepath}")
-                return self.load_model_file(filepath)
+        with model_audit.operation("load", self.fl_ctx, owner=self) as audit:
+            with audit.stage("prepare"):
+                if self.save_filename:
+                    filepath = resolve_path_under_root(
+                        self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
+                    )
+                    if os.path.exists(filepath):
+                        self.info(f"Loading model from {filepath}")
+                        reason = ""
+                    else:
+                        self.info(f"No saved model found at {filepath}, starting fresh")
+                        reason = "file_missing"
+                else:
+                    self.warning("No persistor or save_filename configured")
+                    reason = "no_destination"
+
+            if reason:
+                with audit.stage("initialize", reason=reason):
+                    model = FLModel(params={})
             else:
-                self.info(f"No saved model found at {filepath}, starting fresh")
-                return FLModel(params={})
-        else:
-            self.warning("No persistor or save_filename configured")
-            return FLModel(params={})
+                model = audit.call("implementation", self.load_model_file, filepath)
+            return audit.returned(model)
 
     def save_model(self, model: FLModel) -> None:
         """Save model. Uses persistor if available, otherwise uses save_model_file.
@@ -545,15 +589,19 @@ class FedAvg(BaseFedAvg):
         if self.persistor:
             # Use persistor (parent class behavior)
             super().save_model(model)
-        elif self.save_filename:
-            # Use simple file-based saving
-            filepath = resolve_path_under_root(
-                self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
-            )
-            self.save_model_file(model, filepath)
-            self.info(f"Model saved to {filepath}")
-        else:
-            self.warning("No persistor or save_filename configured, model not saved")
+            return
+        with model_audit.operation("save", self.fl_ctx, owner=self) as audit:
+            if self.save_filename:
+                with audit.stage("prepare"):
+                    filepath = resolve_path_under_root(
+                        self.get_run_dir(), self.save_filename, "save_filename", preserve_leaf=True
+                    )
+                audit.call("implementation", self.save_model_file, model, filepath)
+                self.info(f"Model saved to {filepath}")
+                audit.returned()
+            else:
+                self.warning("No persistor or save_filename configured, model not saved")
+                audit.skipped(reason="no_destination")
 
     def save_model_file(self, model: FLModel, filepath: str) -> None:
         """Save model to file. Override this for framework-specific serialization.
@@ -566,7 +614,7 @@ class FedAvg(BaseFedAvg):
             filepath (str): path to save the model
         """
         # Default: use FOBS to save entire FLModel
-        fobs.dumpf(model, filepath)
+        model_audit.save_step(self, "write", fobs.dumpf, model, filepath)
 
     def load_model_file(self, filepath: str) -> FLModel:
         """Load model from file. Override this for framework-specific deserialization.
@@ -581,4 +629,4 @@ class FedAvg(BaseFedAvg):
             FLModel: loaded model
         """
         # Default: use FOBS to load entire FLModel
-        return fobs.loadf(filepath)
+        return model_audit.load_step(self, "previous_read", fobs.loadf, filepath)

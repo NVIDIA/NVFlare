@@ -1875,10 +1875,14 @@ def test_shared_admission_rejects_unsupported_task_cj_before_launch(tmp_path, bu
     launcher.launch_job = Mock(side_effect=AssertionError("unsupported task CJ must not start"))
     # Canonical site-policy validation has its own tests. Exercise the real
     # selected-launcher check at the shared parent admission boundary here.
-    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode="slurm" if backend == "slurm_server" else "k8s"))
+    from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher
+    from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
+
+    task = object.__new__(SlurmTaskLauncher if backend == "slurm_server" else K8sTaskLauncher)
+    policy = TaskExecutionPolicy(task)
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
         with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
-            with pytest.raises(ValueError, match="supported Kubernetes or Slurm client-job launcher"):
+            with pytest.raises(ValueError, match="unsupported client-job/task launcher pairing"):
                 JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                     client,
                     "job-1",
@@ -1921,9 +1925,13 @@ def test_shared_admission_reaches_matching_native_cj_launcher(tmp_path, mode, mo
     config_dir = Path(workspace.get_app_config_dir("job-1"))
     config_dir.mkdir(parents=True)
     (config_dir / "config_fed_client.json").write_text('{"execution_lifetime":"task"}')
-    policy = TaskExecutionPolicy(SimpleNamespace(launch_mode=mode))
+    from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher
+    from nvflare.app_opt.task_launcher.k8s_launcher import K8sTaskLauncher
+
+    task = object.__new__(SlurmTaskLauncher if mode == "slurm" else K8sTaskLauncher)
+    policy = TaskExecutionPolicy(task)
     with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
-        with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy):
+        with patch.object(TaskExecutionPolicy, "from_workspace", return_value=policy) as load_policy:
             with pytest.raises(RuntimeError, match="native launch boundary reached"):
                 JobExecutor(client=client, startup=workspace.get_startup_kit_dir()).start_app(
                     client,
@@ -1935,6 +1943,7 @@ def test_shared_admission_reaches_matching_native_cj_launcher(tmp_path, mode, mo
                     None,
                     context,
                 )
+    load_policy.assert_called_once_with(workspace)
     launcher.launch_job.assert_called_once()
 
 
@@ -3070,6 +3079,121 @@ def test_late_launch_cleanup_finalizes_without_admin_abort(tmp_path, cleanup_dea
     assert checkpoint.read_text() == "preserved"
     client.send_request_before_shutdown.assert_called_once()
     assert sum(c.args[0] == EventType.JOB_COMPLETED for c in ctx.get_engine().fire_event.call_args_list) == 1
+
+
+@pytest.mark.parametrize("launch_outcome", ["completed-cj", "lost-launch-reply", "shutdown-during-launch"])
+@pytest.mark.parametrize("unsettled", ["coordinator", "worker"])
+def test_composed_handle_retains_shared_ownership_until_physical_cleanup(
+    tmp_path, cleanup_deadlines, launch_outcome, unsettled
+):
+    from nvflare.apis.task_launcher_spec import TaskExecutionPhase, TaskExecutionStatus
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+    from nvflare.app_opt.job_launcher.slurm.task_service import _Job
+    from nvflare.private.fed.client import task_runtime
+    from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers
+    from nvflare.private.fed.task_worker.task_service import _Attempt
+
+    launch_failed = launch_outcome != "completed-cj"
+    late_handle = launch_outcome == "shutdown-during-launch"
+    meta, workspace, client, ctx = _make_start_app_inputs(tmp_path)
+    executor = JobExecutor(client, workspace.get_startup_kit_dir())
+    resources = MagicMock()
+    settled, pending = threading.Event(), threading.Event()
+    native = Mock(spec=ProcessHandle)
+    native.poll.return_value = JobReturnCode.SUCCESS
+    native._is_cleanup_complete.side_effect = lambda: unsettled == "worker" or settled.is_set()
+    owner = _Job(SimpleNamespace(poll_interval=0.01), "job-1", "site-1", "token", "site-1.job-1")
+    owner.manage_cj = True
+    if late_handle:
+        owner.cj_launch_pending = True
+    else:
+        owner.attach_cj(native)
+    owner.on_done = Mock()
+    if unsettled == "worker":
+        worker = Mock(execution_id="slurm:allocation-1")
+        worker.poll.side_effect = lambda: TaskExecutionStatus(TaskExecutionPhase.TERMINAL, settled=settled.is_set())
+        owner.attempts["attempt-1"] = _Attempt(None, handle=worker)
+    wrapped = JobHandleWithTaskWorkers(native, owner, cleanup_timeout=0.01, allow_restart=False)
+    wait = wrapped.wait
+
+    def observe():
+        try:
+            return wait()
+        except TimeoutError:
+            pending.set()
+            raise
+
+    wrapped.wait = observe
+    cleanup_deadlines.observation_pending = pending
+    run_dir = tmp_path / "job-1"
+    write_job_cert(str(run_dir), b"cert", b"key")
+    launcher = MagicMock()
+
+    def launch(_meta, context):
+        if late_handle:
+            engine = context.get_engine()
+            engine._task_execution_state = task_runtime._TaskExecutionState()
+            service = Mock(add_job=Mock(return_value=owner), shutdown=Mock(side_effect=lambda **_: owner.release()))
+            binding = task_runtime.TaskExecutionBinding(
+                owner.backend,
+                Mock(get_or_create=Mock(return_value=service)),
+                "OWNER",
+                "TOKEN",
+                meta,
+                task_runtime.JobLaunchOptions(),
+            )
+
+            def create(_meta, launch_context):
+                task_runtime.shutdown_task_execution(engine)
+                publish_job_handle(native, launch_context)
+                return native
+
+            with patch.object(task_runtime, "JobHandleWithTaskWorkers", return_value=wrapped):
+                return task_runtime._launch_job_with_task_workers(
+                    binding, Mock(launch_job=create), context, cleanup_timeout=0.01
+                )
+        publish_job_handle(wrapped, context)
+        if launch_failed:
+            raise ValueError("start response lost")
+        return wrapped
+
+    launcher.launch_job.side_effect = launch
+    with patch("nvflare.private.fed.client.client_executor.get_job_launcher", return_value=launcher):
+        with ThreadGroup(settled) as threads:
+            owner.thread = threads.start(owner.run)
+            try:
+                args = (client, "job-1", meta, SimpleNamespace(workspace=str(tmp_path), set=[]))
+                if launch_failed:
+                    with pytest.raises(JobCleanupPending):
+                        executor.start_app(*args, {"slot": 1}, "reservation", resources, ctx)
+                else:
+                    executor.start_app(*args, {"slot": 1}, "reservation", resources, ctx)
+                assert pending.wait(5), "cleanup must not report completion while the physical owner is alive"
+                state = executor.run_processes["job-1"][_RUN_STATE_KEY]
+                assert executor.get_run_processes_keys() == ["job-1"]
+                assert executor.run_processes["job-1"][RunProcessKey.JOB_HANDLE]._job_handle is wrapped
+                assert find_job_cert(str(run_dir)) is not None
+                with pytest.raises(RuntimeError, match="still registered"):
+                    executor.delete_run("job-1", str(run_dir))
+                resources.free_resources.assert_not_called()
+                client.send_request_before_shutdown.assert_not_called()
+                assert owner.thread.is_alive()
+            finally:
+                settled.set()
+                owner.release()
+                with owner.lock:
+                    owner.next_cj_observation = 0
+                owner.wake.set()
+                join_thread(owner.thread)
+                if "state" in locals():
+                    join_thread(state.monitor)
+    assert executor.get_run_processes_keys() == []
+    assert find_job_cert(str(run_dir)) is None
+    resources.free_resources.assert_called_once()
+    client.send_request_before_shutdown.assert_called_once()
+    outcome = client.send_request_before_shutdown.call_args.kwargs["request"].payload
+    assert outcome[JobOutcomeMsgKey.CODE] == (ProcessExitCode.INFRASTRUCTURE_ERROR if launch_failed else 0)
+    assert sum(call.args[0] == EventType.JOB_COMPLETED for call in ctx.get_engine().fire_event.call_args_list) == 1
 
 
 def test_monitor_retries_wait_on_the_same_thread_after_transient_query_errors(tmp_path):
