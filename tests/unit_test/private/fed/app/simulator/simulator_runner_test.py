@@ -15,25 +15,35 @@ import copy
 import json
 import os
 import shutil
+import subprocess
 import sys
 import threading
 import uuid
 from argparse import Namespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus, RunnerTask, WorkspaceConstants
+from nvflare.apis.fl_context import FLContextManager
+from nvflare.apis.fl_exception import NotReadyToEndRun
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.signal import Signal
 from nvflare.apis.simulation_plan import SIMULATION_PLAN_PROP
+from nvflare.apis.utils.event import fire_event_to_components
 from nvflare.fuel.utils import gpu_utils
+from nvflare.private.fed import tbi as tbi_module
 from nvflare.private.fed.app.simulator import simulator_runner as simulator_runner_module
 from nvflare.private.fed.app.simulator import simulator_worker
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorClientRunner, SimulatorRunner
+from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.utils.fed_utils import split_gpus
-from tests.timing_utils import CheckedThread, join_thread, wait_for
+from tests.timing_utils import CheckedThread, ThreadGroup, isolate_time, join_thread, wait_for
 
 
 class MockCell:
@@ -42,6 +52,461 @@ class MockCell:
 
     def get_internal_listener_url(self):
         return "tcp://0:123"
+
+
+class _BoundedClientPool(list):
+    """Make a selector regression fail promptly instead of spinning under the pool lock."""
+
+    probes = 0
+
+    def __getitem__(self, index):
+        self.probes += 1
+        assert self.probes <= 100, "selector spun on a fully reserved pool"
+        return super().__getitem__(index)
+
+
+@pytest.fixture
+def client_scheduler(tmp_path, monkeypatch):
+    args = Namespace(workspace=str(tmp_path), log_config=None, set=[])
+    clients = _BoundedClientPool(
+        SimpleNamespace(client_name=f"site-{i}", simulate_running=False, token="token", cell=Mock())
+        for i in range(1, 4)
+    )
+    for client in clients:
+        for directory in ("startup", "local"):
+            (tmp_path / client.client_name / directory).mkdir(parents=True)
+    runner = SimulatorClientRunner(str(tmp_path / "custom"), args, clients, {}, args, {})
+    select = runner.get_next_run_client
+
+    def bounded_selection(gpu, **kwargs):
+        clients.probes = 0
+        return select(gpu, **kwargs)
+
+    monkeypatch.setattr(runner, "get_next_run_client", bounded_selection)
+    clock = isolate_time(monkeypatch, simulator_runner_module)
+    clock.sleep = Mock()
+    return runner, clients, threading.Lock()
+
+
+@pytest.fixture
+def client_task_boundary(client_scheduler, monkeypatch):
+    runner, clients, lock = client_scheduler
+    process, conn = Mock(), Mock()
+    process.poll.return_value = None
+    monkeypatch.setattr(simulator_runner_module, "get_open_ports", Mock(return_value=[12345]))
+    monkeypatch.setattr(simulator_runner_module, "popen_in_new_session", Mock(return_value=process))
+    monkeypatch.setattr(runner, "_create_connection", Mock(return_value=conn))
+    with lock:
+        client = runner.get_next_run_client(None)
+    return runner, clients, lock, client, process, conn
+
+
+def test_client_selection_reserves_before_another_thread_can_select(client_scheduler):
+    runner, clients, lock = client_scheduler
+    clients[0].simulate_running = clients[1].simulate_running = True
+    selected, release = threading.Event(), threading.Event()
+    choices = []
+
+    def select_then_pause():
+        with lock:
+            choices.append(runner.get_next_run_client(None))
+        selected.set()
+        release.wait()
+
+    with ThreadGroup(release) as workers:
+        workers.start(select_then_pause)
+        assert selected.wait(5), "first scheduler did not select a client"
+        with lock:
+            assert choices[0] is clients[2]
+            assert clients[2].simulate_running
+            assert runner.get_next_run_client(None) is None
+
+
+def test_client_selection_is_round_robin_and_can_reuse_a_released_client(client_scheduler):
+    runner, clients, lock = client_scheduler
+    with lock:
+        assert [runner.get_next_run_client(None) for _ in clients] == clients
+        assert runner.get_next_run_client(None) is None
+        clients[1].simulate_running = False
+        assert runner.get_next_run_client(None) is clients[1]
+        assert all(client.simulate_running for client in clients)
+
+
+def test_scheduler_selects_replacement_only_after_worker_cleanup(client_task_boundary, monkeypatch):
+    runner, clients, lock, client, process, conn = client_task_boundary
+    client.simulate_running = False
+    runner.run_client_index = -1
+    conn.recv.side_effect = [False, True, "site-2", False]
+    cleaning, release = threading.Event(), threading.Event()
+    cleanups = []
+
+    def cleanup(_process):
+        cleanups.append(_process)
+        if len(cleanups) == 1:
+            cleaning.set()
+            release.wait()
+
+    monkeypatch.setattr(runner, "_cleanup_process", cleanup)
+    with ThreadGroup(release) as workers:
+        workers.start(lambda: runner.run_client_thread(2, None, lock, False))
+        assert cleaning.wait(5), "worker did not reach cleanup"
+        with lock:
+            assert client.simulate_running
+            assert not any(c.simulate_running for c in clients[1:])
+    assert len(cleanups) == 2
+    assert runner.clients_finished_end_run == {"site-2"}
+    assert not runner.fatal_clients
+    assert not any(c.simulate_running for c in clients)
+
+
+def test_parallel_workers_receive_independent_startup_identities(client_scheduler, monkeypatch):
+    runner, clients, lock = client_scheduler
+    runner.build_ctx = {"client_name": "template"}
+    process = Mock()
+    process.poll.return_value = None
+    connections = [Mock(), Mock()]
+    for client, conn in zip(clients, connections):
+        conn.recv.side_effect = [True, client.client_name, False]
+    sending, second_sent, release = threading.Event(), threading.Event(), threading.Event()
+    identities = {}
+
+    def send_first(data):
+        if isinstance(data, dict):
+            sending.set()
+            release.wait()
+            identities["site-1"] = data[simulator_runner_module.SimulatorConstants.BUILD_CTX]["client_name"]
+
+    def send_second(data):
+        if isinstance(data, dict):
+            identities["site-2"] = data[simulator_runner_module.SimulatorConstants.BUILD_CTX]["client_name"]
+            second_sent.set()
+
+    connections[0].send.side_effect = send_first
+    connections[1].send.side_effect = send_second
+    monkeypatch.setattr(simulator_runner_module, "get_open_ports", Mock(side_effect=[[10001], [10002]]))
+    monkeypatch.setattr(simulator_runner_module, "popen_in_new_session", Mock(return_value=process))
+    monkeypatch.setattr(runner, "_create_connection", lambda port, **kwargs: connections[port - 10001])
+    monkeypatch.setattr(runner, "_cleanup_process", Mock())
+    with lock:
+        first, second = runner.get_next_run_client(None), runner.get_next_run_client(None)
+    with ThreadGroup(release) as workers:
+        workers.start(lambda: runner.do_one_task(first, 3, None, lock))
+        assert sending.wait(5), "first worker did not reach its startup send"
+        workers.start(lambda: runner.do_one_task(second, 3, None, lock))
+        assert second_sent.wait(5), "second worker did not send its startup identity"
+    assert identities == {"site-1": "site-1", "site-2": "site-2"}
+    assert runner.build_ctx == {"client_name": "template"}
+
+
+def test_selection_excludes_finished_and_failed_clients(client_scheduler):
+    runner, clients, lock = client_scheduler
+    runner.clients_finished_end_run.add("site-1")
+    runner.fatal_clients.add("site-2")
+    with lock:
+        assert runner.get_next_run_client(None) is clients[2]
+        assert runner.get_next_run_client(None) is None
+    assert not clients[0].simulate_running
+    assert not clients[1].simulate_running
+
+
+def test_end_run_selection_retries_reaped_failures_but_excludes_unreaped_and_attempted_clients(client_scheduler):
+    runner, clients, lock = client_scheduler
+    runner.fatal_clients.update(c.client_name for c in clients)
+    runner.unreaped_clients.add("site-2")
+    runner.clients_failed_end_run.add("site-3")
+    with lock:
+        assert runner.get_next_run_client(None) is None
+        assert runner.get_next_run_client(None, task_name=RunnerTask.END_RUN) is clients[0]
+        assert runner.get_next_run_client(None, task_name=RunnerTask.END_RUN) is None
+
+
+def test_overlapping_schedulers_finish_each_client_once(client_scheduler, monkeypatch):
+    runner, clients, lock = client_scheduler
+    first_started, second_started, third_started = (threading.Event() for _ in range(3))
+    release_first, release_second = threading.Event(), threading.Event()
+    tasks = []
+
+    def task(client, *args, task_name, **kwargs):
+        tasks.append((client.client_name, task_name))
+        if client is clients[0]:
+            first_started.set()
+            release_first.wait()
+        elif client is clients[1]:
+            second_started.set()
+            release_second.wait()
+        else:
+            third_started.set()
+        return True, client.client_name
+
+    def between_tasks(_interval):
+        if third_started.is_set():
+            release_second.wait()
+            wait_for(lambda: "site-2" in runner.clients_finished_end_run)
+
+    monkeypatch.setattr(runner, "do_one_task", task)
+    simulator_runner_module.time.sleep.side_effect = between_tasks
+    with ThreadGroup(release_first, release_second, timeout=15) as workers:
+        workers.start(lambda: runner.run_client_thread(2, None, lock, True))
+        assert first_started.wait(5), "first scheduler did not start"
+        workers.start(lambda: runner.run_client_thread(2, None, lock, True))
+        assert second_started.wait(5), "second scheduler did not start"
+        release_first.set()
+        assert third_started.wait(5), "remaining client did not receive END_RUN"
+        wait_for(lambda: runner.clients_finished_end_run == {"site-1", "site-3"})
+    assert tasks == [("site-1", RunnerTask.TASK_EXEC), ("site-2", RunnerTask.TASK_EXEC), ("site-3", RunnerTask.END_RUN)]
+    assert runner.clients_finished_end_run == {c.client_name for c in clients}
+    assert not runner.fatal_clients
+    assert not any(c.simulate_running for c in clients)
+
+
+@pytest.mark.parametrize("failure", ["connection", "initial-send", "worker-death"])
+def test_startup_failure_is_failed_not_completed_and_other_clients_end(client_task_boundary, failure):
+    runner, clients, lock, client, process, conn = client_task_boundary
+    client.simulate_running = False
+    runner.run_client_index = -1
+    remaining = [Mock(), Mock()]
+    for candidate, connection in zip(clients[1:], remaining):
+        connection.recv.side_effect = [True, candidate.client_name, False]
+    if failure == "connection":
+        runner._create_connection.side_effect = [RuntimeError("handshake failed"), *remaining]
+    else:
+        runner._create_connection.side_effect = [conn, *remaining]
+        if failure == "initial-send":
+            conn.send.side_effect = BrokenPipeError("startup send failed")
+        else:
+            # First health check observes death; cleanup and later workers use the normal fake boundary.
+            process.poll.side_effect = [1, 1] + [None] * 10
+    runner.run_client_thread(2, None, lock, True)
+    assert runner.clients_finished_end_run == {"site-2", "site-3"}
+    assert runner.fatal_clients == {"site-1"}
+    conn.recv.assert_not_called()
+    assert not any(c.simulate_running for c in clients)
+
+
+@pytest.mark.parametrize("failure", ["exception", "reported"])
+@pytest.mark.parametrize("end_run_for_all", [False, True])
+def test_local_failure_does_not_send_end_run_to_healthy_clients(
+    client_scheduler, monkeypatch, failure, end_run_for_all
+):
+    runner, clients, lock = client_scheduler
+    failing_started, healthy_started, third_started = (threading.Event() for _ in range(3))
+    release_failure, release_healthy = threading.Event(), threading.Event()
+    tasks = []
+
+    def task(client, *args, task_name, **kwargs):
+        tasks.append((client.client_name, task_name))
+        if client is clients[0]:
+            failing_started.set()
+            release_failure.wait()
+            if failure == "exception":
+                raise RuntimeError("connection setup failed")
+            return True, None
+        if client is clients[1]:
+            healthy_started.set()
+        else:
+            third_started.set()
+        release_healthy.wait()
+        return True, client.client_name
+
+    def between_tasks(_interval):
+        if third_started.is_set():
+            release_healthy.wait()
+            wait_for(lambda: "site-2" in runner.clients_finished_end_run)
+
+    monkeypatch.setattr(runner, "do_one_task", task)
+    simulator_runner_module.time.sleep.side_effect = between_tasks
+    with ThreadGroup(release_failure, release_healthy, timeout=15) as workers:
+        workers.start(lambda: runner.run_client_thread(2, None, lock, end_run_for_all))
+        assert failing_started.wait(5), "failing worker did not start"
+        workers.start(lambda: runner.run_client_thread(2, None, lock, end_run_for_all))
+        assert healthy_started.wait(5), "healthy worker did not start"
+        release_failure.set()
+        assert third_started.wait(5), "idle healthy client was not scheduled"
+        assert tasks[-1] == ("site-3", RunnerTask.TASK_EXEC)
+        assert not runner.clients_finished_end_run
+        assert clients[1].simulate_running
+    assert runner.fatal_clients == {"site-1"}
+    assert runner.clients_finished_end_run == {"site-2", "site-3"}
+    assert runner.clients_failed_end_run == ({"site-1"} if end_run_for_all else set())
+
+
+@pytest.mark.parametrize("finalizer_fails", [False, True])
+def test_failed_site_gets_one_end_run_attempt_after_worker_exit(client_task_boundary, finalizer_fails):
+    runner, clients, lock, client, process, conn = client_task_boundary
+    client.simulate_running = False
+    runner.run_client_index = -1
+    conn.send.side_effect = BrokenPipeError("task connection failed")
+    connections = [Mock(), Mock(), Mock()]
+    for name, connection in zip(("site-2", "site-3", "site-1"), connections):
+        connection.recv.side_effect = [True, name, finalizer_fails and name == "site-1"]
+    runner._create_connection.side_effect = [conn, *connections]
+
+    runner.run_client_thread(1, None, lock, True)
+
+    launches = simulator_runner_module.popen_in_new_session.call_args_list
+    assert [
+        (call.args[0][call.args[0].index("--client") + 1], call.args[0][call.args[0].index("--task_name") + 1])
+        for call in launches
+    ] == [
+        ("site-1", str(RunnerTask.TASK_EXEC)),
+        ("site-2", str(RunnerTask.TASK_EXEC)),
+        ("site-3", str(RunnerTask.END_RUN)),
+        ("site-1", str(RunnerTask.END_RUN)),
+    ]
+    assert runner.clients_finished_end_run == (
+        {"site-2", "site-3"} if finalizer_fails else {"site-1", "site-2", "site-3"}
+    )
+    assert runner.clients_failed_end_run == ({"site-1"} if finalizer_fails else set())
+    assert runner.fatal_clients == {"site-1"}  # Finalization cannot erase the earlier execution failure.
+    assert process.wait.call_count == 4
+    assert not any(c.simulate_running for c in clients)
+
+
+@pytest.mark.parametrize("final_reply", [EOFError("truncated outcome"), True])
+def test_partial_or_fatal_worker_reply_is_not_completed(client_task_boundary, final_reply):
+    runner, clients, lock, client, process, conn = client_task_boundary
+    runner.federated_clients = clients[:1]
+    client.simulate_running = False
+    runner.run_client_index = -1
+    conn.recv.side_effect = [True, "site-1", final_reply]
+
+    runner.run_client_thread(2, None, lock, False)
+
+    assert not runner.clients_finished_end_run
+    assert runner.fatal_clients == {"site-1"}
+    assert not client.simulate_running
+
+
+@pytest.mark.parametrize("end_run_for_all", [False, True])
+def test_scheduler_releases_and_records_failed_task(client_scheduler, monkeypatch, end_run_for_all):
+    runner, clients, lock = client_scheduler
+    monkeypatch.setattr(runner, "do_one_task", Mock(side_effect=RuntimeError("worker failed")))
+    runner.run_client_thread(2, None, lock, end_run_for_all)
+    assert runner.fatal_clients == {c.client_name for c in clients}
+    assert not runner.clients_finished_end_run
+    assert not any(c.simulate_running for c in clients)
+
+
+def test_default_mode_keeps_single_execution_slot_after_local_failure(client_scheduler, monkeypatch):
+    runner, clients, lock = client_scheduler
+    task = Mock(side_effect=[RuntimeError("worker died"), (False, None), (True, "site-3")])
+    monkeypatch.setattr(runner, "do_one_task", task)
+    runner.run_client_thread(1, None, lock, False)
+    assert [call.args[0].client_name for call in task.call_args_list] == ["site-1", "site-2", "site-3"]
+    assert all(call.kwargs["task_name"] == RunnerTask.TASK_EXEC for call in task.call_args_list)
+    assert runner.fatal_clients == {"site-1"}
+    assert runner.clients_finished_end_run == {"site-3"}
+    assert not any(c.simulate_running for c in clients)
+
+
+def test_selector_errors_are_logged(client_scheduler, monkeypatch, caplog):
+    runner, clients, lock = client_scheduler
+    monkeypatch.setattr(runner, "get_next_run_client", Mock(side_effect=RuntimeError("selection failed")))
+    runner.run_client_thread(1, None, lock, False)
+    assert "run_client_thread error: RuntimeError: selection failed" in caplog.text
+    assert not any(c.simulate_running for c in clients)
+
+
+def test_bookkeeping_error_releases_reservation_and_is_logged(client_scheduler, monkeypatch, caplog):
+    runner, clients, lock = client_scheduler
+    runner.clients_finished_end_run = Mock()
+    runner.clients_finished_end_run.__contains__ = Mock(return_value=False)
+    runner.clients_finished_end_run.add.side_effect = RuntimeError("completion bookkeeping failed")
+    monkeypatch.setattr(runner, "do_one_task", Mock(return_value=(True, "site-1")))
+    runner.run_client_thread(1, None, lock, False)
+    assert "completion bookkeeping failed" in caplog.text
+    assert runner.fatal_clients == {"site-1"}
+    assert not any(c.simulate_running for c in clients)
+
+
+def test_busy_pool_keeps_current_worker_without_spinning(client_task_boundary):
+    runner, clients, lock, client, process, conn = client_task_boundary
+    for candidate in clients:
+        candidate.simulate_running = True
+    conn.recv.side_effect = [False, True, client.client_name, False]
+    assert runner.do_one_task(client, 2, None, lock) == (True, client.client_name)
+    assert [call.args[0] for call in conn.send.call_args_list[1:]] == [True, False]
+
+
+def test_scheduler_waits_for_a_client_to_be_released(client_scheduler, monkeypatch):
+    runner, clients, lock = client_scheduler
+    for client in clients:
+        client.simulate_running = True
+
+    def release_after_retry(_interval):
+        if simulator_runner_module.time.sleep.call_count == 2:
+            with lock:
+                clients[0].simulate_running = False
+
+    simulator_runner_module.time.sleep.side_effect = release_after_retry
+    task = Mock(return_value=(True, "site-1"))
+    monkeypatch.setattr(runner, "do_one_task", task)
+    runner.run_client_thread(2, None, lock, False)
+    assert simulator_runner_module.time.sleep.call_count == 2
+    assert task.call_args.args[0] is clients[0]
+    assert runner.clients_finished_end_run == {"site-1"}
+    assert not clients[0].simulate_running
+
+
+@pytest.mark.parametrize("exit_before_kill", [False, True])
+def test_worker_cleanup_reaps_after_kill_and_tolerates_exit_race(client_scheduler, exit_before_kill):
+    runner, _, _ = client_scheduler
+    process = Mock()
+    process.poll.return_value = None
+    process.wait.side_effect = [subprocess.TimeoutExpired("worker", 5), 0]
+    if exit_before_kill:
+        process.kill.side_effect = ProcessLookupError()
+
+    assert runner._cleanup_process(process) is True
+
+    methods = [call[0] for call in process.method_calls]
+    assert methods == ["poll", "terminate", "wait", "kill", "wait"]
+
+
+@pytest.mark.parametrize("boundary", ["poll", "terminate", "kill", "wait"])
+def test_worker_cleanup_errors_do_not_authorize_another_worker(client_scheduler, boundary, caplog):
+    runner, _, _ = client_scheduler
+    process = Mock()
+    process.poll.return_value = None
+    if boundary == "kill":
+        process.wait.side_effect = subprocess.TimeoutExpired("worker", 5)
+    getattr(process, boundary).side_effect = OSError("worker control unavailable")
+    assert runner._cleanup_process(process) is False
+    assert "Cannot confirm simulator worker" in caplog.text
+
+
+@pytest.mark.parametrize("shutdown_confirmed", [False, True])
+def test_post_kill_timeout_preserves_reply_and_does_not_reuse_client(client_task_boundary, shutdown_confirmed, caplog):
+    runner, clients, lock, client, process, conn = client_task_boundary
+    client.simulate_running = False
+    runner.run_client_index = -1
+    conn.recv.side_effect = [True, "site-1", False] if shutdown_confirmed else [False]
+    remaining = [Mock(), Mock()]
+    for candidate, connection in zip(clients[1:], remaining):
+        connection.recv.side_effect = [True, candidate.client_name, False]
+    runner._create_connection.side_effect = [conn, *remaining]
+    process.wait.side_effect = [
+        subprocess.TimeoutExpired("worker", 5),
+        subprocess.TimeoutExpired("worker", 5),
+        None,
+        None,
+    ]
+
+    runner.run_client_thread(2, None, lock, True)
+
+    assert "after kill" in caplog.text
+    assert runner.clients_finished_end_run == (
+        {"site-1", "site-2", "site-3"} if shutdown_confirmed else {"site-2", "site-3"}
+    )
+    assert runner.fatal_clients == (set() if shutdown_confirmed else {"site-1"})
+    assert runner.unreaped_clients == {"site-1"}
+    launches = simulator_runner_module.popen_in_new_session.call_args_list
+    assert len(launches) == 3
+    assert [call.args[0][call.args[0].index("--client") + 1] for call in launches] == ["site-1", "site-2", "site-3"]
+    assert launches[1].args[0][launches[1].args[0].index("--task_name") + 1] == str(
+        RunnerTask.END_RUN if shutdown_confirmed else RunnerTask.TASK_EXEC
+    )
+    assert not any(c.simulate_running for c in clients)
 
 
 @pytest.mark.parametrize("extension", ["json", "conf", "yaml"])
@@ -437,7 +902,7 @@ class TestSimulatorRunner:
                 ):
                     runner.do_one_task(client, num_of_threads=0, gpu=None, lock=threading.Lock())
 
-        assert runner.fatal_clients == expected
+        assert runner.fatal_clients == set(expected)
 
     @pytest.mark.parametrize("task_name", [RunnerTask.END_RUN, RunnerTask.TASK_EXEC])
     def test_worker_reports_client_fatal_error(self, task_name):
@@ -454,10 +919,122 @@ class TestSimulatorRunner:
         }.get(key, default)
 
         with patch.object(worker, "fire_event"):
-            _, stop_run, _, fatal_error = worker.do_one_task(client, Namespace(task_name=task_name))
+            _, stop_run, end_run_client, fatal_error = worker.do_one_task(client, Namespace(task_name=task_name))
 
         assert stop_run
+        assert end_run_client == client.client_name
         assert fatal_error
+
+    @pytest.mark.parametrize("phase", ["initialize", "swap-in", "execute"])
+    def test_worker_uncaught_exceptions_are_simulation_failures(self, phase, caplog):
+        worker = simulator_worker.ClientTaskWorker()
+        client = MagicMock(client_name="site-1")
+        client_runner = Mock()
+        fl_ctx = client.run_manager.new_context.return_value.__enter__.return_value
+        fl_ctx.get_prop.side_effect = lambda key, default=None: {
+            FLContextKey.RUNNER: client_runner,
+            FLContextKey.FATAL_SYSTEM_ERROR: False,
+        }.get(key, default)
+        failure = RuntimeError(f"{phase} failed")
+        if phase == "initialize":
+            client.run_manager = None
+            worker.create_client_runner = Mock(side_effect=failure)
+        elif phase == "swap-in":
+            worker.fire_event = Mock(side_effect=failure)
+        else:
+            worker.fire_event = Mock()
+            client_runner.fetch_and_run_one_task.side_effect = failure
+
+        _, stop_run, end_run_client, failed = worker.do_one_task(client, Namespace(task_name=RunnerTask.TASK_EXEC))
+
+        assert stop_run and failed
+        assert end_run_client is None
+        assert f"{phase} failed" in caplog.text
+        assert "END_RUN event handlers failed" not in caplog.text
+
+    @pytest.mark.parametrize("task_name", [RunnerTask.END_RUN, RunnerTask.TASK_EXEC])
+    @pytest.mark.parametrize(
+        "failure_event",
+        [
+            None,
+            EventType.ABORT_TASK,
+            EventType.ABOUT_TO_END_RUN,
+            EventType.END_RUN,
+            "readiness-flag",
+            "readiness-exception",
+            "readiness-error",
+            "end-run-not-ready",
+            "earlier-fatal",
+        ],
+    )
+    def test_worker_checks_actual_end_run_dispatch_context(self, monkeypatch, caplog, task_name, failure_event):
+        events = []
+
+        class Finalizer(FLComponent):
+            def handle_event(self, event_type, fl_ctx):
+                events.append(event_type)
+                if event_type == EventType.CHECK_END_RUN_READINESS:
+                    if failure_event in ("readiness-flag", "readiness-error"):
+                        fl_ctx.set_prop(FLContextKey.NOT_READY_TO_END_RUN, True, private=True, sticky=False)
+                    if failure_event == "readiness-exception":
+                        raise NotReadyToEndRun("cleanup is not ready")
+                    if failure_event == "readiness-error":
+                        raise OSError("readiness handler failed")
+                if event_type == failure_event:
+                    raise OSError("could not write final artifact")
+                if event_type == EventType.END_RUN and failure_event == "end-run-not-ready":
+                    raise NotReadyToEndRun("END_RUN handler did not finish")
+
+        clock = isolate_time(monkeypatch, tbi_module)
+        clock.time = Mock(side_effect=[0, 6])
+        worker = simulator_worker.ClientTaskWorker()
+        client_runner = ClientRunner.__new__(ClientRunner)
+        FLComponent.__init__(client_runner)
+        client_runner.running_tasks = {}
+        client_runner.task_lock = threading.Lock()
+        client_runner._run_abort_requested = True
+        client_runner.get_positive_float_var = lambda name, default: default
+        client_runner.log_info = Mock()
+        client_runner.log_debug = Mock()
+        client_runner.fetch_and_run_one_task = Mock(return_value=(1.0, True))
+        client_runner.run_abort_signal = Signal()
+        client_runner.run_abort_signal.trigger(True)
+        engine = Mock()
+        client_runner.engine = engine
+        manager = FLContextManager(
+            engine=engine,
+            private_stickers={
+                FLContextKey.RUNNER: client_runner,
+                FLContextKey.FATAL_SYSTEM_ERROR: failure_event == "earlier-fatal",
+            },
+        )
+        contexts = []
+
+        def new_context():
+            ctx = manager.new_context()
+            contexts.append(ctx)
+            return ctx
+
+        engine.new_context.side_effect = new_context
+        finalizer = Finalizer()
+        engine.fire_event.side_effect = lambda event, ctx: fire_event_to_components(event, [finalizer], ctx)
+        client = SimpleNamespace(client_name="site-1", run_manager=engine)
+
+        _, stop_run, end_run_client, fatal_error = worker.do_one_task(client, Namespace(task_name=task_name))
+
+        handler_fails = failure_event not in (None, "readiness-flag", "readiness-exception", "earlier-fatal")
+        assert stop_run
+        assert end_run_client == (None if handler_fails else "site-1")
+        assert fatal_error is (handler_fails or failure_event == "earlier-fatal")
+        if failure_event == "earlier-fatal":
+            assert "END_RUN event handlers failed" not in caplog.text
+        assert not contexts[0].get_prop(FLContextKey.EXCEPTIONS)  # The worker's outer context cannot see the failure.
+        # Readiness cleared earlier event errors, but they must still make the outcome fail.
+        assert bool(contexts[1].get_prop(FLContextKey.EXCEPTIONS)) is (
+            failure_event in (EventType.END_RUN, "readiness-error", "end-run-not-ready")
+        )
+        assert events.count(EventType.CHECK_END_RUN_READINESS) == 1
+        assert events.count(EventType.END_RUN) == 1
 
     def test_worker_create_connection_does_not_require_authkey(self):
         conn = Mock()

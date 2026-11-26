@@ -33,7 +33,7 @@ from nvflare.apis.fl_constant import (
     TaskResultReceipt,
 )
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_exception import UnsafeJobError
+from nvflare.apis.fl_exception import NotReadyToEndRun, UnsafeJobError
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.task_launcher_spec import TaskExecutionInterrupted
@@ -1173,7 +1173,8 @@ class ClientRunner(TBI):
         self.log_debug(fl_ctx, "received client job_heartbeat")
         return make_reply(ReturnCode.OK)
 
-    def end_run_events_sequence(self):
+    def end_run_events_sequence(self) -> bool:
+        """Run shutdown events and report whether their handlers completed without errors."""
         with self.engine.new_context() as fl_ctx:
             self.log_info(fl_ctx, "started end-run events sequence")
 
@@ -1192,11 +1193,27 @@ class ClientRunner(TBI):
             self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
             self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
 
+            # Readiness retries clear per-event exceptions; retain earlier shutdown failures.
+            handler_errors = bool(fl_ctx.get_prop(FLContextKey.EXCEPTIONS))
             self.check_end_run_readiness(fl_ctx)
+            # A readiness timeout is advisory. Its control signal is not an END_RUN handler failure.
+            readiness_errors = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
+            if isinstance(readiness_errors, dict):
+                fl_ctx.set_prop(
+                    FLContextKey.EXCEPTIONS,
+                    {
+                        name: error
+                        for name, error in readiness_errors.items()
+                        if not isinstance(error, NotReadyToEndRun)
+                    },
+                    private=True,
+                    sticky=False,
+                )
 
             # now ready to end run
             self.fire_event(EventType.END_RUN, fl_ctx)
             self.log_info(fl_ctx, "END_RUN fired")
+            return not handler_errors and not fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
 
     def abort(self, msg: str = ""):
         """To Abort the current run.

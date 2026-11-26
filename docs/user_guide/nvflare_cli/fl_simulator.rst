@@ -50,6 +50,23 @@ Command Usage
                                 max number of clients
         --end_run_for_all     flag to indicate if running END_RUN event for all clients
 
+Worker failures and finalization
+===============================
+
+A worker startup, communication, or uncaught execution exception marks that site
+as failed. Healthy sites keep their execution slots in both shutdown modes.
+These worker failures include exceptions that do not explicitly raise
+``FATAL_SYSTEM_ERROR``. The simulator returns exit code 2 for a client failure
+when the server workflow could not finish; a completed server workflow retains
+its existing success policy.
+
+With ``--end_run_for_all``, a confirmed successful shutdown starts the finalization
+phase. Each remaining site gets one END_RUN attempt, including failed sites whose
+previous workers were confirmed to have exited. A failed END_RUN is recorded
+without repeated retries. A site whose worker could not be reaped is excluded
+from further launches, including END_RUN, to prevent overlapping workers with the
+same identity. Successful finalization does not clear an earlier worker failure.
+
 
 *****************
 Command examples
