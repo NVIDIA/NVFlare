@@ -24,7 +24,7 @@ site keeps control of its data and local execution.
 [![pypi](https://badge.fury.io/py/nvflare.svg)](https://badge.fury.io/py/nvflare)
 [![pyversion](https://img.shields.io/pypi/pyversions/nvflare.svg)](https://badge.fury.io/py/nvflare)
 [![downloads](https://static.pepy.tech/badge/nvflare)](https://pepy.tech/project/nvflare)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NVIDIA/NVFlare)
+[![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/NVIDIA/NVFlare)
 [![NVIDIA Verified Plugin](https://img.shields.io/badge/NVIDIA-Verified%20Plugin-76B900?style=flat&logo=nvidia&logoColor=white)](https://github.com/NVIDIA/skills#plugin-catalog)
 
 ## What is NVIDIA FLARE?
