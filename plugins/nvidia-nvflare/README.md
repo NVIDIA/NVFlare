@@ -1,12 +1,12 @@
 # NVIDIA FLARE plugin
 
-`nvidia-nvflare` packages NVIDIA FLARE's existing agent skills for Agent Plugins,
-Codex, Claude Code, and Cursor. The proposed initial plugin version is `1.0.0`;
-it is independent of the NVFlare Python package and individual skill versions.
-This packaging candidate is not an approved plugin release.
+`nvidia-nvflare` is an NVIDIA Verified Plugin available for Claude Code, Codex, and Cursor.
+Version 1.0.0 bundles the nine NVIDIA FLARE 2.9 skills. Plugin versions are independent
+of the NVFlare Python package and individual skill versions.
 
-Verification CI generates the final Plugin Card and benchmark for the evaluated
-bundle. Preparation checks below do not establish NVIDIA Verified status.
+For installation commands, see the [NVIDIA/skills marketplace guide](https://github.com/NVIDIA/skills#quickstart).
+The [published plugin](https://github.com/NVIDIA/skills/tree/main/plugins/nvidia-nvflare) includes the Plugin Card,
+benchmark, and signatures. See the [NVIDIA Skills documentation](https://docs.nvidia.com/skills) for more about verified plugins.
 
 ## Contents
 
@@ -223,7 +223,9 @@ Loading probes do not establish conversions or full workflow coverage. Retain
 complete reports and triage findings; an incomplete scan remains a release
 blocker. Do not edit signed resources or suppress findings to obtain a pass.
 
-## Release evidence checklist
+## Maintainer checklist for future releases
+
+Apply these checks when preparing a new plugin release.
 
 - [ ] Review the exact package inventory, license notices, dependencies, and model
   or dataset references; retain third-party attribution where applicable.
@@ -231,9 +233,8 @@ blocker. Do not edit signed resources or suppress findings to obtain a pass.
   scope, linking the prior repository approval. Follow the program's current
   launch process and applicable IP review, attribution, and VP requirements.
 - [ ] Complete native loading and workflow smoke tests for the supported hosts.
-- [ ] Add an approved square marketplace icon and confirm each marketplace's
-  presentation requirements and final installation entry. The current candidate
-  has no icon or published marketplace installation command.
+- [ ] Confirm each marketplace's presentation requirements, including any required
+  icon, and test its published installation instructions.
 - [ ] Scan and evaluate the final plugin through the supported NVIDIA pipeline;
   retain tool versions, source revision, report links, complete configured
   agent/arm coverage, execution errors, canonical case IDs, and gate verdicts.
@@ -247,15 +248,10 @@ blocker. Do not edit signed resources or suppress findings to obtain a pass.
 - [ ] Generate a Plugin Card and plugin-level signature for the exact final
   package. Existing per-skill signatures do not attest to the new manifests or
   the bundle as a whole. Verify the final published package against its attestation.
-- [ ] Review and merge the packaging into the public repository, select the release
-  revision/version, then add a `plugins:` entry in NVIDIA/skills
-  `components.d/nvflare.yml` identifying the repository, `2.9` branch, plugin
-  directory, and `catalog_dir` install name. Confirm resulting marketplace content
-  and install behavior before announcing availability.
-
-Preparation and local validation can proceed while approval is pending. Keep
-unverified items open and avoid describing the candidate as NVIDIA Verified until
-the required review, evaluation, signing, and publication steps are complete.
+- [ ] Review and merge the signed release into the public repository. Confirm the
+  [NVFlare catalog entry](https://github.com/NVIDIA/skills/blob/main/components.d/nvflare.yml)
+  points to the intended branch, plugin directory, and install name. Check marketplace
+  content and installation before announcing the new version.
 
 ## Packaging references
 
