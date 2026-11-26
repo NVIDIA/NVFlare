@@ -24,6 +24,9 @@ _monotonic = time.monotonic
 _sleep = time.sleep
 WAIT_TIMEOUT = 10.0
 
+# Real processes need time for interpreter startup, imports, and transport setup.
+PROCESS_STARTUP_TIMEOUT = 30.0
+
 
 def isolate_time(monkeypatch, *modules):
     """Keep existing clock mocks local to a test's cooperating modules.
@@ -54,7 +57,14 @@ def wait_for(predicate, timeout=WAIT_TIMEOUT, message="condition did not become 
         _sleep(min(0.01, remaining))
 
 
-def expire_deadline_when_ready(monkeypatch, module, ready):
+def expire_deadline_when_ready(
+    monkeypatch,
+    module,
+    ready,
+    *,
+    readiness_timeout=WAIT_TIMEOUT,
+    message="child did not reach readiness before timeout injection",
+):
     """Let a real child reach readiness before expiring its isolated policy clock.
 
     The initial deadline starts at zero. Subsequent reads stay there until the
@@ -74,9 +84,9 @@ def expire_deadline_when_ready(monkeypatch, module, ready):
         if expired or ready():
             expired = True
             return _monotonic()
-        if _monotonic() - started >= WAIT_TIMEOUT:
+        if _monotonic() - started >= readiness_timeout:
             expired = True
-            raise AssertionError("child did not reach readiness before timeout injection")
+            raise AssertionError(message)
         return 0.0
 
     monkeypatch.setattr(clock, "monotonic", monotonic)

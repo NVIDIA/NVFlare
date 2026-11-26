@@ -16,22 +16,30 @@
 
 import json
 import multiprocessing as mp
+from queue import Empty
 
 import pytest
 
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
-from tests.cell_reconnect_test_utils import run_child, run_parent
-from tests.timing_utils import stop_processes
+from tests.cell_reconnect_test_utils import RECONNECT_TEST_TIMEOUT, run_child, run_parent
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, stop_processes
 
 
-def _receive(control):
-    assert control.poll(15), "Cell role did not answer"
+def _receive(control, timeout=15):
+    assert control.poll(timeout), "Cell role did not answer"
     response = control.recv()
     assert "error" not in response, response
     return response
 
 
-@pytest.mark.timeout(75)
+def _wait_for_child_ready(ready, incarnation):
+    try:
+        return ready.get(timeout=PROCESS_STARTUP_TIMEOUT)
+    except Empty:
+        pytest.fail(f"Cell child {incarnation} did not report a connection")
+
+
+@pytest.mark.timeout(RECONNECT_TEST_TIMEOUT)
 def test_graceful_child_replacement_before_old_transport_disconnect(tmp_path):
     config = {
         "backbone_conn_gen": 1,
@@ -54,11 +62,11 @@ def test_graceful_child_replacement_before_old_transport_disconnect(tmp_path):
     children = []
     try:
         parent.start()
-        url = _receive(control)["url"]
+        url = _receive(control, timeout=PROCESS_STARTUP_TIMEOUT)["url"]
         old = ctx.Process(target=run_child, args=(str(tmp_path), url, 1, ready, stops[0]))
         children.append(old)
         old.start()
-        assert ready.get(timeout=15) == {"connected": 1}
+        assert _wait_for_child_ready(ready, 1) == {"connected": 1}
         control.send("arm")
         assert _receive(control) == {"armed": True}
         control.send("request")
@@ -73,7 +81,7 @@ def test_graceful_child_replacement_before_old_transport_disconnect(tmp_path):
         replacement = ctx.Process(target=run_child, args=(str(tmp_path), url, 2, ready, stops[1]))
         children.append(replacement)
         replacement.start()
-        assert ready.get(timeout=15) == {"connected": 2}
+        assert _wait_for_child_ready(ready, 2) == {"connected": 2}
         assert not close_released.is_set(), "Old close notification must stay gated during replacement"
         control.send("request")
         assert _receive(control) == {"rc": ReturnCode.OK, "payload": 2}

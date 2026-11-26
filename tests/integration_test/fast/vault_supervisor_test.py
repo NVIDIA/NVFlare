@@ -16,20 +16,12 @@ import os
 import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
 import yaml
 
-
-def wait_for(predicate, timeout=12):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if predicate():
-            return
-        time.sleep(0.05)
-    raise AssertionError("Supervisor did not reach the expected state")
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, wait_for
 
 
 @pytest.fixture
@@ -134,11 +126,19 @@ while True:
 def test_foreground_signal_shutdown_and_restart(supervisor, action):
     launch, runtime, source, events = supervisor
     process = launch()
-    wait_for(lambda: events.exists() and "start" in events.read_text())
+    wait_for(
+        lambda: events.exists() and "start" in events.read_text(),
+        timeout=PROCESS_STARTUP_TIMEOUT,
+        message=f"Vault supervisor did not report startup in {events}",
+    )
     assert process.poll() is None
     if action == "restart":
         (runtime / "restart.fl").touch()
-        wait_for(lambda: events.read_text().count("start") == 2)
+        wait_for(
+            lambda: events.read_text().count("start") == 2,
+            timeout=PROCESS_STARTUP_TIMEOUT,
+            message=f"Vault supervisor did not report restart in {events}",
+        )
         assert "stop" in events.read_text()
         assert process.poll() is None
     if action == "shutdown":
@@ -156,7 +156,11 @@ def test_foreground_signal_shutdown_and_restart(supervisor, action):
 def test_foreground_stop_leaves_time_for_cleanup_when_child_ignores_term(supervisor, stop_signal):
     launch, runtime, source, events = supervisor
     process = launch(ignore_term=True)
-    wait_for(lambda: events.exists() and "start" in events.read_text())
+    wait_for(
+        lambda: events.exists() and "start" in events.read_text(),
+        timeout=PROCESS_STARTUP_TIMEOUT,
+        message=f"Vault supervisor did not report startup in {events}",
+    )
     child_pid = int(events.read_text().split()[1])
     process.send_signal(stop_signal)
     # Leave margin for cleanup before a runtime's 10-second stop deadline.
@@ -170,7 +174,7 @@ def test_foreground_stop_leaves_time_for_cleanup_when_child_ignores_term(supervi
 def test_foreground_crash_loop_exits_nonzero(supervisor):
     launch, runtime, source, events = supervisor
     process = launch(fail_fast=True)
-    assert process.wait(timeout=15) == 1
+    assert process.wait(timeout=PROCESS_STARTUP_TIMEOUT) == 1
     assert events.read_text().count("start") == 5
     assert not (runtime / "daemon_pid.fl").exists()
 
@@ -178,7 +182,11 @@ def test_foreground_crash_loop_exits_nonzero(supervisor):
 def test_foreground_reused_container_pid_does_not_block_boot(supervisor):
     launch, runtime, source, events = supervisor
     process = launch(stale_pid=True)
-    wait_for(lambda: events.exists() and "start" in events.read_text())
+    wait_for(
+        lambda: events.exists() and "start" in events.read_text(),
+        timeout=PROCESS_STARTUP_TIMEOUT,
+        message=f"Vault supervisor did not report startup in {events}",
+    )
     assert process.poll() is None
     assert not (runtime / "shutdown.fl").exists()
     process.send_signal(signal.SIGTERM)

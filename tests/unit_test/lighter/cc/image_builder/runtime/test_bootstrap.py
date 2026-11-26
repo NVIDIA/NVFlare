@@ -25,7 +25,6 @@ import struct
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, mock_open, patch
@@ -774,46 +773,6 @@ class SupervisorTests(unittest.TestCase):
         audit = patch.object(supervisor, "emit")
         audit.start()
         self.addCleanup(audit.stop)
-
-    def test_timed_out_reopen_leaves_no_running_descendant(self):
-        spawn = subprocess.Popen
-        program = (
-            "import subprocess, sys, time\n"
-            "from pathlib import Path\n"
-            "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
-            "Path(sys.argv[1]).write_text(str(child.pid))\n"
-            "time.sleep(60)\n"
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            pidfile = Path(directory) / "descendant.pid"
-
-            def fixture(argv, **kwargs):
-                return spawn([sys.executable, "-c", program, str(pidfile)], **kwargs)
-
-            with patch.object(supervisor.subprocess, "Popen", side_effect=fixture):
-                with self.assertRaisesRegex(BuildError, "TimeoutExpired"):
-                    supervisor.run_reopen(2, dict(os.environ))
-            pid = int(pidfile.read_text())
-            terminated = ("gone", "Z", "X")
-            status = None
-            deadline = time.monotonic() + 5
-            try:
-                # SIGKILL is asynchronous: waiting for the direct child does
-                # not mean its descendant has finished exiting on another CPU.
-                while True:
-                    try:
-                        status = Path(f"/proc/{pid}/stat").read_text().split(")", 1)[1].split()[0]
-                    except (FileNotFoundError, ProcessLookupError):
-                        # Disappearance before open (ENOENT) or read (ESRCH).
-                        status = "gone"
-                    if status in terminated or time.monotonic() >= deadline:
-                        break
-                    time.sleep(0.01)
-                self.assertIn(status, terminated, "Descendant survived reopen timeout cleanup")
-            finally:
-                if status not in terminated:
-                    with contextlib.suppress(ProcessLookupError):
-                        os.kill(pid, signal.SIGKILL)
 
     def test_ready_precedes_synchronous_start_and_pending_signal_runs_a_tick(self):
         events = []

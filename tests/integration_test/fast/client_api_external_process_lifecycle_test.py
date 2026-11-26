@@ -49,6 +49,10 @@ from nvflare.fuel.utils.fobs.decomposers.via_downloader import (
     materialize_lazy_download_refs,
 )
 from nvflare.fuel.utils.network_utils import get_open_ports
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT
+
+# Leave room for Cell setup, task exchange, download assertions, and cleanup.
+pytestmark = pytest.mark.timeout(PROCESS_STARTUP_TIMEOUT + 90)
 
 _TRAINER_SCRIPT = textwrap.dedent(
     """
@@ -150,7 +154,7 @@ def external_process_env(tmp_path, monkeypatch):
         executor=executor,
         command=f"{sys.executable} -u {trainer_script}",
         launch_once=False,
-        launch_timeout=10.0,
+        launch_timeout=PROCESS_STARTUP_TIMEOUT,
         heartbeat_interval=0.1,
         # These cases detect explicit abort and process death. A heartbeat
         # expiry under scheduler contention must not trigger either scenario.
@@ -263,7 +267,6 @@ def _paused_download(env, result, monkeypatch):
         assert not thread.is_alive(), "accepted-result receiver survived test cleanup"
 
 
-@pytest.mark.timeout(30)
 def test_run_abort_reaps_real_trainer_during_accepted_result_download(external_process_env, monkeypatch, caplog):
     env = external_process_env
     result, trainer = _accepted_lazy_result(env)
@@ -292,7 +295,6 @@ def test_run_abort_reaps_real_trainer_during_accepted_result_download(external_p
     env.executor.system_panic.assert_not_called()
 
 
-@pytest.mark.timeout(30)
 @pytest.mark.skipif(os.name != "posix", reason="requires POSIX process-group SIGKILL")
 def test_real_trainer_death_interrupts_exact_accepted_result_download(external_process_env, monkeypatch, caplog):
     env = external_process_env

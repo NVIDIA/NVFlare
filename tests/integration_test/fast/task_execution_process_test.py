@@ -45,7 +45,7 @@ from nvflare.private.fed.task_worker.artifacts import ArtifactReference, FileTas
 from nvflare.private.fed.task_worker.protocol import read_bootstrap
 from tests.task_execution_test_utils import SCRIPT, _adapter, _config, _statistics_config
 from tests.task_execution_test_utils import native_task as _native_task
-from tests.timing_utils import WAIT_TIMEOUT, ThreadGroup, wait_for
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, WAIT_TIMEOUT, ThreadGroup, wait_for
 
 # Register the shared fixture in this collected module only.
 native_task = _native_task
@@ -418,29 +418,61 @@ def test_shutdown_or_abort_during_result_decoding_keeps_cancellation_without_fal
 
 
 @pytest.mark.parametrize("parent_owned", [False, True])
-def test_real_worker_end_run_uses_native_shutdown_paths(native_task, monkeypatch, parent_owned):
+def test_real_worker_end_run_uses_native_shutdown_paths(native_task, monkeypatch, caplog, parent_owned):
     from tests.process_launcher_test_utils import _assert_pid_not_running, _wait_for_file
 
     _, custom, context, policy = native_task
     ready = custom / "shutdown-worker.pid"
+    progress = custom / "shutdown-worker.stage"
     script = (
-        "import os, pathlib, time\nimport nvflare.client as flare\n"
-        "flare.init()\nflare.receive()\n"
+        "import os, pathlib, time\n"
+        f"progress = pathlib.Path({str(progress)!r})\n"
+        "def mark_stage(stage):\n"
+        "    pending = progress.with_suffix('.tmp')\n"
+        "    pending.write_text(stage)\n"
+        "    pending.replace(progress)\n"
+        "mark_stage('importing nvflare.client')\n"
+        "import nvflare.client as flare\n"
+        "mark_stage('initializing Client API')\n"
+        "flare.init()\n"
+        "mark_stage('receiving first task')\n"
+        "flare.receive()\n"
         f"pathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
         "while True: time.sleep(0.01)\n"
     )
+    caplog.set_level("INFO", logger=policy.launcher.logger.name)
+    launch = policy.launcher.launch_task
+    execution_id = None
+
+    def record_launch(request):
+        nonlocal execution_id
+        handle = launch(request)
+        execution_id = handle.execution_id
+        return handle
+
+    monkeypatch.setattr(policy.launcher, "launch_task", record_launch)
     # The test-only launcher supplies real process settlement; this flag selects
     # the same CJ shutdown branch as a parent-owned native proxy.
     monkeypatch.setattr(policy.launcher, "cleanup_owned_by_parent", parent_owned, raising=False)
+    # Leave time to abort the worker even if readiness uses its full allowance.
+    policy = replace(policy, worker_timeout=PROCESS_STARTUP_TIMEOUT + WAIT_TIMEOUT)
     adapter, data = _adapter(custom, context, policy, script=script)
     native_end = Mock(wraps=adapter._end_native_run)
     monkeypatch.setattr(adapter, "_end_native_run", native_end)
     results = []
     with ThreadGroup(timeout=WAIT_TIMEOUT) as workers:
         workers.start(lambda: results.append(adapter.execute("train", data, context, Signal())))
+        # Allow for interpreter startup, the Cell handshake, and task receipt.
         try:
-            _wait_for_file(ready)
+            _wait_for_file(ready, timeout=PROCESS_STARTUP_TIMEOUT)
             pid = int(ready.read_text())
+        except pytest.fail.Exception:
+            stage = progress.read_text().strip() if progress.exists() else ""
+            raise AssertionError(
+                f"Worker did not receive its first task within {PROCESS_STARTUP_TIMEOUT:g} seconds. "
+                f"Launch execution ID was {execution_id or 'unavailable'}. "
+                f"Last worker stage was {stage or 'before the task script'}."
+            ) from None
         finally:
             adapter.handle_event(EventType.END_RUN, context)
 

@@ -21,9 +21,9 @@ import psutil
 import pytest
 
 from tests import process_test_utils as processes
-from tests.timing_utils import expire_deadline_when_ready, wait_for
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, expire_deadline_when_ready, wait_for
 
-pytestmark = [pytest.mark.timeout(40), pytest.mark.skipif(os.name != "posix", reason="POSIX detached trainer")]
+pytestmark = [pytest.mark.timeout(60), pytest.mark.skipif(os.name != "posix", reason="POSIX detached trainer")]
 
 _WRAPPER = """
 import os, pathlib, subprocess, sys, time
@@ -53,7 +53,13 @@ def test_runner_stops_detached_trainers_and_retains_outcome(tmp_path, monkeypatc
         )
     command = [sys.executable, "-c", _WRAPPER, str(ready), outcome]
     if outcome == "timeout":
-        expire_deadline_when_ready(monkeypatch, processes, ready.exists)
+        expire_deadline_when_ready(
+            monkeypatch,
+            processes,
+            ready.exists,
+            readiness_timeout=PROCESS_STARTUP_TIMEOUT,
+            message=f"Detached trainer did not publish {ready}",
+        )
     child = None
     try:
         if outcome == "timeout":
@@ -62,7 +68,7 @@ def test_runner_stops_detached_trainers_and_retains_outcome(tmp_path, monkeypatc
             assert "original job output" in caught.value.output
             assert caught.value.timeout == 5
         else:
-            result = processes.run_owned_process(command, timeout=10, cleanup_grace=0.2)
+            result = processes.run_owned_process(command, timeout=PROCESS_STARTUP_TIMEOUT, cleanup_grace=0.2)
             assert result.returncode == int(outcome)
             assert "original job output" in result.stdout
         assert ready.exists(), "controlled trainer never reached readiness"
@@ -89,7 +95,9 @@ def test_partial_startup_and_interruption_close_owned_processes(tmp_path, failur
         with pytest.raises((FileNotFoundError, KeyboardInterrupt)):
             with processes.OwnedProcesses(grace=0.2) as owner:
                 process = owner.start([sys.executable, "-c", _WRAPPER, str(ready), "timeout"])
-                wait_for(ready.exists)
+                wait_for(
+                    ready.exists, timeout=PROCESS_STARTUP_TIMEOUT, message=f"Detached trainer did not publish {ready}"
+                )
                 if failure == "startup":
                     owner.start([str(tmp_path / "missing-command")])
                 else:

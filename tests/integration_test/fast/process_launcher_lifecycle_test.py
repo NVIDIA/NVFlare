@@ -40,7 +40,7 @@ from tests.process_launcher_test_utils import (
     _wait_for_file,
     requires_waitid,
 )
-from tests.timing_utils import WAIT_TIMEOUT, ManualClock, ThreadGroup
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, WAIT_TIMEOUT, ManualClock, ThreadGroup
 
 
 @requires_waitid
@@ -62,7 +62,7 @@ def test_clean_exit_honors_exact_environment_and_working_directory(tmp_path, mon
 
     handle = ProcessTaskLauncher().launch_task(request)
     assert os.getpgid(handle.process_group_id) == handle.process_group_id
-    status = handle.wait_for_settlement(timeout=5.0)
+    status = handle.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT)
 
     assert status.phase == TaskExecutionPhase.TERMINAL
     assert status.exit_code == 0
@@ -88,8 +88,8 @@ def test_nonzero_and_signal_exits_are_distinct(tmp_path):
         _request(tmp_path, "attempt-signal", "import os, signal; os.kill(os.getpid(), signal.SIGTERM)")
     )
 
-    nonzero_status = nonzero.wait_for_settlement(timeout=5.0)
-    signal_status = signalled.wait_for_settlement(timeout=5.0)
+    nonzero_status = nonzero.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT)
+    signal_status = signalled.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT)
 
     assert nonzero_status.exit_code == 23
     assert nonzero_status.termination_signal is None
@@ -153,7 +153,7 @@ def test_leader_exit_is_not_settlement_while_descendant_survives(tmp_path):
     _wait_for_file(child_pid_path)
     child_pid = int(child_pid_path.read_text())
 
-    status = handle.wait_for_settlement(timeout=5.0)
+    status = handle.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT)
 
     assert status.exit_code == 0
     assert status.cancel_requested is False
@@ -236,7 +236,7 @@ def test_attempt_identity_cannot_be_reused(tmp_path):
     launcher = ProcessTaskLauncher()
     request = _request(tmp_path, "attempt-once", "pass")
     handle = launcher.launch_task(request)
-    assert handle.wait_for_settlement(timeout=5.0).succeeded
+    assert handle.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT).succeeded
 
     with pytest.raises(TaskLauncherError, match="already launched"):
         launcher.launch_task(request)
@@ -248,7 +248,7 @@ def test_real_zombie_group_settles_without_signalling_or_waiting_for_init(tmp_pa
     process = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
     try:
         observation = psutil.Process(process.pid)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while observation.status() != psutil.STATUS_ZOMBIE:
             assert time.monotonic() < deadline
             time.sleep(0.01)
@@ -289,7 +289,7 @@ def test_zombie_member_with_nonreaping_parent_does_not_block_settlement(tmp_path
         )
         assert os.getpgid(leader_pid) == leader_pid
         sibling = psutil.Process(sibling_pid)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while sibling.status() != psutil.STATUS_ZOMBIE:
             assert time.monotonic() < deadline
             time.sleep(0.01)
@@ -455,7 +455,7 @@ def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_
         stop_grace_period=1.0 if bounded_wait else 0.1, descendant_settle_timeout=0.01, poll_interval=0.01
     ).launch_task(_request(tmp_path, "retained-leader", leader_code, child_code, child_pid_path))
     _wait_for_file(child_pid_path)
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
     while handle.poll().phase != TaskExecutionPhase.TERMINAL:
         assert time.monotonic() < deadline
         time.sleep(0.01)
@@ -502,7 +502,7 @@ def test_external_reaper_between_verification_and_reap_fails_closed(tmp_path, mo
     waitpid = os.waitpid
     stolen = False
     try:
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while owned.poll() is None:
             assert time.monotonic() < deadline
             time.sleep(0.01)
@@ -578,7 +578,7 @@ def test_external_reaping_between_verification_and_signal_is_detected_later(tmp_
             pytest.skip("host posix_spawn with setsid support selected the Popen fallback")
         _wait_for_file(ready)
         child = psutil.Process(int(ready.read_text()))
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while owned.poll() is None:
             assert time.monotonic() < deadline
             time.sleep(0.01)
@@ -671,7 +671,7 @@ def test_subprocess_imports_the_isolated_checkout(tmp_path):
             environment={"PYTHONPATH": str(checkout), "PYTHONDONTWRITEBYTECODE": "1"},
         )
     )
-    assert handle.wait_for_settlement(timeout=5).succeeded
+    assert handle.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT).succeeded
     assert all(Path(path).resolve().is_relative_to(checkout) for path in json.loads(output.read_text()))
 
 
@@ -689,7 +689,7 @@ def test_full_exit_values_settle_once_on_both_spawn_paths(tmp_path, monkeypatch,
     reap = Mock(wraps=handle._adapter.reap)
     monkeypatch.setattr(handle._adapter, "reap", reap)
 
-    status = handle.wait_for_settlement(timeout=5)
+    status = handle.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT)
 
     assert status.exit_code == exit_code & 0xFF
     assert status.termination_signal is None
@@ -707,7 +707,7 @@ def test_full_exit_values_settle_once_on_both_spawn_paths(tmp_path, monkeypatch,
 def test_identity_capacity_is_bounded_without_evicting_settled_attempts(tmp_path, monkeypatch):
     launcher = ProcessTaskLauncher(max_attempt_identities=1)
     request = _request(tmp_path, "retained-at-capacity", "pass")
-    assert launcher.launch_task(request).wait_for_settlement(timeout=5).succeeded
+    assert launcher.launch_task(request).wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT).succeeded
     spawn = Mock()
     monkeypatch.setattr("tests.local_task_launcher.spawn_process", spawn)
     with pytest.raises(TaskLauncherError, match="already launched"):
@@ -740,7 +740,7 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
     child_pid = None
     try:
         _wait_for_file(fork_ready)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while owned.poll() is None:
             assert time.monotonic() < deadline
             time.sleep(0.01)
@@ -751,7 +751,7 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
             snapshot = pids()
             fork_now.write_text("fork")
             _wait_for_file(child_pid_path)
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
             while _process_running(forker):
                 assert time.monotonic() < deadline
                 time.sleep(0.01)

@@ -16,6 +16,7 @@ import logging
 import multiprocessing
 import time
 import traceback
+from queue import Empty
 from threading import Event
 
 import pytest
@@ -27,9 +28,11 @@ from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamTargetUnreachable
 from nvflare.fuel.utils.network_utils import get_open_ports
-from tests.timing_utils import ManualClock
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, ManualClock, stop_processes
 
-_CONNECT_TIMEOUT = 10.0
+_TEST_TIMEOUT = 120
+_CONNECT_TIMEOUT = PROCESS_STARTUP_TIMEOUT
+_READY_TIMEOUT = PROCESS_STARTUP_TIMEOUT + 5
 _CHANNEL = "routed_stream_error_test"
 _TOPIC = "late_reply"
 _MISSING_RECEIVER = "site-2.dead-job"
@@ -53,8 +56,7 @@ def _wait_for_connection(cell, peer_fqcn):
     raise RuntimeError(f"{cell.get_fqcn()} did not connect to {peer_fqcn}")
 
 
-def _wait_for_peer_state(cell, peer_fqcn, connected):
-    deadline = time.monotonic() + _CONNECT_TIMEOUT
+def _wait_for_peer_state(cell, peer_fqcn, connected, *, deadline):
     while time.monotonic() < deadline:
         if cell.is_cell_connected(peer_fqcn) is connected:
             return
@@ -63,7 +65,12 @@ def _wait_for_peer_state(cell, peer_fqcn, connected):
     raise RuntimeError(f"{peer_fqcn} did not {state} from {cell.get_fqcn()}")
 
 
-def _run_server(root_url, status_queue, stop_event):
+def _wait_for_stop(cell, stop_event):
+    if not stop_event.wait(_TEST_TIMEOUT):
+        raise RuntimeError(f"{cell.get_fqcn()} did not receive a stop signal")
+
+
+def _run_server(root_url, status_queue, stop_event, receiver_deadline):
     cell = None
     capture = _ErrorCapture()
     logging.getLogger().addHandler(capture)
@@ -72,11 +79,11 @@ def _run_server(root_url, status_queue, stop_event):
         StreamCell(cell)
         cell.start()
         status_queue.put({"ready": True})
-        _wait_for_peer_state(cell, _MISSING_RECEIVER, connected=True)
+        _wait_for_peer_state(cell, _MISSING_RECEIVER, connected=True, deadline=receiver_deadline)
         status_queue.put({"receiver_connected": True})
-        _wait_for_peer_state(cell, _MISSING_RECEIVER, connected=False)
+        _wait_for_peer_state(cell, _MISSING_RECEIVER, connected=False, deadline=time.monotonic() + _CONNECT_TIMEOUT)
         status_queue.put({"receiver_removed": True})
-        stop_event.wait(30)
+        _wait_for_stop(cell, stop_event)
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -93,7 +100,7 @@ def _run_receiver(root_url, status_queue, stop_event):
         cell.start()
         _wait_for_connection(cell, "server")
         status_queue.put({"ready": True})
-        stop_event.wait(30)
+        _wait_for_stop(cell, stop_event)
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -155,7 +162,7 @@ def _run_sender(root_url, result_queue):
             cell.stop()
 
 
-def _run_recovery_server(root_url, status_queue, stop_event):
+def _run_recovery_server(root_url, status_queue, stop_event, recovery_deadline):
     cell = None
     route_failed = Event()
     try:
@@ -171,11 +178,11 @@ def _run_recovery_server(root_url, status_queue, stop_event):
         cell.add_error_handler(STREAM_CHANNEL, STREAM_DATA_TOPIC, report_route_failure)
         cell.start()
         status_queue.put({"ready": True})
-        if not route_failed.wait(30):
+        if not route_failed.wait(max(0, recovery_deadline - time.monotonic())):
             raise RuntimeError("sender never exercised the missing downstream route")
-        _wait_for_peer_state(cell, _MISSING_RECEIVER, connected=True)
+        _wait_for_peer_state(cell, _MISSING_RECEIVER, connected=True, deadline=recovery_deadline)
         status_queue.put({"route_recovered": True})
-        stop_event.wait(30)
+        _wait_for_stop(cell, stop_event)
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -184,7 +191,7 @@ def _run_recovery_server(root_url, status_queue, stop_event):
             cell.stop()
 
 
-def _run_recovering_sender(root_url, result_queue, receiver_ready):
+def _run_recovering_sender(root_url, result_queue, receiver_ready, recovery_deadline):
     cell = None
     try:
         import nvflare.fuel.f3.streaming.byte_streamer as byte_streamer_module
@@ -208,7 +215,7 @@ def _run_recovering_sender(root_url, result_queue, receiver_ready):
             optional=False,
             reliable=True,
         )
-        if not receiver_ready.wait(30):
+        if not receiver_ready.wait(max(0, recovery_deadline - time.monotonic())):
             raise RuntimeError("downstream route was not restored")
         clock.advance(byte_streamer_module.STREAM_RETRY_WAIT + 0.01)
         result_queue.put({"bytes_sent": future.result(timeout=10), "payload": payload})
@@ -233,7 +240,7 @@ def _run_recovery_receiver(root_url, status_queue, result_queue, stop_event):
         cell.start()
         _wait_for_connection(cell, "server")
         status_queue.put({"ready": True})
-        stop_event.wait(30)
+        _wait_for_stop(cell, stop_event)
     except Exception:
         status_queue.put({"error": traceback.format_exc()})
         raise
@@ -242,13 +249,16 @@ def _run_recovery_receiver(root_url, status_queue, result_queue, stop_event):
             cell.stop()
 
 
-def _queue_result(queue):
-    result = queue.get(timeout=30)
+def _queue_result(queue, stage):
+    try:
+        result = queue.get(timeout=_READY_TIMEOUT)
+    except Empty:
+        pytest.fail(f"Routed stream subprocess did not report {stage}")
     assert "error" not in result, result.get("error")
     return result
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(_TEST_TIMEOUT)
 def test_routed_optional_stream_reports_downstream_route_removal_without_error_logs():
     """The sender's first hop succeeds, then the server reports the missing final receiver."""
     context = multiprocessing.get_context("spawn")
@@ -258,35 +268,30 @@ def test_routed_optional_stream_reports_downstream_route_removal_without_error_l
     result_queue = context.Queue()
     server_stop = context.Event()
     receiver_stop = context.Event()
-    server = context.Process(target=_run_server, args=(root_url, server_status, server_stop))
+    receiver_deadline = time.monotonic() + 2 * _READY_TIMEOUT
+    server = context.Process(target=_run_server, args=(root_url, server_status, server_stop, receiver_deadline))
     receiver = context.Process(target=_run_receiver, args=(root_url, receiver_status, receiver_stop))
     sender = context.Process(target=_run_sender, args=(root_url, result_queue))
 
     try:
         server.start()
-        _queue_result(server_status)
+        _queue_result(server_status, "server state")
         receiver.start()
-        _queue_result(receiver_status)
-        assert _queue_result(server_status)["receiver_connected"] is True
+        _queue_result(receiver_status, "receiver readiness")
+        assert _queue_result(server_status, "server state")["receiver_connected"] is True
         receiver_stop.set()
         receiver.join(timeout=15)
         assert receiver.exitcode == 0
-        assert _queue_result(server_status)["receiver_removed"] is True
+        assert _queue_result(server_status, "server state")["receiver_removed"] is True
         sender.start()
-        result = _queue_result(result_queue)
+        result = _queue_result(result_queue, "optional send outcome")
         sender.join(timeout=15)
     finally:
         receiver_stop.set()
         server_stop.set()
-        for process in (receiver, sender, server):
-            if process.pid is None:
-                continue
-            process.join(timeout=10)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=5)
+        stop_processes(receiver, sender, server)
 
-    server_result = _queue_result(server_status)
+    server_result = _queue_result(server_status, "server state")
     assert sender.exitcode == 0
     assert server.exitcode == 0
     assert result["error_type"] == StreamTargetUnreachable.__name__
@@ -300,7 +305,7 @@ def test_routed_optional_stream_reports_downstream_route_removal_without_error_l
     assert server_result["errors"] == []
 
 
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(_TEST_TIMEOUT)
 def test_non_optional_reliable_stream_recovers_after_transient_downstream_route_failure():
     context = multiprocessing.get_context("spawn")
     root_url = f"tcp://localhost:{get_open_ports(1)[0]}"
@@ -311,8 +316,15 @@ def test_non_optional_reliable_stream_recovers_after_transient_downstream_route_
     server_stop = context.Event()
     receiver_stop = context.Event()
     receiver_ready = context.Event()
-    server = context.Process(target=_run_recovery_server, args=(root_url, server_status, server_stop))
-    sender = context.Process(target=_run_recovering_sender, args=(root_url, sender_result, receiver_ready))
+    # Allow all three process launches and the parent's handoffs before either
+    # peer gives up on recovery. The test watchdog also covers transfer and cleanup.
+    recovery_deadline = time.monotonic() + 3 * _READY_TIMEOUT
+    server = context.Process(
+        target=_run_recovery_server, args=(root_url, server_status, server_stop, recovery_deadline)
+    )
+    sender = context.Process(
+        target=_run_recovering_sender, args=(root_url, sender_result, receiver_ready, recovery_deadline)
+    )
     receiver = context.Process(
         target=_run_recovery_receiver,
         args=(root_url, receiver_status, receiver_result, receiver_stop),
@@ -320,30 +332,24 @@ def test_non_optional_reliable_stream_recovers_after_transient_downstream_route_
 
     try:
         server.start()
-        _queue_result(server_status)
+        _queue_result(server_status, "server state")
         sender.start()
-        route_failure = _queue_result(server_status)
+        route_failure = _queue_result(server_status, "server state")
         assert route_failure["route_error"]
 
         # Observe both ends of the restored route before advancing retry policy.
         receiver.start()
-        _queue_result(receiver_status)
-        assert _queue_result(server_status)["route_recovered"] is True
+        _queue_result(receiver_status, "receiver readiness")
+        assert _queue_result(server_status, "server state")["route_recovered"] is True
         receiver_ready.set()
-        send_result = _queue_result(sender_result)
-        receive_result = _queue_result(receiver_result)
+        send_result = _queue_result(sender_result, "recovered send outcome")
+        receive_result = _queue_result(receiver_result, "recovered receiver outcome")
         sender.join(timeout=15)
     finally:
         receiver_stop.set()
         server_stop.set()
         receiver_ready.set()
-        for process in (receiver, sender, server):
-            if process.pid is None:
-                continue
-            process.join(timeout=10)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=5)
+        stop_processes(receiver, sender, server)
 
     assert sender.exitcode == 0
     assert receiver.exitcode == 0
