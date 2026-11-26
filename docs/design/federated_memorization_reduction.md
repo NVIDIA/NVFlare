@@ -180,11 +180,8 @@ a private Python attribute on the original context object, outside `FLContext.pr
 The task context owns the snapshot lifetime; the filters retain no model state
 between tasks. One paired filter chain per task context is supported.
 
-This boundary matters for `MultiProcessExecutor`: private/non-sticky *properties*
-are still serialized by `get_serializable_data()` for task and event relays.
-The audit attribute is omitted by that helper and the standard FOBS context
-decomposer, so the extra full-model snapshot stays in the parent process. Normal
-training payloads continue through the executor's transport. Install both filters
+Context serialization includes model data and properties. The snapshot stays in
+the parent process as an attribute on the original context. Install both filters
 on the parent client's input/output chains with the same original `FLContext`
 object. Context clones, worker contexts and later task contexts do not inherit the
 snapshot; a custom pipeline that moves output filtering to one of them reports
@@ -351,10 +348,8 @@ later probe from the original matrix. GPU and CPU measurements retain their scop
 The historical H100 run at `778d632e` passed 42 focused tests, including both CUDA
 tests; its numerical and resource measurements remain unchanged. The tiny-model
 simulator also passed at `62873bbcc` after the baseline moved to a context attribute.
-Neither the simulator nor the GPU/Hugging Face workflow launches actual
-`MultiProcessExecutor` workers; its message-builder/serialization regression covers
-that separate transport boundary in process. Current-main Client API materialization
-tests cover the reused runtime paths.
+The context serialization regression verifies that the snapshot stays on the task
+context. Client API materialization tests cover the reused runtime paths.
 
 Before removing experimental status, review the API and security contracts and
 publish paired utility/leakage measurements, all defense strengths and individual

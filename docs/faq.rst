@@ -292,9 +292,9 @@ Client related questions
 
 #. Can a client train with multiple GPUs?
 
-    Use Client API with external ``torchrun`` for PyTorch DDP; see the
+    Use the Client API with external ``torchrun`` for PyTorch DDP. See the
     :github_nvflare_link:`multi-GPU examples <examples/advanced/multi-gpu>`.
-    The legacy wrapper is deprecated; see :ref:`multi_process_executor_migration`.
+    For existing jobs that use the removed executors, see :ref:`multi_process_executor_migration`.
 
 #. How do FL clients get identified?
 
@@ -422,8 +422,6 @@ Known issues
    will resolve to the updated IP for binding when restarting.
 #. Running out of memory can happen at any time, especially if the server and clients are running on same machine.
    This can cause the server to die unexpectedly.
-#. After calling ``shutdown client`` for a client running multi GPUs, a process (sub_worker_process) may remain. The
-   work around for this is to run ``abort client`` before the ``shutdown`` command.
 #. If a snapshot is in a corrupted state, the server may try to restore the job and get stuck. To resolve this, delete
    the snapshot from the location configured in project.yml for the snapshot_persistor storage (by default
    ``/tmp/nvflare/jobs-storage``), and ``abort_job`` should be able to stop the job on the server.

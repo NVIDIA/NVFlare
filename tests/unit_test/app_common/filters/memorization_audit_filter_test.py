@@ -23,15 +23,13 @@ from unittest.mock import Mock
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReturnCode
-from nvflare.apis.fl_context import FLContextManager
+from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.signal import Signal
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.memorization_auditor import MemorizationAuditor
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.executors.multi_process_executor import MultiProcessExecutor
 from nvflare.app_common.filters import memorization_audit_filter as audit_filters
 from nvflare.app_common.filters.memorization_audit_filter import (
     _BASELINE_ATTR,
@@ -39,7 +37,6 @@ from nvflare.app_common.filters.memorization_audit_filter import (
     MemorizationAuditFilter,
 )
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.job_config.api import FedApp, FedJob
@@ -154,36 +151,26 @@ def test_failed_capture_does_not_reuse_baseline(tmp_path):
     assert getattr(fl_ctx, _BASELINE_ATTR, None) is None
 
 
-class RelayOnlyExecutor(MultiProcessExecutor):
-    def get_multi_process_command(self):
-        raise AssertionError("This serialization test must not launch workers")
-
-
-def test_baseline_stays_local_through_worker_event_and_task_relays(tmp_path, isolated_fobs):
+def test_baseline_stays_local_through_context_serialization(tmp_path, isolated_fobs):
     fl_ctx, auditor = context(tmp_path)
-    marker = "AUDIT_BASELINE_MUST_NOT_ENTER_WORKER_MESSAGES"
-    capture(FLModel(params={"w": 1}, meta={"marker": marker}, current_round=0), fl_ctx)
-    executor = RelayOnlyExecutor(num_of_processes=2)
-    executor.engine = fl_ctx.get_engine()
-    executor.targets = ["rank-0", "rank-1"]
-    wires = []
+    marker = "AUDIT_BASELINE_MUST_NOT_ENTER_SERIALIZED_CONTEXT"
+    incoming = FLModel(params={"w": 1}, meta={"marker": marker}, current_round=0)
+    capture(incoming, fl_ctx)
 
-    def send_message(**kwargs):
-        # Use real message construction/FOBS with a fake Cell boundary. No
-        # workers, threads or sockets are started by these relay methods.
-        wires.append(fobs.dumps(kwargs["message"].payload))
+    direct_ctx = FLContext()
+    capture(incoming, direct_ctx)
+    assert getattr(direct_ctx, _BASELINE_ATTR).meta["marker"] == marker
+    assert marker.encode() not in fobs.dumps(direct_ctx)
 
-    executor.engine.client.cell.fire_and_forget.side_effect = send_message
-    executor._pass_event_to_rank_processes(EventType.BEFORE_TASK_EXECUTION, fl_ctx)
+    wire = fobs.dumps(get_serializable_data(fl_ctx))
+    assert marker.encode() not in wire
+    received_ctx = fobs.loads(wire)
+    assert received_ctx.get_identity_name() == fl_ctx.get_identity_name()
+    assert getattr(received_ctx, _BASELINE_ATTR, None) is None
+    assert _BASELINE_ATTR not in received_ctx.props
+
+    # Serializing the context leaves its baseline available for the output filter.
     outgoing = FLModelUtils.to_shareable(FLModel(params={"w": 2}, current_round=0))
-    executor._execute_multi_process("train", outgoing, fl_ctx, Signal())
-    assert len(wires) == 2
-    for wire in wires:
-        assert marker.encode() not in wire
-        relayed = fobs.loads(wire)[CommunicationMetaData.FL_CTX]
-        assert getattr(relayed, _BASELINE_ATTR, None) is None
-        assert _BASELINE_ATTR not in relayed.props
-    # Relays must neither consume nor replace the parent's baseline.
     assert MemorizationAuditFilter(auditor).process(outgoing, fl_ctx) is outgoing
     report = json.loads(next(tmp_path.rglob("*.json")).read_text())
     assert report["status"] == "completed"

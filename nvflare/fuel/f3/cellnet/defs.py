@@ -166,8 +166,6 @@ class CellChannel:
     SERVER_COMMAND = "server_command"
     SERVER_PARENT_LISTENER = "server_parent_listener"
     CLIENT_COMMAND = "client_command"
-    CLIENT_SUB_WORKER_COMMAND = "client_sub_worker_command"
-    MULTI_PROCESS_EXECUTOR = "multi_process_executor"
     SIMULATOR_RUNNER = "simulator_runner"
     RETURN_ONLY = "return_only"
     EDGE_REQUEST = "edge_request"
@@ -184,8 +182,6 @@ class CellChannelTopic:
     GET_TASK = "get_task"
     SUBMIT_RESULT = "submit_result"
     HEART_BEAT = "heart_beat"
-    EXECUTE_RESULT = "execute_result"
-    FIRE_EVENT = "fire_event"
     # Keep the original wire value so existing clients and servers remain compatible.
     REPORT_JOB_OUTCOME = "report_job_failure"
     REPORT_JOB_FAILURE = REPORT_JOB_OUTCOME  # Compatibility alias.
