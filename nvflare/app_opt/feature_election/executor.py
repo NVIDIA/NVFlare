@@ -450,19 +450,29 @@ class FeatureElectionExecutor(Executor):
                 mask[np.argsort(scores)[-k:]] = True
                 return mask, scores
 
-            # Extract base model separately, then forward remaining fs_params as kwargs
+            # Extract base model and "k" separately, then forward remaining fs_params as kwargs
             base_model = self.fs_params.get("model", LogisticRegression(max_iter=1000, random_state=42))
-            ppimbc_kwargs = {k: v for k, v in self.fs_params.items() if k != "model"}
+            k_raw = self.fs_params.get("k")
+            ppimbc_kwargs = {name: v for name, v in self.fs_params.items() if name not in ("model", "k")}
             model = PPIMBC(base_model, **ppimbc_kwargs)
             # fit() returns None; the selected column labels are stored on ``model.MB``.
             # Label the columns by position so ``MB`` maps straight back to indices.
             columns = [str(i) for i in range(n_features)]
             model.fit(pd.DataFrame(self.X_train, columns=columns), self.y_train)
             selected_features = [int(c) for c in (model.MB or [])]
+            # ``feat_imp_scores`` is aligned with ``MB``: log(1 / p-value), sorted descending.
+            importances = np.asarray(model.feat_imp_scores[: len(selected_features)], dtype=float)
+            # A p-value of 0 gives an infinite importance; cap it at the largest finite one.
+            finite = np.isfinite(importances)
+            importances[~finite] = importances[finite].max() if finite.any() else 1.0
+            scores = np.zeros(n_features)
+            scores[selected_features] = importances
+            # "k" optionally caps the selection at the k most important features.
+            # By default every feature PyImpetus selects is kept.
+            if k_raw is not None:
+                selected_features = selected_features[: max(1, int(k_raw))]
             mask = np.zeros(n_features, dtype=bool)
             mask[selected_features] = True
-            scores = np.zeros(n_features)
-            scores[selected_features] = 1.0
             return mask, scores
 
         else:
