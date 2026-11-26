@@ -11,7 +11,8 @@
 [![pypi](https://badge.fury.io/py/nvflare.svg)](https://badge.fury.io/py/nvflare)
 [![pyversion](https://img.shields.io/pypi/pyversions/nvflare.svg)](https://badge.fury.io/py/nvflare)
 [![downloads](https://static.pepy.tech/badge/nvflare)](https://pepy.tech/project/nvflare)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NVIDIA/NVFlare)
+[![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/NVIDIA/NVFlare)
+[![NVIDIA Verified Plugin](https://img.shields.io/badge/NVIDIA-Verified%20Plugin-76B900?style=flat&logo=nvidia&logoColor=white)](https://github.com/NVIDIA/skills#plugin-catalog)
 
 [NVIDIA FLARE](https://nvidia.github.io/NVFlare/) (**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment)
 is a domain-agnostic, open-source, extensible Python SDK that allows researchers and data scientists to adapt existing ML/DL workflows to a federated paradigm.
@@ -47,6 +48,30 @@ $ python -m pip install nvflare
 ```
 
 For detailed installation please refer to [NVIDIA FLARE installation](https://nvflare.readthedocs.io/en/main/installation.html).
+
+## Install the NVIDIA Verified Plugin
+
+The `nvidia-nvflare` plugin bundles nine skills for working with NVIDIA FLARE. Use it to convert a training script
+into a federated job, compute federated statistics, or diagnose a failed run.
+
+**Claude Code** — Run these commands in a Claude Code session.
+
+```text
+/plugin marketplace add NVIDIA/skills
+/plugin install nvidia-nvflare@nvidia-official
+```
+
+**Codex** — Run these commands in your terminal.
+
+```bash
+codex plugin marketplace add NVIDIA/skills
+codex plugin add nvidia-nvflare@nvidia-official
+```
+
+**Cursor** — Install `nvidia-nvflare` from the [Cursor Marketplace](https://cursor.com/marketplace) or add the
+`NVIDIA/skills` marketplace in Cursor.
+
+See the [NVIDIA Skills documentation](https://docs.nvidia.com/skills) for more about verified plugins.
 
 ## Getting Started
 
