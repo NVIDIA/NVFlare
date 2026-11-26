@@ -454,7 +454,14 @@ class FeatureElectionExecutor(Executor):
             base_model = self.fs_params.get("model", LogisticRegression(max_iter=1000, random_state=42))
             ppimbc_kwargs = {k: v for k, v in self.fs_params.items() if k != "model"}
             model = PPIMBC(base_model, **ppimbc_kwargs)
-            selected_features = model.fit(self.X_train, self.y_train)
+            # PPIMBC.fit() returns None; the selected columns (the Markov blanket) are
+            # stored on the fitted model as ``MB``, holding column labels.  Fit on a
+            # DataFrame whose labels are the positional indices so ``MB`` maps straight
+            # back to positions.  Indexing the mask with fit()'s return value would be
+            # ``mask[None] = True``, which selects every feature.
+            columns = [str(i) for i in range(n_features)]
+            model.fit(pd.DataFrame(self.X_train, columns=columns), self.y_train)
+            selected_features = [int(c) for c in (model.MB or [])]
             mask = np.zeros(n_features, dtype=bool)
             mask[selected_features] = True
             scores = np.zeros(n_features)
