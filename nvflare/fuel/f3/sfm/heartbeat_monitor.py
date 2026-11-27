@@ -75,11 +75,13 @@ class HeartbeatMonitor(Thread):
             driver = sfm_conn.conn.connector.driver
             caps = driver.capabilities()
             sends_heartbeat = not caps or caps.get(DriverCap.SEND_HEARTBEAT.value, False)
+            reports_receive_progress = caps and caps.get(DriverCap.REPORT_RECEIVE_PROGRESS.value, False)
             last_activity = sfm_conn.get_last_activity()
 
             if (
                 self.receive_idle_timeout > 0
                 and sends_heartbeat
+                and reports_receive_progress
                 and sfm_conn.sfm_endpoint is not None
                 and last_activity > 0
                 and self.curr_time - last_activity > self.receive_idle_timeout
@@ -92,7 +94,7 @@ class HeartbeatMonitor(Thread):
                         f"no frame received for {idle_seconds:.1f}s "
                         f"(timeout {self.receive_idle_timeout:.1f}s)"
                     )
-                    sfm_conn.conn.force_close()
+                    Thread(target=self._force_close, args=(sfm_conn.conn,), name="hb_force_close", daemon=True).start()
                 continue
 
             stall_sec = sfm_conn.get_send_stall_seconds()
@@ -125,3 +127,10 @@ class HeartbeatMonitor(Thread):
             stale_keys = [k for k in state if k not in active_keys]
             for k in stale_keys:
                 state.pop(k, None)
+
+    @staticmethod
+    def _force_close(conn):
+        try:
+            conn.force_close()
+        except Exception as ex:
+            log.debug(f"Failed to force-close stalled connection {conn}: {ex}")

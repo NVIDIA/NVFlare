@@ -28,32 +28,45 @@ from tests.timing_utils import WAIT_TIMEOUT, ManualClock, ObservedLock, ThreadGr
 
 
 class FakeDriver:
-    def __init__(self, send_heartbeat_supported=True):
+    def __init__(self, send_heartbeat_supported=True, reports_receive_progress=True):
         self.send_heartbeat_supported = send_heartbeat_supported
+        self.reports_receive_progress = reports_receive_progress
 
     def capabilities(self):
         if self.send_heartbeat_supported is None:
             return None
-        return {DriverCap.SEND_HEARTBEAT.value: self.send_heartbeat_supported}
+        return {
+            DriverCap.SEND_HEARTBEAT.value: self.send_heartbeat_supported,
+            DriverCap.REPORT_RECEIVE_PROGRESS.value: self.reports_receive_progress,
+        }
 
 
 class FakeConnObj:
-    def __init__(self, send_heartbeat_supported=True):
-        self.connector = SimpleNamespace(driver=FakeDriver(send_heartbeat_supported))
+    def __init__(self, send_heartbeat_supported=True, reports_receive_progress=True):
+        self.connector = SimpleNamespace(driver=FakeDriver(send_heartbeat_supported, reports_receive_progress))
         self.close = MagicMock()
-        self.force_close = MagicMock(side_effect=self.close)
+        self.force_close_called = threading.Event()
+
+        def force_close():
+            self.force_close_called.set()
+            self.close()
+
+        self.force_close = MagicMock(side_effect=force_close)
 
     def __str__(self):
         return "FakeConn"
 
 
 class FakeSfmConn:
-    def __init__(self, stall_sec, last_activity, send_heartbeat_supported=True):
+    def __init__(self, stall_sec, last_activity, send_heartbeat_supported=True, reports_receive_progress=True):
         self._stall_sec = stall_sec
         self.last_activity = last_activity
         self.sfm_endpoint = object()
         self.receive_idle_timeout_triggered = False
-        self.conn = FakeConnObj(send_heartbeat_supported=send_heartbeat_supported)
+        self.conn = FakeConnObj(
+            send_heartbeat_supported=send_heartbeat_supported,
+            reports_receive_progress=reports_receive_progress,
+        )
         self.send_heartbeat_async = MagicMock()
 
     def get_send_stall_seconds(self):
@@ -206,6 +219,8 @@ class TestSfmStallMonitor:
         for monitor in monitors:
             monitor.curr_time = clock.monotonic()
             monitor._check_heartbeat()
+        assert sender_transport.force_close_called.wait(WAIT_TIMEOUT)
+        assert receiver_transport.force_close_called.wait(WAIT_TIMEOUT)
         sender_transport.force_close.assert_called_once()
         receiver_transport.force_close.assert_called_once()
 
@@ -239,8 +254,53 @@ class TestSfmStallMonitor:
         monitor._check_heartbeat()
         monitor._check_heartbeat()
 
+        assert sfm_conn.conn.force_close_called.wait(WAIT_TIMEOUT)
         sfm_conn.conn.close.assert_called_once()
         sfm_conn.send_heartbeat_async.assert_not_called()
+
+    def test_monitor_keeps_connection_during_large_transfer_on_transport_without_progress(self, monkeypatch):
+        sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=100.0, reports_receive_progress=False)
+        monitor = self._make_monitor(
+            monkeypatch,
+            hb_interval=10,
+            stall_timeout=30.0,
+            close_enabled=False,
+            conns={"c1": sfm_conn},
+            receive_idle_timeout=20.0,
+        )
+
+        monitor.curr_time = 121.0
+        monitor._check_heartbeat()
+
+        sfm_conn.conn.force_close.assert_not_called()
+        sfm_conn.send_heartbeat_async.assert_called_once_with(Types.PING)
+
+    def test_blocking_force_close_does_not_block_heartbeat_scan(self, monkeypatch):
+        stalled = FakeSfmConn(stall_sec=0.0, last_activity=100.0)
+        healthy = FakeSfmConn(stall_sec=0.0, last_activity=100.0, reports_receive_progress=False)
+        close_started = threading.Event()
+        release_close = threading.Event()
+
+        def blocking_close():
+            close_started.set()
+            release_close.wait(WAIT_TIMEOUT)
+
+        stalled.conn.force_close.side_effect = blocking_close
+        monitor = self._make_monitor(
+            monkeypatch,
+            hb_interval=10,
+            stall_timeout=30.0,
+            close_enabled=False,
+            conns={"stalled": stalled, "healthy": healthy},
+            receive_idle_timeout=20.0,
+        )
+
+        monitor.curr_time = 121.0
+        monitor._check_heartbeat()
+
+        assert close_started.wait(WAIT_TIMEOUT)
+        healthy.send_heartbeat_async.assert_called_once_with(Types.PING)
+        release_close.set()
 
     def test_monitor_does_not_close_connection_before_handshake(self, monkeypatch):
         sfm_conn = FakeSfmConn(stall_sec=0.0, last_activity=0.0)
