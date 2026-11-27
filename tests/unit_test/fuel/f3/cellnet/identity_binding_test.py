@@ -379,19 +379,16 @@ def test_tls_handshake_does_not_enforce_peer_identity():
 
 
 @pytest.mark.parametrize("peer_cn", [None, "N/A"])
-def test_mtls_active_connection_without_peer_cn_is_accepted(peer_cn):
-    # On the active (connecting) side, some drivers (e.g. gRPC) do not expose the
-    # peer CN (it is None or "N/A"). Enforcement must be skipped there so the
-    # connecting peer can register the endpoint it dialed out to; otherwise the
-    # default gRPC mTLS client->server handshake would always be rejected.
+def test_mtls_active_connection_without_peer_cn_is_rejected(peer_cn):
     manager = _conn_manager(local_fqcn="site-1", identity_map={"server": "server"})
     conn = _FakeConnection(peer_cn=peer_cn, mode=Mode.ACTIVE)
     sfm_conn = SfmConnection(conn, Endpoint("site-1"))
 
-    manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "server"})
+    with pytest.raises(CommError, match="mTLS peer identity is unavailable"):
+        manager.update_endpoint(sfm_conn, {HandshakeKeys.ENDPOINT_NAME: "server"})
 
-    assert "server" in manager.sfm_endpoints
-    assert not conn.closed
+    assert "server" not in manager.sfm_endpoints
+    assert conn.closed
 
 
 def test_mtls_active_connection_with_peer_cn_enforces_endpoint_identity():

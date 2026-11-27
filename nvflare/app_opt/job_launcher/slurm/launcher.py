@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import copy
-import logging
 import math
 import os
 import secrets
@@ -34,7 +33,6 @@ from nvflare.apis.job_launcher_spec import (
     JobHandleSpec,
     JobLauncherSpec,
     JobProcessArgs,
-    JobReturnCode,
     add_launcher,
     publish_job_handle,
 )
@@ -65,6 +63,7 @@ from nvflare.app_opt.job_launcher.slurm.manager import SlurmJobManager
 from nvflare.app_opt.job_launcher.study_runtime import (
     StudyRuntime,
     load_study_runtime_file,
+    reject_legacy_study_data,
     resolve_study_runtime,
     study_runtime_file_path,
 )
@@ -77,6 +76,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.secret_utils import has_secret_refs
 from nvflare.job_config.defs import ExecutionLifetime
 from nvflare.job_config.task_execution import get_client_execution_lifetime
+from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers
 from nvflare.private.fed.utils.job_cert_utils import JobCertError, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_cj_resource_spec,
@@ -296,16 +296,11 @@ def _file_attach_mount(workspace: Workspace, workspace_path: str) -> Optional[Bi
 
 def load_slurm_study_runtime(config, study, logger):
     runtime_file = study_runtime_file_path(config.workspace_path)
-    legacy_file = os.path.join(config.workspace_path, "local", "study_data.yaml")
-    runtime_exists = os.path.exists(runtime_file)
-    if os.path.exists(legacy_file):
-        message = (
-            f"study runtime file '{runtime_file}' cannot be combined with legacy '{legacy_file}'"
-            if runtime_exists
-            else f"legacy study data file '{legacy_file}' is unsupported by Slurm; migrate to study_runtime.yaml"
-        )
-        raise SlurmLauncherError(message)
-    if not runtime_exists:
+    try:
+        reject_legacy_study_data(config.workspace_path)
+    except RuntimeError as e:
+        raise SlurmLauncherError(str(e)) from None
+    if not os.path.exists(runtime_file):
         return StudyRuntime(study=study or "")
     try:
         runtime_map = load_study_runtime_file(runtime_file, launcher_mode="slurm", logger=logger)
@@ -588,42 +583,6 @@ class SlurmJobLauncher(JobLauncherSpec):
 _GPU_ENV = ("CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "NVIDIA_VISIBLE_DEVICES")
 
 
-class _TaskCJHandle(JobHandleSpec):
-    """Preserve CJ outcome while bounding the wait for parent-owned cleanup."""
-
-    def __init__(self, handle, owner, cleanup_timeout=30.0):
-        self.handle = handle
-        self.owner = owner
-        self.cleanup_timeout = cleanup_timeout
-
-    def terminate(self):
-        self.owner.release()
-        return self.handle.terminate()
-
-    def _terminate_for_heartbeat_cleanup(self):
-        self.owner.release()
-        return self.handle._terminate_for_heartbeat_cleanup()
-
-    def poll(self):
-        code = self.handle.poll()
-        if code != JobReturnCode.UNKNOWN:
-            self.owner.release()
-        return code
-
-    def wait(self):
-        self.handle.wait()
-        self.owner.release()
-        self.owner.thread.join(self.cleanup_timeout)
-        if self.owner.thread.is_alive():
-            with self.owner.lock:
-                pending = [a.execution_id for a in self.owner.attempts.values() if not a.status.settled]
-            logging.getLogger(__name__).warning(
-                "Slurm task cleanup unconfirmed for job %s allocations %s; CP retains cleanup",
-                self.owner.job_id,
-                pending,
-            )
-
-
 class ClientSlurmJobLauncher(SlurmJobLauncher):
     """Launch a resident compute CJ or a coordinator with disposable workers."""
 
@@ -686,8 +645,12 @@ class ClientSlurmJobLauncher(SlurmJobLauncher):
         validate_cj_execution_lifetime(job_meta, fl_ctx.get_identity_name(), lifetime)
         if lifetime == ExecutionLifetime.JOB:
             return super()._build_launch_plan(job_meta, fl_ctx), None
-        from nvflare.app_opt.job_launcher.slurm.task_launcher import _SlurmTaskBackend
-        from nvflare.app_opt.job_launcher.slurm.task_policy import TASK_LAUNCHER_PATH, component_args, component_path
+        from nvflare.app_opt.job_launcher.slurm.task_launcher import (
+            TASK_LAUNCHER_PATH,
+            _SlurmTaskBackend,
+            component_args,
+            component_path,
+        )
 
         data = ConfigService.load_config_dict(workspace.get_resources_file_path())
         launcher_config = data.get("task_execution", {}).get("launcher", {})
@@ -758,7 +721,7 @@ class ClientSlurmJobLauncher(SlurmJobLauncher):
             owner.release()
             raise
         owner.attach_cj(handle)
-        result = _TaskCJHandle(handle, owner, self.task_shutdown_timeout)
+        result = JobHandleWithTaskWorkers(handle, owner, self.task_shutdown_timeout)
         try:
             publish_job_handle(result, fl_ctx)
         except BaseException:

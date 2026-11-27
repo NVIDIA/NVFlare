@@ -46,14 +46,11 @@ from nvflare.app_opt.job_launcher.k8s_pod import (
     get_container_waiting_failure,
     normalize_image_pull_secrets,
     pod_shutdown_confirmed,
-)
-from nvflare.app_opt.job_launcher.study_data import (
-    load_study_data_file,
-    resolve_study_dataset_mounts,
-    should_mount_study_data,
+    validate_isolated_pod,
 )
 from nvflare.app_opt.job_launcher.study_runtime import (
     load_study_runtime_file,
+    reject_legacy_study_data,
     resolve_study_runtime,
     study_runtime_file_path,
 )
@@ -67,6 +64,7 @@ from nvflare.app_opt.job_launcher.workspace_cell_transfer import (
 from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.job_config.task_execution import get_client_execution_lifetime, reject_job_gpu_reservation
+from nvflare.private.fed.task_worker.config_vars import ENV_WORKER_CONFIG_VARS
 from nvflare.private.fed.utils.job_cert_utils import job_startup_files, read_job_cert, require_job_cert
 from nvflare.utils.job_launcher_utils import (
     get_cj_resource_spec,
@@ -305,6 +303,28 @@ def study_secret_volume_name(study: str, name: str) -> str:
     return site_name_to_rfc1123(f"secret-{study}-{name}", max_length=63)
 
 
+def study_pod_bindings(runtime, *, read_only_claims=False):
+    """Return Kubernetes volume, mount, and Secret env entries for a resolved study."""
+    volumes, mounts, secret_env = [], [], []
+    if runtime is not None:
+        for dataset in runtime.datasets:
+            name = study_dataset_volume_name(dataset.study, dataset.dataset)
+            claim = {"claimName": dataset.source}
+            if read_only_claims and dataset.read_only:
+                claim["readOnly"] = True
+            volumes.append({"name": name, "persistentVolumeClaim": claim})
+            mounts.append({"name": name, "mountPath": dataset.mount_path, "readOnly": dataset.read_only})
+        for secret in runtime.secret_mounts:
+            name = study_secret_volume_name(secret.study, secret.name)
+            source = {"secretName": secret.source}
+            if secret.items:
+                source["items"] = [{"key": key, "path": path} for key, path in secret.items]
+            volumes.append({"name": name, "secret": source})
+            mounts.append({"name": name, "mountPath": secret.mount_path, "readOnly": True})
+        secret_env = [{"name": ref.name, "source": ref.source, "key": ref.key} for ref in runtime.secret_env]
+    return volumes, mounts, secret_env
+
+
 class K8sJobHandle(JobHandleSpec):
     def __init__(
         self,
@@ -331,6 +351,7 @@ class K8sJobHandle(JobHandleSpec):
         self.pod_uid = None
         self.workspace_reservation = None
         self._termination_requested = False
+        self._shutdown_confirmed = False
         self.workspace_transfer = workspace_transfer
         self.workspace_job_id = workspace_job_id
         self.credential_secret_name = credential_secret_name
@@ -456,6 +477,12 @@ class K8sJobHandle(JobHandleSpec):
             statuses = getattr(getattr(pod, "status", None), "container_statuses", None)
             if not isinstance(statuses, (list, tuple)):
                 statuses = []
+            # An eviction is lost infrastructure whether or not the container's signal exit
+            # is visible yet. Only an exit code FLARE chose itself says more than that.
+            evicted = (
+                not self._termination_requested and getattr(getattr(pod, "status", None), "reason", None) == "Evicted"
+            )
+            exit_code = None
             for container_status in statuses:
                 if getattr(container_status, "name", None) != job_container_name:
                     continue
@@ -470,8 +497,12 @@ class K8sJobHandle(JobHandleSpec):
                 ):
                     self.terminal_return_code = exit_code
                 elif isinstance(exit_code, int) and exit_code != 0:
-                    self.terminal_return_code = JobReturnCode.EXECUTION_ERROR
+                    self.terminal_return_code = (
+                        ProcessExitCode.INFRASTRUCTURE_ERROR if evicted else JobReturnCode.EXECUTION_ERROR
+                    )
                 break
+            if evicted and exit_code is None and self.terminal_return_code is None:
+                self.terminal_return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
         self._release_job_resources()
 
     def poll(self):
@@ -492,20 +523,39 @@ class K8sJobHandle(JobHandleSpec):
         from kubernetes.client.rest import ApiException
 
         try:
-            return self.api_instance.read_namespaced_pod(name=self.pod_name, namespace=self.namespace)
+            pod = self.api_instance.read_namespaced_pod(name=self.pod_name, namespace=self.namespace)
         except ApiException as e:
             if getattr(e, "status", None) == 404:
-                self.logger.info(
-                    f"job {self.job_id} pod {self.pod_name} not found during querying; assuming terminated"
-                )
-                self.terminal_state = JobState.TERMINATED
-                self._release_job_resources()
+                self._record_missing_pod()
             else:
                 self.logger.warning(f"failed to query pod for job {self.job_id} pod {self.pod_name}: {e}")
             return None
         except Exception as e:
             self.logger.warning(f"unexpected error querying pod for job {self.job_id} pod {self.pod_name}: {e}")
             return None
+        self._record_shutdown_evidence(pod)
+        return pod
+
+    def _record_missing_pod(self):
+        self.terminal_state = JobState.TERMINATED
+        if self._termination_requested:
+            self.logger.info(f"job {self.job_id} pod {self.pod_name} not found after requested termination")
+        elif self.terminal_return_code is None:
+            # Only FLARE's own termination is an abort; any other removal is lost infrastructure.
+            self.terminal_return_code = ProcessExitCode.INFRASTRUCTURE_ERROR
+            self.logger.warning(f"job {self.job_id} pod {self.pod_name} was removed outside FLARE")
+        self._release_job_resources()
+
+    def _record_shutdown_evidence(self, pod):
+        # A restartPolicy=Never Pod cannot leave confirmed container/sandbox shutdown,
+        # so evidence observed once remains valid after the Pod object is removed.
+        if self._shutdown_confirmed or not self.pod_uid:
+            return
+        if getattr(getattr(pod, "metadata", None), "uid", None) != self.pod_uid:
+            return
+        if getattr(pod, "spec", None) is None or getattr(pod, "status", None) is None:
+            return
+        self._shutdown_confirmed = pod_shutdown_confirmed(pod)
 
     def _query_phase(self):
         pod = self._query_pod()
@@ -722,23 +772,42 @@ class K8sJobHandle(JobHandleSpec):
         # default. A timeout never authorizes overlapping checkpoint writers.
         timeout = self.task_owner.backend.cleanup_timeout if self.task_owner is not None else 60.0
         deadline = time.monotonic() + timeout
-        while not self._termination_requested:
+        api_error_logged = False
+        # The bound covers the reads and sleeps too: evidence that arrives after it authorizes nothing.
+        while not self._termination_requested and (remaining := deadline - time.monotonic()) > 0:
             try:
                 pod = self.api_instance.read_namespaced_pod(
-                    name=self.pod_name, namespace=self.namespace, _request_timeout=10.0
+                    name=self.pod_name, namespace=self.namespace, _request_timeout=min(10.0, remaining)
                 )
                 if pod.metadata.uid != self.pod_uid or pod.status.reason in ("NodeLost", "Shutdown"):
                     return False
-                # The task owner's existing thread exits after all workers settle.
-                if pod_shutdown_confirmed(pod) and (self.task_owner is None or not self.task_owner.thread.is_alive()):
-                    return True
+                self._record_shutdown_evidence(pod)
+                pod_state_known = True
             except Exception as error:
-                self.logger.warning("cannot confirm CJ shutdown for recovery: %s", type(error).__name__)
-                return False
-            if time.monotonic() >= deadline:
-                self.logger.warning("CJ recovery cleanup timed out for job %s", self.job_id)
-                return False
-            time.sleep(POLL_INTERVAL)
+                pod_state_known = getattr(error, "status", None) == 404
+                if pod_state_known and not self._shutdown_confirmed:
+                    self.logger.warning(
+                        "CJ Pod %s was removed before its shutdown was observed; recovery is not authorized",
+                        self.pod_name,
+                    )
+                    return False
+                if not pod_state_known and not api_error_logged:
+                    # An unreachable API proves nothing either way: keep observing within the cleanup bound.
+                    self.logger.warning("cannot confirm CJ shutdown for recovery yet: %s", type(error).__name__)
+                    api_error_logged = True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            # The task owner's existing thread exits after all workers settle.
+            if (
+                pod_state_known
+                and self._shutdown_confirmed
+                and (self.task_owner is None or not self.task_owner.thread.is_alive())
+            ):
+                return True
+            time.sleep(min(POLL_INTERVAL, remaining))
+        if not self._termination_requested:
+            self.logger.warning("CJ recovery cleanup timed out for job %s", self.job_id)
         return False
 
 
@@ -746,7 +815,6 @@ class K8sJobLauncher(JobLauncherSpec):
     def __init__(
         self,
         config_file_path: str,
-        study_data_pvc_file_path: str = None,
         timeout=None,
         namespace=DEFAULT_NAMESPACE,
         pending_timeout=DEFAULT_PENDING_TIMEOUT,
@@ -761,11 +829,6 @@ class K8sJobLauncher(JobLauncherSpec):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config_file_path = config_file_path
-        if study_data_pvc_file_path is not None and (
-            not isinstance(study_data_pvc_file_path, str) or not study_data_pvc_file_path
-        ):
-            raise ValueError("study_data_pvc_file_path must be a non-empty string or None")
-        self.study_data_pvc_file_path = study_data_pvc_file_path
         self.timeout = timeout
         self.namespace = namespace
         self.startup_secret_name = (
@@ -785,22 +848,13 @@ class K8sJobLauncher(JobLauncherSpec):
             raise ValueError("workspace_mount_path must be a non-empty string")
         self.workspace_mount_path = workspace_mount_path
         self.image_pull_secrets = normalize_image_pull_secrets(image_pull_secrets)
-        self.study_data_pvc_dict = None
         self.core_v1 = None
 
     def _resolve_study_runtime(self, workspace_root: str, study):
+        reject_legacy_study_data(workspace_root)
         runtime_file = study_runtime_file_path(workspace_root)
         if not os.path.exists(runtime_file):
             return None
-        legacy_files = {os.path.join(workspace_root, "local", "study_data.yaml")}
-        if self.study_data_pvc_file_path:
-            legacy_files.add(self.study_data_pvc_file_path)
-        conflicts = sorted(path for path in legacy_files if os.path.exists(path))
-        if conflicts:
-            raise RuntimeError(
-                f"study runtime file '{runtime_file}' cannot be combined with the legacy study data "
-                f"file(s) {conflicts}; migrate all studies to study_runtime.yaml and delete the v1 file."
-            )
         runtime_map = load_study_runtime_file(runtime_file, launcher_mode="k8s", logger=self.logger)
         return resolve_study_runtime(runtime_map, study, runtime_file, logger=self.logger)
 
@@ -999,8 +1053,9 @@ class K8sJobLauncher(JobLauncherSpec):
         workspace_root = args.workspace
         study_runtime = self._resolve_study_runtime(workspace_root, study)
         if not job_image and study_runtime is not None:
-            # job-supplied image wins; the study's container.image is the site default
             job_image = study_runtime.container_image
+            if job_image and execution_lifetime == "task":
+                self.logger.info("Using study image %s for the task-mode CJ at site %s", job_image, site_name)
         if not job_image:
             raise RuntimeError(
                 f"K8sJobLauncher is configured for site '{site_name}' but no job image "
@@ -1010,18 +1065,9 @@ class K8sJobLauncher(JobLauncherSpec):
                 f"resource_spec['{site_name}']['k8s']['image'] (legacy), "
                 f"or studies.<study>.container.image in local/study_runtime.yaml (site default)."
             )
-        if study_runtime is not None:
-            pod_manifest_template = study_runtime.pod_template
-            data_mounts = study_runtime.datasets
-        else:
-            pod_manifest_template = None
-            data_mounts = []
-            if should_mount_study_data(study) and self.study_data_pvc_file_path:
-                if self.study_data_pvc_dict is None:
-                    self.study_data_pvc_dict = load_study_data_file(self.study_data_pvc_file_path, logger=self.logger)
-                data_mounts = resolve_study_dataset_mounts(
-                    self.study_data_pvc_dict, study, self.study_data_pvc_file_path, logger=self.logger
-                )
+        pod_manifest_template = study_runtime.pod_template if study_runtime is not None else None
+        pod_runtime = study_runtime if execution_lifetime == "job" else None
+        study_volumes, study_mounts, study_secret_env = study_pod_bindings(pod_runtime)
         native_resources = k8s_spec
         if execution_lifetime == "task":
             # Existing fields describe compute; none leak into the persistent CJ.
@@ -1037,7 +1083,7 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError(f"missing {JobProcessArgs.EXE_MODULE} in {FLContextKey.JOB_PROCESS_ARGS}")
         _, job_cmd = exe_module_entry
 
-        env = dict(study_runtime.env) if study_runtime is not None else {}
+        env = dict(pod_runtime.env) if pod_runtime is not None else {}
         if app_custom_folder:
             workspace_root_abs = os.path.abspath(workspace_root)
             custom_folder_abs = os.path.abspath(app_custom_folder)
@@ -1088,45 +1134,22 @@ class K8sJobLauncher(JobLauncherSpec):
                     "readOnly": True,
                 },
             ]
-            for dataset_mount in data_mounts:
-                volume_name = study_dataset_volume_name(dataset_mount.study, dataset_mount.dataset)
-                volume_list.append({"name": volume_name, "persistentVolumeClaim": {"claimName": dataset_mount.source}})
-                volume_mount_list.append(
-                    {
-                        "name": volume_name,
-                        "mountPath": dataset_mount.mount_path,
-                        "readOnly": dataset_mount.read_only,
-                    }
-                )
-            secret_mounts = study_runtime.secret_mounts if study_runtime is not None else []
-            for secret_mount in secret_mounts:
-                volume_name = study_secret_volume_name(secret_mount.study, secret_mount.name)
-                secret_source = {"secretName": secret_mount.source}
-                if secret_mount.items:
-                    secret_source["items"] = [{"key": key, "path": path} for key, path in secret_mount.items]
-                volume_list.append({"name": volume_name, "secret": secret_source})
-                volume_mount_list.append({"name": volume_name, "mountPath": secret_mount.mount_path, "readOnly": True})
-
             job_config = {
                 "name": pod_name,
                 "image": job_image,
                 "container_name": f"container-{job_id}",
                 "command": job_cmd,
-                "volume_mount_list": volume_mount_list,
-                "volume_list": volume_list,
+                "volume_mount_list": volume_mount_list + study_mounts,
+                "volume_list": volume_list + study_volumes,
                 "module_args": self.get_module_args(job_id, fl_ctx),
                 "env": env,
             }
             secret_env_refs = [{"name": name, "source": credential_secret_name, "key": name} for name in credential_env]
-            if study_runtime is not None:
-                if study_runtime.secret_env:
-                    secret_env_refs.extend(
-                        {"name": ref.name, "source": ref.source, "key": ref.key} for ref in study_runtime.secret_env
-                    )
-                if pod_manifest_template is not None:
-                    # Credential secretKeyRefs attach to every job, so a multi-container
-                    # template must always name its main container.
-                    job_config["require_main_container"] = True
+            secret_env_refs.extend(study_secret_env)
+            if pod_manifest_template is not None:
+                # Credential secretKeyRefs attach to every job, so a multi-container
+                # template must always name its main container.
+                job_config["require_main_container"] = True
             if secret_env_refs:
                 job_config["secret_env"] = secret_env_refs
             if self.image_pull_secrets:
@@ -1186,6 +1209,7 @@ class K8sJobLauncher(JobLauncherSpec):
                 site_name,
                 workspace_obj,
                 execution_lifetime=execution_lifetime,
+                study_runtime=study_runtime,
                 job_meta=job_meta,
                 fl_ctx=fl_ctx,
                 transfer_token=workspace_transfer_token,
@@ -1372,6 +1396,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
         workspace,
         *,
         execution_lifetime="job",
+        study_runtime=None,
         job_meta=None,
         fl_ctx=None,
         transfer_token=None,
@@ -1383,13 +1408,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             return
 
         spec = manifest["spec"]
-        if (
-            len(spec["containers"]) != 1
-            or spec.get("initContainers")
-            or spec.get("ephemeralContainers")
-            or any(spec.get(name) for name in ("hostPID", "hostIPC", "hostNetwork"))
-        ):
-            raise ValueError("the persistent Kubernetes CJ profile requires one isolated container")
+        validate_isolated_pod(spec, "persistent Kubernetes CJ")
         volumes = [volume for volume in spec["volumes"] if volume["name"] == "workspace-job"]
         if len(volumes) != 1:
             raise ValueError("persistent CJ requires the resident workspace-job volume")
@@ -1438,7 +1457,7 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             return
         # A worker Pod cannot reach CJ's loopback. Kubernetes, rather than a
         # job/template environment value, supplies the advertised CJ address.
-        env = [item for item in container.get("env", []) if item["name"] != ENV_CJ_POD_IP]
+        env = [item for item in container.get("env", []) if item["name"] not in {ENV_CJ_POD_IP, ENV_WORKER_CONFIG_VARS}]
         env.append(
             {
                 "name": ENV_CJ_POD_IP,
@@ -1461,7 +1480,10 @@ class ClientK8sJobLauncher(K8sJobLauncher):
             job_id,
             site_name,
             startup_secret_name=startup_secret_name,
+            study_runtime=study_runtime,
         )
+        if backend.study_env_names:
+            container["env"].append({"name": ENV_WORKER_CONFIG_VARS, "value": backend.study_env_names})
         cell = fl_ctx.get_engine().cell
         return K8sTaskService.get_or_create(cell).add_job(backend, job_id, site_name, transfer_token)
 

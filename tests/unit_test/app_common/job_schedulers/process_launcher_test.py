@@ -118,6 +118,9 @@ class DummyWorkspace:
     def get_app_dir(self, job_id):
         return os.path.join(self.root_dir, job_id, "app")
 
+    def get_client_app_config_file_path(self, job_id):
+        return os.path.join(self.get_app_dir(job_id), "config", "config_fed_client.json")
+
     def get_app_custom_dir(self, job_id):
         self.calls.append(job_id)
         return self.custom_path
@@ -136,6 +139,39 @@ def _build_fl_ctx(workspace):
     fl_ctx = FLContext()
     fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True, sticky=False)
     return fl_ctx
+
+
+@pytest.mark.parametrize("launcher_class", [ClientProcessJobLauncher, ServerProcessJobLauncher])
+@pytest.mark.parametrize(
+    "executable, workspace_name",
+    [
+        ("venv space/python", "workspace"),
+        ("venv#hash/python", "workspace"),
+        ("venv space#hash/python", "workspace"),
+        ("venv/python", "workspace space"),
+        ("venv/python", "workspace#hash"),
+        ("venv's/python", "workspace space#hash'quote"),
+    ],
+)
+def test_generated_job_command_preserves_launch_arguments(
+    tmp_path, monkeypatch, launcher_class, executable, workspace_name
+):
+    executable = str(tmp_path / executable)
+    workspace = tmp_path / workspace_name
+    options = ["data_dir=/data/train set#1", "label=Alice's model", r"path=C:\data\train", "empty="]
+    context = _build_fl_ctx(DummyWorkspace(workspace))
+    context.set_prop(
+        FLContextKey.JOB_PROCESS_ARGS,
+        {
+            JobProcessArgs.EXE_MODULE: ("-m", "probe.worker"),
+            JobProcessArgs.WORKSPACE: ("-m", str(workspace)),
+            JobProcessArgs.OPTIONS: ("--set", shlex.join(options)),
+        },
+    )
+    monkeypatch.setattr(sys, "executable", executable)
+    with mock.patch("nvflare.app_common.job_launcher.process_launcher.spawn_process") as spawn:
+        launcher_class().launch_job({JobConstants.JOB_ID: "job-1"}, context)
+    assert spawn.call_args.args[0] == [executable, "-m", "probe.worker", "-m", str(workspace), "--set", *options]
 
 
 def _write_runtime(tmp_path, studies):
@@ -432,3 +468,13 @@ def test_process_launcher_handle_event_always_adds_launcher(monkeypatch):
 
     assert recorded["launcher"] is launcher
     assert recorded["ctx"] is fl_ctx
+
+
+def test_physical_cleanup_does_not_require_restart_eligibility(tmp_path):
+    adapter = mock.Mock()
+    adapter.poll.return_value = 0
+    handle = ProcessHandle(process_adapter=adapter, owns_process_group=True, app_dir=str(tmp_path))
+    (tmp_path / bootstrap_file_name(1)).write_text("uncleared application marker")
+    with mock.patch("nvflare.app_common.job_launcher.process_launcher.os.killpg", side_effect=ProcessLookupError):
+        assert handle._is_cleanup_complete()
+        assert not handle.can_restart()

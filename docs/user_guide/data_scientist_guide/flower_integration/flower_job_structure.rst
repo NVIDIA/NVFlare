@@ -31,47 +31,8 @@ server app and the client app, and to pass app-specific configuration to the app
 
 Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this example <examples/hello-world/hello-flower/flwr-pt/pyproject.toml>`.
 
-.. code-block:: toml
-
-    [build-system]
-    requires = ["hatchling"]
-    build-backend = "hatchling.build"
-
-    # Tested with:
-    #   flwr==1.27.0
-    #   nvflare==2.9.0rc1
-    #   torch==2.11.0
-    #   torchvision==0.26.0
-    #   tensorboard==2.20.0
-
-    [project]
-    name = "flwr-pt"
-    version = "1.0.0"
-    description = ""
-    license = "Apache-2.0"
-    dependencies = [
-        "flwr>=1.26",
-        "nvflare~=2.9.0rc",
-        "torch",
-        "torchvision",
-        "tensorboard"
-    ]
-
-    [tool.hatch.build.targets.wheel]
-    packages = ["."]
-
-    [tool.flwr.app]
-    publisher = "nvidia"
-
-    [tool.flwr.app.components]
-    serverapp = "flwr_pt.server:app"
-    clientapp = "flwr_pt.client:app"
-
-    [tool.flwr.app.config]
-    num-server-rounds = 3
-    learning-rate = 0.001
-    momentum = 0.9
-
+.. literalinclude:: ../../../../examples/hello-world/hello-flower/flwr-pt/pyproject.toml
+   :language: toml
 
 .. note:: Note that the information defined in pyproject.toml must match the code in the project folder!
 
@@ -80,10 +41,9 @@ Here is an example of ``pyproject.toml``, taken from :github_nvflare_link:`this 
    need to define a ``[tool.flwr.federations]`` section in ``pyproject.toml`` for
    FLARE execution.
 
-.. note:: Flower 1.26+ support requires the NVFlare 2.9 release candidate line
-   (``nvflare~=2.9.0rc``), or NVFlare installed from current ``main``. If you
-   are using released NVFlare 2.7.x, use ``flwr>=1.16,<1.26`` and the 2.7 branch
-   or tag of the Flower examples.
+.. note:: This integration requires ``flwr>=1.43`` and Python 3.11 or newer.
+   Use the same Flower minor version on the server and every client.
+   Older deployments should use their matching NVFlare release and examples.
 
 Project Name
 ~~~~~~~~~~~~

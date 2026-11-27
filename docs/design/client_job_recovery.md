@@ -20,7 +20,7 @@ The job's client registration must also remain valid: re-registering CP creates 
 new token that the existing server job does not adopt. Migrating that registration
 is outside this client-only recovery feature.
 
-## One setting
+## Recovery setting
 
 `max_cj_restart_failures` is configured on CP, with default `3`.
 Set `NVFLARE_MAX_CJ_RESTART_FAILURES` in CP's environment before startup, or add
@@ -47,9 +47,11 @@ closing the server assignment. CP waits for CJ and its workers to stop, then
 uses the same restart policy. A valid committed result takes precedence;
 application errors, rejected submissions and cancellation do not trigger recovery.
 
-Kubernetes supports this path with the persistent jobs PVC. Integration with the
-[Slurm task-adapter proposal](https://github.com/NVIDIA/NVFlare/pull/5513)
-remains separate work; resident Slurm CJ recovery is unchanged. Local Process/Docker
+Kubernetes supports this path with the persistent jobs PVC. Slurm
+([task adapter](https://github.com/NVIDIA/NVFlare/pull/5513)) uses the shared
+workspace: a worker allocation settling as TIMEOUT, PREEMPTED, OUT_OF_MEMORY,
+NODE_FAIL, BOOT_FAIL or a signal-killed FAILED exits CJ, and CP replaces it after all workers settle. No
+signal precedes the wall-time limit, so work since the last checkpoint repeats. Local Process/Docker
 task mode is deferred because its CJ restart gates do not establish worker
 settlement; see the [eligibility gap](#process-task-mode-recovery-gap) below.
 
@@ -107,14 +109,15 @@ and consecutive-attempt limit.
 | Process | The launcher-owned CJ has exited, its process group is absent, and no external-trainer launch bootstrap remains. |
 | Docker | Container wait/inspection confirms exit, rather than merely losing its record. |
 | Slurm | Accounting reports COMPLETED, FAILED, TIMEOUT, OUT_OF_MEMORY, or PREEMPTED, and the allocation has left the active queue. |
-| Kubernetes | The same CJ Pod UID has confirmed container/sandbox shutdown, its PVC workspace finished initialization, and all CP-owned task workers have settled. |
+| Kubernetes | The same CJ Pod UID has confirmed container/sandbox shutdown, read now or observed by CP before the Pod object was removed; its PVC workspace finished initialization; and all CP-owned task workers have settled. |
 
 Normal success, STOPPED teardown, cancellation, configuration errors, and unsafe
 component failures do not trigger recovery. Missing accounting, node loss, backend
 API errors, and network/heartbeat failures are not proof of termination. A launch
 exception ends recovery rather than risking duplicate submission when acceptance
-is unknown. If a handle was returned before launch setup failed, CP terminates and
-waits for that worker before releasing its resources. Docker physical launches use
+is unknown. If a handle was published or returned before launch setup failed, CP
+attempts cancellation and observation before releasing its resources. Unconfirmed
+cleanup retains ownership as described below. Docker physical launches use
 unique container names, allowing delayed auto-removal of the previous container.
 Existing scheduler queue/startup timeouts remain in effect.
 
@@ -144,6 +147,17 @@ stops while CP continues worker cleanup. Replacement Pods get fresh launch IDs,
 task capabilities and credential Secrets; the old task capability is closed.
 Old CJ Pod deletion is best effort; the final Pod is retained for diagnostics.
 
+A CJ Pod removed outside FLARE (manual deletion, drain, eviction or preemption)
+is reported as an infrastructure failure, never as an abort. A missing Pod is
+not shutdown evidence. CP replaces such a CJ only when it observed the kubelet's
+container/sandbox shutdown for that Pod UID before the Pod object disappeared;
+otherwise the job ends. CJ Pods carry no settlement finalizer, so whether that
+evidence is observed depends on timing: recovery after Pod removal is best
+effort, unlike task worker Pods, whose finalizer keeps them observable. API
+errors during the recovery check are retried until `cleanup_timeout`; they
+neither prove shutdown nor end recovery early, and a definitive read is still
+required before replacement.
+
 Native worker attempt IDs include the CJ launch ID; server task and attempt IDs
 stay unchanged. Logs map server attempts to physical worker IDs.
 
@@ -162,6 +176,191 @@ launching a CJ. The deferral adds no task-worker recovery owner and leaves
 resident restart gates unchanged. CJ-group exit alone must not be used as proof
 that an independently launched worker has settled.
 See the [backend/lifetime matrix](task_worker_lifecycle.md#backend-and-recovery-boundaries).
+
+## Failed launch cleanup and retained ownership
+
+This client-parent behavior applies to initial and replacement CJ launches whose
+launcher publishes an accepted handle through `publish_job_handle()` or returns
+one. CP attaches that handle before applying a saved abort. A launch exception,
+a missing return handle after publication, an AFTER_JOB_LAUNCH failure, or monitor
+startup failure initiates cancellation and completion observation. Cancellation
+failure cannot skip observation. The original launch failure is logged first.
+
+### Ownership and observation
+
+While CP lives, each accepted handle it owns has one registration that holds the
+admission allocation and credentials. Release requires backend completion
+evidence and no cancellation still in flight. The start caller and monitor
+coordinate so only one claims release. Both recheck the current cancellation
+under the executor lock before removing the registration. The monitor keeps
+the recorded CJ outcome if it has to wait for a later stop. Heartbeat presence
+continues through outcome reporting, even after the monitor has claimed release.
+
+Each registered run has an explicit client-parent lifecycle in `_RunState`.
+`ClientStatus` retains its existing CJ-reported STARTING/STARTED/STOPPED values;
+`get_status()` returns those values without overlaying parent cleanup phases.
+The human-readable `check_status()` can describe pending cleanup or observation.
+The parent phases describe launching, monitoring and ownership release:
+
+```mermaid
+stateDiagram-v2
+    [*] --> LAUNCHING: Register ownership
+    LAUNCHING --> MONITORING: Launch succeeds
+    LAUNCHING --> CANCELLING: Accepted launch fails
+    MONITORING --> CANCELLING: Monitor startup fails
+    MONITORING --> LAUNCHING: Replace a completed CJ
+    MONITORING --> OBSERVATION_PENDING: Observation fails
+    OBSERVATION_PENDING --> MONITORING: Observation and result recover
+    OBSERVATION_PENDING --> CLEANUP_PENDING: Stop starts after any ordinary abort grace
+    CANCELLING --> RELEASED: Cleanup confirmed within caller bound
+    CANCELLING --> CLEANUP_PENDING: Cleanup remains unresolved
+    MONITORING --> CLEANUP_PENDING: Tracked cancellation still running
+    CLEANUP_PENDING --> RELEASED: Completion confirmed and cancellation finished
+    MONITORING --> RELEASED: Completion confirmed without restart
+```
+
+`job_launch_cleanup_timeout` bounds each caller wait for cancellation and the
+first observation (default 10 seconds each, finite and positive). Configure it
+on CP through `NVFLARE_JOB_LAUNCH_CLEANUP_TIMEOUT` or
+`--set job_launch_cleanup_timeout=<seconds>`; `--set` takes precedence. A saved
+abort has its own bounded cancellation wait. Cleanup reuses a saved cancellation
+while it is running or after success, and retries a completed failure once.
+
+One daemon monitor owns observation for the logical run, including replacements
+and failed launches. The initial caller and explicit admin retries can wait on
+that monitor's observation event. Pending heartbeat cleanup schedules a stop
+and ensures the monitor is started, then returns without waiting on either
+backend operation. If `wait()` raises, the
+same monitor retries after the backend's `poll_interval` (10 seconds for backends
+without that setting). Heartbeat cleanup and reachable admin aborts can wake this
+retry backoff and retry a completed cancellation, including one that raised or
+returned without stopping the runtime. A running cancellation is reused, and
+concurrent cleanup requests are serialized. Heartbeat retries stay quiet while
+that call and the monitor are already running. Ordinary abort, saved abort and
+failed launch cleanup use the same cancellation record for each handle. The
+executor registers the stop under its ownership lock before waiting for it, so a
+stop begun before an observation failure is visible to later retries and to the
+release check. A started or stopped CJ in `OBSERVATION_PENDING` gets the ordinary
+10-second teardown grace before the first backend stop. Once the stop starts,
+the run enters `CLEANUP_PENDING` and later retries can use the same stop record.
+Query failures do not themselves request cancellation. A healthy run
+uses OBSERVATION_PENDING during an observation outage, preserving heartbeat
+abort handling and normal CJ recovery once observation succeeds. This is distinct
+from CLEANUP_PENDING after a failed launch or requested cancellation.
+
+Slurm cancellation is retried until one `scancel` request is accepted. After that,
+CP continues observation without sending more cancellation requests, including
+while the allocation remains COMPLETING. This also applies to a later explicit
+admin abort: it does not force another accepted Slurm cancellation. Cancellation
+observation uses intervals
+of at most one second during the first 10 seconds after the initial request,
+then returns to `poll_interval`. Repeated requests do not extend this fast window.
+Scheduler query outages and slow settlement can exceed the caller deadline.
+
+If cleanup is unresolved, CP keeps the registration, exact handle, admission
+allocation/token/resource-manager references and credentials. The start request
+returns `JobCleanupPending`, transferring release responsibility to the monitor;
+the scheduler must not free the allocation, even if the monitor completes before
+that error reaches it. Cleanup that settles synchronously instead rolls back to
+the start caller. A failed replacement remains with the existing monitor and
+cannot report a terminal outcome before its accepted handle has settled.
+
+Once observation succeeds and cancellation is no longer in flight, the monitor
+uses its ordinary completion path. Removing the exact registration under the
+executor lock is the release commit point. It then frees admission resources,
+removes the credential and reports the outcome once, outside that lock. A per-job
+directory fence prevents another start or deletion from racing these actions.
+A separate finalizing set keeps the job in heartbeat reports until the outcome
+report returns, including while admission release or credential removal is in
+progress. The server must continue seeing that presence while its outcome is
+pending. This set records protocol presence, not another resource-release owner;
+registration removal remains the release commit point. Other jobs and heartbeats
+can continue. Errors releasing admission or removing
+credentials are logged critically for operator reconciliation; they do not
+suppress terminal outcome reporting or automatically repeat a possibly partial
+resource-manager release.
+
+A cleanup-pending run rejects repeat starts, including after a CJ reported
+STARTED. A repeated start releases only its new allocation. Deletion rejects all
+registered runs and runs whose directory cleanup is in progress. Status exposes
+`cleanup pending` with its age. The first unresolved cleanup emits a critical log;
+the existing heartbeat job-list read emits at most one reminder per run every
+five minutes, even if its backend wait remains blocked. Heartbeat cleanup keeps
+retrying completed cancellation attempts while the client still owns the run;
+an observation outage or failed launch must not disable this path. Confirmed late
+completion is logged and releases ownership automatically, without an admin abort.
+
+Admin abort is available only while the server can route the command to that job.
+After the server drops a job, an explicit admin abort cannot be relied on as the
+remedy. The client continues advertising its owned run, allowing server-triggered
+heartbeat cleanup to retry cancellation. Persistent backend failures require the
+backend operator to reconcile the exact owned runtime.
+
+### Guarantees and operator escalation
+
+A normal `JobHandleSpec.wait()` return is the backend's existing completion
+contract. CP relies on that contract; it does not independently audit physical
+GPU reclamation. Cancellation acknowledgement, elapsed time, and a task's result
+are separate from runtime completion. Verified task results retain their existing
+success semantics. An observation error alone does not trigger CJ replay or an
+application failure; normal CJ recovery still applies if subsequent completion
+evidence satisfies the existing recovery rules.
+
+If the normal monitor cannot start, launch cleanup retries monitor startup. If
+that attempt also fails, the run remains owned and logs that automatic observation
+is unavailable. A later heartbeat cleanup request or a reachable admin abort
+retries startup, reusing a cancellation that is still running. No observer is
+claimed to be running while thread creation is failing.
+
+Uncertainty can persist indefinitely if the backend never provides reliable
+completion evidence. Preserve the exact runtime identity, workspace, launch files,
+credentials and CP logs, and involve the backend operator when reminders persist.
+For Slurm, cancel only a verified owned allocation and use its queue/accounting
+records according to the backend contract. A name match or absence during a query
+outage is insufficient. Stuck scheduler/node teardown may require cluster-admin
+action; CP cannot guarantee that the OS or scheduler will release resources by a
+deadline. Do not clear admission state or restart CP to bypass an unresolved run.
+
+Control operations and the monitor use daemon threads. This permits CP exit; it
+does not terminate an external runtime. Ownership is held in memory and automatic
+reconciliation operates only while CP lives. After CP loss, an operator must
+reconcile its owned runtimes and rebuild admission state before restarting or
+resubmitting. Restart adoption, uncertain submission before a handle exists and
+server-side ownership remain separate work. There is no force-finalize command
+that treats uncertain completion as proof of release.
+
+### Resident Slurm submission gap and qualification
+
+The resident `SlurmJobManager` currently registers its handle only after `sbatch`
+returns a usable ID. An accepted submission whose reply times out, raises, or lacks
+an ID can therefore fail before publication; its current exception path removes
+launch files. `ClientSlurmJobLauncher` also releases the task owner when that CJ
+launch raises. These paths are **not fixed by caller retention**. The server launch
+path does not install JOB_HANDLE_CALLBACK and registers SJ only after launch returns;
+this client change claims no SJ ownership fix.
+
+A separate Slurm slice must register/persist an uncertain submission identity
+before invoking `sbatch`, retain its files, avoid blind retry, reconcile only exact
+owned identities, and give both CP and SP explicit bounded cleanup ownership.
+Nonzero/signal exits and missing replies are not automatically rejection. That
+slice must review the existing resident terminal/missing-record settlement rules,
+which are weaker than the CP-owned task submission path. It must preserve task
+success when allocation cleanup remains unconfirmed.
+
+Unit fault injection verifies caller policy, not scheduler or GPU behavior. Live
+Slurm qualification must exercise accepted-but-lost replies, cancellation/query
+outages, controller/accounting lag, allocation/step teardown and physical GPU
+release for CJ and SJ as applicable. Earlier operator-inventory hardware runs do
+not qualify this change or the pending Slurm slice.
+
+### Kubernetes settlement limitation
+
+The current `K8sJobHandle.terminate()` marks the handle terminal and releases its
+job resources even when Pod deletion raises an API or network error. Its `wait()`
+then returns without confirming Pod/container shutdown. The caller can therefore
+release ownership despite a surviving Pod; this PR does not fix that backend
+contract. Track the separate [Kubernetes ownership follow-up](https://github.com/NVIDIA/NVFlare/issues/5791).
+Do not describe the caller-retention fix as Kubernetes settlement protection.
 
 ## Task and checkpoint boundaries
 

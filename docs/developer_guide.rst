@@ -79,6 +79,7 @@ Advanced Topics
 ===============
 
 - :doc:`Filters <programming_guide/filters>`
+- :doc:`Memorization Reduction <programming_guide/memorization_reduction>`
 - :doc:`Component Configuration <programming_guide/component_configuration>`
 - :doc:`Resource Manager and Consumer <programming_guide/resource_manager_and_consumer>`
 - :doc:`Global Model Initialization <programming_guide/global_model_initialization>`
@@ -91,6 +92,7 @@ Advanced Topics
    :hidden:
 
    programming_guide/filters
+   programming_guide/memorization_reduction
    programming_guide/component_configuration
    programming_guide/resource_manager_and_consumer
    programming_guide/global_model_initialization

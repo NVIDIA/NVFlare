@@ -21,6 +21,7 @@ from typing import Any, Dict, List
 
 import grpc
 
+from nvflare.apis.fl_constant import ConnectionSecurity
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_config_utils import requires_secure_connection
 from nvflare.fuel.f3.comm_error import CommError
@@ -39,7 +40,7 @@ from nvflare.security.logging import secure_format_exception, secure_format_trac
 from .aio_base_driver import AioBaseDriver
 from .driver_params import DriverCap, DriverParams
 from .grpc.streamer_pb2 import Frame
-from .grpc.utils import get_grpc_client_credentials, get_grpc_server_credentials, use_aio_grpc
+from .grpc.utils import get_grpc_client_credentials, get_grpc_server_credentials, probe_grpc_peer_cert_aio, use_aio_grpc
 from .net_utils import MAX_FRAME_SIZE, get_address, get_tcp_urls, ssl_required
 
 GRPC_DEFAULT_OPTIONS = [
@@ -354,9 +355,17 @@ class AioGrpcDriver(AioBaseDriver):
         channel = None
         try:
             secure = ssl_required(params)
+            conn_props = {DriverParams.PEER_ADDR.value: address}
             if secure:
+                peer_cert = None
+                if (
+                    params.get(DriverParams.CONNECTION_SECURITY.value, ConnectionSecurity.MTLS)
+                    == ConnectionSecurity.MTLS
+                ):
+                    peer_cert = await probe_grpc_peer_cert_aio(params, self.options)
+                    Connection.record_peer(conn_props, peer_cert, secure=True)
                 channel = grpc.aio.secure_channel(
-                    address, options=self.options, credentials=get_grpc_client_credentials(params)
+                    address, options=self.options, credentials=get_grpc_client_credentials(params, peer_cert=peer_cert)
                 )
                 self.logger.info(f"created secure channel at {address}")
             else:
@@ -365,10 +374,6 @@ class AioGrpcDriver(AioBaseDriver):
 
             self.logger.debug(f"CLIENT: connected to {address}")
             stub = StreamerStub(channel)
-            conn_props = {DriverParams.PEER_ADDR.value: address}
-
-            if secure:
-                conn_props[DriverParams.PEER_CN.value] = "N/A"
 
             connection = AioStreamSession(aio_ctx=aio_ctx, connector=connector, conn_props=conn_props, channel=channel)
             if not self.add_connection(connection):

@@ -298,7 +298,7 @@ def main():
         peak_reserved_delta_mb = max(0.0, peak_reserved_mb - round_start_reserved_mb)
         meta = {"num_examples": len(train_dataset)}
         if args.max_steps is not None:
-            meta[FLMetaKey.NUM_STEPS_CURRENT_ROUND] = args.max_steps
+            meta[FLMetaKey.NUM_STEPS_CURRENT_ROUND] = trainer.state.global_step
         else:
             meta["NUM_TRAIN_EPOCHS_CURRENT_ROUND"] = args.num_train_epochs
         flare.send(flare.FLModel(params_type=flare.ParamsType.FULL, params=params, metrics=metrics, meta=meta))

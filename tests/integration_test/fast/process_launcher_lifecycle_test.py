@@ -40,7 +40,7 @@ from tests.process_launcher_test_utils import (
     _wait_for_file,
     requires_waitid,
 )
-from tests.timing_utils import WAIT_TIMEOUT, ManualClock, ThreadGroup
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, WAIT_TIMEOUT, ManualClock, ThreadGroup
 
 
 @requires_waitid
@@ -62,7 +62,7 @@ def test_clean_exit_honors_exact_environment_and_working_directory(tmp_path, mon
 
     handle = ProcessTaskLauncher().launch_task(request)
     assert os.getpgid(handle.process_group_id) == handle.process_group_id
-    status = handle.wait_for_settlement(timeout=5.0)
+    status = handle.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT)
 
     assert status.phase == TaskExecutionPhase.TERMINAL
     assert status.exit_code == 0
@@ -88,8 +88,8 @@ def test_nonzero_and_signal_exits_are_distinct(tmp_path):
         _request(tmp_path, "attempt-signal", "import os, signal; os.kill(os.getpid(), signal.SIGTERM)")
     )
 
-    nonzero_status = nonzero.wait_for_settlement(timeout=5.0)
-    signal_status = signalled.wait_for_settlement(timeout=5.0)
+    nonzero_status = nonzero.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT)
+    signal_status = signalled.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT)
 
     assert nonzero_status.exit_code == 23
     assert nonzero_status.termination_signal is None
@@ -153,7 +153,7 @@ def test_leader_exit_is_not_settlement_while_descendant_survives(tmp_path):
     _wait_for_file(child_pid_path)
     child_pid = int(child_pid_path.read_text())
 
-    status = handle.wait_for_settlement(timeout=5.0)
+    status = handle.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT)
 
     assert status.exit_code == 0
     assert status.cancel_requested is False
@@ -236,7 +236,7 @@ def test_attempt_identity_cannot_be_reused(tmp_path):
     launcher = ProcessTaskLauncher()
     request = _request(tmp_path, "attempt-once", "pass")
     handle = launcher.launch_task(request)
-    assert handle.wait_for_settlement(timeout=5.0).succeeded
+    assert handle.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT).succeeded
 
     with pytest.raises(TaskLauncherError, match="already launched"):
         launcher.launch_task(request)
@@ -248,7 +248,7 @@ def test_real_zombie_group_settles_without_signalling_or_waiting_for_init(tmp_pa
     process = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
     try:
         observation = psutil.Process(process.pid)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while observation.status() != psutil.STATUS_ZOMBIE:
             assert time.monotonic() < deadline
             time.sleep(0.01)
@@ -289,7 +289,7 @@ def test_zombie_member_with_nonreaping_parent_does_not_block_settlement(tmp_path
         )
         assert os.getpgid(leader_pid) == leader_pid
         sibling = psutil.Process(sibling_pid)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while sibling.status() != psutil.STATUS_ZOMBIE:
             assert time.monotonic() < deadline
             time.sleep(0.01)
@@ -455,7 +455,7 @@ def test_exited_leader_keeps_pid_reserved_until_stubborn_descendant_settles(tmp_
         stop_grace_period=1.0 if bounded_wait else 0.1, descendant_settle_timeout=0.01, poll_interval=0.01
     ).launch_task(_request(tmp_path, "retained-leader", leader_code, child_code, child_pid_path))
     _wait_for_file(child_pid_path)
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
     while handle.poll().phase != TaskExecutionPhase.TERMINAL:
         assert time.monotonic() < deadline
         time.sleep(0.01)
@@ -502,7 +502,7 @@ def test_external_reaper_between_verification_and_reap_fails_closed(tmp_path, mo
     waitpid = os.waitpid
     stolen = False
     try:
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while owned.poll() is None:
             assert time.monotonic() < deadline
             time.sleep(0.01)
@@ -578,7 +578,7 @@ def test_external_reaping_between_verification_and_signal_is_detected_later(tmp_
             pytest.skip("host posix_spawn with setsid support selected the Popen fallback")
         _wait_for_file(ready)
         child = psutil.Process(int(ready.read_text()))
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while owned.poll() is None:
             assert time.monotonic() < deadline
             time.sleep(0.01)
@@ -671,7 +671,7 @@ def test_subprocess_imports_the_isolated_checkout(tmp_path):
             environment={"PYTHONPATH": str(checkout), "PYTHONDONTWRITEBYTECODE": "1"},
         )
     )
-    assert handle.wait_for_settlement(timeout=5).succeeded
+    assert handle.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT).succeeded
     assert all(Path(path).resolve().is_relative_to(checkout) for path in json.loads(output.read_text()))
 
 
@@ -689,7 +689,7 @@ def test_full_exit_values_settle_once_on_both_spawn_paths(tmp_path, monkeypatch,
     reap = Mock(wraps=handle._adapter.reap)
     monkeypatch.setattr(handle._adapter, "reap", reap)
 
-    status = handle.wait_for_settlement(timeout=5)
+    status = handle.wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT)
 
     assert status.exit_code == exit_code & 0xFF
     assert status.termination_signal is None
@@ -707,7 +707,7 @@ def test_full_exit_values_settle_once_on_both_spawn_paths(tmp_path, monkeypatch,
 def test_identity_capacity_is_bounded_without_evicting_settled_attempts(tmp_path, monkeypatch):
     launcher = ProcessTaskLauncher(max_attempt_identities=1)
     request = _request(tmp_path, "retained-at-capacity", "pass")
-    assert launcher.launch_task(request).wait_for_settlement(timeout=5).succeeded
+    assert launcher.launch_task(request).wait_for_settlement(timeout=PROCESS_STARTUP_TIMEOUT).succeeded
     spawn = Mock()
     monkeypatch.setattr("tests.local_task_launcher.spawn_process", spawn)
     with pytest.raises(TaskLauncherError, match="already launched"):
@@ -740,7 +740,7 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
     child_pid = None
     try:
         _wait_for_file(fork_ready)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
         while owned.poll() is None:
             assert time.monotonic() < deadline
             time.sleep(0.01)
@@ -751,7 +751,7 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
             snapshot = pids()
             fork_now.write_text("fork")
             _wait_for_file(child_pid_path)
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + PROCESS_STARTUP_TIMEOUT
             while _process_running(forker):
                 assert time.monotonic() < deadline
                 time.sleep(0.01)
@@ -797,3 +797,135 @@ def test_real_worker_forked_after_snapshot_cannot_be_reported_settled(tmp_path, 
 
 
 pytestmark = [pytest.mark.timeout(120), pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")]
+
+
+@pytest.mark.timeout(90)
+def test_late_process_coordinator_cleanup_kills_child_after_leader_exit(tmp_path):
+    from nvflare.apis.fl_constant import ReservedKey
+    from nvflare.apis.fl_context import FLContext
+    from nvflare.apis.job_launcher_spec import JobReturnCode, publish_job_handle
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+    from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskService
+    from nvflare.private.fed.client.task_runtime import (
+        JobLaunchOptions,
+        TaskExecutionBinding,
+        _launch_job_with_task_workers,
+        _TaskExecutionState,
+        shutdown_task_execution,
+    )
+    from tests.timing_utils import join_thread, wait_for
+
+    child_pid_path = tmp_path / "coordinator-child.pid"
+    child_code = (
+        "import os,pathlib,sys,time; " "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(120)"
+    )
+    leader_code = (
+        "import pathlib,subprocess,sys,time; "
+        "subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2]]); "
+        "p=pathlib.Path(sys.argv[2]); "
+        'exec("while not p.exists():\\n time.sleep(0.01)")'
+    )
+    entered, finish = threading.Event(), threading.Event()
+    cell = SimpleNamespace(get_fqcn=lambda: "site-1", register_request_cb=Mock())
+    context = FLContext()
+    context.set_prop(ReservedKey.IDENTITY_NAME, "site-1")
+    engine = SimpleNamespace(get_cell=lambda: cell, _task_execution_state=_TaskExecutionState())
+    context.set_prop(ReservedKey.ENGINE, engine)
+    runtime = TaskExecutionBinding(
+        SimpleNamespace(poll_interval=0.02),
+        SlurmTaskService,
+        "TEST_OWNER",
+        "TEST_TOKEN",
+        {"job_id": "job-1"},
+        JobLaunchOptions(),
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", leader_code, child_code, str(child_pid_path)],
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    native = ProcessHandle(process=process, owns_process_group=True)
+    native.wait = Mock(side_effect=AssertionError("launch failure must not call an unbounded wait"))
+
+    def create(meta, fl_ctx):
+        wait_for(child_pid_path.exists, timeout=20)
+        assert process.wait(timeout=20) == 0
+        entered.set()
+        finish.wait()
+        publish_job_handle(native, fl_ctx)
+        return native
+
+    def launch():
+        with pytest.raises(RuntimeError, match="shut down during"):
+            _launch_job_with_task_workers(runtime, Mock(launch_job=create), context, cleanup_timeout=2.0)
+
+    try:
+        with ThreadGroup(finish, timeout=30) as threads:
+            worker = threads.start(launch)
+            assert entered.wait(25), "coordinator did not exit after its child reached readiness"
+            child_pid = int(child_pid_path.read_text())
+            assert native.poll() == JobReturnCode.SUCCESS
+            assert not native._is_cleanup_complete()
+            assert _process_running(psutil.Process(child_pid))
+            owner = cell._slurm_task_service.jobs["job-1"]
+            shutdown_task_execution(engine, timeout=0.01)
+            assert owner.thread.is_alive() and owner.cj_launch_pending
+            finish.set()
+            join_thread(worker, timeout=20)
+            join_thread(owner.thread, timeout=20)
+            native.wait.assert_not_called()
+            _assert_pid_not_running(child_pid)
+            assert native._is_cleanup_complete()
+            assert not cell._slurm_task_service.jobs
+    finally:
+        finish.set()
+        if not native._is_cleanup_complete():
+            native.terminate()
+        process.wait(timeout=10)
+        service = getattr(cell, "_slurm_task_service", None)
+        if service:
+            assert service.shutdown(timeout=10) == ()
+
+
+def test_running_process_coordinator_aborts_settle_without_cleanup_warnings(tmp_path, caplog):
+    from nvflare.app_common.job_launcher.process_launcher import ProcessHandle
+    from nvflare.app_opt.job_launcher.slurm.task_service import SlurmTaskService
+    from nvflare.private.fed.client.task_runtime import JobHandleWithTaskWorkers
+    from tests.process_test_utils import OwnedProcesses
+    from tests.timing_utils import join_thread
+
+    service = SlurmTaskService(SimpleNamespace(get_fqcn=lambda: "site-1", register_request_cb=Mock()))
+    code = "import pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text('ready'); time.sleep(120)"
+    try:
+        with OwnedProcesses() as processes:
+            for attempt in range(20):
+                ready = tmp_path / f"coordinator-{attempt}.ready"
+                process = processes.start([sys.executable, "-c", code, str(ready)])
+                native = ProcessHandle(process=process, owns_process_group=True)
+                owner = service.add_job(
+                    SimpleNamespace(poll_interval=0.02),
+                    f"job-{attempt}",
+                    "site-1",
+                    "test-token",
+                    cj_launch_pending=True,
+                )
+                owner.attach_cj(native)
+                owner.finish_cj_launch()
+                _wait_for_file(ready)
+                assert process.poll() is None
+                handle = JobHandleWithTaskWorkers(native, owner, allow_restart=False)
+                handle.terminate()
+                join_thread(owner.thread, timeout=10)
+                assert native._is_cleanup_complete()
+                handle.wait()
+                assert not service.jobs
+        assert not [
+            record
+            for record in caplog.records
+            if record.name == "nvflare.private.fed.task_worker.task_service"
+            and "Coordinator cleanup unconfirmed" in record.getMessage()
+        ]
+    finally:
+        assert service.shutdown(timeout=10) == ()

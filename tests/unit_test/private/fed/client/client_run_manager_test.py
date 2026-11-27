@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from nvflare.apis.fl_constant import ProcessType, ReservedKey, SiteType
+from nvflare.apis.fl_constant import FLContextKey, ProcessType, ReservedKey, SiteType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.private.aux_runner import AuxRunner
@@ -27,6 +27,19 @@ class _DummyRunManager:
     def __init__(self):
         self.all_clients = None
         self.name_to_clients = {}
+
+
+def test_client_run_manager_defaults_without_a_federated_client(tmp_path):
+    meta_file = tmp_path / "meta.json"
+    meta_file.write_text("{}")
+    workspace = MagicMock()
+    workspace.get_job_meta_path.return_value = str(meta_file)
+    run_manager = ClientRunManager("site-1", "job-1", workspace, client=None, components={}, handlers=[])
+
+    with run_manager.new_context() as fl_ctx:
+        assert fl_ctx.get_prop(FLContextKey.CLIENT_CONFIG) == {}
+        assert fl_ctx.get_prop(ReservedKey.FQSN) == "site-1"
+        assert fl_ctx.get_prop(ReservedKey.IS_LEAF) is True
 
 
 def test_get_job_clients_raises_if_job_clients_missing():

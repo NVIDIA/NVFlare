@@ -208,6 +208,20 @@ class SessionSpec(ABC):
         """
         pass
 
+    def get_job_resources(self, job_id: str, site: str = None) -> dict:
+        """Return the finalized resource summary and optional participant detail for one job."""
+
+        raise NotImplementedError
+
+    def get_study_resources(self) -> dict:
+        """Return the active study's rollup for jobs the caller may inspect.
+
+        Each job requires the same permission as ``get_job_resources``.
+        Restricted jobs are omitted from both results and coverage counts.
+        """
+
+        raise NotImplementedError
+
     @abstractmethod
     def list_jobs(
         self,
@@ -236,13 +250,15 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def download_job_result(self, job_id: str, destination: str = None) -> str:
+    def download_job_result(self, job_id: str, destination: str = None, outputs_only: bool = False) -> str:
         """
         Download result of the job
 
         Args:
             job_id: ID of the job
             destination: optional directory to move the downloaded result into.
+            outputs_only: download only the job's outputs, the files it produced on the server, without the submitted
+                job, its config and code, or the logs, when the server supports it.
 
         Returns: folder path to the location of the job result
 

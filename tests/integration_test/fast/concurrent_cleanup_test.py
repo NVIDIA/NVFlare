@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from tests.process_test_utils import run_owned_process
-from tests.timing_utils import expire_deadline_when_ready
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT, expire_deadline_when_ready
 
 
 @pytest.mark.timeout(60)
@@ -36,7 +36,7 @@ def test_concurrent_cleanup_has_process_watchdog(scenario):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.timeout(40)
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize(
     "scenario, module, name, method",
     [
@@ -49,7 +49,13 @@ def test_product_deadlock_is_stopped_by_parent_watchdog(tmp_path, monkeypatch, s
 
     root = str(Path(__file__).resolve().parents[3])
     ready = tmp_path / "deadlock-entered"
-    expire_deadline_when_ready(monkeypatch, process_test_utils, ready.exists)
+    expire_deadline_when_ready(
+        monkeypatch,
+        process_test_utils,
+        ready.exists,
+        readiness_timeout=PROCESS_STARTUP_TIMEOUT,
+        message=f"Process did not reproduce {scenario} before publishing {ready}",
+    )
     code = (
         "import threading; from pathlib import Path; "
         f"from {module} import {name}; "

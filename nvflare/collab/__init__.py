@@ -17,9 +17,14 @@ from .api.facade import Facade as collab
 
 if TYPE_CHECKING:
     from .api.exceptions import CollabCallError
+    from .fedbuff_recipe import FedBuffRecipe, FedBuffScheduleState
+    from .model_ops import ModelOps
     from .recipe import CollabRecipe
 
 __all__ = [
+    "FedBuffRecipe",
+    "FedBuffScheduleState",
+    "ModelOps",
     "collab",
     "CollabCallError",
     "CollabRecipe",
@@ -31,6 +36,9 @@ __all__ = [
 # recipe pulls in FLARE job/runtime machinery, which client-side
 # training scripts that only need the `collab` facade should not pay for.
 _EXPORTS = {
+    "FedBuffRecipe": ".fedbuff_recipe",
+    "FedBuffScheduleState": ".fedbuff_recipe",
+    "ModelOps": ".model_ops",
     "CollabCallError": ".api.exceptions",
     "CollabRecipe": ".recipe",
 }

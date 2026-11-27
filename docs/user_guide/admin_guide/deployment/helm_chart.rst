@@ -508,29 +508,29 @@ Example ``study_runtime.yaml``:
            source: nvfldata
            mode: ro
 
-For Kubernetes, each dataset ``source`` value is a PVC claim name. The job pod
-mounts the dataset at ``/data/<study>/<dataset>``, for example
+For Kubernetes, each dataset ``source`` value is a PVC claim name. The pod running the training
+code mounts the dataset at ``/data/<study>/<dataset>``, for example
 ``/data/default/data``. ``mode`` must be ``ro`` or ``rw``. Missing entries for
 a job's study mean no study-data PVCs are mounted for that job. The same file
 also configures per-study env vars, secret-backed env vars and mounts, and Pod
 templates; the launcher re-reads it on every job launch. Any template files
-referenced by ``pod_template`` must be staged with ``local/``.
+referenced by ``pod_template`` or ``worker_pod_template`` must be staged with ``local/``.
 
-Legacy v1 kits that still use ``local/study_data.yaml`` keep working:
-``nvflare deploy prepare`` then emits the launcher's
-``study_data_pvc_file_path`` pointing at that file and does not write a
-``study_runtime.yaml`` template. The two files must not coexist; to migrate,
-move all studies into ``study_runtime.yaml`` and delete ``study_data.yaml``.
+The v1 ``local/study_data.yaml`` format and the launcher's
+``study_data_pvc_file_path`` argument were removed in 2.10. A launcher refuses to
+start jobs while the file is present; move all studies into ``study_runtime.yaml``
+and delete ``study_data.yaml``.
 
 When a study's ``local/study_runtime.yaml`` entry sets ``pod_template``,
-matching jobs use the study-specific Pod template, and ``datasets`` entries
-from the same study are added as PVC volume mounts. The launcher always
-replaces template ``workspace-job`` and ``startup-kit`` volumes and
-job-container mounts with its generated workspace ``emptyDir`` and startup-kit
-Secret mounts.
+matching jobs use the study-specific CJ Pod template. In job mode, ``datasets``
+entries from the same study are added to that Pod as PVC volume mounts. In task
+mode, workers get those mounts and can use a separate ``worker_pod_template``.
+See :ref:`kubernetes_task_study_runtime`. The launcher owns the ``workspace-job``
+and ``startup-kit`` volumes and container mounts. The workspace uses an
+``emptyDir`` by default and the assigned jobs PVC subPath for persistent CJs.
 
 Minimal Study Job Pod Template
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Reference the template per study in ``local/study_runtime.yaml`` (paths resolve
 relative to ``local/``; an inline pod mapping is also accepted):

@@ -810,19 +810,40 @@ in executor arguments control the timeout behavior:
         ...
     }
 
+.. _xgboost_collective_worker_capacity:
+
 Number of Clients
 -----------------
-The default configuration can only handle 20 clients. This parameter needs to be adjusted if more clients are involved in the training:
 
-.. code-block::
-   :caption: config_fed_client.json
+For histogram-based federated XGBoost, set ``rm_max_request_workers``
+in the server application configuration to at least the number of
+participating clients. The default is 20. Allow extra workers if other
+request handlers share the pool.
+
+For 100 clients, add this top-level setting alongside the existing
+``workflows`` and ``components`` entries:
+
+.. code-block:: json
+   :caption: config_fed_server.json (partial)
 
     {
         "format_version": 2,
-        "num_rounds": 3,
-        "rm_max_request_workers": 100,
-        ...
+        "rm_max_request_workers": 100
     }
+
+XGBoost collectives wait for all participating clients. With too few
+server workers, requests can remain queued behind workers waiting for
+the same collective, causing timeouts. Increasing ``tx_timeout`` or
+setting ``rm_max_request_workers`` only in the client configuration
+does not resolve this bottleneck.
+
+This requirement applies with and without encryption. Secure training
+also requires sufficient CPU and memory, especially when multiple
+clients share a host. For timeout settings, see
+:ref:`reliable_xgboost_timeout`.
+
+In simulator mode, run all participating clients concurrently. For
+example, use ``-n 100 -t 100`` for 100 clients.
 
 
 Additional Resources

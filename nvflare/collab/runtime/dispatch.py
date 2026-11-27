@@ -23,6 +23,7 @@ from nvflare.fuel.f3.cellnet.utils import new_cell_message
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import StreamError
+from nvflare.fuel.sec.authn import is_message_origin_trusted
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 from .defs import CALL_PROTOCOL_VERSION, MSG_CHANNEL, MSG_TOPIC, CallHeaderKey, CallReplyKey, ObjectCallKey
@@ -100,7 +101,12 @@ class _CollabStreamFilter:
         ):
             return None
 
-        rejection = self.authorizer.authorize(message.headers)
+        if not is_message_origin_trusted(message, self.authorizer.local_fqcn):
+            rejection = self.authorizer._reject(
+                message.get_header(MessageHeaderKey.ORIGIN), "untrusted transport origin"
+            )
+        else:
+            rejection = self.authorizer.authorize(message.headers)
         if rejection:
             self.byte_receiver.reject(message, rejection)
             # Incoming request filters stop delivery when they return a Message. The

@@ -17,9 +17,11 @@ import io
 import json
 import os
 import shutil
+import tempfile
 import threading
 import uuid
 import weakref
+from contextlib import contextmanager, nullcontext
 from typing import Dict, List, Optional, Set
 from zipfile import BadZipFile, ZipFile
 
@@ -38,6 +40,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.job_def import (
     ALL_SITES,
     DEFAULT_STUDY,
+    OUTPUTS_ONLY_PROP,
     SERVER_SITE_NAME,
     Job,
     JobMetaKey,
@@ -53,6 +56,8 @@ from nvflare.apis.storage import (
     JOB_ZIP,
     META,
     META_JSON,
+    OUTPUTS,
+    OUTPUTS_ZIP,
     WORKSPACE,
     WORKSPACE_ZIP,
     DataTypes,
@@ -60,19 +65,39 @@ from nvflare.apis.storage import (
     StorageSpec,
 )
 from nvflare.apis.utils.job_submit_token import canonical_job_content_hash, validate_submit_token
+from nvflare.app_common.logging.constants import client_log_path, client_log_staging_root
+from nvflare.app_common.logging.log_staging import ClientLogStaging
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, ReplyKeyword, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.binary_transfer import BinaryTransfer
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.sec.admin_audit import prepare, record, reject, update_context
+from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.log_utils import get_obj_logger, read_log_tail
 from nvflare.private.admin_defs import MsgHeader
 from nvflare.private.admin_defs import ReturnCode as AdminReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.fed.resource_stats.archive_reader import WorkspaceResourceStatsError, WorkspaceResourceStatsReader
+from nvflare.private.fed.resource_stats.measurements import (
+    SCHEMA_VERSION,
+    canonical_json_bytes,
+    sum_job_totals,
+    sum_study_totals,
+    utc_timestamp,
+)
+from nvflare.private.fed.resource_stats.report_reader import (
+    JOB_STATUS_PATTERN,
+    KIND_STUDY_SUMMARY,
+    MAX_JOB_NAME_LENGTH,
+    MAX_STUDY_JOBS,
+    MAX_STUDY_SUMMARY_BYTES,
+)
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+from nvflare.private.fed.server.job_outputs import outputs_only_refusal
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import extract_participants
@@ -87,6 +112,22 @@ class _SubmitTokenJobDeleted(Exception):
         super().__init__("submit token refers to a deleted job")
         self.record = record
 
+
+def _outputs_note(whole_job_reason: Optional[str], missing: Optional[str]) -> Optional[str]:
+    """One note for the caller: why an outputs-only request returned the whole job, and that stored outputs are
+    missing from the download. None when the download is what was asked for."""
+    parts = []
+    if whole_job_reason:
+        parts.append(f"the whole job was downloaded because {whole_job_reason}")
+    if missing and missing != whole_job_reason:
+        parts.append(missing)
+    return "; ".join(parts) or None
+
+
+_OUTPUTS_ARCHIVE_MISSING = (
+    "the job's outputs archive cannot be read from the job store, so the downloaded workspace does not include "
+    "its outputs"
+)
 
 CLONED_META_KEYS = {
     JobMetaKey.JOB_NAME.value,
@@ -109,6 +150,15 @@ JSON_LOG_FILE_NAME = "log.json"
 
 def _active_study_from_conn(conn: Connection) -> str:
     return conn.get_prop(ConnProps.ACTIVE_STUDY, DEFAULT_STUDY) or DEFAULT_STUDY
+
+
+def _resource_job_name(job: Job, job_id: str | None = None) -> str:
+    """Bound only the query display label; do not change persisted metadata."""
+
+    for name in (job.meta.get(JobMetaKey.JOB_NAME.value), job.meta.get(JobMetaKey.JOB_FOLDER_NAME.value)):
+        if isinstance(name, str) and name:
+            return name[:MAX_JOB_NAME_LENGTH]
+    return job_id or job.job_id
 
 
 def _append_no_such_job_error(conn: Connection, job_id: str):
@@ -145,6 +195,33 @@ def _create_get_job_log_cmd_parser():
     parser.add_argument("log_file_name", nargs="?", default=WorkspaceConstants.LOG_FILE_NAME, help="log file name")
     parser.add_argument("--tail-bytes", type=int, help="maximum UTF-8 log bytes per site before transfer")
     return parser
+
+
+def _create_get_job_resources_cmd_parser():
+    parser = SafeArgumentParser(prog=AdminCommandNames.GET_JOB_RESOURCES)
+    parser.add_argument("job_id", help="Job ID")
+    parser.add_argument("--site", help="Include one accepted participant report")
+    return parser
+
+
+def _is_terminal_resource_job(status: str) -> bool:
+    return isinstance(status, str) and (
+        status.startswith("FINISHED:")
+        or status in {"FINISHED_OK", "FINISHED_EXCEPTION", "ABORTED", "ABANDONED", "FAILED"}
+    )
+
+
+def _normalize_job_status(status) -> str:
+    if isinstance(status, RunStatus):
+        return status.value
+    return status if isinstance(status, str) and status else "UNKNOWN"
+
+
+def _resource_job_status(status) -> str:
+    """Keep malformed legacy metadata out of query rows, without making it terminal."""
+
+    value = _normalize_job_status(status)
+    return value if JOB_STATUS_PATTERN.fullmatch(value) else "UNKNOWN"
 
 
 class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
@@ -194,6 +271,20 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     usage=f"{AdminCommandNames.GET_JOB_LOG} job_id [server|all|client_name]",
                     handler_func=self.get_job_log,
                     authz_func=self.authorize_job_id,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.GET_JOB_RESOURCES,
+                    description="get finalized resource statistics for a job",
+                    usage=f"{AdminCommandNames.GET_JOB_RESOURCES} job_id [--site participant_name]",
+                    handler_func=self.get_job_resources,
+                    authz_func=self.authorize_job_id,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.GET_STUDY_RESOURCES,
+                    description="get resource statistics for accessible jobs in the active study",
+                    usage=AdminCommandNames.GET_STUDY_RESOURCES,
+                    handler_func=self.get_study_resources,
+                    authz_func=self.command_authz_required,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.GET_JOB_META,
@@ -310,6 +401,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             return PreAuthzReturnCode.ERROR
 
         conn.set_prop(self.JOB, job)
+        prepare(lambda: update_context(job_id=job_id, scope_name=job.meta.get(JobMetaKey.SCOPE, "")))
         conn.set_prop(ConnProps.SUBMITTER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME, ""))
         conn.set_prop(ConnProps.SUBMITTER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG, ""))
         conn.set_prop(ConnProps.SUBMITTER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE, ""))
@@ -363,7 +455,15 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         conn.append_success("")
 
     def configure_job_log(self, conn: Connection, args: List[str]):
+        try:
+            self._configure_job_log(conn, args)
+        except Exception:
+            record("logging.job.error", reason="processing_error")
+            raise
+
+    def _configure_job_log(self, conn: Connection, args: List[str]):
         if len(args) < 4:
+            record("logging.job.rejected", reason="invalid_arguments")
             conn.append_error("syntax error: please provide job_id, target_type, and config")
             return
 
@@ -380,10 +480,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 job_manager = engine.job_def_manager
                 job = job_manager.get_job(job_id, fl_ctx)
                 job_status = job.meta.get(JobMetaKey.STATUS)
+                prepare(lambda: update_context(job_id=job_id, scope_name=job.meta.get(JobMetaKey.SCOPE, "")))
                 if job_status != RunStatus.RUNNING.value:
+                    record("logging.job.rejected", reason="job_not_running")
                     conn.append_error(f"Job {job_id} must be running but is {job_status}")
                     return
         except Exception as e:
+            record("logging.job.error", reason="status_check_failed")
             conn.append_error(
                 f"Exception occurred trying to check job status {job_id} for configure_job_log: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
@@ -392,6 +495,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             err = engine.configure_job_log(str(job_id), config)
+            # Clean child completion and transport failures can both return None.
+            # Keep the existing reply behavior without claiming acknowledgement.
+            record(
+                "logging.job.remote_reported",
+                reason="remote_error" if err else "unknown_outcome",
+                site=SERVER_SITE_NAME,
+            )
             if err:
                 conn.append_error(err)
                 return
@@ -410,9 +520,12 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             expected_clients = conn.get_prop(self.TARGET_CLIENTS, {}) or {}
             for client_token, client_name in expected_clients.items():
                 if client_token not in received_tokens:
+                    record("logging.job.remote_reported", reason="no_reply", site=client_name or "")
                     client_errors.append(f"{client_name or client_token}: no reply")
 
             for client_reply in client_replies:
+                # Audit-only inspection cannot change handling of a client reply.
+                prepare(lambda: self._record_job_log_reply(client_reply, expected_clients))
                 client_name = client_reply.client_name or client_reply.client_token or "client"
                 if client_reply.reply is None:
                     client_errors.append(f"{client_name}: no reply")
@@ -428,11 +541,23 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 conn.append_error(error_info, make_meta(MetaStatusValue.ERROR, info=error_info))
 
         if target_type not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
+            record("logging.job.rejected", reason="invalid_target")
             conn.append_error(
                 "invalid target type {}. Usage: configure_job_log job_id server|client <client-name>...|all config".format(
                     target_type
                 )
             )
+
+    @staticmethod
+    def _record_job_log_reply(client_reply, expected_clients):
+        # Client tokens are session secrets; only established site names may be recorded.
+        site = expected_clients.get(client_reply.client_token) or client_reply.client_name or ""
+        if client_reply.reply is None:
+            reason = "no_reply"
+        else:
+            code = client_reply.reply.get_header(MsgHeader.RETURN_CODE)
+            reason = "acknowledged" if code == AdminReturnCode.OK else "remote_error"
+        record("logging.job.remote_reported", reason=reason, site=site)
 
     def list_jobs(self, conn: Connection, args: List[str]):
         try:
@@ -509,6 +634,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def delete_job(self, conn: Connection, args: List[str]):
         job = conn.get_prop(self.JOB)
         if not job:
+            record("job.delete.rejected", reason="missing_job")
             conn.append_error(
                 "program error: job not set in conn", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "no job")
             )
@@ -516,31 +642,60 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
         job_id = conn.get_prop(self.JOB_ID)
         if job.meta.get(JobMetaKey.STATUS, "") in [RunStatus.DISPATCHED.value, RunStatus.RUNNING.value]:
+            record("job.delete.rejected", reason="job_running", job_id=job_id)
             conn.append_error(
                 f"job: {job_id} is running, could not be deleted at this time.",
                 meta=make_meta(MetaStatusValue.JOB_RUNNING, job_id),
             )
             return
 
+        deleted = False
+        delete_error = False
         try:
             engine = conn.app_ctx
             job_def_manager = engine.job_def_manager
 
             with engine.new_context() as fl_ctx:
-                job_def_manager.delete(job_id, fl_ctx)
-                mark_deleted = getattr(job_def_manager, "mark_submit_records_job_deleted", None)
-                if callable(mark_deleted):
-                    marked_records = mark_deleted(job_id, self._submitter_from_conn(conn), fl_ctx)
-                else:
-                    marked_records = []
+                workspace = getattr(engine, "get_workspace", lambda: None)()
+                staging = ClientLogStaging(workspace) if workspace is not None else None
+                with staging.locked() if staging else nullcontext():
+                    try:
+                        if staging:
+                            staging.prepare_delete(job_id)
+                        job_def_manager.delete(job_id, fl_ctx)
+                        deleted = True
+                    except Exception:
+                        if staging:
+                            staging.cancel_delete(job_id)
+                        raise
+                    if staging:
+                        staging.mark_deleted(job_id)
+                    mark_deleted = getattr(job_def_manager, "mark_submit_records_job_deleted", None)
+                    if callable(mark_deleted):
+                        marked_records = mark_deleted(job_id, self._submitter_from_conn(conn), fl_ctx)
+                    else:
+                        marked_records = []
+                    if staging:
+                        staging.remove_closed_job_logs(job_id)
                 marked_count = len(marked_records)
                 conn.append_string(f"Job {job_id} deleted. Submit records marked deleted: {marked_count}.")
         except Exception as e:
+            delete_error = True
             conn.append_error(
                 f"exception occurred: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
             )
             return
+        finally:
+            # All staging locks and context cleanup have completed before audit I/O.
+            if deleted:
+                record("job.delete.applied", reason="manager_completed", job_id=job_id)
+            if delete_error:
+                record(
+                    "job.delete.cleanup_error" if deleted else "job.delete.error",
+                    reason="bookkeeping_failed" if deleted else "deletion_failed",
+                    job_id=job_id,
+                )
         conn.append_success(
             "",
             meta=make_meta(
@@ -568,13 +723,228 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             else:
                 _append_no_such_job_error(conn, job_id)
 
+    @staticmethod
+    @contextmanager
+    def _resource_query_slot(conn: Connection):
+        """Reject overlapping archive queries on this engine without queuing."""
+
+        lock = conn.app_ctx.resource_query_lock
+        if not lock.acquire(blocking=False):
+            detail = "resource query busy; retry later"
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.ERROR, detail))
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            lock.release()
+
+    def get_job_resources(self, conn: Connection, args: List[str]):
+        try:
+            parsed = _create_get_job_resources_cmd_parser().parse_args(args[1:])
+        except Exception as e:
+            detail = secure_format_exception(e)
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.SYNTAX_ERROR, detail))
+            return
+
+        job_id = conn.get_prop(self.JOB_ID)
+        parsed_job_id = parsed.job_id.lower()
+        if job_id != parsed_job_id:
+            detail = "job_id mismatch between authorization and request"
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.SYNTAX_ERROR, detail))
+            return
+        job = conn.get_prop(self.JOB)
+        status = _resource_job_status(job.meta.get(JobMetaKey.STATUS.value) if job else None)
+        if not _is_terminal_resource_job(status):
+            conn.append_error(f"job {job_id} is not finalized", meta=make_meta(MetaStatusValue.JOB_RUNNING, job_id))
+            return
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            detail = "job definition manager is unavailable"
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, detail))
+            return
+        with self._resource_query_slot(conn) as admitted:
+            if not admitted:
+                return
+            try:
+                with engine.new_context() as fl_ctx:
+                    with self._staged_resource_reader(
+                        job_def_manager, job_id, fl_ctx, job.meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is True
+                    ) as reader:
+                        summary = reader.read_resource_summary()
+                        if summary["job_id"] != job_id:
+                            raise WorkspaceResourceStatsError("resource summary job_id does not match selected job")
+                        result = {"resource_summary": summary, "job_name": _resource_job_name(job, job_id)}
+                        if parsed.site:
+                            result["participant_summary"] = reader.read_participant_summary(parsed.site)
+            except (OSError, StorageException, WorkspaceResourceStatsError) as e:
+                detail = secure_format_exception(e)
+                conn.append_error(detail, meta=make_meta(MetaStatusValue.ERROR, detail))
+                return
+            conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
+
+    def get_study_resources(self, conn: Connection, args: List[str]):
+        if len(args) != 1:
+            detail = f"usage: {AdminCommandNames.GET_STUDY_RESOURCES}"
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.SYNTAX_ERROR, detail))
+            return
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            detail = "job definition manager is unavailable"
+            conn.append_error(detail, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, detail))
+            return
+
+        with self._resource_query_slot(conn) as admitted:
+            if not admitted:
+                return
+            study = _active_study_from_conn(conn)
+            with engine.new_context() as fl_ctx:
+                try:
+                    jobs = [
+                        job
+                        for job in job_def_manager.get_all_jobs(fl_ctx)
+                        if get_job_meta_study(job.meta) == study and self._is_resource_job_authorized(conn, job)
+                    ]
+                except Exception:
+                    # Do not disclose job identities or policy details, or return partially checked results.
+                    detail = "unable to authorize study resource statistics"
+                    conn.append_error(detail, meta=make_meta(MetaStatusValue.NOT_AUTHORIZED, detail))
+                    return
+                if len(jobs) > MAX_STUDY_JOBS:
+                    detail = f"study contains more than {MAX_STUDY_JOBS} accessible retained jobs"
+                    conn.append_error(detail, meta=make_meta(MetaStatusValue.ERROR, detail))
+                    return
+                selected = sorted(
+                    (
+                        job.job_id,
+                        _resource_job_name(job),
+                        _resource_job_status(job.meta.get(JobMetaKey.STATUS.value)),
+                        job.meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is True,
+                    )
+                    for job in jobs
+                )
+                rows = []
+                cumulative_row_bytes = 0
+                for job_id, job_name, status, outputs_stored in selected:
+                    row = {
+                        "job_id": job_id,
+                        "job_name": job_name,
+                        "job_status": status,
+                        "resource_data": "nonterminal",
+                    }
+                    if _is_terminal_resource_job(status):
+                        try:
+                            with self._staged_resource_reader(
+                                job_def_manager, job_id, fl_ctx, outputs_stored
+                            ) as reader:
+                                summary = reader.read_resource_summary()
+                            if summary["job_id"] != job_id:
+                                raise WorkspaceResourceStatsError("resource summary job_id does not match selected job")
+                            row.update(resource_data="included", totals=sum_job_totals(summary["participants"]))
+                            row_bytes = len(canonical_json_bytes(row))
+                        except (OSError, StorageException, WorkspaceResourceStatsError, ValueError):
+                            row.pop("totals", None)
+                            row["resource_data"] = "unavailable"
+
+                    if row["resource_data"] != "included":
+                        row_bytes = len(canonical_json_bytes(row))
+                    if row_bytes > MAX_STUDY_SUMMARY_BYTES - cumulative_row_bytes:
+                        detail = f"study resource rows exceed {MAX_STUDY_SUMMARY_BYTES} bytes"
+                        conn.append_error(detail, meta=make_meta(MetaStatusValue.ERROR, detail))
+                        return
+                    cumulative_row_bytes += row_bytes
+                    rows.append(row)
+
+            result = {
+                "schema_version": SCHEMA_VERSION,
+                "kind": KIND_STUDY_SUMMARY,
+                "selection": {"study_name": study},
+                "generated_at": utc_timestamp(),
+                "coverage": {
+                    "selected_jobs": len(rows),
+                    "included_jobs": sum(row["resource_data"] == "included" for row in rows),
+                    "unavailable_jobs": sum(row["resource_data"] == "unavailable" for row in rows),
+                    "nonterminal_jobs": sum(row["resource_data"] == "nonterminal" for row in rows),
+                },
+                "jobs": rows,
+            }
+            try:
+                result["totals"] = sum_study_totals(rows)
+                if len(canonical_json_bytes(result)) > MAX_STUDY_SUMMARY_BYTES:
+                    raise ValueError(f"study resource summary exceeds {MAX_STUDY_SUMMARY_BYTES} bytes")
+            except Exception as e:
+                detail = secure_format_exception(e)
+                conn.append_error(detail, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, detail))
+                return
+            conn.append_dict(result, meta=make_meta(MetaStatusValue.OK))
+
+    @staticmethod
+    def _is_resource_job_authorized(conn: Connection, job: Job) -> bool:
+        """Apply the single-job resource permission before including a study job."""
+
+        user = Person(
+            name=conn.get_prop(ConnProps.USER_NAME, ""),
+            org=conn.get_prop(ConnProps.USER_ORG, ""),
+            role=conn.get_prop(ConnProps.USER_ROLE, ""),
+        )
+        submitter = Person(
+            name=job.meta.get(JobMetaKey.SUBMITTER_NAME, ""),
+            org=job.meta.get(JobMetaKey.SUBMITTER_ORG, ""),
+            role=job.meta.get(JobMetaKey.SUBMITTER_ROLE, ""),
+        )
+        # AuthzFilter uses CommandEntry.name for both scoped and unscoped commands.
+        ctx = AuthzContext(user=user, submitter=submitter, right=AdminCommandNames.GET_JOB_RESOURCES)
+        decision = AuthorizationService.authorize(ctx)
+        if (
+            not isinstance(decision, tuple)
+            or len(decision) != 2
+            or not isinstance(decision[0], bool)
+            or not isinstance(decision[1], str)
+        ):
+            raise ValueError("malformed authorization response")
+        authorized, error = decision
+        return authorized and not error
+
+    @staticmethod
+    @contextmanager
+    def _staged_resource_reader(job_def_manager: JobDefManagerSpec, job_id: str, fl_ctx, outputs_stored: bool):
+        if not isinstance(job_id, str) or not job_id or job_id in {".", ".."} or os.path.basename(job_id) != job_id:
+            raise WorkspaceResourceStatsError("job_id cannot be used for workspace staging")
+
+        with tempfile.TemporaryDirectory(prefix="nvflare-resource-stats-") as stage_root:
+
+            def stage(component, filename):
+                archive_path = os.path.join(stage_root, job_id, filename)
+                if not os.path.isfile(archive_path):
+                    job_def_manager.get_storage_for_download(
+                        jid=job_id, download_dir=stage_root, component=component, download_file=filename, fl_ctx=fl_ctx
+                    )
+                if not os.path.isfile(archive_path):
+                    raise WorkspaceResourceStatsError(f"staged {component} archive is unavailable")
+                return archive_path
+
+            yield WorkspaceResourceStatsReader(
+                stage(WORKSPACE, WORKSPACE_ZIP),
+                outputs_archive=(lambda: stage(OUTPUTS, OUTPUTS_ZIP)) if outputs_stored else None,
+            )
+
     def get_job_log(self, conn: Connection, args: List[str]):
+        try:
+            self._get_job_log(conn, args)
+        except Exception:
+            record("download.job_log.error", reason="preparation_error")
+            raise
+
+    def _get_job_log(self, conn: Connection, args: List[str]):
         try:
             parser = _create_get_job_log_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
             if parsed_args.tail_bytes is not None and parsed_args.tail_bytes <= 0:
                 raise ValueError("--tail-bytes must be a positive integer")
         except Exception as e:
+            reject("download.setup.rejected", reason="invalid_arguments", component="job_log")
             conn.append_error(
                 secure_format_exception(e),
                 meta=make_meta(MetaStatusValue.SYNTAX_ERROR, secure_format_exception(e)),
@@ -584,6 +954,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         prop_job_id = conn.get_prop(self.JOB_ID)
         parsed_job_id = parsed_args.job_id.lower() if isinstance(parsed_args.job_id, str) else parsed_args.job_id
         if prop_job_id is not None and parsed_job_id is not None and prop_job_id != parsed_job_id:
+            reject("download.setup.rejected", reason="job_mismatch", component="job_log")
             conn.append_error(
                 "job_id mismatch between connection property and parsed argument",
                 meta=make_meta(
@@ -637,6 +1008,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                     workspace_zip_loaded=workspace_zip_loaded,
                 )
         except TypeError as e:
+            reject("download.setup.rejected", reason="retrieval_failed", component="job_log")
             error = secure_format_exception(e)
             conn.append_error(error, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, error))
             return
@@ -645,6 +1017,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             limit = min(parsed_args.tail_bytes, self.MAX_RETURNED_JOB_LOG_BYTES)
             payload["logs"] = {site: self._tail_log_text(text, limit) for site, text in payload["logs"].items()}
         conn.append_dict(payload, meta=make_meta(MetaStatusValue.OK))
+        record("download.job_log.prepared", reason="reply_prepared", component="job_log")
 
     @staticmethod
     def _normalize_log_file_name(log_file_name: str) -> str:
@@ -840,12 +1213,17 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         log_file_name: str = WorkspaceConstants.LOG_FILE_NAME,
     ) -> Optional[str]:
         workspace = engine.get_workspace()
-        log_file = os.path.join(workspace.get_log_root(job_id), client_name, log_file_name)
         try:
-            if os.path.exists(log_file):
-                return "".join(self._collect_job_log_lines(log_file))
-        except FileNotFoundError:
+            staged = client_log_path(client_log_staging_root(workspace), job_id, client_name, log_file_name)
+        except ValueError:
             return None
+        try:
+            if not os.path.isfile(staged):
+                staged = os.path.join(workspace.get_log_root(job_id), client_name, log_file_name)
+            if os.path.isfile(staged):
+                return "".join(self._collect_job_log_lines(staged))
+        except FileNotFoundError:
+            pass
         return None
 
     def _read_stored_client_job_log(
@@ -1059,7 +1437,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         with engine.new_context() as fl_ctx:
             list_of_data = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
             if list_of_data:
-                system_components = {"workspace", "meta", "scheduled", "data"}
+                system_components = {WORKSPACE, META, "scheduled", DATA, OUTPUTS}
                 filtered_data = [item for item in list_of_data if item not in system_components]
                 if filtered_data:
                     data_str = ", ".join(filtered_data)
@@ -1073,38 +1451,55 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
     def abort_job(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
         job_runner = engine.job_runner
+        audit_action = "job.abort.error"
+        audit_reason = "processing_error"
+        job_id = None
 
         try:
             job_id = conn.get_prop(self.JOB_ID)
             with engine.new_context() as fl_ctx:
                 job_status = job_runner.abort_before_start(job_id, fl_ctx)
                 if job_status is job_runner.STARTING:
+                    audit_action, audit_reason = "job.abort.retry_required", "job_starting"
                     message = f"Job {job_id} {ReplyKeyword.JOB_STARTING_RETRY_ABORT}"
                     conn.append_error(message, meta=make_meta(MetaStatusValue.ERROR, message))
                     return
                 if job_status in [RunStatus.SUBMITTED.value, RunStatus.DISPATCHED.value]:
+                    audit_action, audit_reason = "job.abort.before_execution", "aborted_before_execution"
                     message = f"Aborted the job {job_id} before running it."
                     conn.append_string(message)
                     conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
                     return
-                elif job_status and job_status.startswith("FINISHED:"):
-                    message = f"Job for {job_id} is already completed."
-                    conn.append_string(message)
-                    conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
-                else:
-                    message = job_runner.stop_run(job_id, fl_ctx)
-                    if message:
-                        conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, message))
-                    else:
+                if not (job_status or "").startswith("FINISHED:"):
+                    error = job_runner.stop_run(job_id, fl_ctx)
+                    if not error:
+                        audit_action, audit_reason = "job.abort.requested", "abort_requested"
                         message = "Abort signal has been sent to the server app."
                         conn.append_string(message)
                         conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
+                        return
+
+                    # Completion publishes the final status before removing the running job.
+                    if job_status == RunStatus.RUNNING:
+                        job = engine.job_def_manager.get_job(job_id, fl_ctx)
+                        job_status = job.meta.get(JobMetaKey.STATUS) if job else None
+                    if not (job_status or "").startswith("FINISHED:"):
+                        audit_action, audit_reason = "job.abort.error", "abort_request_failed"
+                        conn.append_error(error, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, error))
+                        return
+
+                audit_action, audit_reason = "job.abort.unchanged", "already_finished"
+                message = f"Job for {job_id} is already completed."
+                conn.append_string(message)
+                conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
         except Exception as e:
             conn.append_error(
                 f"Exception occurred trying to abort job: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
             )
             return
+        finally:
+            record(audit_action, reason=audit_reason, job_id=job_id)
 
     def clone_job(self, conn: Connection, args: List[str]):
         job = conn.get_prop(self.JOB)
@@ -1614,6 +2009,8 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
 
                 # Submit-token is server-owned submission metadata. User job metadata must not expose it.
                 meta.pop(SubmitRecordKey.SUBMIT_TOKEN.value, None)
+                # set by the server when the job ends, never by a submitter
+                meta.pop(JobMetaKey.JOB_OUTPUTS_STORED.value, None)
 
                 job_def_manager = engine.job_def_manager
                 if not isinstance(job_def_manager, JobDefManagerSpec):
@@ -1706,7 +2103,16 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_download_dir = self.tx_path(conn, tx_id)
         shutil.rmtree(job_download_dir, ignore_errors=True)
 
-    def _download_job_comps(self, conn: Connection, args: List[str], get_comps_f, require_finished: bool = False):
+    def _download_job_comps(
+        self, conn: Connection, args: List[str], get_comps_f, require_finished: bool = False, outputs_only: bool = False
+    ):
+        try:
+            self._prepare_job_download(conn, args, get_comps_f, require_finished, outputs_only)
+        except Exception:
+            reject("download.setup.rejected", reason="setup_error")
+            raise
+
+    def _prepare_job_download(self, conn, args, get_comps_f, require_finished, outputs_only):
         """
         Job download uses binary protocol for more efficient download.
         - Retrieve job data from job store. This puts job files (meta, data, and workspace) in a transfer folder
@@ -1719,6 +2125,7 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
             self.logger.error(
                 f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
             )
+            reject("download.setup.rejected", reason="manager_unavailable")
             conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
             return
 
@@ -1731,20 +2138,25 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         job_id = args[1]
 
         with engine.new_context() as fl_ctx:
+            job = None
             if require_finished:
                 job = job_def_manager.get_job(job_id, fl_ctx)
                 if not job:
+                    reject("download.setup.rejected", reason="job_unavailable")
                     _append_no_such_job_error(conn, job_id)
                     return
+                prepare(lambda: update_context(job_id=job_id, scope_name=job.meta.get(JobMetaKey.SCOPE, "")))
                 job_status = job.meta.get(JobMetaKey.STATUS)
                 if not job_status or not job_status.startswith("FINISHED:"):
+                    reject("download.setup.rejected", reason="job_not_finished")
                     conn.append_error(
                         f"job {job_id} is not done",
                         meta=make_meta(MetaStatusValue.JOB_RUNNING, job_id),
                     )
                     return
-            comps = get_comps_f(job_def_manager, job_id, fl_ctx)
+            comps = get_comps_f(job_def_manager, job_id, fl_ctx, job)
             if not comps:
+                reject("download.setup.rejected", reason="no_components")
                 conn.append_string(
                     "No components to download",
                     meta=make_meta(
@@ -1754,23 +2166,86 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
                 )
                 return
 
+            # A successful component lookup establishes the resource for component downloads too.
+            update_context(job_id=job_id)
             try:
-                for ct, file_name in comps:
-                    job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+                reply_meta = {}
+                if outputs_only:
+                    reason, missing = self._prepare_outputs_download(
+                        job_def_manager, job_id, job.meta, job_download_dir, comps, fl_ctx
+                    )
+                else:
+                    reason, missing = None, self._prepare_whole_job(
+                        job_def_manager, job_id, job_download_dir, comps, fl_ctx
+                    )
+                if outputs_only and not reason:
+                    reply_meta[MetaKey.OUTPUTS_ONLY] = True
+                note = _outputs_note(reason, missing)
+                if note:
+                    # the download is not what the caller asked for; the client shows why
+                    reply_meta[MetaKey.OUTPUTS_NOTE] = note
+
+                if os.path.lexists(os.path.join(job_download_dir, job_id, OUTPUTS_ZIP)):
+                    # the outputs belong in the workspace folder, beside the rest of it
+                    reply_meta[MetaKey.UNZIP_INTO] = {OUTPUTS_ZIP: WORKSPACE_ZIP[: -len(".zip")]}
 
                 self.download_folder(
                     conn,
                     tx_id=tx_id,
                     folder_name=job_id,
+                    reply_meta=reply_meta or None,
                 )
             except Exception as e:
                 secure_log_traceback()
                 self.logger.error(f"exception downloading job {job_id}: {secure_format_exception(e)}")
-                self._clean_up_download(conn, tx_id)
-                conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+                try:
+                    self._clean_up_download(conn, tx_id)
+                    conn.append_error("internal error", meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+                finally:
+                    reject("download.setup.rejected", reason="preparation_error")
 
-    def _get_default_job_components(self, job_def_manager, job_id, fl_ctx):
-        return [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
+    @staticmethod
+    def _outputs_stored_apart(meta: Optional[dict]) -> bool:
+        """Whether the job's outputs are stored apart from its workspace, as recorded at job end."""
+        return isinstance(meta, dict) and meta.get(JobMetaKey.JOB_OUTPUTS_STORED.value) is True
+
+    def _prepare_whole_job(self, job_def_manager, job_id: str, job_download_dir: str, comps, fl_ctx) -> Optional[str]:
+        """Prepare the whole job for download, and say why its stored outputs are missing from it, if they are.
+
+        A job whose outputs are stored apart has them only in its outputs archive. If that archive cannot be read,
+        the rest of the job is still prepared, and the reason tells the client that the workspace lacks them.
+        """
+        for ct, file_name in comps:
+            if ct != OUTPUTS:
+                job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+                continue
+            if not self._prepare_outputs_archive(job_def_manager, job_id, job_download_dir, [(ct, file_name)], fl_ctx):
+                return _OUTPUTS_ARCHIVE_MISSING
+        return None
+
+    def _prepare_outputs_archive(self, job_def_manager, job_id: str, job_download_dir: str, comps, fl_ctx) -> bool:
+        """Prepare ``comps``, the last of which is the job's outputs archive, and return whether it was prepared.
+
+        When preparing fails, a possibly partial outputs archive is removed: it would fail to unzip and take the
+        rest of the download with it.
+        """
+        prepared = os.path.join(job_download_dir, job_id, comps[-1][1])
+        try:
+            for ct, file_name in comps:
+                job_def_manager.get_storage_for_download(job_id, job_download_dir, ct, file_name, fl_ctx)
+        except Exception as e:
+            self.logger.warning(f"cannot prepare the outputs of job {job_id}: {secure_format_exception(e)}")
+            if os.path.lexists(prepared):
+                os.remove(prepared)
+        return os.path.lexists(prepared)
+
+    def _get_default_job_components(self, job_def_manager, job_id, fl_ctx, job):
+        # job: the finished job this download already loaded; a second lookup could fail and drop its outputs
+        comps = [(DATA, JOB_ZIP), (META, META_JSON), (WORKSPACE, WORKSPACE_ZIP)]
+        if self._outputs_stored_apart(job.meta):
+            # the job's outputs are stored apart from the rest of its workspace
+            comps.append((OUTPUTS, OUTPUTS_ZIP))
+        return comps
 
     def download_job(self, conn: Connection, args: List[str]):
         """
@@ -1779,7 +2254,35 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         - Returns job file names, a TX ID, and a command name for downloading files to the admin client
         - Admin client downloads received file names one by one. It signals the end of download in the last command.
         """
-        self._download_job_comps(conn, args, self._get_default_job_components, require_finished=True)
+        cmd_props = conn.get_prop(ConnProps.CMD_PROPS)
+        outputs_only = isinstance(cmd_props, dict) and cmd_props.get(OUTPUTS_ONLY_PROP) is True
+        self._download_job_comps(
+            conn, args, self._get_default_job_components, require_finished=True, outputs_only=outputs_only
+        )
+
+    def _prepare_outputs_download(self, job_def_manager, job_id: str, meta: dict, job_download_dir: str, comps, fl_ctx):
+        """Prepare an outputs-only download: meta.json and the job's outputs archive as workspace.zip.
+
+        The outputs archive was stored when the job ended, so it is prepared like the workspace archive in a full
+        download, with no work before the reply. The whole job is prepared instead when the job did not complete,
+        did not store its outputs apart, or its outputs archive cannot be read.
+
+        Returns:
+            (None, None) for an outputs-only download; otherwise why the whole job was prepared, and why its stored
+            outputs are missing from it, if they are.
+        """
+        reason = outputs_only_refusal(meta)
+        if not reason and not self._outputs_stored_apart(meta):
+            reason = (
+                "the job's outputs were not stored apart: it produced no output files, it finished before this "
+                "feature, or they were kept in its workspace archive"
+            )
+        if not reason:
+            comps_to_send = [(META, META_JSON), (OUTPUTS, WORKSPACE_ZIP)]
+            if self._prepare_outputs_archive(job_def_manager, job_id, job_download_dir, comps_to_send, fl_ctx):
+                return None, None
+            reason = _OUTPUTS_ARCHIVE_MISSING
+        return reason, self._prepare_whole_job(job_def_manager, job_id, job_download_dir, comps, fl_ctx)
 
     def download_job_components(self, conn: Connection, args: List[str]):
         """Download additional job components (e.g., ERRORLOG_site-1) for a specified job.
@@ -1789,13 +2292,13 @@ class JobCommandModule(CommandModule, CommandUtil, BinaryTransfer):
         """
         self._download_job_comps(conn, args, self._get_extra_job_components)
 
-    def _get_extra_job_components(self, job_def_manager, job_id, fl_ctx):
+    def _get_extra_job_components(self, job_def_manager, job_id, fl_ctx, job=None):
         all_components = job_def_manager.list_components(jid=job_id, fl_ctx=fl_ctx)
         if all_components:
             return [
                 (item, item)
                 for item in all_components
-                if item not in {WORKSPACE, META, "scheduled", DATA} and StorageSpec.is_valid_component(item)
+                if item not in {WORKSPACE, META, "scheduled", DATA, OUTPUTS} and StorageSpec.is_valid_component(item)
             ]
         else:
             return None

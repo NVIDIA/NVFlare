@@ -489,32 +489,33 @@ class ConnManager(ConnMonitor):
             )
 
         conn_props = sfm_conn.conn.get_conn_properties()
-        # Passive mTLS connections must always present the connecting peer's CN.
-        # Active mTLS connections enforce the same binding when the driver exposes
-        # a real peer CN; gRPC active-side connections may report "N/A"/None.
+        # Both sides of an mTLS connection must bind the claimed endpoint to
+        # the authenticated peer certificate, including active gRPC connections.
         if is_mtls_connection(sfm_conn.conn.connector.params):
             peer_cn = get_param(conn_props, DriverParams.PEER_CN)
-            if sfm_conn.conn.connector.mode == Mode.PASSIVE or (peer_cn and peer_cn != "N/A"):
-                if (
-                    is_valid_admin_client_name(endpoint_name)
-                    and sfm_conn.conn.connector.mode == Mode.PASSIVE
-                    and not is_admin_listener(sfm_conn.conn.connector.params)
-                ):
-                    sfm_conn.conn.close()
-                    raise CommError(
-                        CommError.BAD_DATA,
-                        f"Admin endpoint '{endpoint_name}' can only connect through an admin listener",
-                    )
-                try:
-                    self.identity_resolver.require_match(
-                        endpoint_name,
-                        peer_cn,
-                        f"connection {sfm_conn.get_name()}",
-                        peer_cert=_peer_cert(conn_props),
-                    )
-                except ValueError as ex:
-                    sfm_conn.conn.close()
-                    raise CommError(CommError.BAD_DATA, str(ex))
+            if not peer_cn or peer_cn == "N/A":
+                sfm_conn.conn.close()
+                raise CommError(CommError.BAD_DATA, f"mTLS peer identity is unavailable for {sfm_conn.get_name()}")
+            if (
+                is_valid_admin_client_name(endpoint_name)
+                and sfm_conn.conn.connector.mode == Mode.PASSIVE
+                and not is_admin_listener(sfm_conn.conn.connector.params)
+            ):
+                sfm_conn.conn.close()
+                raise CommError(
+                    CommError.BAD_DATA,
+                    f"Admin endpoint '{endpoint_name}' can only connect through an admin listener",
+                )
+            try:
+                self.identity_resolver.require_match(
+                    endpoint_name,
+                    peer_cn,
+                    f"connection {sfm_conn.get_name()}",
+                    peer_cert=_peer_cert(conn_props),
+                )
+            except ValueError as ex:
+                sfm_conn.conn.close()
+                raise CommError(CommError.BAD_DATA, str(ex))
 
         endpoint = Endpoint(endpoint_name, data)
         endpoint.state = EndpointState.READY
@@ -523,18 +524,18 @@ class ConnManager(ConnMonitor):
 
         sfm_endpoint = self.sfm_endpoints.get(endpoint_name)
         if sfm_endpoint:
-            old_state = sfm_endpoint.endpoint.state
             sfm_endpoint.endpoint = endpoint
         else:
-            old_state = EndpointState.IDLE
             sfm_endpoint = SfmEndpoint(endpoint)
 
         sfm_endpoint.add_connection(sfm_conn)
         sfm_conn.sfm_endpoint = sfm_endpoint
         self.sfm_endpoints[endpoint_name] = sfm_endpoint
 
-        if endpoint.state != old_state:
-            self.notify_monitors(endpoint)
+        # A goodbye can remove the Cell route before the old transport reports
+        # DISCONNECTED. A replacement's handshake must republish its endpoint
+        # even when the previous connection still appeared READY.
+        self.notify_monitors(endpoint)
 
     def notify_monitors(self, endpoint: Endpoint):
 

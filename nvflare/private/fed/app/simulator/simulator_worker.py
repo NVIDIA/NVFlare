@@ -91,7 +91,9 @@ class ClientTaskWorker(FLComponent):
                 self.fire_event(EventType.SWAP_IN, fl_ctx)
 
                 if args.task_name == RunnerTask.END_RUN:
-                    client_runner.end_run_events_sequence()
+                    if not client_runner.end_run_events_sequence():
+                        raise RuntimeError("END_RUN event handlers failed")
+                    end_run_client = client.client_name
                     self.logger.info("Simulator END_RUN sequence.")
                     stop_run = True
 
@@ -107,7 +109,8 @@ class ClientTaskWorker(FLComponent):
 
                         # if any client got the END_RUN event, stop the simulator run.
                         if client_runner.run_abort_signal.triggered:
-                            client_runner.end_run_events_sequence()
+                            if not client_runner.end_run_events_sequence():
+                                raise RuntimeError("END_RUN event handlers failed")
                             end_run_client = client.client_name
                             stop_run = True
                             self.logger.info("End the Simulator run.")
@@ -127,6 +130,9 @@ class ClientTaskWorker(FLComponent):
             self.logger.error(f"do_one_task execute exception: {secure_format_exception(e)}")
             secure_log_traceback()
             stop_run = True
+            # An uncaught initialization/execution exception is a failed worker,
+            # even when no component explicitly fired FATAL_SYSTEM_ERROR.
+            fatal_error = True
 
         return interval, stop_run, end_run_client, fatal_error
 

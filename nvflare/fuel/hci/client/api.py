@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import sys
 import threading
 import time
 import traceback
@@ -25,7 +24,14 @@ from pathlib import Path
 from typing import List, Optional
 
 import nvflare.fuel.f3.streaming.file_downloader as downloader
-from nvflare.apis.fl_constant import ConnectionSecurity, FLContextKey, ProcessType, ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    ConnectionSecurity,
+    FLContextKey,
+    ProcessType,
+    ReservedKey,
+    ReturnCode,
+)
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.apis.shareable import Shareable
@@ -40,6 +46,7 @@ from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.endpoint import EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.hci.client.event import EventContext, EventHandler, EventPropKey, EventType
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
@@ -71,6 +78,7 @@ from nvflare.private.fed.authenticator import Authenticator, validate_auth_heade
 from nvflare.private.fed.utils.identity_utils import IdentityAsserter, TokenVerifier, get_cn_from_cert, load_cert_file
 from nvflare.private.stream_runner import HeaderKey, ObjectStreamer
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.tool.cli_output import print_human, sanitize_cli_output
 
 from .api_spec import (
     AdminAPISpec,
@@ -86,6 +94,11 @@ from .api_status import APIStatus
 _CMD_TYPE_UNKNOWN = 0
 _CMD_TYPE_CLIENT = 1
 _CMD_TYPE_SERVER = 2
+
+# Resource queries stage archived workspaces sequentially. Keep their default
+# request wait local to the operation; an explicit session timeout still wins.
+_RESOURCE_QUERY_COMMANDS = frozenset({AdminCommandNames.GET_JOB_RESOURCES, AdminCommandNames.GET_STUDY_RESOURCES})
+_RESOURCE_QUERY_TIMEOUT = 300.0
 
 MAX_AUTO_LOGIN_TRIES = 300
 AUTO_LOGIN_INTERVAL = 1.5
@@ -112,12 +125,7 @@ class ResultKey(object):
 
 
 def _print_hci_message(msg: str):
-    try:
-        from nvflare.tool.cli_output import print_human
-
-        print_human(msg)
-    except ImportError:
-        print(msg, file=sys.stderr)
+    print_human(msg)
 
 
 class _ServerReplyJsonProcessor(object):
@@ -135,7 +143,8 @@ class _ServerReplyJsonProcessor(object):
             resp: The raw response that returns by the server.
         """
         api = self.ctx.get_api()
-        api.debug("Server Reply: {}".format(resp))
+        if api._debug:
+            api.debug("Server Reply: {}".format(sanitize_cli_output(resp)))
 
         ctx = self.ctx
 
@@ -243,6 +252,15 @@ class _CmdListReplyProcessor(ReplyProcessor):
             )
 
         api.server_cmd_received = True
+
+
+class _AdminCellReconnectMonitor(EndpointMonitor):
+    def __init__(self):
+        self.reconnected = threading.Event()
+
+    def state_change(self, endpoint):
+        if endpoint.name == FQCN.ROOT_SERVER and endpoint.state == EndpointState.READY:
+            self.reconnected.set()
 
 
 class AdminAPI(AdminAPISpec, StreamableEngine):
@@ -379,6 +397,10 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.closed = False
         self.in_logout = False
         self.cell = None
+        self._cell_auth_monitor = None
+        self._cell_reconnect_lock = threading.RLock()
+        self._cell_recovery_needed = False
+        self._cell_recovery_in_progress = False
         self.aux_runner = None
         self.object_streamer = None
         self.fl_ctx_mgr = FLContextManager(
@@ -427,6 +449,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         self.login_result = None
         cell = self.cell
         self.cell = None
+        self._cell_auth_monitor = None
         try:
             self.shutdown_streamer()
         finally:
@@ -540,7 +563,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             logger=self.logger,
             local_cell_fqcn=self.cell.get_fqcn(),
         )
-        self.debug(f"Successfully authenticated to {self.server_identity}: {token=} {ssid=}")
+        self._cell_auth_monitor = _AdminCellReconnectMonitor()
+        self.cell.core_cell.communicator.register_monitor(self._cell_auth_monitor)
+        self.debug(f"Successfully authenticated to {self.server_identity}")
 
         self.aux_runner = AuxRunner(self)
         self.object_streamer = ObjectStreamer(self.aux_runner)
@@ -672,7 +697,7 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         try:
             self.fire_session_event(EventType.BEFORE_LOGIN)
             result = self._try_login()
-            self.debug(f"login result is {result}")
+            self.debug(f"login status: {result.get(ResultKey.STATUS)}")
         except Exception as e:
             result = {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
@@ -763,12 +788,31 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
         return self.server_sess_active
 
     def _user_login(self):
+        # Explicit login and automatic recovery share the same guard so their
+        # CERT_LOGIN/GET_CMD_LIST commands cannot recursively start recovery.
+        with self._cell_reconnect_lock:
+            was_in_progress = self._cell_recovery_in_progress
+            self._cell_recovery_in_progress = True
+            try:
+                result = self._login_user_session()
+                if result.get(ResultKey.STATUS) == APIStatus.SUCCESS:
+                    self._cell_recovery_needed = False
+                return result
+            finally:
+                self._cell_recovery_in_progress = was_in_progress
+
+    def _login_user_session(self):
         """Login user
 
         Returns:
             A dict of login status and details
         """
         self.ensure_client_cert_valid()
+        monitor = getattr(self, "_cell_auth_monitor", None)
+        if monitor and monitor.reconnected.is_set():
+            # A restarted server no longer has this Cell's delegated token binding.
+            # Re-register before CERT_LOGIN, outside the transport callback thread.
+            self._reset_cell()
         if not self.cell:
             self.connect()
         command = f"{InternalCommands.CERT_LOGIN} {self.user_name}"
@@ -832,8 +876,8 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             conn.update_meta({MetaKey.CMD_PROPS: cmd_props})
 
         timeout = self.cmd_timeout
-        if not timeout:
-            timeout = 5.0
+        if timeout is None:
+            timeout = _RESOURCE_QUERY_TIMEOUT if ctx.get_command_name() in _RESOURCE_QUERY_COMMANDS else 5.0
 
         requester = ctx.get_requester()
         if requester:
@@ -1018,6 +1062,9 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
             return self._do_client_command(command=command, args=args, ent=ent, props=props)
 
         # server command
+        recovery_error = self._recover_cell_session()
+        if recovery_error:
+            return recovery_error
         if not self.server_sess_active:
             return {
                 ResultKey.STATUS: APIStatus.ERROR_INACTIVE_SESSION,
@@ -1026,9 +1073,32 @@ class AdminAPI(AdminAPISpec, StreamableEngine):
 
         return self.server_execute(command, cmd_entry=ent, props=props)
 
+    def _recover_cell_session(self):
+        with self._cell_reconnect_lock:
+            monitor = self._cell_auth_monitor
+            needed = self._cell_recovery_needed or (monitor and monitor.reconnected.is_set())
+            if not needed or self.in_logout or self._cell_recovery_in_progress:
+                return
+            # Keep this independent of the monitor: _user_login replaces it and
+            # clears server_sess_active, even if CERT_LOGIN or GET_CMD_LIST fails.
+            self._cell_recovery_needed = True
+            self._cell_recovery_in_progress = True
+            try:
+                result = self._user_login()
+                if result.get(ResultKey.STATUS) == APIStatus.SUCCESS:
+                    self._cell_recovery_needed = False
+                    return
+                return result
+            finally:
+                self._cell_recovery_in_progress = False
+
     def server_execute(self, command, reply_processor=None, cmd_entry=None, cmd_ctx=None, props=None, headers=None):
         if self.in_logout and command != InternalCommands.LOGOUT:
             return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "session is logging out"}
+
+        recovery_error = self._recover_cell_session()
+        if recovery_error:
+            return recovery_error
 
         args = split_to_args(command)
         if cmd_ctx:

@@ -18,12 +18,15 @@ from typing import List
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ServerCommandKey, SystemComponents
+from nvflare.apis.job_def import get_job_meta_study
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
 from nvflare.apis.shareable import Shareable
+from nvflare.app_opt.job_launcher.study_runtime import study_block_reason
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, SysCommandTopic, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.fed.client.client_executor import JobCleanupPending
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 
@@ -54,6 +57,11 @@ def _get_resource_consumer(engine: ClientEngineInternalSpec):
     return resource_consumer
 
 
+def _study_block_reason(job_meta, fl_ctx):
+    workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+    return study_block_reason(workspace.get_root_dir(), get_job_meta_study(job_meta)) if workspace else None
+
+
 class CheckResourceProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.CHECK_RESOURCE]
@@ -78,7 +86,8 @@ class CheckResourceProcessor(RequestProcessor):
                 fl_ctx.set_peer_context(shared_fl_ctx)
 
                 engine.fire_event(EventType.BEFORE_CHECK_RESOURCE_MANAGER, fl_ctx)
-                block_reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
+                job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+                block_reason = _study_block_reason(job_meta, fl_ctx) or fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
                 if block_reason:
                     is_resource_enough = False
                     token = block_reason
@@ -116,6 +125,9 @@ class StartJobProcessor(RequestProcessor):
 
         try:
             with engine.new_context() as fl_ctx:
+                block_reason = _study_block_reason(job_meta, fl_ctx)
+                if block_reason:
+                    raise RuntimeError(block_reason)
                 allocated_resources = resource_manager.allocate_resources(
                     resource_requirement=resource_spec, token=token, fl_ctx=fl_ctx
                 )
@@ -131,7 +143,7 @@ class StartJobProcessor(RequestProcessor):
             )
         except Exception as e:
             result = f"{ERROR_MSG_PREFIX}: Start job execution exception: {secure_format_exception(e)}."
-            if allocated_resources:
+            if allocated_resources and not isinstance(e, JobCleanupPending):
                 with engine.new_context() as fl_ctx:
                     resource_manager.free_resources(resources=allocated_resources, token=token, fl_ctx=fl_ctx)
 

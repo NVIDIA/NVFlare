@@ -191,7 +191,7 @@ class SessionManager:
         finally:
             sess.close()
 
-    def get_job_result(self, job_id: str, timeout: float = 0.0) -> Optional[str]:
+    def get_job_result(self, job_id: str, timeout: float = 0.0, outputs_only: bool = False) -> Optional[str]:
         """Get the result workspace of the job."""
         sess = self._get_session()
         try:
@@ -201,7 +201,12 @@ class SessionManager:
             rc = sess.monitor_job(job_id, timeout=timeout, cb=_job_monitor_callback, cb_run_counter=cb_run_counter)
             if rc == MonitorReturnCode.JOB_FINISHED:
                 _print_output("Downloading job results...", flush=True)
-                result = sess.download_job_result(job_id)
+                if outputs_only:
+                    result, notice = sess._download_job_result(job_id, outputs_only=True)
+                    if notice:
+                        _print_output(notice)
+                else:
+                    result = sess.download_job_result(job_id)
                 if result and job_status_outcome(cb_run_counter.get("status")) in ("failed", "aborted"):
                     try:
                         collect_client_errors(sess, job_id, result)

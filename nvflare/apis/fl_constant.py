@@ -95,7 +95,6 @@ class ReservedKey:
     WORKFLOW = "__workflow__"
     REPLY = "__reply__"
     EVENT_ORIGIN = "__event_origin__"
-    EVENT_ORIGIN_SITE = "__event_origin_site__"
     EVENT_DATA = "__event_data__"
     EVENT_SCOPE = "__event_scope__"
     RUN_ABORT_SIGNAL = "__run_abort_signal__"
@@ -104,9 +103,6 @@ class ReservedKey:
     SHARED_FL_CONTEXT = "__shared_fl_context__"
     ARGS = "__args__"
     WORKSPACE_OBJECT = "__workspace_object__"
-    RANK_NUMBER = "__rank_number__"
-    NUM_OF_PROCESSES = "__num_of_processes__"
-    FROM_RANK_NUMBER = "__from_rank_number__"
     SECURE_MODE = "__secure_mode__"
     SIMULATE_MODE = "__simulate_mode__"
     JOB_INFO = "__job_info__"
@@ -137,7 +133,6 @@ class FLContextKey:
     TASK_ATTEMPT_REQUIRED = ReservedKey.TASK_ATTEMPT_REQUIRED
     EVENT_ID = ReservedKey.EVENT_ID
     EVENT_ORIGIN = ReservedKey.EVENT_ORIGIN
-    EVENT_ORIGIN_SITE = ReservedKey.EVENT_ORIGIN_SITE
     EVENT_DATA = ReservedKey.EVENT_DATA
     EVENT_SCOPE = ReservedKey.EVENT_SCOPE
     EXCEPTIONS = ReservedKey.EXCEPTIONS
@@ -156,9 +151,6 @@ class FLContextKey:
     ARGS = ReservedKey.ARGS
     REPLY = ReservedKey.REPLY
     WORKSPACE_OBJECT = ReservedKey.WORKSPACE_OBJECT
-    RANK_NUMBER = ReservedKey.RANK_NUMBER
-    NUM_OF_PROCESSES = ReservedKey.NUM_OF_PROCESSES
-    FROM_RANK_NUMBER = ReservedKey.FROM_RANK_NUMBER
     SECURE_MODE = ReservedKey.SECURE_MODE
     SIMULATE_MODE = ReservedKey.SIMULATE_MODE
     JOB_INFO = ReservedKey.JOB_INFO
@@ -287,6 +279,8 @@ class AdminCommandNames:
     SHOW_ERRORS = "show_errors"
     RESET_ERRORS = "reset_errors"
     GET_JOB_LOG = "get_job_log"
+    GET_JOB_RESOURCES = "get_job_resources"
+    GET_STUDY_RESOURCES = "get_study_resources"
     AUX_COMMAND = "aux_command"
     SYS_INFO = "sys_info"
     REPORT_RESOURCES = "report_resources"
@@ -447,7 +441,7 @@ class WorkspaceConstants:
 
     LOGGING_CONFIG = "log_config.json"
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
-    AUDIT_LOG = "audit.log"
+    AUDIT_LOG = "audit.jsonl"
     LOG_FILE_NAME = "log.txt"
     ERROR_LOG_FILE_NAME = "error_log.txt"
     STATS_POOL_SUMMARY_FILE_NAME = "stats_pool_summary.json"

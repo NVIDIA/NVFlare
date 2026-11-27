@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import os
 import tempfile
 import threading
@@ -22,7 +23,7 @@ import pytest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
-from nvflare.apis.streaming import StreamContextKey
+from nvflare.apis.streaming import StreamableEngine, StreamContextKey
 from nvflare.app_common.streamers import log_streamer
 from nvflare.app_common.streamers.log_streamer import (
     KEY_DATA,
@@ -35,6 +36,7 @@ from nvflare.app_common.streamers.log_streamer import (
     _LogTailProducer,
     dispatch_stream_done,
 )
+from nvflare.private.stream_runner import TOPIC_STREAM_REQUEST, HeaderKey, ObjectStreamer
 from tests.timing_utils import ManualClock
 
 
@@ -257,7 +259,8 @@ def test_first_chunk_execution_exception_is_transient_and_retries():
 
         replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
         result = producer.process_replies(replies, {}, Mock(spec=FLContext))
-        assert result is None  # stream must continue
+        assert result is False  # this stream ends; stream_log() starts a new one
+        assert producer.restart_stream is True
         assert producer._first_ok_received is False
         assert producer._bootstrap_miss_count == 1
 
@@ -282,7 +285,8 @@ def test_first_chunk_execution_exception_on_heartbeat_does_not_seek():
     producer._last_was_data = False  # simulate heartbeat last-emit
     replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
     result = producer.process_replies(replies, {}, Mock(spec=FLContext))
-    assert result is None  # transient miss, stream continues
+    assert result is False  # transient miss: stream_log() starts a new stream
+    assert producer.restart_stream is True
     assert producer._first_ok_received is False
     assert producer._bootstrap_miss_count == 1
 
@@ -301,6 +305,7 @@ def test_execution_exception_after_first_ok_still_ends_stream():
         replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
         result = producer.process_replies(replies, {}, Mock(spec=FLContext))
         assert result is False  # stream should tear down
+        assert producer.restart_stream is False
     finally:
         producer.close()
         os.unlink(path)
@@ -341,12 +346,16 @@ def test_persistent_bootstrap_execution_exception_is_capped():
 
         replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
         for i in range(producer._MAX_BOOTSTRAP_MISSES):
+            producer.restart_stream = False
             result = producer.process_replies(replies, {}, Mock(spec=FLContext))
-            assert result is None
+            assert result is False
+            assert producer.restart_stream is True
             assert producer._bootstrap_miss_count == i + 1
 
+        producer.restart_stream = False
         result = producer.process_replies(replies, {}, Mock(spec=FLContext))
         assert result is False
+        assert producer.restart_stream is False
         assert producer._first_ok_received is False
         assert producer._bootstrap_miss_count == producer._MAX_BOOTSTRAP_MISSES
     finally:
@@ -372,6 +381,106 @@ def test_first_chunk_ok_flips_strict_mode():
         fail_replies = {"server": make_reply(ReturnCode.EXECUTION_EXCEPTION)}
         result = producer.process_replies(fail_replies, {}, Mock(spec=FLContext))
         assert result is False
+        assert producer.restart_stream is False
     finally:
         producer.close()
         os.unlink(path)
+
+
+class _LoopbackAuxRunner:
+    """Hands each request, as the copy a wire would carry, to the handler registered for its topic."""
+
+    def __init__(self):
+        self.handlers = {}
+        self.stream_requests = []
+
+    def register_aux_message_handler(self, topic, message_handle_func):
+        self.handlers[topic] = message_handle_func
+
+    def send_aux_request(self, topic, targets, request, fl_ctx, **kwargs):
+        request = copy.deepcopy(request)
+        if topic == TOPIC_STREAM_REQUEST:
+            self.stream_requests.append(request)
+        return {target: self.handlers[topic](topic, request, fl_ctx) for target in targets}
+
+
+def _stream_log_to_late_receiver(log_path, appended: bytes, chunk_size=None):
+    """Stream a stopped log to a receiver that registers, and sees the log grow, only after the first request."""
+    aux_runner = _LoopbackAuxRunner()
+    streamer = ObjectStreamer(aux_runner)
+    received = []
+    handle_request = aux_runner.handlers[TOPIC_STREAM_REQUEST]
+
+    def register_after_first_request(aux_topic, request, fl_ctx):
+        reply = handle_request(aux_topic, request, fl_ctx)
+        if len(aux_runner.stream_requests) == 1:
+            streamer.register_stream_processing(
+                "channel",
+                "topic",
+                LogChunkConsumerFactory(
+                    chunk_received_cb=lambda data, stream_ctx, fl_ctx: received.append(data),
+                    idle_timeout=0.0,
+                    stream_done_cb=None,
+                    cb_kwargs={},
+                ),
+            )
+            with open(log_path, "ab") as f:
+                f.write(appended)
+        return reply
+
+    aux_runner.handlers[TOPIC_STREAM_REQUEST] = register_after_first_request
+    engine = Mock(spec=StreamableEngine)
+    engine.stream_objects.side_effect = streamer.stream
+    fl_ctx = Mock(spec=FLContext)
+    fl_ctx.get_engine.return_value = engine
+    fl_ctx.get_run_abort_signal.return_value = None
+    stop_event = threading.Event()
+    stop_event.set()
+
+    try:
+        rc, _ = LogStreamer.stream_log(
+            channel="channel",
+            topic="topic",
+            stream_ctx={},
+            targets=["server"],
+            file_name=str(log_path),
+            fl_ctx=fl_ctx,
+            stop_event=stop_event,
+            poll_interval=0.01,
+            chunk_size=chunk_size,
+        )
+    finally:
+        streamer.shutdown()
+    return rc, b"".join(received), aux_runner.stream_requests
+
+
+def test_stream_restarts_when_receiver_registers_after_first_chunk(tmp_path):
+    """A receiver that rejected the first chunk holds no stream to continue, so
+    the retry must open a new stream instead of sending the next sequence number
+    of the rejected one. The log must keep being tailed afterwards."""
+    log_path = tmp_path / "log.txt"
+    log_path.write_bytes(b"first line\n")
+
+    rc, received, requests = _stream_log_to_late_receiver(log_path, appended=b"second line\n")
+
+    assert rc == ReturnCode.OK
+    assert received == b"first line\nsecond line\n"
+    assert [request.get_header(HeaderKey.SEQ) for request in requests] == [0, 0, 1]
+    rejected, accepted, eof = (request.get_header(HeaderKey.TX_ID) for request in requests)
+    assert rejected != accepted == eof
+    assert requests[1].get_header(HeaderKey.CTX)
+
+
+def test_stream_restarted_after_rejected_eof_sends_log_written_since(tmp_path):
+    """A rejected EOF was never delivered. Lines written before the retry must
+    all be sent, followed by a new EOF, rather than ending after one chunk."""
+    log_path = tmp_path / "log.txt"
+    log_path.write_bytes(b"")
+    appended = b"written while the receiver was not ready\n"
+
+    rc, received, requests = _stream_log_to_late_receiver(log_path, appended, chunk_size=8)
+
+    assert rc == ReturnCode.OK
+    assert received == appended
+    assert requests[0][KEY_EOF] is True
+    assert [request[KEY_EOF] for request in requests[1:]] == [False] * 6 + [True]

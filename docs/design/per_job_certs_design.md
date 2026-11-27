@@ -298,7 +298,7 @@ create the run directory root-owned and break extraction for non-root pods.
 | Server kit with job CA, older client release | Not supported: the old CJ would run on site certificates. Run matching releases |
 | Non-secure mode / simulator | No certificates in use; feature inactive |
 | Relays | Relays keep their provisioned site certs; CJs behind a relay use job certs |
-| Sub-worker cells, Client API trainers | Unchanged: sub-workers use unauthenticated local internal links; CellPipe trainers connect with the root CA only. Neither holds a site key, and if they are ever given a credential it must be the job credential, never the site's. |
+| Managed Client API trainers | A trainer must never hold the site key. The job credential is the only TLS credential a trainer may receive. See the [task worker CellNet design](task_worker_cellnet_session.md) for task-worker networking. |
 
 (Message-level encryption was verified to already support certificate chains:
 `CredentialManager` loads multi-cert PEMs and `SimpleCellCipher` validates

@@ -45,7 +45,7 @@ adopting an existing job and its workers after CP restarts, not starting a new C
 | Kubernetes | `job` | No; resident CJ Pod retains its allocation | With persistent jobs PVC and confirmed shutdown | Not provided | Application checkpoint restore after eligible CJ replacement |
 | Kubernetes | `task` | Yes, after worker Pod settlement | After confirmed CJ and worker shutdown | Not provided | Worker loss triggers CJ recovery; application restores its checkpoint |
 | Slurm | `job` | No; resident CJ allocation retains its resources | Conditional on confirmed allocation exit and recovery gates | Not provided | Application checkpoint restore after eligible CJ replacement |
-| Slurm | `task` (draft) | Designed per task allocation; native qualification required | Disabled in the draft; CP retains task cleanup | Not provided | Not implemented |
+| Slurm | `task` | Yes, after worker allocation settlement | After confirmed CJ exit and settled workers | Not provided | Worker loss triggers CJ recovery; application restores its checkpoint |
 
 Resident recovery relies on a live CP/server and a valid client registration.
 Restoring partial progress on the original assignment additionally needs a
@@ -472,7 +472,9 @@ cannot add a second full jobs-claim mount. Site seccomp/supplemental-group setti
 are preserved while required nonroot/no-escalation settings are enforced. CJ and
 workers receive no Kubernetes API token. This profile does not allocate per-job
 UIDs/claims or isolate worker access from files already inside its own job subtree.
-Additional CJ dataset volumes are not automatically inherited by task workers.
+CP applies the study runtime's datasets and secrets directly to task workers.
+The CJ's Pod template configures its own environment and placement, while
+the study's worker scheduling settings control placement of task pods.
 
 Persistent job subtrees are retained after success as well as failure. Operators
 budget capacity, archive and remove them only after the job, runtimes, in-flight

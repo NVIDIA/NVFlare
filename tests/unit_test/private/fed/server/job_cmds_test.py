@@ -13,8 +13,11 @@
 # limitations under the License.
 
 import datetime
+import errno
 import gc
 import io
+import shutil
+import threading
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -27,17 +30,29 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import (
     SUBMIT_TOKEN_JOB_DELETED_STATUS,
     FLContextKey,
+    ReservedKey,
     ReturnCode,
     ServerCommandKey,
     WorkspaceConstants,
 )
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.job_def import JobMetaKey, RunStatus, SubmitRecordKey, SubmitRecordState
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.storage import StorageException
+from nvflare.apis.streaming import StreamContextKey
+from nvflare.apis.workspace import Workspace
+from nvflare.app_common.logging.constants import client_log_staging_root
+from nvflare.app_common.logging.job_log_receiver import JobLogReceiver
+from nvflare.app_common.logging.log_staging import ClientLogStaging
+from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
+from nvflare.app_common.streamers.log_streamer import KEY_FILE_NAME
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.lighter.tool_consts import NVFLARE_SUBMITTER_CRT_FILE
 from nvflare.private.admin_defs import MsgHeader, error_reply, ok_reply
+from nvflare.private.fed.resource_stats.measurements import SCHEMA_VERSION, canonical_json_bytes
 from nvflare.private.fed.server import cmd_utils as cmd_utils_module
 from nvflare.private.fed.server import job_cmds as job_cmds_module
 from nvflare.private.fed.server.job_cmds import (
@@ -45,7 +60,10 @@ from nvflare.private.fed.server.job_cmds import (
     _create_get_job_log_cmd_parser,
     _create_list_job_cmd_parser,
 )
+from nvflare.private.fed.server.job_outputs import link_job_outputs
 from nvflare.private.fed.server.message_send import ClientReply
+from tests.resource_stats_report_test_utils import _participant_summary, _resource_summary
+from tests.timing_utils import ObservedLock, ThreadGroup
 
 TEST_CASES = [
     (
@@ -356,11 +374,15 @@ class _FakeEngine:
 class _FakeListedJob:
     def __init__(self, meta):
         self.meta = meta
+        self.job_id = meta.get(JobMetaKey.JOB_ID.value)
 
 
 class _FakeListJobDefManager:
     def __init__(self, jobs):
         self.jobs = jobs
+
+    def list_components(self, jid, fl_ctx):
+        return []
 
     def get_all_jobs(self, fl_ctx):
         return self.jobs
@@ -375,6 +397,7 @@ class _FakeListJobDefManager:
 class _FakeListEngine:
     def __init__(self, jobs):
         self.job_def_manager = _FakeListJobDefManager(jobs)
+        self.resource_query_lock = threading.Lock()
 
     def new_context(self):
         from nvflare.apis.fl_context import FLContext
@@ -1067,7 +1090,7 @@ def test_list_jobs_by_submit_token_returns_deleted_status(monkeypatch):
 
 def test_list_job_components_returns_empty_list_for_system_components(monkeypatch):
     monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
-    engine = _FakeListComponentsEngine(["data", "meta", "workspace"])
+    engine = _FakeListComponentsEngine(["data", "meta", "workspace", "outputs"])
     conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1"})
 
     JobCommandModule().list_job_components(conn, ["list_job_components", "job-1"])
@@ -1193,6 +1216,181 @@ def test_list_jobs_defaults_to_default_study_when_session_study_missing(monkeypa
     assert len(conn.tables[0].rows) == 1
     assert conn.tables[0].rows[0][1][JobMetaKey.STUDY.value] == "default"
     assert len(conn.successes) == 1
+
+
+def test_get_study_resources_refuses_oversized_response(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "MAX_STUDY_SUMMARY_BYTES", 1)
+    conn = _MockConnection(app_ctx=_FakeListEngine([]), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.dicts == []
+    assert "exceeds 1 bytes" in conn.errors[0][0]
+
+
+def test_get_study_resources_enforces_incremental_row_byte_budget(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(job_cmds_module, "MAX_STUDY_SUMMARY_BYTES", 10)
+    monkeypatch.setattr(job_cmds_module, "canonical_json_bytes", lambda _value: b"123456")
+    monkeypatch.setattr(
+        job_cmds_module,
+        "sum_study_totals",
+        lambda _rows: pytest.fail("study totals must not be derived after the row budget is exhausted"),
+    )
+    jobs = [
+        _FakeListedJob({JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: RunStatus.RUNNING}),
+        _FakeListedJob({JobMetaKey.JOB_ID.value: "job-2", JobMetaKey.STATUS.value: RunStatus.RUNNING}),
+    ]
+    conn = _MockConnection(app_ctx=_FakeListEngine(jobs), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.dicts == []
+    assert conn.errors[0][0] == "study resource rows exceed 10 bytes"
+
+
+def test_get_study_resources_normalizes_run_status_enum(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "job-1",
+            JobMetaKey.STATUS.value: RunStatus.RUNNING,
+        }
+    )
+    conn = _MockConnection(app_ctx=_FakeListEngine([job]), props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    result, _meta = conn.dicts[0]
+    assert result["jobs"] == [
+        {"job_id": "job-1", "job_name": "job-1", "job_status": "RUNNING", "resource_data": "nonterminal"}
+    ]
+
+
+def test_get_study_resources_stages_workspace_instead_of_loading_component(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "sum_job_totals",
+        lambda participants: {"marker": participants[0]},
+    )
+    monkeypatch.setattr(job_cmds_module, "sum_study_totals", lambda rows: {"derived": True})
+    job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "job-1",
+            JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED,
+        }
+    )
+    engine = _FakeListEngine([job])
+    staged_paths = []
+
+    def _stage_workspace(jid, download_dir, component, download_file, fl_ctx):
+        archive_path = Path(download_dir) / jid / download_file
+        archive_path.parent.mkdir(parents=True)
+        archive_path.write_bytes(b"staged workspace")
+        staged_paths.append(archive_path)
+
+    class _PathReader:
+        def __init__(self, workspace_path, *, outputs_archive=None):
+            assert Path(workspace_path).read_bytes() == b"staged workspace"
+
+        @staticmethod
+        def read_resource_summary():
+            return {"schema_version": SCHEMA_VERSION, "job_id": "job-1", "participants": ["included"]}
+
+    engine.job_def_manager.get_storage_for_download = MagicMock(side_effect=_stage_workspace)
+    engine.job_def_manager.get_storage_component = MagicMock(
+        side_effect=AssertionError("study query must not materialize workspace bytes")
+    )
+    monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", _PathReader)
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.errors == []
+    result, _meta = conn.dicts[0]
+    assert result["jobs"] == [
+        {
+            "job_id": "job-1",
+            "job_name": "job-1",
+            "job_status": RunStatus.FINISHED_COMPLETED.value,
+            "resource_data": "included",
+            "totals": {"marker": "included"},
+        }
+    ]
+    engine.job_def_manager.get_storage_for_download.assert_called_once()
+    engine.job_def_manager.get_storage_component.assert_not_called()
+    assert len(staged_paths) == 1
+    assert not staged_paths[0].exists()
+
+
+def test_get_study_resources_uses_job_metadata_name_without_archived_copy(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "sum_job_totals",
+        lambda participants: {"marker": participants},
+    )
+    monkeypatch.setattr(job_cmds_module, "sum_study_totals", lambda rows: {"derived": True})
+    job = _FakeListedJob(
+        {
+            JobMetaKey.JOB_ID.value: "job-1",
+            JobMetaKey.JOB_NAME.value: "trusted-name",
+            JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED,
+        }
+    )
+    engine = _FakeListEngine([job])
+
+    def _stage_workspace(jid, download_dir, component, download_file, fl_ctx):
+        archive_path = Path(download_dir) / jid / download_file
+        archive_path.parent.mkdir(parents=True)
+        archive_path.write_bytes(b"staged workspace")
+
+    class _PathReader:
+        archive_job_id = "job-1"
+
+        def __init__(self, workspace_path, *, outputs_archive=None):
+            assert Path(workspace_path).read_bytes() == b"staged workspace"
+
+        @staticmethod
+        def read_resource_summary():
+            return {
+                "schema_version": SCHEMA_VERSION,
+                "job_id": _PathReader.archive_job_id,
+                "participants": [],
+            }
+
+    engine.job_def_manager.get_storage_for_download = MagicMock(side_effect=_stage_workspace)
+    monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", _PathReader)
+    conn = _MockConnection(app_ctx=engine, props={ConnProps.ACTIVE_STUDY: "default"})
+
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+
+    assert conn.errors == []
+    result, _meta = conn.dicts[0]
+    assert result["jobs"] == [
+        {
+            "job_id": "job-1",
+            "job_name": "trusted-name",
+            "job_status": RunStatus.FINISHED_COMPLETED.value,
+            "resource_data": "included",
+            "totals": {"marker": []},
+        }
+    ]
+
+    _PathReader.archive_job_id = "job-2"
+    mismatch_conn = _MockConnection(app_ctx=engine, props={ConnProps.ACTIVE_STUDY: "default"})
+    JobCommandModule().get_study_resources(mismatch_conn, ["get_study_resources"])
+    assert mismatch_conn.errors == []
+    assert mismatch_conn.dicts[0][0]["jobs"] == [
+        {
+            "job_id": "job-1",
+            "job_name": "trusted-name",
+            "job_status": RunStatus.FINISHED_COMPLETED.value,
+            "resource_data": "unavailable",
+        }
+    ]
 
 
 def test_list_jobs_ignores_duration_parse_failures(monkeypatch):
@@ -2144,6 +2342,264 @@ def test_download_job_packages_all_default_components_for_finished_job(monkeypat
     module.download_folder.assert_called_once()
 
 
+def _symlink_store(tmp_path, job_id, workspace_files, outputs_files=None):
+    """A job store that prepares downloads as symlinks to its stored components, as FilesystemStorage does."""
+    store = tmp_path / "store" / job_id
+    store.mkdir(parents=True)
+    (store / "data").write_bytes(b"job zip")
+    (store / "meta").write_text("{}")
+    for component, files in (("workspace", workspace_files), ("outputs", outputs_files)):
+        if files is not None:
+            with ZipFile(store / component, "w") as z:
+                for name, data in files.items():
+                    z.writestr(name, data)
+
+    def get_storage_for_download(jid, download_dir, component, download_file, fl_ctx):
+        target_dir = Path(download_dir) / jid
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target = target_dir / download_file
+        if target.exists() or target.is_symlink():
+            target.unlink()
+        if (store / component).exists():  # FilesystemStorage skips a component the job does not have
+            target.symlink_to(store / component)
+
+    return store, get_storage_for_download
+
+
+def _use_store(engine, tmp_path, workspace_files, outputs_files=None):
+    store, engine.job_def_manager.get_storage_for_download = _symlink_store(
+        tmp_path, "job-1", workspace_files, outputs_files
+    )
+    engine.job_def_manager.list_components = lambda jid, fl_ctx: sorted(p.name for p in store.iterdir())
+    return store
+
+
+def _download(engine, tmp_path, cmd_props=None):
+    props = {ConnProps.DOWNLOAD_DIR: str(tmp_path / "tx")}
+    if cmd_props is not None:
+        props[ConnProps.CMD_PROPS] = cmd_props
+    conn = _MockConnection(app_ctx=engine, props=props)
+    module = JobCommandModule()
+    prepared = {}
+    reply = {}
+
+    def download_folder(conn, tx_id, folder_name, reply_meta=None):
+        folder = tmp_path / "tx" / tx_id / folder_name
+        prepared.update({p.name: p for p in folder.iterdir()})
+        reply["meta"] = reply_meta
+
+    module.download_folder = download_folder
+    module.download_job(conn, ["download_job", "job-1"])
+    assert conn.errors == []
+    return prepared, reply["meta"]
+
+
+_WORKSPACE = {"app_server/FL_global_model.pt": b"model", "metrics/metrics_summary.json": b"{}", "log.txt": b"log"}
+
+
+def _finished_job(status=RunStatus.FINISHED_COMPLETED.value, stored=False):
+    meta = {JobMetaKey.JOB_ID.value: "job-1", JobMetaKey.STATUS.value: status}
+    if stored:
+        meta[JobMetaKey.JOB_OUTPUTS_STORED.value] = True  # recorded at job end
+    return _FakeListedJob(meta)
+
+
+_OUTPUTS = {"app_server/FL_global_model.pt": b"model"}
+
+
+def test_download_job_outputs_only_serves_the_stored_outputs_archive_like_a_full_download(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    store = _use_store(engine, tmp_path, _WORKSPACE, _OUTPUTS)
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["meta.json", "workspace.zip"]
+    # no archive work before the reply: workspace.zip is a link to the stored outputs archive
+    assert prepared["workspace.zip"].resolve() == (store / "outputs").resolve()
+    with ZipFile(prepared["workspace.zip"]) as z:
+        assert z.namelist() == ["app_server/FL_global_model.pt"]
+    assert reply_meta == {MetaKey.OUTPUTS_ONLY: True}  # what was asked for: only the marker, no note
+
+
+@pytest.mark.parametrize(
+    "job, reason",
+    [
+        (_finished_job(status=RunStatus.FINISHED_EXECUTION_EXCEPTION.value), "did not complete successfully"),
+        (_finished_job(), "the job's outputs were not stored apart"),  # none produced, or an older job
+    ],
+)
+def test_download_job_outputs_only_falls_back_to_the_whole_job(monkeypatch, tmp_path, job, reason):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([job])
+    _use_store(engine, tmp_path, _WORKSPACE)
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    with ZipFile(prepared["workspace.zip"]) as z:
+        assert sorted(z.namelist()) == sorted(_WORKSPACE)
+    assert reply_meta[MetaKey.OUTPUTS_NOTE].startswith("the whole job was downloaded because")
+    assert reason in reply_meta[MetaKey.OUTPUTS_NOTE]
+    assert MetaKey.OUTPUTS_ONLY not in reply_meta
+
+
+def test_download_job_outputs_only_never_asks_a_store_for_a_missing_outputs_component(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    _use_store(engine, tmp_path, _WORKSPACE)
+    prepare = engine.job_def_manager.get_storage_for_download
+
+    def strict_prepare(jid, download_dir, component, download_file, fl_ctx):
+        if component == "outputs":
+            raise StorageException("no such component")  # a store that raises for a missing component
+        prepare(jid, download_dir, component, download_file, fl_ctx)
+
+    engine.job_def_manager.get_storage_for_download = strict_prepare
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta[MetaKey.OUTPUTS_NOTE]
+
+
+def test_a_full_download_without_the_outputs_archive_returns_the_rest_and_says_so(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    _use_store(engine, tmp_path, {"log.txt": b"log"})  # the outputs component is gone
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert "does not include its outputs" in reply_meta[MetaKey.OUTPUTS_NOTE]
+
+
+def test_a_full_download_uses_the_job_it_loaded_to_select_the_outputs_archive(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    _use_store(engine, tmp_path, {"log.txt": b"log"}, _OUTPUTS)
+    get_job = engine.job_def_manager.get_job
+    lookups = []
+
+    def get_job_once(jid, fl_ctx):
+        lookups.append(jid)
+        return get_job(jid, fl_ctx) if len(lookups) == 1 else None  # a later lookup hits a transient store error
+
+    engine.job_def_manager.get_job = get_job_once
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "outputs.zip", "workspace.zip"]
+    assert MetaKey.OUTPUTS_NOTE not in reply_meta
+
+
+def test_a_partly_prepared_outputs_archive_is_dropped_and_reported_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    _use_store(engine, tmp_path, {"log.txt": b"log"}, _OUTPUTS)
+    prepare = engine.job_def_manager.get_storage_for_download
+
+    def copying_store_that_fails(jid, download_dir, component, download_file, fl_ctx):
+        if component == "outputs":
+            target = Path(download_dir) / jid / download_file
+            target.write_bytes(b"PK\x03\x04 partial")  # a copy cut short
+            raise StorageException("connection reset")
+        prepare(jid, download_dir, component, download_file, fl_ctx)
+
+    engine.job_def_manager.get_storage_for_download = copying_store_that_fails
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert "does not include its outputs" in reply_meta[MetaKey.OUTPUTS_NOTE]
+
+
+def test_an_outputs_only_download_without_the_outputs_archive_returns_the_whole_job_and_says_so(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    _use_store(engine, tmp_path, {"log.txt": b"log"})
+    prepare = engine.job_def_manager.get_storage_for_download
+
+    def strict_prepare(jid, download_dir, component, download_file, fl_ctx):
+        if component == "outputs":
+            raise StorageException("no such component")  # a store that raises for a missing component
+        prepare(jid, download_dir, component, download_file, fl_ctx)
+
+    engine.job_def_manager.get_storage_for_download = strict_prepare
+
+    prepared, reply_meta = _download(engine, tmp_path, {"outputs_only": True})
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    note = reply_meta[MetaKey.OUTPUTS_NOTE]
+    assert note.startswith("the whole job was downloaded because the job's outputs archive cannot be read")
+    assert note.count("cannot be read from the job store") == 1  # not repeated
+
+
+@pytest.mark.parametrize("cmd_props", [None, {}, {"outputs_only": "yes"}])
+def test_download_job_without_outputs_only_is_unchanged_for_a_job_without_outputs(monkeypatch, tmp_path, cmd_props):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    _use_store(engine, tmp_path, _WORKSPACE)
+
+    prepared, reply_meta = _download(engine, tmp_path, cmd_props)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta is None
+
+
+def test_full_download_works_when_the_store_cannot_list_components(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job()])
+    _use_store(engine, tmp_path, _WORKSPACE)
+
+    def broken_list(jid, fl_ctx):
+        raise StorageException("listing unsupported")
+
+    engine.job_def_manager.list_components = broken_list
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "workspace.zip"]
+    assert reply_meta is None
+
+
+def test_full_download_sends_both_archives_into_the_workspace_folder(monkeypatch, tmp_path):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    engine = _FakeListEngine([_finished_job(stored=True)])
+    store = _use_store(engine, tmp_path, {"log.txt": b"log"}, _OUTPUTS)
+
+    prepared, reply_meta = _download(engine, tmp_path)
+
+    assert sorted(prepared) == ["job.zip", "meta.json", "outputs.zip", "workspace.zip"]
+    # both stored archives are linked, with no work before the reply
+    assert prepared["outputs.zip"].resolve() == (store / "outputs").resolve()
+    assert reply_meta == {MetaKey.UNZIP_INTO: {"outputs.zip": "workspace"}}
+
+
+def test_submit_job_drops_a_submitted_outputs_stored_record(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(
+        job_cmds_module,
+        "JobMetaValidator",
+        lambda: _FakeJobMetaValidatorWithMeta({JobMetaKey.JOB_OUTPUTS_STORED.value: True}),
+    )
+    engine = _FakeEngine()
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={
+            ConnProps.FILE_LOCATION: "job.zip",
+            ConnProps.USER_NAME: "submitter",
+            ConnProps.USER_ORG: "org",
+            ConnProps.USER_ROLE: "role",
+        },
+    )
+
+    JobCommandModule().submit_job(conn, ["submit_job", "job_folder"])
+
+    assert conn.errors == []
+    assert JobMetaKey.JOB_OUTPUTS_STORED.value not in engine.job_def_manager.created_meta
+
+
 def test_get_job_log_returns_server_log(monkeypatch, tmp_path):
     monkeypatch.setattr(job_cmds_module, "ServerEngine", object)
 
@@ -2437,3 +2893,715 @@ def test_invalid_log_byte_limit_rejected_before_reading(tmp_path, limit):
     assert conn.errors
     assert not conn.dicts
     engine.job_def_manager.get_client_data.assert_not_called()
+
+
+@pytest.fixture
+def resource_query_engine(monkeypatch):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(JobCommandModule, "_is_resource_job_authorized", staticmethod(lambda *_: True))
+    monkeypatch.setattr(job_cmds_module, "sum_job_totals", lambda _: {"derived": True})
+    monkeypatch.setattr(job_cmds_module, "sum_study_totals", lambda _: {"derived": True})
+
+    class Reader:
+        def __init__(self, workspace_path, *, outputs_archive=None):
+            self.path = Path(workspace_path)
+            assert self.path.read_bytes() == b"staged archive"
+
+        def read_resource_summary(self):
+            return {"job_id": self.path.parent.name, "participants": []}
+
+    monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", Reader)
+
+    def create(job_ids=("job-1",)):
+        jobs = [
+            _FakeListedJob({JobMetaKey.JOB_ID.value: jid, JobMetaKey.STATUS.value: RunStatus.FINISHED_COMPLETED})
+            for jid in job_ids
+        ]
+        engine = _FakeListEngine(jobs)
+        engine.resource_query_lock = ObservedLock()
+        paths = []
+
+        def stage(jid, download_dir, component, download_file, fl_ctx):
+            assert all(not path.exists() for path in paths)
+            path = Path(download_dir) / jid / download_file
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"staged archive")
+            paths.append(path)
+
+        engine.job_def_manager.get_storage_for_download = MagicMock(side_effect=stage)
+        return engine, paths, Reader, stage
+
+    return create
+
+
+def _resource_query_connection(engine):
+    job = engine.job_def_manager.jobs[0]
+    return _MockConnection(
+        app_ctx=engine,
+        props={
+            JobCommandModule.JOB: job,
+            JobCommandModule.JOB_ID: job.job_id,
+            ConnProps.ACTIVE_STUDY: "default",
+        },
+    )
+
+
+def _invoke_resource_query(kind, conn):
+    module = JobCommandModule()
+    if kind == "job":
+        module.get_job_resources(conn, ["get_job_resources", conn.get_prop(JobCommandModule.JOB_ID)])
+    else:
+        module.get_study_resources(conn, ["get_study_resources"])
+
+
+@pytest.mark.parametrize(
+    "kind,failure",
+    [
+        ("job", "staging"),
+        ("study", "staging"),
+        ("job", "reader"),
+        ("study", "reader"),
+        ("study", "authorization"),
+        ("job", "unexpected"),
+        ("study", "unexpected"),
+    ],
+)
+def test_resource_query_slot_and_archives_are_cleaned_up_after_failure(
+    resource_query_engine, monkeypatch, kind, failure
+):
+    engine, paths, reader, stage = resource_query_engine()
+
+    def fail_staging(*args, **kwargs):
+        stage(*args, **kwargs)
+        raise OSError("staging failed")
+
+    class BrokenReader:
+        def __init__(self, workspace_path, *, outputs_archive=None):
+            assert Path(workspace_path).exists()
+            if failure == "unexpected":
+                raise RuntimeError("unexpected reader failure")
+            raise job_cmds_module.WorkspaceResourceStatsError("reader failed")
+
+    if failure == "staging":
+        engine.job_def_manager.get_storage_for_download.side_effect = fail_staging
+    elif failure in {"reader", "unexpected"}:
+        monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", BrokenReader)
+    else:
+        monkeypatch.setattr(
+            JobCommandModule,
+            "_is_resource_job_authorized",
+            staticmethod(MagicMock(side_effect=RuntimeError("authorization failed"))),
+        )
+    failed = _resource_query_connection(engine)
+    if failure == "unexpected":
+        with pytest.raises(RuntimeError, match="unexpected reader failure"):
+            _invoke_resource_query(kind, failed)
+    else:
+        _invoke_resource_query(kind, failed)
+        assert failed.errors or failed.dicts[0][0]["jobs"][0]["resource_data"] == "unavailable"
+    assert all(not path.exists() for path in paths)
+    assert not engine.resource_query_lock.lock.locked()
+
+    engine.job_def_manager.get_storage_for_download.side_effect = stage
+    monkeypatch.setattr(job_cmds_module, "WorkspaceResourceStatsReader", reader)
+    monkeypatch.setattr(JobCommandModule, "_is_resource_job_authorized", staticmethod(lambda *_: True))
+    retry = _resource_query_connection(engine)
+    _invoke_resource_query(kind, retry)
+    assert retry.errors == []
+    assert retry.dicts
+    assert all(not path.exists() for path in paths)
+
+
+def test_resource_query_early_budget_error_releases_admission_slot(resource_query_engine, monkeypatch):
+    engine, paths, _, _ = resource_query_engine()
+    monkeypatch.setattr(job_cmds_module, "MAX_STUDY_JOBS", 0)
+    conn = _resource_query_connection(engine)
+    JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+    assert "more than 0 accessible retained jobs" in conn.errors[0][0]
+    assert conn.errors[0][1][MetaKey.STATUS] == MetaStatusValue.ERROR
+    assert not engine.resource_query_lock.lock.locked()
+    _invoke_resource_query("job", _resource_query_connection(engine))
+    assert len(paths) == 1 and not paths[0].exists()
+
+
+@pytest.mark.parametrize("kind", ["job", "study"])
+def test_resource_query_reply_failure_releases_slot_for_retry(resource_query_engine, kind):
+    engine, paths, _, _ = resource_query_engine()
+    failed = _resource_query_connection(engine)
+    failed.append_dict = MagicMock(side_effect=RuntimeError("connection closed"))
+
+    with pytest.raises(RuntimeError, match="connection closed"):
+        _invoke_resource_query(kind, failed)
+
+    assert all(not path.exists() for path in paths)
+    assert not engine.resource_query_lock.lock.locked()
+    retry = _resource_query_connection(engine)
+    _invoke_resource_query(kind, retry)
+    assert retry.errors == []
+    assert retry.dicts
+    assert all(not path.exists() for path in paths)
+
+
+@pytest.mark.parametrize("kind", ["job", "study"])
+def test_resource_query_context_failure_releases_slot_for_retry(resource_query_engine, kind):
+    engine, paths, _, _ = resource_query_engine()
+    context = engine.new_context
+    engine.new_context = MagicMock(side_effect=RuntimeError("context failed"))
+
+    with pytest.raises(RuntimeError, match="context failed"):
+        _invoke_resource_query(kind, _resource_query_connection(engine))
+
+    engine.job_def_manager.get_storage_for_download.assert_not_called()
+    assert not engine.resource_query_lock.lock.locked()
+    engine.new_context = context
+    retry = _resource_query_connection(engine)
+    _invoke_resource_query(kind, retry)
+    assert retry.errors == []
+    assert retry.dicts
+    assert all(not path.exists() for path in paths)
+
+
+@pytest.mark.parametrize(
+    "scenario,first_kind,second_kind",
+    [
+        ("same_server", "job", "study"),
+        ("same_server", "study", "job"),
+        ("between_archives", "study", "job"),
+        ("other_server", "job", "study"),
+        ("other_command", "study", None),
+    ],
+)
+def test_resource_queries_hold_one_server_slot_until_cleanup(
+    resource_query_engine, monkeypatch, scenario, first_kind, second_kind
+):
+    engine, paths, _, stage = resource_query_engine(
+        ("job-1", "job-2") if scenario == "between_archives" else ("job-1",)
+    )
+    entered, release, returned = threading.Event(), threading.Event(), threading.Event()
+
+    def blocked_stage(*args, **kwargs):
+        stage(*args, **kwargs)
+        entered.set()
+        release.wait()
+
+    def blocked_totals(participants):
+        if len(paths) == 1:
+            assert not paths[0].exists()
+            entered.set()
+            release.wait()
+        return {"derived": True}
+
+    if scenario == "between_archives":
+        monkeypatch.setattr(job_cmds_module, "sum_job_totals", blocked_totals)
+    else:
+        engine.job_def_manager.get_storage_for_download.side_effect = blocked_stage
+    second_engine, extra_paths = engine, []
+    if scenario == "other_server":
+        second_engine, extra_paths, _, _ = resource_query_engine()
+    first, second = _resource_query_connection(engine), _resource_query_connection(second_engine)
+    engine.job_def_manager.list_components = MagicMock(return_value=["workspace"])
+
+    def second_query():
+        if second_kind:
+            _invoke_resource_query(second_kind, second)
+        else:
+            JobCommandModule().list_job_components(second, ["list_job_components", "job-1"])
+        returned.set()
+
+    busy = scenario in {"same_server", "between_archives"}
+    with ThreadGroup(release) as threads:
+        threads.start(_invoke_resource_query, first_kind, first)
+        assert entered.wait(2), "first query did not reach the held boundary"
+        threads.start(second_query)
+        if busy:
+            assert engine.resource_query_lock.blocked.wait(1), "second query did not contend for the slot"
+        assert returned.wait(1), "another query or command was queued"
+        assert not release.is_set()
+        if busy:
+            assert second.errors[0][0] == "resource query busy; retry later"
+            assert second.errors[0][1][MetaKey.STATUS] == MetaStatusValue.ERROR
+            assert not second.dicts
+            assert engine.job_def_manager.get_storage_for_download.call_count == 1
+        else:
+            assert not second.errors
+        if scenario == "other_command":
+            assert second.successes
+            engine.job_def_manager.list_components.assert_called_once()
+        if scenario == "other_server":
+            assert second.dicts
+            assert not second_engine.resource_query_lock.blocked.is_set()
+    assert not first.errors and first.dicts
+    assert all(not path.exists() for path in paths + extra_paths)
+    if scenario == "between_archives":
+        assert len(first.dicts[0][0]["jobs"]) == 2
+        assert len(paths) == 2
+    retry = _resource_query_connection(engine)
+    _invoke_resource_query("job", retry)
+    assert not retry.errors and retry.dicts
+    assert all(not path.exists() for path in paths)
+
+
+def _query_resource_archives(monkeypatch, tmp_path, workspace, outputs, *, stored=True, study=False):
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    monkeypatch.setattr(JobCommandModule, "_is_resource_job_authorized", staticmethod(lambda *_: True))
+    engine = _FakeListEngine([_finished_job(stored=stored)])
+    _use_store(engine, tmp_path, workspace, outputs)
+    prepare = engine.job_def_manager.get_storage_for_download
+    engine.job_def_manager.get_storage_for_download = MagicMock(wraps=prepare)
+    conn = _resource_query_connection(engine)
+    if study:
+        JobCommandModule().get_study_resources(conn, ["get_study_resources"])
+    else:
+        JobCommandModule().get_job_resources(conn, ["get_job_resources", "job-1", "--site", "site-1"])
+    calls = engine.job_def_manager.get_storage_for_download.call_args_list
+    assert all(not Path(call.kwargs["download_dir"]).exists() for call in calls)
+    assert not engine.resource_query_lock.locked()
+    return conn, [call.kwargs["component"] for call in calls]
+
+
+@pytest.mark.parametrize(
+    "summary_output,stored,study",
+    [(False, False, False), (False, True, False), (True, True, False), (False, True, True), (True, True, True)],
+)
+def test_resource_queries_read_summary_once_for_job_and_site(monkeypatch, tmp_path, summary_output, stored, study):
+    summary, participant = _resource_summary(), _participant_summary()
+    workspace, outputs = {}, {}
+    (outputs if summary_output else workspace)["resource_stats/resource_summary.json"] = canonical_json_bytes(summary)
+    if not summary_output:
+        outputs["resource_stats/resource_summary.json"] = b"must prefer workspace"
+    conn, fetched = _query_resource_archives(monkeypatch, tmp_path, workspace, outputs, stored=stored, study=study)
+    assert not conn.errors
+    result = conn.dicts[0][0]
+    if study:
+        assert result["coverage"]["included_jobs"] == 1
+        assert result["jobs"][0]["totals"]["resource_utilization"]["cpu_consumed"] == {"cpu_seconds": 1.5}
+    else:
+        assert result["resource_summary"] == summary
+        assert result["participant_summary"] == participant
+    assert fetched == ["workspace"] + (["outputs"] if summary_output else [])
+
+
+@pytest.mark.parametrize("stored,study", [(True, False), (True, True), (False, False), (False, True)])
+def test_resource_queries_keep_missing_outputs_unavailable(monkeypatch, tmp_path, stored, study):
+    outputs = None if stored else {"resource_stats/resource_summary.json": canonical_json_bytes(_resource_summary())}
+    conn, fetched = _query_resource_archives(monkeypatch, tmp_path, {}, outputs, stored=stored, study=study)
+    if study:
+        result = conn.dicts[0][0]
+        assert result["coverage"] == {
+            "selected_jobs": 1,
+            "included_jobs": 0,
+            "unavailable_jobs": 1,
+            "nonterminal_jobs": 0,
+        }
+        assert result["totals"]["resource_utilization"]["cpu_consumed"] == {"status": "unavailable"}
+    else:
+        assert conn.errors and not conn.dicts
+    assert fetched == ["workspace"] + (["outputs"] if stored else [])
+
+
+def test_resource_reports_survive_the_produced_outputs_split(monkeypatch, tmp_path):
+    run = tmp_path / "run"
+    files = {
+        "resource_stats/resource_summary.json": canonical_json_bytes(_resource_summary()),
+        "log.txt": b"log",
+    }
+    for name, data in files.items():
+        path = run / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    split = link_job_outputs([str(run)])
+    assert split is not None
+    try:
+        split.link_rest()
+        assert sorted(split.found) == sorted(name for name in files if name.startswith("resource_stats/"))
+        workspace, outputs = [
+            {str(path.relative_to(folder)): path.read_bytes() for path in Path(folder).rglob("*") if path.is_file()}
+            for folder in (split.rest_dirs[0], split.output_dirs[0])
+        ]
+        conn, fetched = _query_resource_archives(monkeypatch, tmp_path, workspace, outputs)
+        assert not conn.errors
+        assert conn.dicts[0][0]["resource_summary"] == _resource_summary()
+        assert conn.dicts[0][0]["participant_summary"] == _participant_summary()
+        assert fetched == ["workspace", "outputs"]
+    finally:
+        assert not split.remove()
+
+
+def _staged_log_deletion_case(tmp_path, monkeypatch, external_log_root=False):
+    root = tmp_path / "workspace"
+    (root / "startup").mkdir(parents=True)
+    (root / "local").mkdir()
+    workspace = Workspace(str(root), site_name="server")
+    workspace.log_root = str(tmp_path / "external-log-root") if external_log_root else None
+    manager = SimpleJobDefManager(uri_root=str(tmp_path / "jobs"))
+    store = FilesystemStorage()
+    monkeypatch.setattr(manager, "_get_job_store", lambda fl_ctx: store)
+    engine = _FakeServerEngine(workspace)
+    engine.job_def_manager = manager
+    engine.get_component = lambda name: manager
+    engine.get_client_from_name = lambda name: None
+    engine.fire_event = lambda event_type, fl_ctx: None
+    fl_ctx = FLContext()
+    fl_ctx.put(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    fl_ctx.put(FLContextKey.CLIENT_NAME, "site-1", private=True, sticky=False)
+    peer = FLContext()
+    peer.put(ReservedKey.IDENTITY_NAME, "site-1", private=True, sticky=False)
+    peer.put(ReservedKey.RUN_NUM, "job-1", private=True, sticky=False)
+    fl_ctx.set_peer_context(peer)
+    manager.create({JobMetaKey.JOB_ID.value: "job-1"}, b"job content", fl_ctx)
+    manager.set_status("job-1", RunStatus.FINISHED_ABORTED, fl_ctx)
+    conn = _MockConnection(
+        app_ctx=engine,
+        props={JobCommandModule.JOB: manager.get_job("job-1", fl_ctx), JobCommandModule.JOB_ID: "job-1"},
+    )
+    path = Path(client_log_staging_root(workspace)) / "job-1/site-1/log.txt"
+    return JobLogReceiver(), fl_ctx, conn, path
+
+
+@pytest.mark.parametrize("external_log_root", [False, True])
+def test_delete_job_removes_closed_partial_logs(tmp_path, monkeypatch, external_log_root):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch, external_log_root)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"retained partial\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    assert path.read_bytes() == b"retained partial\n"
+    JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert conn.errors == []
+    assert fl_ctx.get_engine().job_def_manager.get_job("job-1", fl_ctx) is None
+    assert not path.parent.parent.exists()
+    assert list(path.parents[2].iterdir()) == [path.parents[2] / ".lock"]
+
+
+@pytest.mark.parametrize("rc", [ReturnCode.OK, ReturnCode.TIMEOUT])
+def test_delete_job_drains_active_streams_without_recreating_deleted_job(tmp_path, monkeypatch, rc):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    other_receiver = JobLogReceiver()
+    first = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: rc}
+    second = {KEY_FILE_NAME: "log.json", StreamContextKey.RC: rc}
+    receiver._on_chunk_received(b"before deletion\n", first, fl_ctx)
+    other_receiver._on_chunk_received(b"other stream\n", second, fl_ctx)
+    manager = fl_ctx.get_engine().job_def_manager
+    monkeypatch.setattr(manager, "set_client_data", MagicMock(wraps=manager.set_client_data))
+    JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert conn.errors == []
+    assert path.read_bytes() == b"before deletion\n"
+    # A delayed/stale job-store response must not override an explicit deletion.
+    with patch.object(manager, "get_job", return_value=conn.get_prop(JobCommandModule.JOB)):
+        with pytest.raises(ValueError, match="deleted or unknown job"):
+            JobLogReceiver()._on_chunk_received(b"late data", {KEY_FILE_NAME: "late.txt"}, fl_ctx)
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+        JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    assert path.read_bytes() == b"before deletion\n"
+    receiver._on_chunk_received(b"after deletion\n", first, fl_ctx)
+    assert path.read_bytes() == b"before deletion\nafter deletion\n"
+    receiver._on_stream_done(first, fl_ctx)
+    assert not path.exists()
+    assert path.with_name("log.json").exists()
+    other_receiver._on_stream_done(second, fl_ctx)
+    assert not path.parent.parent.exists()
+    manager.set_client_data.assert_not_called()
+    assert manager.get_job("job-1", fl_ctx) is None
+    with pytest.raises(ValueError, match="deleted or unknown job"):
+        receiver._on_chunk_received(b"late data", {KEY_FILE_NAME: "late.txt"}, fl_ctx)
+    assert not path.parent.parent.exists()
+
+
+def test_failed_job_deletion_retains_partial_logs(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"retained partial\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    monkeypatch.setattr(
+        fl_ctx.get_engine().job_def_manager, "delete", MagicMock(side_effect=RuntimeError("store error"))
+    )
+    JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert len(conn.errors) == 1
+    assert path.read_bytes() == b"retained partial\n"
+    assert fl_ctx.get_engine().job_def_manager.get_job("job-1", fl_ctx) is not None
+    assert not (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    assert not (path.parents[1] / ClientLogStaging.DELETED_MARKER).exists()
+
+
+def test_receiver_restart_removes_abandoned_deleted_job_logs(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"retained partial\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    # Simulate a server failure after deletion was recorded but before cleanup.
+    with ClientLogStaging(fl_ctx.get_engine().get_workspace()).locked() as staging:
+        staging.prepare_delete("job-1")
+        fl_ctx.get_engine().job_def_manager.delete("job-1", fl_ctx)
+        staging.mark_deleted("job-1")
+    restarted = JobLogReceiver()
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+        restarted._register(EventType.SYSTEM_START, fl_ctx)
+    assert not path.parent.parent.exists()
+
+
+@pytest.mark.parametrize("failure", [SystemExit("server stopped"), OSError(errno.ENOSPC, "disk full")])
+def test_delete_intent_recovers_interruption_after_store_deletion(tmp_path, monkeypatch, failure):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"retained partial\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    with patch.object(ClientLogStaging, "mark_deleted", side_effect=failure):
+        if isinstance(failure, SystemExit):
+            with pytest.raises(SystemExit):
+                JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+        else:
+            JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+            assert len(conn.errors) == 1
+    assert not fl_ctx.get_engine().job_def_manager.job_exists("job-1", fl_ctx)
+    assert path.read_bytes() == b"retained partial\n"
+    assert (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+        JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    assert not path.parent.parent.exists()
+
+
+def test_intent_write_failure_does_not_delete_job(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"keep log\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    manager = fl_ctx.get_engine().job_def_manager
+    monkeypatch.setattr(manager, "delete", MagicMock(wraps=manager.delete))
+    with patch("nvflare.app_common.logging.log_staging.os.fsync", side_effect=OSError(errno.ENOSPC, "disk full")):
+        JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert len(conn.errors) == 1
+    manager.delete.assert_not_called()
+    assert manager.job_exists("job-1", fl_ctx)
+    assert path.read_bytes() == b"keep log\n"
+    # Preparation failure cancels immediately; delayed error uploads need no restart.
+    assert path.read_bytes() == b"keep log\n"
+    assert not (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    late_stream = {KEY_FILE_NAME: "error_log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"delayed error\n", late_stream, fl_ctx)
+    receiver._on_stream_done(late_stream, fl_ctx)
+    assert manager.get_client_data("job-1", "site-1", "ERRORLOG", fl_ctx) == b"delayed error\n"
+
+
+def test_new_stream_recovers_intent_after_failed_rollback(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"keep log\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    manager = fl_ctx.get_engine().job_def_manager
+    monkeypatch.setattr(manager, "delete", MagicMock(wraps=manager.delete))
+    with patch("nvflare.app_common.logging.log_staging.os.fsync", side_effect=OSError(errno.ENOSPC, "disk full")):
+        with patch.object(ClientLogStaging, "cancel_delete", side_effect=PermissionError("rollback unavailable")):
+            JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert len(conn.errors) == 1
+    manager.delete.assert_not_called()
+    assert (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    late_stream = {KEY_FILE_NAME: "error_log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"delayed error\n", late_stream, fl_ctx)
+    receiver._on_stream_done(late_stream, fl_ctx)
+    assert manager.get_client_data("job-1", "site-1", "ERRORLOG", fl_ctx) == b"delayed error\n"
+    assert path.read_bytes() == b"keep log\n"
+    assert not (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+
+
+@pytest.mark.parametrize("failure", [PermissionError("store unavailable"), NotImplementedError("unsupported")])
+def test_new_stream_preserves_unresolved_intent_on_lookup_failure(tmp_path, monkeypatch, failure):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"keep log\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    with ClientLogStaging(fl_ctx.get_engine().get_workspace()).locked() as staging:
+        staging.prepare_delete("job-1")
+    manager = fl_ctx.get_engine().job_def_manager
+    late_stream = {KEY_FILE_NAME: "error_log.txt", StreamContextKey.RC: ReturnCode.OK}
+    with patch.object(manager, "job_exists", side_effect=failure):
+        with pytest.raises(type(failure)):
+            receiver._on_chunk_received(b"delayed error\n", late_stream, fl_ctx)
+    assert (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    assert path.read_bytes() == b"keep log\n"
+    assert not path.with_name("error_log.txt").exists()
+    receiver._on_chunk_received(b"delayed error\n", late_stream, fl_ctx)
+    receiver._on_stream_done(late_stream, fl_ctx)
+    assert manager.get_client_data("job-1", "site-1", "ERRORLOG", fl_ctx) == b"delayed error\n"
+
+
+def test_new_stream_recovery_cannot_recreate_deleted_job(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"retained partial\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    manager = fl_ctx.get_engine().job_def_manager
+    with ClientLogStaging(fl_ctx.get_engine().get_workspace()).locked() as staging:
+        staging.prepare_delete("job-1")
+        manager.delete("job-1", fl_ctx)
+    with patch.object(manager, "get_job", return_value=conn.get_prop(JobCommandModule.JOB)):
+        with pytest.raises(ValueError, match="deleted or unknown job"):
+            receiver._on_chunk_received(b"late error", {KEY_FILE_NAME: "error_log.txt"}, fl_ctx)
+    assert manager.job_exists("job-1", fl_ctx) is False
+    assert not path.parent.parent.exists()
+
+
+def test_delete_intent_before_store_mutation_preserves_existing_job(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"keep log\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    with patch.object(fl_ctx.get_engine().job_def_manager, "delete", side_effect=SystemExit("server stopped")):
+        with pytest.raises(SystemExit):
+            JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+    assert (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    assert fl_ctx.get_engine().job_def_manager.job_exists("job-1", fl_ctx)
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+        JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    assert path.read_bytes() == b"keep log\n"
+    assert not (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+
+
+@pytest.mark.parametrize("failure", [PermissionError("store unavailable"), NotImplementedError("unsupported"), None])
+def test_uncertain_deletion_recovery_preserves_logs_and_intent(tmp_path, monkeypatch, failure):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.TIMEOUT}
+    receiver._on_chunk_received(b"keep until confirmed\n", stream, fl_ctx)
+    receiver._on_stream_done(stream, fl_ctx)
+    with ClientLogStaging(fl_ctx.get_engine().get_workspace()).locked() as staging:
+        staging.prepare_delete("job-1")
+    manager = fl_ctx.get_engine().job_def_manager
+    lookup = MagicMock(side_effect=failure) if failure else MagicMock(return_value=None)
+    with patch.object(manager, "job_exists", lookup):
+        with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+            JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    assert path.read_bytes() == b"keep until confirmed\n"
+    assert (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+    # Confirmed presence cancels the intent, without relying on get_job(None).
+    with patch.object(manager, "get_job", return_value=None):
+        with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+            JobLogReceiver()._register(EventType.SYSTEM_START, fl_ctx)
+    assert path.read_bytes() == b"keep until confirmed\n"
+    assert not (path.parents[1] / ClientLogStaging.DELETE_INTENT).exists()
+
+
+def test_missing_job_metadata_does_not_authorize_removing_logs(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"keep on storage outage\n", stream, fl_ctx)
+    monkeypatch.setattr(fl_ctx.get_engine().job_def_manager, "get_job", lambda *args: None)
+    receiver._on_stream_done(stream, fl_ctx)
+    restarted = JobLogReceiver()
+    with patch("nvflare.app_common.logging.job_log_receiver.LogStreamer.register_stream_processing"):
+        restarted._register(EventType.SYSTEM_START, fl_ctx)
+    assert path.read_bytes() == b"keep on storage outage\n"
+
+
+def test_duplicate_stream_cannot_truncate_an_active_log(tmp_path, monkeypatch):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"preserve active log\n", stream, fl_ctx)
+    try:
+        with pytest.raises(ValueError, match="active stream"):
+            JobLogReceiver()._on_chunk_received(b"overwrite", {KEY_FILE_NAME: "log.txt"}, fl_ctx)
+        assert path.read_bytes() == b"preserve active log\n"
+    finally:
+        receiver._on_stream_done(stream, fl_ctx)
+
+
+@pytest.mark.parametrize("first_operation", ["delete", "publish"])
+def test_job_deletion_and_log_publication_are_serialized(tmp_path, monkeypatch, first_operation):
+    receiver, fl_ctx, conn, path = _staged_log_deletion_case(tmp_path, monkeypatch)
+    stream = {KEY_FILE_NAME: "log.txt", StreamContextKey.RC: ReturnCode.OK}
+    receiver._on_chunk_received(b"complete log\n", stream, fl_ctx)
+    manager = fl_ctx.get_engine().job_def_manager
+    entered = threading.Event()
+    release = threading.Event()
+    second_entered = threading.Event()
+    second_attempted = threading.Event()
+    errors = []
+    operations = {"delete": manager.delete, "publish": manager.set_client_data}
+
+    def block_first(*args, **kwargs):
+        entered.set()
+        if not release.wait(5):
+            raise TimeoutError("test did not release first operation")
+        return operations[first_operation](*args, **kwargs)
+
+    def observe_second(*args, **kwargs):
+        second_entered.set()
+        return operations["publish" if first_operation == "delete" else "delete"](*args, **kwargs)
+
+    monkeypatch.setattr(manager, "delete", block_first if first_operation == "delete" else observe_second)
+    monkeypatch.setattr(manager, "set_client_data", block_first if first_operation == "publish" else observe_second)
+
+    def run(operation, second=False):
+        try:
+            if second:
+                second_attempted.set()
+            if operation == "delete":
+                JobCommandModule().delete_job(conn, ["delete_job", "job-1"])
+            else:
+                receiver._on_stream_done(stream, fl_ctx)
+        except Exception as ex:
+            errors.append(ex)
+
+    first = threading.Thread(target=run, args=(first_operation,))
+    second = threading.Thread(target=run, args=("publish" if first_operation == "delete" else "delete", True))
+    try:
+        first.start()
+        assert entered.wait(5)
+        second.start()
+        assert second_attempted.wait(5)
+        assert not second_entered.wait(0.1)
+    finally:
+        release.set()
+        first.join(timeout=5)
+        if second.ident is not None:
+            second.join(timeout=5)
+    assert not first.is_alive() and not second.is_alive()
+    assert errors == []
+    assert conn.errors == []
+    assert manager.get_job("job-1", fl_ctx) is None
+    assert not path.parent.parent.exists()
+    # When deletion wins, the stream is discarded without entering publication.
+    assert second_entered.is_set() == (first_operation == "publish")
+
+
+@pytest.mark.parametrize("target", ["site-1", "all"])
+@pytest.mark.parametrize("file_name", ["log.txt", "log.json"])
+def test_get_job_log_reads_default_receiver_while_stream_is_open(tmp_path, monkeypatch, target, file_name):
+    monkeypatch.setattr(job_cmds_module, "ServerEngine", _FakeServerEngine)
+    monkeypatch.setattr(job_cmds_module, "JobDefManagerSpec", object)
+    workspace = _FakeWorkspace(tmp_path / "external-log-root")
+    engine = _FakeServerEngine(workspace)
+    engine.get_client_from_name = lambda name: None
+    engine.get_component = lambda name: engine.job_def_manager
+    engine.job_def_manager.get_storage_component.return_value = None
+    engine.job_def_manager.list_components.return_value = []
+    engine.job_def_manager.get_client_data.return_value = None
+    job = _FakeListedJob({JobMetaKey.DEPLOY_MAP.value: {"app": ["server", "site-1"]}})
+    conn = _MockConnection(app_ctx=engine, props={JobCommandModule.JOB_ID: "job-1", JobCommandModule.JOB: job})
+    peer = FLContext()
+    peer.put(ReservedKey.IDENTITY_NAME, "site-1", private=True, sticky=False)
+    peer.put(ReservedKey.RUN_NUM, "job-1", private=True, sticky=False)
+    fl_ctx = FLContext()
+    fl_ctx.put(ReservedKey.ENGINE, engine, private=True, sticky=False)
+    fl_ctx.put(FLContextKey.CLIENT_NAME, "site-1", private=True, sticky=False)
+    fl_ctx.set_peer_context(peer)
+    receiver = JobLogReceiver()
+    stream = {KEY_FILE_NAME: file_name, StreamContextKey.RC: ReturnCode.OK}
+    try:
+        receiver._on_chunk_received(b"round started\n", stream, fl_ctx)
+        engine.job_def_manager.set_client_data.assert_not_called()
+        JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", target, file_name])
+        payload, _ = conn.dicts.pop()
+        assert payload["logs"]["site-1"] == "round started\n"
+        # Abort/failure cleanup removes per-job run and external log directories
+        # before client streams necessarily reach EOF. Active staging must survive.
+        shutil.rmtree(workspace.get_log_root("job-1"))
+        receiver._on_chunk_received(b"batch finished\n", stream, fl_ctx)
+        JobCommandModule().get_job_log(conn, ["get_job_log", "job-1", target, file_name])
+        payload, _ = conn.dicts.pop()
+        assert payload["logs"]["site-1"] == "round started\nbatch finished\n"
+        engine.job_def_manager.set_client_data.assert_not_called()
+        engine.job_def_manager.get_client_data.assert_not_called()
+    finally:
+        receiver._on_stream_done(stream, fl_ctx)
+    args = engine.job_def_manager.set_client_data.call_args.args
+    assert args[0] == "job-1"
+    assert args[2] == "site-1"
+    assert Path(args[1]).read_bytes() == b"round started\nbatch finished\n"

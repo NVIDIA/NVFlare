@@ -171,48 +171,25 @@ class TestWorkspaceTransferManager:
             assert "local/study_data.yaml" not in names
             assert "local/study_runtime.yaml" not in names
 
-    def test_workspace_bundle_excludes_legacy_custom_study_data_path(self):
-        with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
-            _make_workspace(ws_root, JOB_ID)
-            resource_config = {
-                "components": [
-                    {
-                        "id": "k8s_launcher",
-                        "path": "nvflare.app_opt.job_launcher.k8s_launcher.ClientK8sJobLauncher",
-                        "args": {
-                            "workspace_mount_path": "/workspace",
-                            "study_data_pvc_file_path": "/workspace/local/custom_data.yaml",
-                        },
-                    }
-                ]
-            }
-            _write_file(os.path.join(ws_root, "local", "resources.json"), json.dumps(resource_config).encode())
-            _write_file(os.path.join(ws_root, "local", "custom_data.yaml"), b"study-a: {}\n")
-            _write_file(os.path.join(ws_root, "local", "custom", "helper.py"), b"VALUE = 1\n")
-            zip_path = os.path.join(tmp, "workspace.zip")
-
-            _zip_workspace_to_file(ws_root, JOB_ID, zip_path)
-
-            with zipfile.ZipFile(zip_path) as zf:
-                names = set(zf.namelist())
-            assert "local/resources.json" in names
-            assert "local/custom/helper.py" in names
-            assert "local/custom_data.yaml" not in names
-
-    def test_workspace_bundle_excludes_study_runtime_pod_templates(self):
+    @pytest.mark.parametrize("worker_template", ["worker.yaml", r"worker\private.yaml"])
+    def test_workspace_bundle_excludes_study_runtime_pod_templates(self, worker_template):
         with tempfile.TemporaryDirectory() as ws_root, tempfile.TemporaryDirectory() as tmp:
             _make_workspace(ws_root, JOB_ID)
             _write_file(
                 os.path.join(ws_root, "local", "study_runtime.yaml"),
-                b"format_version: 2\n"
-                b"studies:\n"
-                b"  study-a:\n"
-                b"    pod_template: pod_specs/h100-pod.yaml\n"
-                b"  study-b:\n"
-                b"    pod_template:\n"
-                b"      spec: {}\n",
+                (
+                    "format_version: 2\n"
+                    "studies:\n"
+                    "  study-a:\n"
+                    "    pod_template: pod_specs/h100-pod.yaml\n"
+                    f"    worker_pod_template: 'pod_specs/{worker_template}'\n"
+                    "  study-b:\n"
+                    "    pod_template:\n"
+                    "      spec: {}\n"
+                ).encode(),
             )
             _write_file(os.path.join(ws_root, "local", "pod_specs", "h100-pod.yaml"), b"kind: Pod\n")
+            _write_file(os.path.join(ws_root, "local", "pod_specs", worker_template), b"kind: Pod\n")
             _write_file(os.path.join(ws_root, "local", "custom", "helper.py"), b"VALUE = 1\n")
             zip_path = os.path.join(tmp, "workspace.zip")
 
@@ -225,6 +202,7 @@ class TestWorkspaceTransferManager:
             assert f"{JOB_ID}/app/config/config_train.json" in names
             assert "local/study_runtime.yaml" not in names
             assert "local/pod_specs/h100-pod.yaml" not in names
+            assert "local/pod_specs/" + worker_template.replace(os.sep, "/") not in names
 
     @pytest.mark.parametrize("zip_fn", [_zip_workspace_to_file, _zip_results_to_file])
     def test_bundles_exclude_job_credential(self, zip_fn):

@@ -27,18 +27,78 @@ Verify with ``nvflare system version``. Leftover 2.9 peers are rejected before
 endpoint attachment and cannot replace a 2.10 connection. This procedure
 includes a server outage and does not resume running jobs across the upgrade.
 
-.. _multi_process_executor_migration:
-
-Multi-process Executor Deprecation
+Weights & Biases Backend Approval
 ---------------------------------
 
-``MultiProcessExecutor`` and ``PTMultiProcessExecutor`` are deprecated in 2.10
-while their imports and configuration remain available. For PyTorch DDP training,
-use job-based Client API with ``launch_external_process=True`` and ``torchrun``,
-as in the :github_nvflare_link:`multi-GPU example <examples/advanced/multi-gpu/pt>`.
-Only global rank zero exchanges models with FLARE; the script synchronizes
-models and shutdown across ranks. Applications relying on the legacy wrapper's
-arbitrary FL events or component graph must adapt those explicitly before migrating.
+Jobs using ``WandBReceiver`` with a custom ``wandb_args.settings.base_url``
+now require receiving-site approval unless the URL matches that site's
+``WANDB_BASE_URL``. When that variable is unset, the receiver uses the saved
+global W&B host, with the cloud endpoint as the final default. Add trusted URLs
+to ``wandb_base_urls`` in the receiving site's canonical ``local/resources.json``
+or its default fallback. Apply this at every site
+running the receiver, including client-side tracking. Job settings cannot
+provide proxy overrides or disable TLS verification. See
+:ref:`experiment_tracking_log_writer` for experiment-tracking configuration.
+
+Study Data File Removed
+-----------------------
+
+The v1 ``local/study_data.yaml`` and the K8s launcher argument
+``study_data_pvc_file_path`` are removed. The Docker, Kubernetes, and Slurm
+launchers refuse to launch jobs while ``local/study_data.yaml`` exists, and
+``K8sJobLauncher`` no longer accepts ``study_data_pvc_file_path``. Move each
+study's datasets into ``local/study_runtime.yaml`` (``format_version: 2``),
+delete ``study_data.yaml``, and remove ``study_data_pvc_file_path`` from the
+launcher configuration. For example,
+``default: {data: {source: nvfldata, mode: ro}}`` becomes::
+
+    format_version: 2
+    studies:
+      default:
+        datasets:
+          data: {source: nvfldata, mode: ro}
+
+Process mode never read ``study_data.yaml``.
+
+Two cases need attention before starting 2.10 on an existing kit and workspace:
+
+- **Kits prepared with 2.8 are affected even if no study data was configured.**
+  2.8 ``nvflare deploy prepare`` wrote a comment-only ``local/study_data.yaml``
+  into every Docker and K8s kit and always set ``study_data_pvc_file_path`` on
+  the K8s launcher. Delete the file even if it is comment-only, and remove the
+  argument from the launcher configuration. Re-running ``nvflare deploy prepare``
+  with 2.10 replaces the launcher argument but leaves the old file in place, so
+  the file must still be deleted.
+- **A client's** ``study_runtime.yaml`` **is also its study allow-list.** When
+  the file lists at least one study, jobs for every unlisted study are rejected
+  at the resource check, including ``default`` (jobs submitted without a
+  study). List every study the site should run, not only those that had dataset
+  mounts; an entry such as ``default: {}`` is enough for a study without
+  datasets.
+
+.. _multi_process_executor_migration:
+
+Multi-process Executors Removed
+-------------------------------
+
+NVFlare 2.10 removes ``MultiProcessExecutor``, ``PTMultiProcessExecutor`` and their
+sub-worker runtime without a prior deprecation release. Update jobs that
+import, subclass or configure either executor before upgrading to 2.10.
+
+For PyTorch DDP training, use the job-based Client API with
+``launch_external_process=True`` and ``torchrun``. The
+:github_nvflare_link:`multi-GPU example <examples/advanced/multi-gpu/pt>` shows how
+global rank zero exchanges models with FLARE and how the training script
+synchronizes models and shutdown across ranks. Port any custom component setup
+or FL event handling that relied on relaying between the parent and workers.
+
+Update any code that uses the removed rank context keys or message protocol.
+
+- ``FLContextKey`` and ``ReservedKey`` lose ``RANK_NUMBER``, ``NUM_OF_PROCESSES``,
+  ``FROM_RANK_NUMBER`` and ``EVENT_ORIGIN_SITE``.
+- ``CellChannel`` loses ``CLIENT_SUB_WORKER_COMMAND`` and
+  ``MULTI_PROCESS_EXECUTOR``.
+- ``CellChannelTopic`` loses ``EXECUTE_RESULT`` and ``FIRE_EVENT``.
 
 Upgrading from 2.7.2 to 2.8.0
 =============================

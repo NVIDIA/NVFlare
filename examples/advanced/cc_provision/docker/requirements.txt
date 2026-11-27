@@ -1,5 +1,0 @@
-torch
-torchvision
-tensorboard
-tensorflow
-safetensors

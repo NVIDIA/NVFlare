@@ -14,6 +14,7 @@
 
 import logging
 import os
+import re
 import time
 
 from nvflare.apis.job_def import RunStatus
@@ -74,6 +75,10 @@ def _event_waits_for_successful_run(event: dict, event_triggered: bool) -> bool:
     if not event_triggered and _expects_successful_run_state(event.get("trigger")):
         return True
     return event_triggered and _expects_successful_run_state(event.get("result"))
+
+
+def _needs_workflow_stats(condition: dict) -> bool:
+    return condition.get("type") == "run_state" and "workflows" in condition.get("data", {})
 
 
 def _resolve_event_sequence_timeout(event_sequence_timeout):
@@ -202,6 +207,7 @@ class NVFTestDriver:
         self.test_done = False
         self.job_id = None
         self.last_job_name = None
+        self._workflow_ready_jobs = set()
 
         self.action_handlers = {
             "start": _StartHandler(),
@@ -337,12 +343,50 @@ class NVFTestDriver:
             except (JobNotFound, ConnectionError, SessionClosed):
                 return run_state
             job_run_status = job_meta.get("status")
-            try:
-                stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
-            except (JobNotFound, JobNotRunning, ConnectionError, SessionClosed):
-                stats = None
-            # update run_state
-            _, run_state = _update_run_state(stats=stats, run_state=run_state, job_run_status=job_run_status)
+            # Metadata is served by the parent and remains available while the
+            # job process is starting or has already exited.
+            _, run_state = _update_run_state(stats=None, run_state=run_state, job_run_status=job_run_status)
+        return run_state
+
+    def _job_workflow_is_ready(self):
+        if self.job_id in self._workflow_ready_jobs:
+            return True
+
+        marker = "Server runner starting ..."
+        job_log = self._get_job_log(target=TargetType.SERVER, job_id=self.job_id)
+        ready = any(marker in line for line in job_log)
+        if not ready:
+            # The first workflow-dependent event may occur after log rotation.
+            # Read only retained backups of this job's log, never the site's log
+            # or another job's files. ls returns one name per line without a TTY.
+            listing = self.super_admin_api.ls_target(TargetType.SERVER, path=self.job_id)
+            for name in listing.splitlines():
+                name = name.strip()
+                if not re.fullmatch(r"log\.txt\.[0-9]+", name):
+                    continue
+                text = self.super_admin_api.cat_target(TargetType.SERVER, file=os.path.join(self.job_id, name))
+                if marker in text:
+                    ready = True
+                    break
+        if ready:
+            # A later rotation (or removal of older backups) cannot undo startup.
+            self._workflow_ready_jobs.add(self.job_id)
+        return ready
+
+    def _get_workflow_state(self, run_state):
+        if not self.job_id or not self.super_admin_api or run_state.get("job_status") != RunStatus.RUNNING.value:
+            return run_state
+        run_state["workflows"] = None
+        try:
+            # RUNNING metadata means the process was launched, not that its
+            # engine is initialized. Observe this job's startup before sending
+            # show_stats to it; the site's log can contain earlier jobs.
+            if not self._job_workflow_is_ready():
+                return run_state
+            stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
+        except (JobNotFound, JobNotRunning, ConnectionError, SessionClosed):
+            return run_state
+        _, run_state = _update_run_state(stats, run_state, run_state["job_status"])
         return run_state
 
     def _build_event_sequence_error(self, message: str, run_state: dict, event_idx: int, event_triggered: list) -> str:
@@ -417,6 +461,9 @@ class NVFTestDriver:
             run_state = self._get_run_state(run_state)
 
             if event_idx < len(event_sequence):
+                pending = event_sequence[event_idx]["result" if event_triggered[event_idx] else "trigger"]
+                if _needs_workflow_stats(pending):
+                    run_state = self._get_workflow_state(run_state)
                 self._check_for_terminal_job(
                     event=event_sequence[event_idx],
                     event_is_triggered=event_triggered[event_idx],
@@ -466,6 +513,8 @@ class NVFTestDriver:
                         # check result state only when server is up and running
                         if self.server_status() is not None:
                             run_state = self._get_run_state(run_state)
+                            if _needs_workflow_stats(result):
+                                run_state = self._get_workflow_state(run_state)
                             # compare run_state to expected result data from the test case
                             _check_run_state(state=run_state, expected_state=result["data"])
                             event_idx += 1

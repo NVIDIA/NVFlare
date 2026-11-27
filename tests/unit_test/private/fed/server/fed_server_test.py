@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from contextlib import nullcontext
 from threading import Lock
 from types import SimpleNamespace
@@ -20,22 +21,40 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import ConnPropKey, RunProcessKey, SecureTrainConst, ServerCommandKey, ServerCommandNames
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import (
+    ConnPropKey,
+    FLContextKey,
+    RunProcessKey,
+    SecureTrainConst,
+    ServerCommandKey,
+    ServerCommandNames,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey, RunStatus
 from nvflare.apis.job_launcher_spec import JobReturnCode
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.event import fire_event_to_components
+from nvflare.app_opt.confidential_computing.cc_manager import CC_INFO, CC_NAMESPACE, CC_TOKEN, CCManager
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.common.exit_codes import ProcessExitCode
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessagePropKey
+from nvflare.fuel.f3.cellnet.defs import CellChannelTopic, MessageHeaderKey, MessagePropKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
-from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.endpoint import Endpoint, EndpointState
 from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, sign_content
-from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, ClientRegMsgKey, JobOutcomeMsgKey, new_cell_message
+from nvflare.private.defs import (
+    CellChannel,
+    CellMessageHeaderKeys,
+    ClientRegMsgKey,
+    ClientType,
+    JobOutcomeMsgKey,
+    new_cell_message,
+)
 from nvflare.private.fed.authenticator import MISSING_CLIENT_FQCN
+from nvflare.private.fed.server.auth_registry import NonRegularAuthRegistry
 from nvflare.private.fed.server.client_manager import ClientManager
 from nvflare.private.fed.server.fed_server import BaseServer, FederatedServer
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
@@ -66,6 +85,102 @@ def auth_server(auth_identity):
     server.client_manager = SimpleNamespace(clients={})
     server._get_id_asserter = lambda: identity
     return server, private_key
+
+
+@pytest.mark.parametrize("client_name", ["site-1", "site-2"])
+def test_registration_event_receives_client_name_from_request(client_name):
+    server = object.__new__(FederatedServer)
+    server.logger = MagicMock()
+    server.engine = MagicMock()
+    context = FLContext()
+    server.engine.new_context.return_value = nullcontext(context)
+    server._ready_for_registration = MagicMock(return_value=None)
+    server.client_manager = MagicMock()
+    server.client_manager.authenticate.return_value = None
+    server._generate_reply = MagicMock(return_value="registration reply")
+
+    def check_registration_event(event_type, fl_ctx):
+        if event_type == EventType.CLIENT_REGISTER_RECEIVED:
+            assert fl_ctx.get_prop_detail(FLContextKey.CLIENT_NAME) == {
+                "value": client_name,
+                "private": True,
+                "sticky": False,
+            }
+
+    server.engine.fire_event.side_effect = check_registration_event
+    request = new_cell_message(
+        {CellMessageHeaderKeys.CLIENT_NAME: client_name, CellMessageHeaderKeys.CLIENT_TYPE: ClientType.REGULAR},
+        Shareable(),
+    )
+
+    assert server.register_client(request) == "registration reply"
+    server.engine.fire_event.assert_any_call(EventType.CLIENT_REGISTER_RECEIVED, fl_ctx=context)
+
+
+@pytest.mark.parametrize("stage", ["verification", "issuance"])
+@pytest.mark.parametrize("failure", [RuntimeError, TimeoutError])
+def test_registration_rejects_unexpected_cc_exceptions(stage, failure, caplog):
+    site = "cc-client"
+    context = FLContext()
+    context.set_prop(FLContextKey.SECURE_MODE, True)
+    manager = CCManager([], [], cc_enabled_sites=[site])
+    verifier = MagicMock()
+    verifier.verify_for_site.return_value = True
+    manager.cc_verifiers = {"test": verifier}
+    issuer = MagicMock()
+    manager.cc_issuers = {issuer: 3600}
+    if stage == "verification":
+        verifier.verify_for_site.side_effect = failure("sensitive-provider-detail")
+    else:
+        issuer.generate_with_retry.side_effect = failure("sensitive-provider-detail")
+
+    server = object.__new__(FederatedServer)
+    server.logger = logging.getLogger(__name__)
+    server.engine = MagicMock()
+    server.engine.new_context.return_value = nullcontext(context)
+    server.engine.fire_event.side_effect = lambda event, fl_ctx: fire_event_to_components(event, [manager], fl_ctx)
+    server._ready_for_registration = MagicMock(return_value=None)
+    server.reg_lock = Lock()
+    server.name_to_reg = {site: object()}
+    server.client_manager = MagicMock()
+    server.client_manager.authenticate.return_value = Client(site, "registration-token")
+    server.sign_auth_token = MagicMock(return_value="signature")
+    server.project_name = "test-project"
+    server.tokens = {}
+    server.admin_server = None
+    server.server_state = SimpleNamespace(ssid="test-session")
+
+    peer = FLContext()
+    peer.set_prop(CC_INFO, {site: [{CC_NAMESPACE: "test", CC_TOKEN: "test-evidence"}]})
+    payload = Shareable()
+    payload.set_peer_context(peer)
+    request = new_cell_message(
+        {
+            MessageHeaderKey.ORIGIN: site,
+            CellMessageHeaderKeys.CLIENT_NAME: site,
+            CellMessageHeaderKeys.CLIENT_TYPE: ClientType.REGULAR,
+        },
+        payload,
+    )
+
+    reply = server.register_client(request)
+
+    verifier.verify_for_site.assert_called_once_with("test-evidence", site)
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+    server.client_manager.authenticate.assert_not_called()
+    server.sign_auth_token.assert_not_called()
+    assert not server.tokens
+    if stage == "verification":
+        issuer.generate_with_retry.assert_not_called()
+        diagnostic = "CC verifier test"
+    else:
+        issuer.generate_with_retry.assert_called_once()
+        diagnostic = "CC token generation"
+    assert f"{diagnostic} raised {failure.__name__} for site {site}" in caplog.messages
+    for sensitive in ("sensitive-provider-detail", "test-evidence"):
+        assert sensitive not in caplog.text
+        assert sensitive not in str(reply.headers)
+        assert sensitive not in str(reply.payload)
 
 
 @pytest.fixture
@@ -585,6 +700,7 @@ class TestFederatedServer:
             },
             None,
         )
+        request.set_prop(MessagePropKey.ENDPOINT, Endpoint(origin))
         reply = server._validate_auth_headers(request)
         if accepted:
             assert reply is None
@@ -642,8 +758,12 @@ class TestFederatedServer:
         server.client_manager = ClientManager()
         if origin == "admin":
             origin = peer = new_admin_client_name()
+            server._non_regular_auth_clients = NonRegularAuthRegistry()
+            server._non_regular_auth_clients.register(name, "delegated", origin, Endpoint(peer))
         request = new_cell_message(
             {
+                MessageHeaderKey.CHANNEL: CellChannel.SERVER_MAIN,
+                MessageHeaderKey.TOPIC: CellChannelTopic.HEART_BEAT,
                 MessageHeaderKey.ORIGIN: origin,
                 MessageHeaderKey.DESTINATION: "server",
                 CellMessageHeaderKeys.CLIENT_NAME: name,
@@ -662,25 +782,35 @@ class TestFederatedServer:
         reply = server._validate_auth_headers(request)
         assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
 
-    def test_non_secure_server_registers_transit_header_sanitizer(self):
+    @pytest.mark.parametrize("secure", [False, True])
+    def test_server_registers_auth_or_transit_filter_and_secure_disconnect_cleanup(self, secure):
         server = object.__new__(FederatedServer)
         server.lock = MagicMock()
         server.cell = MagicMock()
         server.engine = MagicMock()
         server._register_cellnet_cbs = MagicMock()
+        server._non_regular_auth_clients = NonRegularAuthRegistry()
 
         with patch("nvflare.private.fed.server.fed_server.BaseServer.deploy"):
             server.deploy(
                 args=MagicMock(),
                 grpc_args={"service": {"target": "localhost:8002"}},
-                secure_train=False,
+                secure_train=secure,
             )
 
         server.cell.core_cell.add_incoming_filter.assert_called_once_with(
             channel="*",
             topic="*",
-            cb=server._strip_peer_transit_headers,
+            cb=server._validate_auth_headers if secure else server._strip_peer_transit_headers,
         )
+        if secure:
+            monitor = server.cell.core_cell.communicator.register_monitor.call_args.args[0]
+            peer = Endpoint("relay-1")
+            monitor.register("relay-1", "live", peer.name, peer)
+            assert monitor.resolve("relay-1", "live") == peer.name
+            peer.state = EndpointState.DISCONNECTED
+            monitor.state_change(peer)
+            assert monitor.resolve("relay-1", "live") is None
 
     def test_create_job_cell_allows_missing_server_config_for_non_secure_cell(self):
         server = object.__new__(FederatedServer)
@@ -1327,6 +1457,48 @@ class TestFederatedServer:
             assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
             server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
 
+    def test_process_job_outcome_binds_resource_report_to_authenticated_client(self):
+        with patch("nvflare.private.fed.server.fed_server.ServerEngine"):
+            server = FederatedServer(
+                project_name="project_name",
+                min_num_clients=1,
+                max_num_clients=10,
+                cmd_modules=None,
+                heart_beat_timeout=600,
+                args=MagicMock(),
+                secure_train=False,
+                snapshot_persistor=MagicMock(),
+            )
+            server.client_manager.is_from_authorized_client = MagicMock(return_value=True)
+            client = MagicMock()
+            client.name = "site-1"
+            server.client_manager.clients = {"token-1": client}
+            server.engine.job_runner.is_client_outcome_pending.return_value = True
+            server.engine.job_runner.accept_client_resource_report.return_value = "accepted"
+            report = {JobOutcomeMsgKey.PARTICIPANT_SUMMARY: b"{}"}
+            request = new_cell_message(
+                {CellMessageHeaderKeys.TOKEN: "token-1", MessageHeaderKey.ORIGIN: "spoofed-name"},
+                {
+                    JobOutcomeMsgKey.JOB_ID: "job-1",
+                    JobOutcomeMsgKey.CODE: 0,
+                    JobOutcomeMsgKey.REASON: "",
+                    JobOutcomeMsgKey.RESOURCE_REPORT: report,
+                },
+            )
+
+            reply = server.process_job_outcome(request)
+
+            server.engine.job_runner.accept_client_resource_report.assert_called_once_with("job-1", "site-1", report)
+            assert reply.payload == {JobOutcomeMsgKey.RESOURCE_REPORT_STATUS: "accepted"}
+
+            server.engine.job_runner.resolve_client_outcome.reset_mock()
+            server.engine.job_runner.accept_client_resource_report.side_effect = RuntimeError("write failed")
+            reply = server.process_job_outcome(request)
+
+            assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.OK
+            assert reply.payload == {JobOutcomeMsgKey.RESOURCE_REPORT_STATUS: "server_error"}
+            server.engine.job_runner.resolve_client_outcome.assert_called_once_with("job-1", "site-1")
+
     def test_notify_dead_client_fails_barrier_only_job(self):
         server = object.__new__(FederatedServer)
         server.logger = MagicMock()
@@ -1378,3 +1550,59 @@ class TestGetValidatedSiteConfig:
         s = Shareable()
         s[ClientRegMsgKey.SITE_CONFIG] = site_config
         assert self._call(s) == site_config
+
+
+@pytest.mark.parametrize("origin", ["site-a", "relay-1.site-a", "site-a.job"])
+def test_unmapped_signed_token_cannot_authorize_application_traffic(auth_server, origin):
+    server, private_key = auth_server
+    request = new_cell_message(
+        {
+            MessageHeaderKey.ORIGIN: origin,
+            MessageHeaderKey.DESTINATION: "server.job-a",
+            MessageHeaderKey.CHANNEL: "collab",
+            CellMessageHeaderKeys.CLIENT_NAME: "site-a",
+            CellMessageHeaderKeys.TOKEN: "unmapped",
+            CellMessageHeaderKeys.TOKEN_SIGNATURE: sign_content("site-aunmapped", private_key),
+        },
+        None,
+    )
+    request.set_prop(MessagePropKey.ENDPOINT, Endpoint(origin))
+    reply = server._validate_auth_headers(request)
+    assert reply.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+
+
+@pytest.mark.parametrize("disconnected", [False, True])
+def test_registration_reply_retains_live_token_or_rejects_disconnected_transport(disconnected):
+    server = object.__new__(FederatedServer)
+    server.logger = MagicMock()
+    server.engine = MagicMock()
+    context = FLContext()
+    server.engine.new_context.return_value = nullcontext(context)
+    server._ready_for_registration = MagicMock(return_value=None)
+    server.client_manager = MagicMock()
+    client = Client("relay-1", "proposed-token")
+    client.set_fqcn("relay-1")
+    server.client_manager.authenticate.return_value = client
+    server.server_state = SimpleNamespace(ssid="session")
+    server.sign_auth_token = MagicMock(return_value="signature")
+    server._generate_reply = lambda headers, payload, fl_ctx: payload
+    server._non_regular_auth_clients = NonRegularAuthRegistry()
+    peer = Endpoint("relay-1")
+    server._non_regular_auth_clients.register("relay-1", "live-token", "relay-1", peer)
+    if disconnected:
+        peer.state = EndpointState.DISCONNECTED
+        server._non_regular_auth_clients.state_change(peer)
+    request = new_cell_message(
+        {CellMessageHeaderKeys.CLIENT_NAME: "relay-1", CellMessageHeaderKeys.CLIENT_TYPE: ClientType.RELAY}, Shareable()
+    )
+    request.set_prop(MessagePropKey.ENDPOINT, peer)
+    result = server.register_client(request)
+    if disconnected:
+        assert result.get_header(MessageHeaderKey.RETURN_CODE) == F3ReturnCode.UNAUTHENTICATED
+        server.sign_auth_token.assert_not_called()
+        assert server._non_regular_auth_clients.resolve("relay-1", "live-token") is None
+        return
+    assert result[CellMessageHeaderKeys.TOKEN] == "live-token"
+    server.sign_auth_token.assert_called_once_with("relay-1", "live-token")
+    assert server._non_regular_auth_clients.resolve("relay-1", "live-token") == "relay-1"
+    assert server._non_regular_auth_clients.resolve("relay-1", "proposed-token") is None

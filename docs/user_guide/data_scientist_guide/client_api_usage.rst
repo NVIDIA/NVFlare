@@ -154,6 +154,106 @@ Below is a table overview of key Client APIs.
      - Patches the PyTorch Lightning Trainer for usage with FLARE.
      - :func:`patch<nvflare.app_opt.lightning.api.patch>`
 
+Lightning step-level sync
+-------------------------
+
+By default, ``flare.patch(trainer)`` runs one FL round per ``trainer.fit()`` call, so the shortest
+round is one epoch. For models where an epoch takes hours, set ``sync_every_n_steps`` to exchange
+the model with the server every N optimizer steps within a single ``fit()``:
+
+.. code-block:: python
+
+    import nvflare.client.lightning as flare
+
+    flare.patch(trainer, sync_every_n_steps=10)
+    trainer.fit(model, datamodule=dm)
+
+This switches the execution model from one ``fit()`` per FL round to one ``fit()`` spanning all rounds,
+so the fit-per-round loop, which validates each received global model before training on it, becomes:
+
+.. code-block:: python
+
+    # One fit() per round (default)
+    flare.patch(trainer)
+    while flare.is_running():
+        input_model = flare.receive()
+        trainer.validate(model, datamodule=dm)  # scores the received global model
+        trainer.fit(model, datamodule=dm)
+
+    # One fit() for all rounds (step mode)
+    flare.patch(trainer, sync_every_n_steps=10)
+    trainer.fit(model, datamodule=dm)  # in-fit validation scores the site's local weights
+
+The two kinds of validation differ:
+
+* **Per-round global-model evaluation**: ``trainer.validate()`` before ``fit()`` scores the global model
+  received for the round. Only fit-per-round mode does this, and only there can its metrics be sent with
+  ``train_with_evaluation``, which step mode does not support.
+* **Local validation**: validation that Lightning runs inside ``fit()`` (``val_check_interval``, epoch
+  end) scores the site's own weights, not the new global model, in both modes. In step mode it is the only
+  validation during training. Its metrics, and ``ModelCheckpoint`` or ``EarlyStopping`` callbacks that
+  monitor them, describe the local model.
+
+The global model can still be evaluated after training: evaluate tasks such as cross-site evaluation are
+answered by ``trainer.validate()`` after ``fit()``, as shown below.
+
+Each received global model is loaded in place, so the optimizer, LR scheduler, AMP scaler and
+data position carry over between rounds. Rank 0 sends at the end of the sync batch and receives the
+next task at the start of the next batch (or at the end of the epoch, for a sync on an epoch's last
+batch), and every rank loads the next global model there. Validation and other callbacks in between
+run while the server aggregates. ``fit()`` ends when the server stops sending training tasks. When the
+last sync falls between validation intervals, the job ends without a final validation.
+
+This order changes when events are noticed: a shutdown or a pending evaluate task is found only after
+the validation that follows a sync, and a validation that stops training (``EarlyStopping``) or raises
+does so before the next receive.
+
+A train-only job needs no code after ``fit()``. If the job also sends evaluate tasks (cross-site
+evaluation), answer them after ``fit()``. The loop stops on any other task, and rank 0 decides for all
+ranks, since only rank 0 can call ``is_evaluate()``:
+
+.. code-block:: python
+
+    trainer.fit(model, datamodule=dm)
+    while True:
+        evaluate = trainer.global_rank == 0 and flare.is_running() and flare.is_evaluate()
+        if not trainer.strategy.broadcast(evaluate, src=0):
+            break
+        trainer.validate(model, datamodule=dm)
+
+The server's ``num_rounds`` decides how long training runs: step mode lifts the trainer's ``max_epochs``
+and ``max_steps``, so epochs keep cycling the data until the server stops sending training tasks. A site
+that stops on its own (``EarlyStopping``, ``max_time``) sends its open round and leaves without answering
+later rounds. When the FedAvg server sends it a task again, that task fails and the job aborts, because the
+round can no longer reach ``min_clients`` responses. ``min_clients`` is also the number of sites sampled
+per round, so lowering it only avoids the abort while the stopped site is not sampled again. Each site reports N steps per round, so FedAvg weights
+sites equally.
+
+LR schedulers that count optimizer steps (warmup and decay, ``StepLR``, ``ExponentialLR``) work unchanged.
+A scheduler sized from the trainer's run length, such as ``OneCycleLR`` or ``CosineAnnealingLR`` with
+``T_max`` from ``trainer.estimated_stepping_batches``, must be sized for the run the server drives:
+``num_rounds * sync_every_n_steps`` optimizer steps. Pass ``num_rounds`` to the training script, for
+example as a script argument. ``OneCycleLR`` raises once it is stepped past ``total_steps``, and the
+callback logs a warning when training passes the trainer's own limit.
+
+In this mode, ``restore_state`` and ``update_fit_loop`` have no effect, and ``train_with_evaluation``
+is not supported. Optimizer state carries over between rounds only with job lifetime. With task lifetime
+(``launch_once=False``) each round starts a fresh optimizer, so step mode gives no benefit over
+``max_steps=N`` there.
+
+When the script runs in an external process, set ``shutdown_timeout`` (for example 30 seconds) in the
+recipe or ``ScriptRunner``. In step mode the script is still inside ``fit()`` when the job ends, and with
+the default of 0 the process is terminated at once, so the DataLoader workers are killed, a traceback is
+logged, and code after ``fit()`` does not run. With a timeout, ``fit()`` returns and the script ends normally.
+
+Any callback in ``trainer.callbacks`` can define these hooks, in both modes:
+
+* ``on_fl_receive(trainer, pl_module, fl_model)``: before the received model is loaded. Edits to
+  ``fl_model`` change what is loaded, not the copy the Client API keeps for ``DIFF`` transfers.
+* ``on_fl_model_loaded(trainer, pl_module, fl_model)``: after it is loaded.
+* ``on_fl_before_send(trainer, pl_module, fl_model)``: before the model is sent; ``fl_model`` is
+  ``None`` on ranks other than 0.
+
 .. list-table:: HuggingFace APIs
    :widths: 25 25 50
    :header-rows: 1

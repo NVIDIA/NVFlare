@@ -17,6 +17,7 @@ import logging
 import math
 import os
 import re
+import shlex
 import sys
 
 from nvflare.apis.fl_constant import FLContextKey, SystemVarName
@@ -47,16 +48,19 @@ def get_credential_env(job_args: dict) -> dict:
 
 
 def _job_args_str(job_args, arg_names) -> str:
-    result = ""
-    sep = ""
+    tokens = []
     for name in arg_names:
         e = job_args.get(name)
         if not e:
             continue
         n, v = e
-        result += f"{sep}{n} {v}"
-        sep = " "
-    return result
+        tokens.append(str(n))
+        if name == JobProcessArgs.OPTIONS:
+            # OPTIONS is a shell-encoded list of individual --set values.
+            tokens.extend(shlex.split(v, comments=False))
+        else:
+            tokens.append(str(v))
+    return shlex.join(tokens)
 
 
 def get_client_job_args(include_exe_module=True, include_set_options=True):
@@ -90,7 +94,7 @@ def generate_client_command(fl_ctx) -> str:
         raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext")
 
     args_str = _job_args_str(job_args, get_client_job_args())
-    return f"{sys.executable} {args_str}"
+    return f"{shlex.quote(sys.executable)} {args_str}"
 
 
 def get_server_job_args(include_exe_module=True, include_set_options=True):
@@ -124,7 +128,7 @@ def generate_server_command(fl_ctx) -> str:
         raise RuntimeError(f"missing {FLContextKey.JOB_PROCESS_ARGS} in FLContext!")
 
     args_str = _job_args_str(job_args, get_server_job_args())
-    return f"{sys.executable} {args_str}"
+    return f"{shlex.quote(sys.executable)} {args_str}"
 
 
 _LAUNCHER_MODE_KEYS = {"process", "docker", "k8s", "slurm"}

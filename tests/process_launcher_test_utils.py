@@ -26,6 +26,7 @@ import pytest
 
 from nvflare.apis.task_launcher_spec import TaskLaunchRequest
 from tests.local_task_launcher import ProcessTaskHandle, ProcessTaskLauncher
+from tests.timing_utils import PROCESS_STARTUP_TIMEOUT
 
 requires_waitid = pytest.mark.skipif(
     not all(hasattr(os, name) for name in ("waitid", "WNOWAIT", "P_PID", "WEXITED", "WNOHANG", "CLD_EXITED")),
@@ -61,7 +62,7 @@ def _request(tmp_path, attempt_id, code, *args, environment=None):
     )
 
 
-def _wait_for_file(path, timeout=5.0):
+def _wait_for_file(path, timeout=PROCESS_STARTUP_TIMEOUT):
     deadline = time.monotonic() + timeout
     while True:
         try:

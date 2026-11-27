@@ -162,9 +162,6 @@
     "ModelLearnerExecutor": [
         "nvflare.app_common.executors.model_learner_executor"
     ],
-    "MultiProcessExecutor": [
-        "nvflare.app_common.executors.multi_process_executor"
-    ],
     "SplitNNLearnerExecutor": [
         "nvflare.app_common.executors.splitnn_learner_executor"
     ],
@@ -396,35 +393,17 @@
     "FlowerServerConnector": [
         "nvflare.app_opt.flower.connectors.flower_connector"
     ],
-    "GrpcClientConnector": [
-        "nvflare.app_opt.flower.connectors.grpc_client_connector"
+    "HttpClientConnector": [
+        "nvflare.app_opt.flower.connectors.http_client_connector"
     ],
-    "GrpcServerConnector": [
-        "nvflare.app_opt.flower.connectors.grpc_server_connector"
+    "HttpServerConnector": [
+        "nvflare.app_opt.flower.connectors.http_server_connector"
     ],
     "FlowerController": [
         "nvflare.app_opt.flower.controller"
     ],
     "FlowerExecutor": [
         "nvflare.app_opt.flower.executor"
-    ],
-    "MockClientApplet": [
-        "nvflare.app_opt.flower.mock.applet"
-    ],
-    "MockClientPyApplet": [
-        "nvflare.app_opt.flower.mock.applet"
-    ],
-    "MockServerApplet": [
-        "nvflare.app_opt.flower.mock.applet"
-    ],
-    "MockController": [
-        "nvflare.app_opt.flower.mock.controller"
-    ],
-    "MockExecutor": [
-        "nvflare.app_opt.flower.mock.executor"
-    ],
-    "MockPyExecutor": [
-        "nvflare.app_opt.flower.mock.executor"
     ],
     "HECrossSiteModelEval": [
         "nvflare.app_opt.he.cross_site_model_eval"
@@ -465,9 +444,6 @@
     ],
     "PTFileModelPersistor": [
         "nvflare.app_opt.pt.file_model_persistor"
-    ],
-    "PTMultiProcessExecutor": [
-        "nvflare.app_opt.pt.multi_process_executor"
     ],
     "JoblibModelParamPersistor": [
         "nvflare.app_opt.sklearn.joblib_model_param_persistor"

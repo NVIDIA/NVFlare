@@ -30,8 +30,13 @@ from nvflare.apis.task_launcher_spec import TaskLauncherError
 from nvflare.apis.workspace import Workspace
 from nvflare.app_opt.job_launcher.slurm.batch import _submission_argv
 from nvflare.app_opt.job_launcher.slurm.launcher import ClientSlurmJobLauncher
-from nvflare.app_opt.job_launcher.slurm.task_launcher import SlurmTaskLauncher, _SlurmTaskBackend
-from nvflare.app_opt.job_launcher.slurm.task_policy import CJ_LAUNCHER_PATH, TASK_LAUNCHER_PATH, task_resources
+from nvflare.app_opt.job_launcher.slurm.task_launcher import (
+    CJ_LAUNCHER_PATH,
+    TASK_LAUNCHER_PATH,
+    SlurmTaskLauncher,
+    _SlurmTaskBackend,
+    task_resources,
+)
 from nvflare.app_opt.job_launcher.slurm.task_service import ENV_TASK_OWNER, ENV_TASK_TOKEN
 from nvflare.tool.deploy.deploy_common import SLURM_CLIENT_LAUNCHER
 from nvflare.utils.job_launcher_utils import get_resource_manager_spec, normalize_cj_resource_spec
@@ -431,10 +436,15 @@ def test_cj_recovery_requires_proof_for_every_independent_execution(profile, lif
     cell = SimpleNamespace(get_fqcn=lambda: "site-1", register_request_cb=Mock())
     context.set_prop(ReservedKey.ENGINE, SimpleNamespace(get_cell=lambda: cell))
     handle = cj.launch_job({"job_id": "job-1"}, context)
-    assert handle.can_restart() is (lifetime == "job")
     if lifetime == "job":
         assert handle is native
+        assert handle.can_restart() is True
     else:
+        # No worker is outstanding, so the owner settles once CJ death is confirmed.
+        native.can_restart.return_value = False
+        assert handle.can_restart() is False
+        native.can_restart.return_value = True
+        assert handle.can_restart() is True
         handle.terminate()
         handle._terminate_for_heartbeat_cleanup()
         handle.wait()

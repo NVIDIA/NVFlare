@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.flare_api.api_spec import CommandError, MonitorReturnCode, TargetType
 from nvflare.fuel.hci.client.api import ResultKey
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
 
 
 def _make_session():
@@ -100,6 +100,33 @@ class TestGetJobMeta:
         with patch.object(session, "_do_command", return_value=_ok_meta_result({MetaKey.JOB_META: job_meta})):
             result = session.get_job_meta("abc123")
         assert result == job_meta
+
+
+class TestGetResources:
+    @staticmethod
+    def _reply(payload):
+        result = _ok_meta_result()
+        result["data"] = [{ProtoKey.TYPE: ProtoKey.DICT, ProtoKey.DATA: payload}]
+        return result
+
+    def test_job_resources_command_and_site(self):
+        session = _make_session()
+        payload = {"resource_summary": {"job_id": "job-1"}}
+        with patch.object(session, "_do_command", return_value=self._reply(payload)) as mock_cmd:
+            assert session.get_job_resources("job-1", site="site-1") == payload
+        assert split_to_args(mock_cmd.call_args.args[0]) == [
+            AdminCommandNames.GET_JOB_RESOURCES,
+            "job-1",
+            "--site",
+            "site-1",
+        ]
+
+    def test_study_resources_command(self):
+        session = _make_session()
+        payload = {"kind": "nvflare.resource_stats.study_summary"}
+        with patch.object(session, "_do_command", return_value=self._reply(payload)) as mock_cmd:
+            assert session.get_study_resources() == payload
+        mock_cmd.assert_called_once_with(AdminCommandNames.GET_STUDY_RESOURCES, enforce_meta=False)
 
 
 class TestDeleteJob:
@@ -893,3 +920,89 @@ def test_job_log_interface_matches_implementation_signature():
     from nvflare.fuel.flare_api.flare_api import Session
 
     assert signature(SessionSpec.get_job_logs) == signature(Session.get_job_logs)
+
+
+class TestDownloadJobResultOutputsOnly:
+    _JOB_ID = "123e4567-e89b-42d3-a456-426614174000"
+
+    def _download(self, tmp_path, reply=None, **kwargs):
+        location = tmp_path / self._JOB_ID
+        location.mkdir(exist_ok=True)
+        meta = {MetaKey.LOCATION: str(location), **(reply or {})}
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result(meta)) as cmd:
+            path = session.download_job_result(self._JOB_ID, **kwargs)
+        return cmd, path
+
+    _WHOLE = {MetaKey.OUTPUTS_NOTE: "the whole job was downloaded because it produced no output files"}
+
+    _OUTPUTS = {MetaKey.OUTPUTS_ONLY: True}
+
+    def test_sends_outputs_only_as_a_command_property(self, tmp_path):
+        cmd, path = self._download(tmp_path, self._OUTPUTS, outputs_only=True)
+
+        cmd.assert_called_once_with(f"{AdminCommandNames.DOWNLOAD_JOB} {self._JOB_ID}", props={"outputs_only": True})
+        assert path == str(tmp_path / self._JOB_ID)
+
+    def test_default_download_sends_no_property(self, tmp_path):
+        cmd, _ = self._download(tmp_path)
+
+        cmd.assert_called_once_with(f"{AdminCommandNames.DOWNLOAD_JOB} {self._JOB_ID}", props=None)
+
+    def test_shows_the_servers_note(self, tmp_path, caplog):
+        with caplog.at_level("WARNING"):
+            self._download(tmp_path, self._WHOLE, outputs_only=True)
+
+        assert f"Job {self._JOB_ID}: the whole job was downloaded because it produced no output files" in (caplog.text)
+
+    def test_says_nothing_when_the_download_is_what_was_asked_for(self, tmp_path, caplog):
+        with caplog.at_level("INFO"):
+            self._download(tmp_path, self._OUTPUTS, outputs_only=True)
+
+        assert "whole job" not in caplog.text
+
+    def test_a_server_that_ignores_outputs_only_is_reported_as_a_whole_job_download(self, tmp_path):
+        location = tmp_path / self._JOB_ID
+        location.mkdir()
+        session = _make_session()
+        reply = _ok_meta_result({MetaKey.LOCATION: str(location)})  # an older server: no marker, no note
+        with patch.object(session, "_do_command", return_value=reply):
+            _, notice = session._download_job_result(self._JOB_ID, outputs_only=True)
+
+        assert notice == (
+            f"Job {self._JOB_ID}: the whole job was downloaded because the server does not support "
+            "outputs-only downloads."
+        )
+
+    def test_a_full_download_without_the_marker_says_nothing(self, tmp_path):
+        location = tmp_path / self._JOB_ID
+        location.mkdir()
+        session = _make_session()
+        with patch.object(session, "_do_command", return_value=_ok_meta_result({MetaKey.LOCATION: str(location)})):
+            _, notice = session._download_job_result(self._JOB_ID)
+
+        assert notice is None
+
+    def test_internal_download_returns_the_notice(self, tmp_path):
+        location = tmp_path / self._JOB_ID
+        location.mkdir()
+        session = _make_session()
+        reply = _ok_meta_result({MetaKey.LOCATION: str(location), **self._WHOLE})
+        with patch.object(session, "_do_command", return_value=reply):
+            path, notice = session._download_job_result(self._JOB_ID, outputs_only=True)
+
+        assert path == str(location)
+        assert notice.startswith(f"Job {self._JOB_ID}: the whole job was downloaded because")
+
+    def test_warns_when_a_full_download_lacks_the_jobs_stored_outputs(self, tmp_path, caplog):
+        missing = {MetaKey.OUTPUTS_NOTE: "the job's outputs archive cannot be read from the job store"}
+        with caplog.at_level("WARNING"):
+            self._download(tmp_path, missing)
+
+        assert f"Job {self._JOB_ID}: the job's outputs archive cannot be read" in caplog.text
+
+    def test_rejects_a_non_bool_outputs_only(self, tmp_path):
+        from nvflare.fuel.flare_api.api_spec import InvalidArgumentError
+
+        with pytest.raises(InvalidArgumentError):
+            _make_session().download_job_result(self._JOB_ID, outputs_only="yes")

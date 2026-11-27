@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import os
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -2125,6 +2126,35 @@ class TestFedAvgLoadSaveModel:
         assert hasattr(controller, "save_model_file")
         assert hasattr(controller, "load_model_file")
 
+    @pytest.mark.parametrize("save_filename", ["{outside}", "../outside.pt"])
+    @pytest.mark.parametrize("operation", ["load", "save"])
+    def test_rejects_model_paths_outside_run_dir(self, tmp_path, save_filename, operation):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        outside = str(tmp_path / "outside.pt")
+        controller = FedAvg(save_filename=save_filename.format(outside=outside))
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(run_dir))
+
+        with pytest.raises(ValueError, match="save_filename"):
+            if operation == "load":
+                controller.load_model()
+            else:
+                controller.save_model(FLModel(params={}))
+
+    def test_accepts_model_path_under_run_dir(self, tmp_path):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        controller = FedAvg(save_filename="models/model.pt")
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(run_dir))
+        controller.save_model_file = MagicMock()
+        model = FLModel(params={})
+
+        controller.save_model(model)
+
+        controller.save_model_file.assert_called_once_with(model, str(run_dir / "models" / "model.pt"))
+
 
 class TestPTFedAvgModel:
     """Test PTFedAvg model type handling."""
@@ -2231,6 +2261,7 @@ class TestPTFedAvgModelPersistence:
             metrics={"accuracy": 0.85},
         )
         filepath = str(tmp_path / "test_model.pt")
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
 
         # Save and load
         controller.save_model_file(model, filepath)
@@ -2254,12 +2285,118 @@ class TestPTFedAvgModelPersistence:
         params = {"weight": torch.tensor([1.0, 2.0])}
         filepath = str(tmp_path / "model_no_metadata.pt")
         torch.save(params, filepath)
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
 
         # Load without metadata file
         loaded = controller.load_model_file(filepath)
 
         assert torch.equal(loaded.params["weight"], params["weight"])
         assert loaded.metrics is None  # No metadata
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    @pytest.mark.parametrize("operation", ["load", "save"])
+    def test_rejects_metadata_sidecar_symlink_escape(self, tmp_path, operation):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        filepath = tmp_path / "model.pt"
+        torch.save({"weight": torch.tensor([1.0])}, filepath)
+        outside = tmp_path.parent / f"{tmp_path.name}-outside.metadata"
+        outside.write_bytes(b"outside must remain unchanged")
+        metadata = tmp_path / "model.pt.metadata"
+        metadata.symlink_to(outside)
+        controller = PTFedAvg()
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
+
+        with pytest.raises(ValueError, match="model metadata path"):
+            if operation == "load":
+                controller.load_model_file(str(filepath))
+            else:
+                controller.save_model_file(FLModel(params={"weight": torch.tensor([2.0])}), str(filepath))
+        assert outside.read_bytes() == b"outside must remain unchanged"
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_allows_metadata_sidecar_symlink_within_run_directory(self, tmp_path):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        models = tmp_path / "models"
+        metadata = tmp_path / "metadata"
+        models.mkdir()
+        metadata.mkdir()
+        filepath = models / "current.pt"
+        sidecar = models / "current.pt.metadata"
+        sidecar.symlink_to("../metadata/current.metadata")
+        controller = PTFedAvg()
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
+        model = FLModel(params={"weight": torch.tensor([1.0])}, metrics={"accuracy": 0.95})
+
+        controller.save_model_file(model, str(filepath))
+        loaded = controller.load_model_file(str(filepath))
+
+        assert loaded.metrics == {"accuracy": 0.95}
+        assert (metadata / "current.metadata").is_file()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    def test_checkpoint_alias_preserves_its_metadata_sidecar(self, tmp_path):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        target = tmp_path / "target.pt"
+        alias = tmp_path / "current.pt"
+        alias.symlink_to(target)
+        controller = PTFedAvg(save_filename=alias.name)
+        controller.persistor = None
+        controller.get_run_dir = MagicMock(return_value=str(tmp_path))
+        model = FLModel(params={"weight": torch.tensor([1.0])}, metrics={"accuracy": 0.95})
+
+        controller.save_model(model)
+        loaded = controller.load_model()
+
+        assert loaded.metrics == {"accuracy": 0.95}
+        assert (tmp_path / "current.pt.metadata").is_file()
+        assert not (tmp_path / "target.pt.metadata").exists()
+
+    @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlink support required")
+    @pytest.mark.parametrize("metadata_layout", ["target", "both", "neither", "escaping_target"])
+    def test_load_checkpoint_alias_with_legacy_metadata(self, tmp_path, metadata_layout):
+        import torch
+
+        from nvflare.app_opt.pt.fedavg import PTFedAvg
+
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        target = run_dir / "target.pt"
+        alias = run_dir / "current.pt"
+        alias.symlink_to(target.name)
+        controller = PTFedAvg(persistor_id="", save_filename=alias.name)
+        controller.get_run_dir = MagicMock(return_value=str(run_dir))
+        model = FLModel(params={"weight": torch.tensor([1.0])}, metrics={"accuracy": 0.85})
+        # Reproduce the old layout: weights and metadata named after the target.
+        controller.save_model_file(model, str(target))
+        target_metadata = run_dir / "target.pt.metadata"
+        if metadata_layout == "both":
+            model.metrics = {"accuracy": 0.95}
+            controller.save_model(model)
+        elif metadata_layout in {"neither", "escaping_target"}:
+            target_metadata.unlink()
+        if metadata_layout == "escaping_target":
+            outside = tmp_path / "outside.metadata"
+            outside.write_bytes(b"outside must not be deserialized")
+            target_metadata.symlink_to(outside)
+            with patch("nvflare.app_opt.pt.fedavg.fobs.loadf") as load_metadata:
+                with pytest.raises(ValueError, match="model metadata path"):
+                    controller.load_model()
+                load_metadata.assert_not_called()
+            return
+
+        loaded = controller.load_model()
+
+        assert torch.equal(loaded.params["weight"], model.params["weight"])
+        assert loaded.metrics == (None if metadata_layout == "neither" else model.metrics)
 
     def test_run_registers_tensor_decomposer(self):
         """Test that run() registers TensorDecomposer."""
@@ -2379,3 +2516,559 @@ class TestBaseFedAvgMemoryManagement:
         # Can be customized
         controller2 = CyclicController(memory_gc_rounds=3)
         assert controller2._memory_gc_rounds == 3
+
+
+def _steps_result(client, w, steps, ctrl_diff=None):
+    meta = {"client_name": client}
+    if steps is not None:
+        meta[FLMetaKey.NUM_STEPS_CURRENT_ROUND] = steps
+    if ctrl_diff is not None:
+        meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF] = {"w": np.array([ctrl_diff])}
+    return FLModel(params={"w": np.array([w])}, params_type=ParamsType.FULL, current_round=0, meta=meta)
+
+
+def _streaming_fedavg():
+    from nvflare.app_common.aggregators.weighted_aggregation_helper import WeightedAggregationHelper
+
+    controller = FedAvg(num_clients=2)
+    controller._aggr_helper = WeightedAggregationHelper()
+    controller._aggr_metrics_helper = WeightedAggregationHelper()
+    controller.current_round = 0
+    controller.warning = MagicMock()
+    aggregate_one_result = controller._aggregate_one_result
+
+    def receive_reply(result):
+        controller._reply_count += 1
+        return aggregate_one_result(result)
+
+    controller._aggregate_one_result = receive_reply
+    return controller
+
+
+def _base_fedavg():
+    controller = _TestBaseFedAvg()
+    controller.fl_ctx = FLContext()
+    controller.event = lambda _: None
+    controller.fire_event_with_data = lambda *args, **kwargs: None
+    controller.current_round = 0
+    controller.warning = MagicMock()
+    return controller
+
+
+class TestZeroStepResults:
+    def test_streaming_skips_zero_step_site(self):
+        controller = _streaming_fedavg()
+
+        assert controller._aggregate_one_result(_steps_result("site-1", 1.0, 0)) is False
+        assert controller._aggregate_one_result(_steps_result("site-2", 3.0, 10)) is True
+
+        assert controller._get_aggregated_result().params["w"] == pytest.approx([3.0])
+        controller.warning.assert_called_once()
+        assert "site-1" in controller.warning.call_args.args[0]
+        assert "round 0" in controller.warning.call_args.args[0]
+
+    def test_streaming_all_zero_steps_keeps_model(self):
+        controller = _streaming_fedavg()
+        controller._aggregate_one_result(_steps_result("site-1", 1.0, 0))
+        controller._aggregate_one_result(_steps_result("site-2", 3.0, 0.0))
+
+        assert controller._all_results_zero_step()
+        aggr_result = controller._get_aggregated_result()
+        model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, meta={})
+        assert FLModelUtils.update_model(model, aggr_result).params["w"] == pytest.approx([5.0])
+
+    def test_streaming_missing_steps_keeps_weight_one(self):
+        controller = _streaming_fedavg()
+        controller._aggregate_one_result(_steps_result("site-1", 1.0, None))
+        controller._aggregate_one_result(_steps_result("site-2", 3.0, -5))
+
+        assert controller._get_aggregated_result().params["w"] == pytest.approx([2.0])
+        controller.warning.assert_not_called()
+
+    def test_base_aggregate_skips_zero_step_site(self):
+        controller = _base_fedavg()
+
+        aggr_result = controller.aggregate([_steps_result("site-1", 1.0, 0), _steps_result("site-2", 3.0, 2)])
+
+        assert aggr_result.params["w"] == pytest.approx([3.0])
+        assert aggr_result.meta["nr_aggregated"] == 1
+        controller.warning.assert_called_once()
+
+    def test_base_aggregate_all_zero_steps_keeps_model(self):
+        controller = _base_fedavg()
+
+        aggr_result = controller.aggregate([_steps_result("site-1", 1.0, 0), _steps_result("site-2", 3.0, 0)])
+
+        model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, meta={})
+        assert FLModelUtils.update_model(model, aggr_result).params["w"] == pytest.approx([5.0])
+        assert controller.warning.call_count == 3
+
+    def test_scaffold_zero_step_site_does_not_change_control_variates(self):
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        controller = _base_fedavg()
+        aggr_result = controller.aggregate(
+            [_steps_result("site-1", 1.0, 0, ctrl_diff=100.0), _steps_result("site-2", 3.0, 2, ctrl_diff=0.5)],
+            aggregate_fn=scaffold_aggregate_fn,
+        )
+
+        assert aggr_result.meta[AlgorithmConstants.SCAFFOLD_CTRL_DIFF]["w"] == pytest.approx([0.5])
+
+    def test_scaffold_all_zero_steps_has_no_control_delta(self):
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        controller = _base_fedavg()
+        aggr_result = controller.aggregate(
+            [_steps_result("site-1", 1.0, 0, ctrl_diff=100.0)], aggregate_fn=scaffold_aggregate_fn
+        )
+
+        assert aggr_result.meta.get(AlgorithmConstants.SCAFFOLD_CTRL_DIFF, {}) == {}
+
+    def test_base_aggregate_empty_results_keeps_error_path(self):
+        controller = _base_fedavg()
+        controller.exception = MagicMock()
+        controller.panic = MagicMock()
+
+        aggr_result = controller.aggregate([])
+
+        controller.panic.assert_called_once()
+        assert aggr_result.params is None
+        controller.warning.assert_not_called()
+
+    def test_base_aggregate_all_zero_steps_publishes_zero_contribution_stats(self):
+        controller = _base_fedavg()
+        controller.current_round = 3
+
+        controller.aggregate([_steps_result("site-1", 1.0, 0)])
+
+        stats = controller.fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        assert stats[AggregationStatsKey.ROUND] == 3
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 0
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == []
+
+    def test_streaming_all_zero_steps_replaces_previous_round_stats(self):
+        controller = _streaming_fedavg()
+        controller.fl_ctx = FLContext()
+        controller.fl_ctx.set_prop(
+            AppConstants.AGGREGATION_STATS, {AggregationStatsKey.ROUND: 0}, private=True, sticky=False
+        )
+        controller.current_round = 1
+        controller._aggregate_one_result(_steps_result("site-1", 1.0, 0))
+
+        controller._get_aggregated_result()
+
+        stats = controller.fl_ctx.get_prop(AppConstants.AGGREGATION_STATS)
+        assert stats[AggregationStatsKey.ROUND] == 1
+        assert stats[AggregationStatsKey.ACCEPTED_CONTRIBUTIONS] == 0
+        assert stats[AggregationStatsKey.CONTRIBUTORS] == []
+
+    @pytest.mark.parametrize(
+        "meta, expected",
+        [({}, 1.0), ({FLMetaKey.NUM_STEPS_CURRENT_ROUND: None}, 1.0), ({FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0}, 0.0)]
+        + [({FLMetaKey.NUM_STEPS_CURRENT_ROUND: 7}, 7.0)],
+    )
+    def test_num_steps_weight_contract(self, meta, expected):
+        from nvflare.app_common.workflows.base_fedavg import _get_num_steps_weight
+
+        assert _get_num_steps_weight(FLModel(params={"w": 1.0}, meta=meta)) == expected
+
+    def test_base_aggregate_omitted_and_none_steps_weight_one(self):
+        controller = _base_fedavg()
+        explicit_none = _steps_result("site-2", 3.0, None)
+        explicit_none.meta[FLMetaKey.NUM_STEPS_CURRENT_ROUND] = None
+
+        aggr_result = controller.aggregate(
+            [_steps_result("site-1", 1.0, None), explicit_none, _steps_result("site-3", 5.0, 0)]
+        )
+
+        assert aggr_result.params["w"] == pytest.approx([2.0])
+        assert aggr_result.meta["nr_aggregated"] == 2
+
+    def test_streaming_all_empty_zero_step_results_keep_model(self):
+        controller = _streaming_fedavg()
+        for client in ("site-1", "site-2"):
+            result = _steps_result(client, 1.0, 0)
+            result.params = {}
+            assert controller._aggregate_one_result(result) is False
+
+        assert controller._all_results_zero_step()
+        assert controller._get_aggregated_result().params == {}
+
+    def test_streaming_mixed_zero_step_and_rejected_result_fails_round(self):
+        controller = _streaming_fedavg()
+        rejected = _steps_result("site-2", 3.0, 5)
+        rejected.params = {}
+        controller._aggregate_one_result(_steps_result("site-1", 1.0, 0))
+        controller._aggregate_one_result(rejected)
+
+        assert not controller._all_results_zero_step()
+        with pytest.raises(RuntimeError, match="no accepted contributions"):
+            controller._get_aggregated_result()
+
+    def test_aggregate_fn_skips_zero_step_site_with_disjoint_keys(self):
+        trained = FLModel(params={"a": np.array([2.0])}, current_round=0, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 4})
+        skipped = FLModel(params={"b": np.array([9.0])}, current_round=0, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+
+        aggr_result = BaseFedAvg.aggregate_fn([skipped, trained])
+
+        assert set(aggr_result.params) == {"a"}
+        assert aggr_result.params["a"] == pytest.approx([2.0])
+
+    def test_aggregate_fn_all_zero_steps_keeps_model(self):
+        aggr_result = BaseFedAvg.aggregate_fn([_steps_result("site-1", 1.0, 0)])
+
+        model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, meta={})
+        assert FLModelUtils.update_model(model, aggr_result).params["w"] == pytest.approx([5.0])
+
+    def test_scaffold_aggregate_fn_all_zero_steps_keeps_model(self):
+        from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+        aggr_result = scaffold_aggregate_fn([_steps_result("site-1", 1.0, 0, ctrl_diff=1.0)])
+
+        assert aggr_result.params == {}
+        assert aggr_result.meta.get(AlgorithmConstants.SCAFFOLD_CTRL_DIFF, {}) == {}
+
+
+def _process_reply(controller, shareable, client="site-1"):
+    task = Task("train", Shareable())
+    task.set_prop(AppConstants.TASK_PROP_CALLBACK, controller._aggregate_one_result)
+    task.set_prop(AppConstants.META_DATA, {})
+    client_task = ClientTask(Client(client, client), task)
+    client_task.result = shareable
+    controller._process_result(client_task, controller.fl_ctx)
+
+
+def _process_ready_fedavg(**kwargs):
+    controller = _streaming_fedavg()
+    del controller._aggregate_one_result
+    controller.fl_ctx = FLContext()
+    controller.event = lambda _: None
+    controller.info = MagicMock()
+    controller._accept_train_result = lambda **_: True
+    for key, value in kwargs.items():
+        setattr(controller, key, value)
+    return controller
+
+
+class TestZeroStepReviewFollowUps:
+    def test_reply_failing_conversion_is_not_a_zero_step_skip(self):
+        from nvflare.apis.dxo import MetaKey, from_shareable
+
+        controller = _process_ready_fedavg()
+        _process_reply(controller, FLModelUtils.to_shareable(_steps_result("site-1", 1.0, 0)))
+        dxo = from_shareable(FLModelUtils.to_shareable(_steps_result("site-2", 3.0, 5)))
+        dxo.meta[MetaKey.INITIAL_METRICS] = 0.8
+        _process_reply(controller, dxo.to_shareable(), client="site-2")
+
+        assert not controller._all_results_zero_step()
+        with pytest.raises(RuntimeError, match="no accepted contributions"):
+            controller._get_aggregated_result()
+
+    def test_reply_rejected_by_return_code_is_not_a_zero_step_skip(self):
+        controller = _process_ready_fedavg()
+        _process_reply(controller, FLModelUtils.to_shareable(_steps_result("site-1", 1.0, 0)))
+        controller._accept_train_result = lambda **_: False
+        _process_reply(controller, Shareable(), client="site-2")
+
+        assert not controller._all_results_zero_step()
+
+    def test_streaming_zero_step_result_releases_lazy_refs(self):
+        controller = _streaming_fedavg()
+        ref = MagicMock()
+        result = _steps_result("site-1", 1.0, 0)
+        result.params = {"w": ref}
+
+        controller._aggregate_one_result(result)
+
+        ref.release.assert_called_once()
+
+    def test_base_aggregate_zero_step_result_releases_lazy_refs(self):
+        controller = _base_fedavg()
+        ref = MagicMock()
+        skipped = _steps_result("site-1", 1.0, 0)
+        skipped.params = {"w": ref}
+
+        controller.aggregate([skipped, _steps_result("site-2", 3.0, 2)])
+
+        ref.release.assert_called_once()
+
+    def test_update_model_keeps_meta_and_metrics_on_unchanged_result(self):
+        from nvflare.app_common.workflows.base_fedavg import _make_unchanged_model_result
+
+        controller = _base_fedavg()
+        model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, metrics={"acc": 0.9}, meta={"k": 1})
+
+        updated = controller.update_model(model, _make_unchanged_model_result(0))
+
+        assert updated.metrics == {"acc": 0.9}
+        assert updated.meta["k"] == 1
+        assert updated.params["w"] == pytest.approx([5.0])
+
+
+def test_zero_step_array_params_result_is_skipped():
+    controller = _base_fedavg()
+    skipped = FLModel(params=np.array([1.0]), meta={"client_name": "site-1", FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+
+    kept = controller._drop_zero_step_results([skipped, _steps_result("site-2", 3.0, 2)])
+
+    assert len(kept) == 1
+
+
+def _zero_step_reply():
+    return FLModelUtils.to_shareable(
+        FLModel(params={}, params_type=ParamsType.DIFF, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+    )
+
+
+def _unconvertible_reply():
+    from nvflare.apis.dxo import MetaKey, from_shareable
+
+    dxo = from_shareable(
+        FLModelUtils.to_shareable(
+            FLModel(
+                params={"w": np.array([1.0])}, params_type=ParamsType.DIFF, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 5}
+            )
+        )
+    )
+    dxo.meta[MetaKey.INITIAL_METRICS] = 0.8
+    return dxo.to_shareable()
+
+
+def _wire_controller(controller, replies, model):
+    clients = [f"site-{i + 1}" for i in range(len(replies))]
+    controller.fl_ctx = FLContext()
+    controller.abort_signal = Signal()
+    controller.engine = MagicMock(get_clients=lambda: clients)
+    controller.event = lambda *_: None
+    controller.fire_event_with_data = lambda *_: None
+    controller.info = MagicMock()
+    controller.warning = MagicMock()
+    controller.sample_clients = lambda _: clients
+    controller.load_model = lambda: model
+    controller.save_model = MagicMock()
+    controller._accept_train_result = lambda result, **_: result.get_return_code() in (None, "OK")
+
+    def broadcast_and_wait(task, fl_ctx, targets=None, **_):
+        for name, reply in zip(clients, replies):
+            client_task = ClientTask(Client(name, name), task)
+            client_task.result = reply
+            task.result_received_cb(client_task, fl_ctx)
+
+    controller.broadcast_and_wait = broadcast_and_wait
+    controller.broadcast = broadcast_and_wait
+    return controller
+
+
+class TestServerOwnedZeroStepDecision:
+    def test_scaffold_run_fails_zero_step_round_with_unconvertible_reply(self):
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        model = FLModel(params={"w": np.array([1.0])}, params_type=ParamsType.FULL, meta={})
+        controller = _wire_controller(
+            Scaffold(num_clients=2, num_rounds=1, persistor_id=""), [_zero_step_reply(), _unconvertible_reply()], model
+        )
+        controller.model = model
+        controller._global_ctrl_weights = {"w": np.array([0.0])}
+
+        with pytest.raises(RuntimeError, match="no accepted contributions"):
+            controller.run()
+        controller.save_model.assert_not_called()
+
+    def test_fedavg_lr_run_fails_zero_step_round_with_unconvertible_reply(self):
+        from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
+
+        model = FLModel(params={"w": np.array([1.0, 2.0, 3.0])}, params_type=ParamsType.FULL, meta={})
+        controller = _wire_controller(
+            FedAvgLR(num_clients=2, num_rounds=1, damping_factor=0.5, epsilon=1.0, n_features=2),
+            [_zero_step_reply(), _unconvertible_reply()],
+            model,
+        )
+
+        with pytest.raises(RuntimeError, match="no accepted contributions"):
+            controller.run()
+        controller.save_model.assert_not_called()
+
+    def test_fedavg_run_ignores_client_unchanged_flag_from_custom_aggregator(self):
+        class PickFirst(ModelAggregator):
+            def __init__(self):
+                super().__init__()
+                self.picked = None
+
+            def accept_model(self, model):
+                self.picked = self.picked or model
+
+            def aggregate_model(self):
+                picked, self.picked = self.picked, None
+                return picked
+
+            def reset_stats(self):
+                self.picked = None
+
+        model = FLModel(params={"w": np.array([0.0])}, params_type=ParamsType.FULL, meta={})
+        reply = FLModelUtils.to_shareable(
+            FLModel(
+                params={"w": np.array([9.0])},
+                params_type=ParamsType.FULL,
+                meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 5, "fedavg_unchanged_model": True},
+            )
+        )
+        controller = _wire_controller(FedAvg(num_clients=1, num_rounds=1, aggregator=PickFirst()), [reply], model)
+        controller.persistor = None
+        controller.get_num_standing_tasks = lambda: 0
+
+        controller.run()
+
+        controller.save_model.assert_called_once()
+        assert controller.save_model.call_args.args[0].params["w"] == pytest.approx([9.0])
+
+
+@pytest.mark.parametrize("fn_name", ["base", "scaffold"])
+def test_direct_aggregate_fn_then_update_model_keeps_model_on_all_zero_round(fn_name):
+    from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+    from nvflare.app_common.workflows.scaffold import scaffold_aggregate_fn
+
+    fn = BaseFedAvg.aggregate_fn if fn_name == "base" else scaffold_aggregate_fn
+    controller = _base_fedavg()
+    controller.fl_ctx = FLContext()
+    controller.event = lambda *_: None
+    model = FLModel(params={"w": np.array([5.0])}, params_type=ParamsType.FULL, metrics={"acc": 0.9}, meta={"k": 1})
+    zero = FLModel(params={"w": np.array([1.0])}, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+
+    updated = controller.update_model(model, fn([zero]))
+
+    assert updated.params["w"] == pytest.approx([5.0])
+    assert updated.metrics == {"acc": 0.9}
+
+
+def _reply(params, steps, meta=None):
+    meta = {FLMetaKey.NUM_STEPS_CURRENT_ROUND: steps, **(meta or {})}
+    return FLModelUtils.to_shareable(FLModel(params=params, params_type=ParamsType.DIFF, meta=meta))
+
+
+def _wire_batches(controller, batches, model):
+    _wire_controller(controller, [None], model)
+    pending = list(batches)
+
+    def broadcast_and_wait(task, fl_ctx, targets=None, **_):
+        for i, reply in enumerate(pending.pop(0)):
+            client_task = ClientTask(Client(f"site-{i + 1}", f"site-{i + 1}"), task)
+            client_task.result = reply
+            task.result_received_cb(client_task, fl_ctx)
+
+    controller.broadcast_and_wait = broadcast_and_wait
+    return controller
+
+
+def _validate_before_train(controller):
+    send = controller.send_model_and_wait
+
+    def send_with_validation(task_name="train", data=None, **kwargs):
+        if task_name == "train":
+            send(task_name="validate", data=data, **kwargs)
+        return send(task_name=task_name, data=data, **kwargs)
+
+    controller.send_model_and_wait = send_with_validation
+
+
+_VALIDATION = FLModelUtils.to_shareable(FLModel(params={}, metrics={"acc": 0.5}))
+
+
+class TestPerBatchReplyCount:
+    def test_scaffold_run_with_validation_before_training(self):
+        from nvflare.app_common.workflows.scaffold import Scaffold
+
+        model = FLModel(params={"w": np.array([1.0])}, params_type=ParamsType.FULL, meta={})
+        ctrl = {AlgorithmConstants.SCAFFOLD_CTRL_DIFF: {"w": np.array([0.5])}}
+        controller = _wire_batches(
+            Scaffold(num_clients=1, num_rounds=2, persistor_id=""),
+            [[_VALIDATION], [_reply({}, 0)], [_VALIDATION], [_reply({"w": np.array([2.0])}, 3, ctrl)]],
+            model,
+        )
+        controller.model = model
+        controller._global_ctrl_weights = {"w": np.array([0.0])}
+        _validate_before_train(controller)
+
+        controller.run()
+
+        assert controller.save_model.call_count == 2
+        assert controller.model.params["w"] == pytest.approx([3.0])
+        assert controller._global_ctrl_weights["w"] == pytest.approx([0.5])
+
+    def test_fedavg_lr_run_with_validation_before_training(self):
+        from nvflare.app_common.np.constants import NPConstants
+        from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
+
+        model = FLModel(params={NPConstants.NUMPY_KEY: np.zeros(3)}, params_type=ParamsType.FULL, meta={})
+        trained = {"gradient": np.ones(3), "hessian": np.eye(3)}
+        controller = _wire_batches(
+            FedAvgLR(num_clients=1, num_rounds=2, damping_factor=1.0, epsilon=1.0, n_features=2),
+            [[_VALIDATION], [_reply({}, 0)], [_VALIDATION], [_reply(trained, 3)]],
+            model,
+        )
+        _validate_before_train(controller)
+
+        controller.run()
+
+        assert controller.save_model.call_count == 2
+        assert not np.allclose(controller.save_model.call_args.args[0].params[NPConstants.NUMPY_KEY], 0.0)
+
+    def test_aggregate_uses_train_batch_count_after_later_validation(self):
+        model = FLModel(params={"w": np.array([1.0])}, params_type=ParamsType.FULL, meta={})
+        controller = _wire_batches(_base_fedavg(), [[_reply({}, 0)], [_VALIDATION]], model)
+
+        train_results = controller.send_model_and_wait(task_name="train", data=model)
+        controller.send_model_and_wait(task_name="validate", data=model)
+        aggr = controller.aggregate(train_results)
+
+        assert controller.update_model(model, aggr).params["w"] == pytest.approx([1.0])
+
+    def test_zero_step_and_rejected_reply_in_batch_still_fails(self):
+        model = FLModel(params={"w": np.array([1.0])}, params_type=ParamsType.FULL, meta={})
+        controller = _wire_batches(_base_fedavg(), [[_reply({}, 0), _unconvertible_reply()]], model)
+
+        results = controller.send_model_and_wait(task_name="train", data=model)
+
+        with pytest.raises(RuntimeError, match="no accepted contributions"):
+            controller.aggregate(results)
+
+
+class TestNoStaleKeepModel:
+    def test_base_direct_update_after_all_zero_round_is_applied(self):
+        from nvflare.app_common.workflows.base_fedavg import BaseFedAvg
+
+        controller = _base_fedavg()
+        controller.fl_ctx = FLContext()
+        controller.event = lambda *_: None
+        model = FLModel(params={"w": np.array([1.0])}, params_type=ParamsType.FULL, meta={})
+
+        model = controller.update_model(model, controller.aggregate([_steps_result("site-1", 7.0, 0)]))
+        assert model.params["w"] == pytest.approx([1.0])
+        model = controller.update_model(model, BaseFedAvg.aggregate_fn([_steps_result("site-1", 5.0, 5)]))
+
+        assert model.params["w"] == pytest.approx([5.0])
+
+    def test_lr_direct_update_after_all_zero_round_is_applied(self):
+        from nvflare.app_common.np.constants import NPConstants
+        from nvflare.app_common.workflows.lr.fedavg import FedAvgLR
+
+        controller = FedAvgLR(num_clients=1, num_rounds=1, damping_factor=1.0, epsilon=1.0, n_features=2)
+        controller.fl_ctx = FLContext()
+        controller.event = lambda *_: None
+        controller.info = MagicMock()
+        controller.warning = MagicMock()
+        controller.current_round = 0
+        model = FLModel(params={NPConstants.NUMPY_KEY: np.zeros(3)}, params_type=ParamsType.FULL, meta={})
+        zero = FLModel(params={}, params_type=ParamsType.DIFF, meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 0})
+        trained = FLModel(
+            params={"gradient": np.ones(3), "hessian": np.eye(3)},
+            params_type=ParamsType.DIFF,
+            meta={FLMetaKey.NUM_STEPS_CURRENT_ROUND: 5},
+        )
+
+        model = controller.update_model(
+            model, controller.aggregate([zero], aggregate_fn=controller.newton_raphson_aggregator_fn)
+        )
+        np.testing.assert_array_equal(model.params[NPConstants.NUMPY_KEY], np.zeros(3))
+        model = controller.update_model(model, controller.newton_raphson_aggregator_fn([trained]))
+
+        assert not np.allclose(model.params[NPConstants.NUMPY_KEY], 0.0)

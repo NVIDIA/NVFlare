@@ -49,6 +49,7 @@
 - [Preflight Check](user_guide/nvflare_cli/preflight_check.md): Validate system readiness before launch.
 - [System Configuration](user_guide/admin_guide/configurations/system_configuration.md): Configure runtime system behavior.
 - [Monitoring](user_guide/admin_guide/monitoring.md): Monitor running federated learning systems.
+- [Resource Statistics](user_guide/admin_guide/resource_statistics.md): Inspect final job and study measurements, how they are collected, and their limits.
 
 ## Security And Compliance
 

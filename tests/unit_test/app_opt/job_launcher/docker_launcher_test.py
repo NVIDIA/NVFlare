@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 import os
 import sys
 import threading
@@ -64,27 +63,17 @@ _docker_models_containers.RUN_HOST_CONFIG_KWARGS = ["shm_size", "ipc_mode", "dev
 _docker_models.containers = _docker_models_containers
 _docker_mock.models = _docker_models
 
-for _mod_name, _mod_obj in [
-    ("docker", _docker_mock),
-    ("docker.errors", _docker_errors),
-    ("docker.types", _docker_types),
-    ("docker.models", _docker_models),
-    ("docker.models.containers", _docker_models_containers),
-]:
-    sys.modules[_mod_name] = _mod_obj
-
-# Patch docker.from_env and docker.errors at import time so DockerJobLauncher.__init__
-# doesn't actually try to connect to the Docker daemon.
 _docker_mock.from_env = MagicMock
 
 from nvflare.apis.app_validation import AppValidationKey
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_launcher_spec import JobProcessArgs, JobProcessEnv, JobReturnCode
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 from nvflare.app_common.resource_managers.passthrough_resource_manager import PassthroughResourceManager
+from nvflare.app_opt.job_launcher import docker_launcher as docker_module
 from nvflare.app_opt.job_launcher.docker_launcher import (
     ClientDockerJobLauncher,
     DockerJobHandle,
@@ -96,6 +85,24 @@ from nvflare.app_opt.job_launcher.docker_launcher import (
 )
 from nvflare.utils.job_launcher_utils import get_resource_manager_spec
 from tests.timing_utils import isolate_time
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _isolated_docker_boundary():
+    # Scope the stub to this suite, including when another suite imported the
+    # launcher first. Collection must not replace the SDK for unrelated tests.
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(docker_module, "docker", _docker_mock)
+        for name, module in (
+            ("docker", _docker_mock),
+            ("docker.errors", _docker_errors),
+            ("docker.types", _docker_types),
+            ("docker.models", _docker_models),
+            ("docker.models.containers", _docker_models_containers),
+        ):
+            patcher.setitem(sys.modules, name, module)
+        yield
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -909,182 +916,6 @@ class TestDockerJobLauncherLaunchJob:
             launcher.launch_job(_make_job_meta(job_id="../other"), fl_ctx)
 
         dc.containers.run.assert_not_called()
-
-    def test_launch_study_data_mounts_nested_datasets(self):
-        launcher = _make_launcher()
-        dc = launcher._docker_client
-        container = MagicMock()
-        container.id = "abc123"
-        dc.containers.run.return_value = container
-        dc.containers.get.return_value = _make_container("running")
-        study_data = {
-            "study-a": {
-                "training": {"source": "/data/train", "mode": "ro"},
-                "output": {"source": "/data/out", "mode": "rw"},
-            }
-        }
-
-        fl_ctx, _ = _make_fl_ctx()
-        with patch(
-            "nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data
-        ) as mock_load:
-            with patch(
-                "nvflare.app_opt.job_launcher.docker_launcher.os.path.exists",
-                side_effect=lambda path: not path.endswith("study_runtime.yaml"),
-            ):
-                launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
-
-        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml", logger=launcher.logger)
-        call_kwargs = dc.containers.run.call_args[1]
-        assert call_kwargs["command"] == [
-            "/usr/local/bin/python",
-            "-u",
-            "-m",
-            "nvflare.private.fed.app.client.worker_process",
-            "-w",
-            "/ws",
-            "-s",
-            "/ws/startup",
-            "-u",
-            "tcp://site-1:8002",
-        ]
-        assert call_kwargs["working_dir"] == "/var/tmp/nvflare/workspace/job-1"
-
-        mounts_by_target = _mounts_by_target(call_kwargs["mounts"])
-        assert mounts_by_target["/data/study-a/training"] == {
-            "Target": "/data/study-a/training",
-            "Source": "/data/train",
-            "Type": "bind",
-            "ReadOnly": True,
-        }
-        assert mounts_by_target["/data/study-a/output"] == {
-            "Target": "/data/study-a/output",
-            "Source": "/data/out",
-            "Type": "bind",
-            "ReadOnly": False,
-        }
-
-    def test_launch_study_data_mounts_same_source_to_multiple_targets(self):
-        launcher = _make_launcher()
-        dc = launcher._docker_client
-        container = MagicMock()
-        container.id = "abc123"
-        dc.containers.run.return_value = container
-        dc.containers.get.return_value = _make_container("running")
-        study_data = {
-            "study-a": {
-                "training": {"source": "/data/shared", "mode": "ro"},
-                "validation": {"source": "/data/shared", "mode": "ro"},
-            }
-        }
-
-        fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
-            launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
-
-        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
-        assert mounts_by_target["/data/study-a/training"]["Source"] == "/data/shared"
-        assert mounts_by_target["/data/study-a/validation"]["Source"] == "/data/shared"
-
-    def test_launch_study_data_host_source_is_not_prechecked_from_parent_container(self):
-        launcher = _make_launcher()
-        dc = launcher._docker_client
-        container = MagicMock()
-        container.id = "abc123"
-        dc.containers.run.return_value = container
-        dc.containers.get.return_value = _make_container("running")
-        study_data = {"study-a": {"training": {"source": "/host/not-mounted-in-parent", "mode": "ro"}}}
-
-        def _exists(path):
-            if path.endswith("study_runtime.yaml"):
-                return False
-            raise AssertionError("host source should be left for Docker to validate")
-
-        fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
-            with patch("nvflare.app_opt.job_launcher.docker_launcher.os.path.exists", side_effect=_exists):
-                launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
-
-        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
-        assert mounts_by_target["/data/study-a/training"] == {
-            "Target": "/data/study-a/training",
-            "Source": "/host/not-mounted-in-parent",
-            "Type": "bind",
-            "ReadOnly": True,
-        }
-
-    def test_launch_default_study_without_mapping_does_not_mount_data(self):
-        launcher = _make_launcher()
-        dc = launcher._docker_client
-        container = MagicMock()
-        container.id = "abc123"
-        dc.containers.run.return_value = container
-        dc.containers.get.return_value = _make_container("running")
-
-        fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value={}) as mock_load:
-            launcher.launch_job(_make_job_meta(study="default"), fl_ctx)
-
-        mock_load.assert_called_once_with("/var/tmp/nvflare/workspace/local/study_data.yaml", logger=launcher.logger)
-        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
-        assert set(mounts_by_target) == {
-            "/var/tmp/nvflare/workspace",
-            "/var/tmp/nvflare/workspace/startup/client.crt",
-            "/var/tmp/nvflare/workspace/startup/fed_client.json",
-            "/var/tmp/nvflare/workspace/startup/rootCA.pem",
-            "/var/tmp/nvflare/workspace/local",
-            "/var/tmp/nvflare/workspace/job-1",
-        }
-
-    def test_launch_default_study_mounts_default_mapping_when_present(self):
-        launcher = _make_launcher()
-        dc = launcher._docker_client
-        container = MagicMock()
-        container.id = "abc123"
-        dc.containers.run.return_value = container
-        dc.containers.get.return_value = _make_container("running")
-        study_data = {"default": {"training": {"source": "/data/default-train", "mode": "ro"}}}
-
-        fl_ctx, _ = _make_fl_ctx()
-        with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
-            with patch(
-                "nvflare.app_opt.job_launcher.docker_launcher.os.path.exists",
-                side_effect=lambda path: not path.endswith("study_runtime.yaml"),
-            ):
-                launcher.launch_job(_make_job_meta(study="default"), fl_ctx)
-
-        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
-        assert mounts_by_target["/data/default/training"] == {
-            "Target": "/data/default/training",
-            "Source": "/data/default-train",
-            "Type": "bind",
-            "ReadOnly": True,
-        }
-
-    def test_launch_omits_data_mount_when_study_mapping_is_missing(self, caplog):
-        launcher = _make_launcher()
-        dc = launcher._docker_client
-        container = MagicMock()
-        container.id = "abc123"
-        dc.containers.run.return_value = container
-        dc.containers.get.return_value = _make_container("running")
-        study_data = {"other-study": {"training": {"source": "/data/train", "mode": "ro"}}}
-
-        fl_ctx, _ = _make_fl_ctx()
-        with caplog.at_level(logging.WARNING):
-            with patch("nvflare.app_opt.job_launcher.docker_launcher.load_study_data_file", return_value=study_data):
-                launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
-
-        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
-        assert set(mounts_by_target) == {
-            "/var/tmp/nvflare/workspace",
-            "/var/tmp/nvflare/workspace/startup/client.crt",
-            "/var/tmp/nvflare/workspace/startup/fed_client.json",
-            "/var/tmp/nvflare/workspace/startup/rootCA.pem",
-            "/var/tmp/nvflare/workspace/local",
-            "/var/tmp/nvflare/workspace/job-1",
-        }
-        assert "has no entry for study 'study-a'" in caplog.text
 
     def test_launch_no_docker_socket_in_job_container(self):
         """Job containers must never receive the Docker socket."""
@@ -1992,15 +1823,37 @@ class TestDockerJobLauncherStudyRuntime:
             launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
         dc.containers.run.assert_not_called()
 
-    def test_conflicts_with_v1_file(self, tmp_path):
-        self._write_study_runtime(tmp_path, "format_version: 2\nstudies: {}\n")
+    @pytest.mark.parametrize("with_runtime_file", [False, True])
+    def test_rejects_legacy_study_data_file(self, tmp_path, with_runtime_file):
+        if with_runtime_file:
+            self._write_study_runtime(tmp_path, "format_version: 2\nstudies: {}\n")
+        (tmp_path / "local").mkdir(parents=True, exist_ok=True)
         (tmp_path / "local" / "study_data.yaml").write_text("study-a: {}\n", encoding="utf-8")
         launcher, dc = self._make_v2_launcher(tmp_path)
 
         fl_ctx, _ = _make_fl_ctx()
-        with pytest.raises(RuntimeError, match="cannot be combined"):
+        with pytest.raises(RuntimeError, match="no longer supported"):
             launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
         dc.containers.run.assert_not_called()
+
+    def test_same_source_mounts_to_multiple_targets(self, tmp_path):
+        self._write_study_runtime(
+            tmp_path,
+            "format_version: 2\n"
+            "studies:\n"
+            "  study-a:\n"
+            "    datasets:\n"
+            "      training: {source: /data/shared, mode: ro}\n"
+            "      validation: {source: /data/shared, mode: ro}\n",
+        )
+        launcher, dc = self._make_v2_launcher(tmp_path)
+
+        fl_ctx, _ = _make_fl_ctx()
+        launcher.launch_job(_make_job_meta(study="study-a"), fl_ctx)
+
+        mounts_by_target = _mounts_by_target(dc.containers.run.call_args[1]["mounts"])
+        assert mounts_by_target["/data/study-a/training"]["Source"] == "/data/shared"
+        assert mounts_by_target["/data/study-a/validation"]["Source"] == "/data/shared"
 
     def test_rejects_pod_template(self, tmp_path):
         self._write_study_runtime(
@@ -2017,8 +1870,8 @@ class TestDockerJobLauncherStudyRuntime:
 
 def test_local_job_mode_still_delegates_to_docker_launcher():
     launcher = _make_launcher()
-    context = MagicMock()
-    context.get_identity_name.return_value = "site-1"
+    context = FLContext()
+    context.set_prop(ReservedKey.IDENTITY_NAME, "site-1")
     meta = {"resource_spec": {"site-1": {"num_of_gpus": 1}}}
     with patch.object(DockerJobLauncher, "launch_job", return_value="job-handle") as launch:
         assert launcher.launch_job(meta, context) == "job-handle"
