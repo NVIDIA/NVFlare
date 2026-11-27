@@ -186,6 +186,15 @@ def test_receive_idle_timeout_closes_server_connection_and_reconnects(scheme, mo
 
         client_conn_manager.process_frame = ignore_server_ping
         assert dropped_ping.wait(3), f"{scheme} server did not send a heartbeat"
+
+        if scheme in ("grpc", "agrpc", "http"):
+            # These transports cannot report receive progress for large
+            # in-flight frames, so the idle timeout is intentionally disabled.
+            time.sleep(1.2)
+            assert EndpointState.DISCONNECTED not in states["server"], states
+            assert states["server"][-1] == EndpointState.READY, states
+            return
+
         assert wait_for(lambda: EndpointState.DISCONNECTED in states["server"]), states
 
         # Let the active connector retry and verify the closed server-side

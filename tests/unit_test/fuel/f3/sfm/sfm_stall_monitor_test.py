@@ -48,8 +48,8 @@ class FakeConnObj:
         self.force_close_called = threading.Event()
 
         def force_close():
-            self.force_close_called.set()
             self.close()
+            self.force_close_called.set()
 
         self.force_close = MagicMock(side_effect=force_close)
 
