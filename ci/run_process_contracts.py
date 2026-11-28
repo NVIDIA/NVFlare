@@ -37,6 +37,7 @@ TESTS = (
     "tests/integration_test/fast/fedbuff_optional_import_test.py",
     "tests/integration_test/fast/grpc_peer_identity_test.py",
     "tests/integration_test/fast/flower_http_transport_test.py",
+    "tests/integration_test/fast/f3_heartbeat_backpressure_test.py",
     "tests/integration_test/fast/hf_distributed_contract_test.py",
     "tests/integration_test/fast/http_frame_size_test.py",
     "tests/integration_test/fast/job_cert_binding_live_test.py",

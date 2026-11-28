@@ -452,6 +452,8 @@ class FileConnection(Connection):
                             break
 
                 frames = self.reader.read_frames()
+                if self.reader.progressed:
+                    self.report_receive_progress()
                 if frames:
                     self.received_anything = True
                     peer_seen = now
@@ -476,6 +478,8 @@ class FileConnection(Connection):
         quiet_polls = 0
         while quiet_polls < DRAIN_GRACE_POLLS:
             frames = self.reader.read_frames()
+            if self.reader.progressed:
+                self.report_receive_progress()
             if frames:
                 self.received_anything = True
                 for frame in frames:
@@ -550,7 +554,11 @@ class FileDriver(BaseDriver):
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
-        return {DriverCap.SEND_HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: False}
+        return {
+            DriverCap.SEND_HEARTBEAT.value: True,
+            DriverCap.REPORT_RECEIVE_PROGRESS.value: True,
+            DriverCap.SUPPORT_SSL.value: False,
+        }
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):

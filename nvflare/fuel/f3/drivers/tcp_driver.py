@@ -90,7 +90,11 @@ class TcpDriver(BaseDriver):
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
-        return {DriverCap.SEND_HEARTBEAT.value: True, DriverCap.SUPPORT_SSL.value: True}
+        return {
+            DriverCap.SEND_HEARTBEAT.value: True,
+            DriverCap.REPORT_RECEIVE_PROGRESS.value: True,
+            DriverCap.SUPPORT_SSL.value: True,
+        }
 
     def listen(self, connector: ConnectorInfo):
         self.connector = connector
