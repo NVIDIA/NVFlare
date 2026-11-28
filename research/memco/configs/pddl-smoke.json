@@ -1,0 +1,17 @@
+{
+  "job_name": "memco-pddl-smoke",
+  "dataset_family": "pddl",
+  "domains": ["gripper", "blockworld"],
+  "data_root": "/path/to/data-root",
+  "output_root": "artifacts/pddl",
+  "server_output_directory": "artifacts/pddl/server",
+  "model": "gpt-4o-mini",
+  "promotion_policy": "wilson",
+  "promotion_threshold": 0.35,
+  "wilson_alpha": 0.05,
+  "wilson_threshold": 0.35,
+  "max_train_tasks": 2,
+  "max_evaluate_tasks": 1,
+  "max_trials": 30,
+  "call_timeout": 600
+}

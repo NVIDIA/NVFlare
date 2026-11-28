@@ -1,0 +1,18 @@
+{
+  "job_name": "memco-alfworld",
+  "dataset_family": "alfworld",
+  "data_root": "/path/to/nvdamasgm",
+  "alfworld_game_root": "/bigdata/siyan/projects/nvdamas/data/alfworld/alfworld_official_042/json_2.1.1",
+  "output_root": "artifacts/alfworld",
+  "server_output_directory": "artifacts/alfworld/server",
+  "model": "gpt-4o-mini",
+  "promotion_threshold": 0.35,
+  "promotion_policy": "wilson",
+  "wilson_alpha": 0.05,
+  "wilson_threshold": 0.35,
+  "max_train_tasks": 0,
+  "max_evaluate_tasks": 0,
+  "max_trials": 30,
+  "batch_size": 10,
+  "call_timeout": 86400
+}
