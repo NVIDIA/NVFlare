@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, SecureTrainConst, SiteType
+from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, SecureTrainConst, SiteType, SystemComponents
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.data_event.data_bus import DataBus
 from nvflare.fuel.data_event.utils import get_scope_property
@@ -159,6 +159,26 @@ def test_client_configer_points_job_process_at_job_credential(tmp_path, job_id, 
     else:
         assert client[SecureTrainConst.SSL_CERT] == os.path.join(startup, "client.crt")
         assert client[SecureTrainConst.PRIVATE_KEY] == os.path.join(startup, "client.key")
+
+
+@pytest.mark.parametrize(
+    ("job_id", "expected_ids"), [(None, ["resource_manager", "resource_consumer", "other"]), ("job-1", ["other"])]
+)
+def test_client_job_process_skips_resource_manager_and_consumer(job_id, expected_ids):
+    # The job process runs with a CUDA_VISIBLE_DEVICES mask holding only the job's GPUs,
+    # so it must not rebuild the site's resource manager (and consumer).
+    configer = FLClientStarterConfiger.__new__(FLClientStarterConfiger)
+    configer.args = SimpleNamespace(job_id=job_id)
+    configer.components = {}
+    configer.handlers = []
+    ids = [SystemComponents.RESOURCE_MANAGER, SystemComponents.RESOURCE_CONSUMER, "other"]
+
+    with patch.object(FLClientStarterConfiger, "build_component", side_effect=lambda element: element["id"]):
+        for i, cid in enumerate(ids):
+            node = SimpleNamespace(element={"id": cid, "path": "x.Component"}, path=lambda i=i: f"components.#{i}")
+            configer.process_config_element(MagicMock(), node)
+
+    assert list(configer.components) == expected_ids
 
 
 @pytest.mark.parametrize("security", [ConnectionSecurity.CLEAR, ConnectionSecurity.TLS, ConnectionSecurity.MTLS])

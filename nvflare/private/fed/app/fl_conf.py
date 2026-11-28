@@ -20,7 +20,14 @@ import re
 import sys
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ConnectionSecurity, ConnPropKey, FilterKey, SiteType, SystemConfigs
+from nvflare.apis.fl_constant import (
+    ConnectionSecurity,
+    ConnPropKey,
+    FilterKey,
+    SiteType,
+    SystemComponents,
+    SystemConfigs,
+)
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.data_event.utils import set_scope_property
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -209,6 +216,10 @@ class FLServerStarterConfiger(JsonConfigurator):
         )
 
 
+# Components that only the client parent process uses (job scheduling and launching).
+_CLIENT_PARENT_ONLY_COMPONENTS = (SystemComponents.RESOURCE_MANAGER, SystemComponents.RESOURCE_CONSUMER)
+
+
 class FLClientStarterConfiger(JsonConfigurator):
     """FL Client startup configure."""
 
@@ -272,8 +283,14 @@ class FLClientStarterConfiger(JsonConfigurator):
             return
 
         if re.search(r"^components\.#[0-9]+$", path):
-            c = self.build_component(element)
             cid = element.get("id", None)
+            if self.args.job_id and cid in _CLIENT_PARENT_ONLY_COMPONENTS:
+                # Only the client parent schedules and launches jobs. The job process gets a
+                # CUDA_VISIBLE_DEVICES mask with just the job's GPUs, so building the site's
+                # GPUResourceManager there would check the whole pool against that mask and fail.
+                return
+
+            c = self.build_component(element)
             if not cid:
                 raise ConfigError("missing component id")
 
