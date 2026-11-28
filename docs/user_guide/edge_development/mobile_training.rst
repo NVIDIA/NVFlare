@@ -52,18 +52,16 @@ Use the ``ETFedBuffRecipe`` to create a federated training job for mobile device
 .. code-block:: python
 
    recipe = ETFedBuffRecipe(
-       job_name=job_name,
+       name=job_name,
+       num_rounds=3 - 1,  # Preserve the version-3 stop.
+       buffer_size=total_num_of_devices,
+       concurrency=total_num_of_devices,
+       min_open_slots=total_num_of_devices,
        device_model=device_model,
        input_shape=input_shape,
        output_shape=output_shape,
        model_manager_config=ModelManagerConfig(
-           max_model_version=3,
            update_timeout=1000.0,
-           num_updates_for_model=total_num_of_devices,
-       ),
-       device_manager_config=DeviceManagerConfig(
-           device_selection_size=total_num_of_devices,
-           min_hole_to_fill=total_num_of_devices,
        ),
        evaluator_config=evaluator_config,
        simulation_config=(
@@ -76,6 +74,8 @@ Use the ``ETFedBuffRecipe`` to create a federated training job for mobile device
        ),
        device_training_params={"epoch": 3, "lr": 0.0001, "batch_size": batch_size},
    )
+
+See :ref:`edge-fedbuff-naming` for shared keyword names, compatibility, and Edge semantics.
 
 Key parameters:
 

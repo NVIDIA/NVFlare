@@ -1259,16 +1259,19 @@ EdgeFedBuffRecipe
     from nvflare.edge.tools.edge_fed_buff_recipe import (
         EdgeFedBuffRecipe,
         ModelManagerConfig,
-        DeviceManagerConfig,
     )
 
     recipe = EdgeFedBuffRecipe(
-        job_name="edge-fedavg",
+        name="edge-fedavg",
+        num_rounds=20 - 1,  # Preserve the version-20 stop.
+        buffer_size=100,
+        concurrency=100,
         model=MyModel(),
-        model_manager_config=ModelManagerConfig(max_num_active_model_versions=3, max_model_version=20),
-        device_manager_config=DeviceManagerConfig(device_selection_size=100),
+        model_manager_config=ModelManagerConfig(max_num_active_model_versions=3),
         initial_ckpt="/path/to/pretrained.pt",  # Optional: pre-trained weights
     )
+
+See :ref:`edge-fedbuff-naming` for compatibility and migration.
 
 **Examples:**
 

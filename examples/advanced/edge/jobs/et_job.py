@@ -15,13 +15,7 @@
 import argparse
 import os
 
-from nvflare.edge.tools.et_fed_buff_recipe import (
-    DeviceManagerConfig,
-    ETFedBuffRecipe,
-    EvaluatorConfig,
-    ModelManagerConfig,
-    SimulationConfig,
-)
+from nvflare.edge.tools.et_fed_buff_recipe import ETFedBuffRecipe, EvaluatorConfig, ModelManagerConfig, SimulationConfig
 from nvflare.recipe.prod_env import ProdEnv
 
 parser = argparse.ArgumentParser()
@@ -83,20 +77,18 @@ elif args.dataset == "xor":
 
 
 recipe = ETFedBuffRecipe(
-    job_name=job_name,
+    name=job_name,
+    num_rounds=3 - 1,  # Preserve the version-3 stop (initial model is version 1).
+    buffer_size=total_num_of_devices,
+    concurrency=total_num_of_devices,
+    min_open_slots=total_num_of_devices,
     device_model=device_model,
     input_shape=input_shape,
     output_shape=output_shape,
     model_manager_config=ModelManagerConfig(
         # max_num_active_model_versions=1,
-        max_model_version=3,
         update_timeout=1000,
-        num_updates_for_model=total_num_of_devices,
         # max_model_history=1,
-    ),
-    device_manager_config=DeviceManagerConfig(
-        device_selection_size=total_num_of_devices,
-        min_hole_to_fill=total_num_of_devices,
     ),
     evaluator_config=evaluator_config,
     simulation_config=(

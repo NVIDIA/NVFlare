@@ -422,10 +422,13 @@ An example can be found in the `edge examples <https://github.com/NVIDIA/NVFlare
 .. code-block:: python
 
    recipe = EdgeFedBuffRecipe(
-           job_name=f"pt_job_{fl_mode}{suffix}",
+           name=f"pt_job_{fl_mode}{suffix}",
            model=Cifar10ConvNet(),
-           model_manager_config=model_manager_config,
-           device_manager_config=device_manager_config,
+           num_rounds=global_rounds - 1,  # Preserve the existing max_model_version budget.
+           buffer_size=total_devices,
+           concurrency=total_devices,
+           min_open_slots=total_devices,
+           server_lr=1.0,
            evaluator_config=EvaluatorConfig(
                torchvision_dataset={"name": "CIFAR10", "path": dataset_root},
                eval_frequency=eval_frequency
@@ -440,55 +443,104 @@ An example can be found in the `edge examples <https://github.com/NVIDIA/NVFlare
            custom_source_root=None,
        )
 
-Specifically, there are four main components to define. Among them, ``evaluator_config`` and ``simulation_config`` are straightforward:
+.. _edge-fedbuff-naming:
 
-- **Evaluator**: A standalone widget that evaluates the global model with a dataset whenever the server generates a number of ``eval_frequency`` global model versions.
-- **Simulation**: Used for simulating devices on LCJs as described earlier. ``num_devices`` is per leaf client—the total number of devices involved in FL will be ``num_leaf * num_devices`` (``12 * num_devices`` if using the example tree we generated earlier).
+Shared names and migration
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``model_manager_config`` and ``device_manager_config`` contain more parameters that provide control over server behavior—essentially: 1) when to generate a new global model, and 2) when and to whom the global model should be sent:
+``EdgeFedBuffRecipe`` and ``ETFedBuffRecipe`` accept the same common keyword names
+as the Collab ``FedBuffRecipe``. Existing positional arguments, ``job_name``, and
+manager config objects remain supported, with no deprecation warning or removal
+scheduled. Use the new names for new code:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Recipe keyword
+     - Legacy setting
+     - Unchanged default
+   * - ``name``
+     - ``job_name``
+     - Required
+   * - ``num_rounds``
+     - ``model_manager_config.max_model_version - 1``
+     - 19 publications (stop at version 20)
+   * - ``buffer_size``
+     - ``model_manager_config.num_updates_for_model``
+     - 100 device updates
+   * - ``concurrency``
+     - ``device_manager_config.device_selection_size``
+     - 100 devices across the hierarchy
+   * - ``min_open_slots``
+     - ``device_manager_config.min_hole_to_fill``
+     - 1 empty device slot
+   * - ``server_lr``
+     - ``model_manager_config.global_lr``
+     - 0.01
+
+Only supplied (non-``None``) recipe keywords override the corresponding fields on
+copies of manager configs. Other fields and supplied config objects are left
+unchanged. If both ``name`` and ``job_name`` are supplied, they must agree.
+For example, these configurations produce the same settings:
 
 .. code-block:: python
 
-   model_manager_config = ModelManagerConfig(
-               global_lr= ,
-               num_updates_for_model= ,
-               max_model_version= ,
-               max_model_history= ,
-          )
-
-- **global_lr**: Defines how device model updates contribute to the global model.
-- **num_updates_for_model**: Defines how many device updates the server needs to receive before generating a new global model.
-- **max_model_version**: Defines how many global models the server needs to generate before stopping the FL job.
-- **max_model_history**: Defines how many models to keep on record. Models older than this are considered too old, and their updates are discarded without being aggregated to the global model.
-
-.. code-block:: python
-
-   device_manager_config = DeviceManagerConfig(
-   device_selection_size= ,
-   min_hole_to_fill= ,
-   device_reuse= ,
+   # Existing code remains supported.
+   old = EdgeFedBuffRecipe(
+       job_name="edge-job", model=MyModel(),
+       model_manager_config=ModelManagerConfig(
+           max_model_version=101, num_updates_for_model=20, global_lr=0.1,
+           max_model_history=None, update_timeout=500,
+       ),
+       device_manager_config=DeviceManagerConfig(
+           device_selection_size=200, min_hole_to_fill=10, device_reuse=False,
+       ),
+   )
+   new = EdgeFedBuffRecipe(
+       name="edge-job", model=MyModel(),
+       num_rounds=100, buffer_size=20, server_lr=0.1,
+       concurrency=200, min_open_slots=10,
+       model_manager_config=ModelManagerConfig(max_model_history=None, update_timeout=500),
+       device_manager_config=DeviceManagerConfig(device_reuse=False),
    )
 
-- **device_selection_size**: Defines the total number of devices that will be constantly maintained for concurrent active model training.
-- **min_hole_to_fill**: Defines when the current global model should be dispatched to devices. Whenever a device reports back, it is removed from the device selection list, creating a "hole" in the list. This hole is then filled by sampling from the available devices, and whoever is selected to fill the holes receives the current global model for training. This parameter defines the minimum number of holes before sampling and dispatching the current global model.
-- **device_reuse**: A boolean defining whether devices that have already participated in training can be selected again.
+``num_rounds`` counts new publications after initial version 1; it does not imply
+a synchronous barrier. To preserve an existing stop at version ``V``, use
+``num_rounds=V-1``. Edge's ``buffer_size`` is a threshold: a hierarchical report
+may contain several device updates, and publication consumes all buffered updates
+when the threshold is reached or exceeded. Collab consumes exactly ``buffer_size``
+contributions. ``concurrency`` counts devices behind leaf clients across the
+entire hierarchy, rather than FLARE clients. ``server_lr`` deliberately retains
+Edge's 0.01 default; Collab defaults to 1.0.
 
-To give a realistic example, if we want to configure a standard synchronous FL pipeline running M rounds with a total of N devices (``12 * num_devices`` as mentioned above), we can set the parameters as follows:
+Manager configs retain advanced settings and their defaults:
 
-For ``model_manager_config``:
+- ``ModelManagerConfig.max_model_history`` (10) limits the age of newly accepted
+  updates, not the publication budget. ``None`` disables this age limit. Accepted,
+  unconsumed updates remain buffered even outside the window.
+- ``ModelManagerConfig.max_num_active_model_versions`` (3) independently limits
+  model-version aggregation buckets on hierarchical clients.
+- ``ModelManagerConfig.update_timeout`` (5 seconds) controls client aggregation
+  timeout; ``staleness_weight`` (False) controls staleness weighting.
+- ``DeviceManagerConfig.device_reuse`` (True) controls device reuse.
+- ``EvaluatorConfig.eval_frequency`` controls evaluation frequency.
+- ``SimulationConfig.num_devices`` (1000) is per leaf client; ``concurrency`` is
+  global. Simulation worker counts and timeouts keep their existing defaults.
 
-- **global_lr=1.0**
-- **num_updates_for_model=N**
-- **max_model_version=M**
-- **max_model_history=1**
+To give a realistic example, if we want to configure a standard synchronous FL pipeline stopping at model version M (including initial version 1) with a total of N devices (``12 * num_devices`` as mentioned above), we can set the parameters as follows:
 
-This configuration ensures that local updates are aggregated with a scale factor of 1.0, all devices' updates are required to generate a global model, there will be M global model versions (M rounds), and since all devices must report back before generating a new model version, we only need to track one global model version.
+For the recipe:
 
-For ``device_manager_config``:
+- **server_lr=1.0**
+- **buffer_size=N**
+- **num_rounds=M-1**
 
-- **device_selection_size=N**
-- **min_hole_to_fill=N**
-- **device_reuse=True**
+And ``model_manager_config=ModelManagerConfig(max_model_history=1)``.
+
+This configuration ensures that local updates are aggregated with a scale factor of 1.0, all devices' updates are required to generate a global model, there will be M-1 new publications after initial version 1, and since all devices must report back before generating a new model version, we only need to track one global model version.
+
+For the recipe, use ``concurrency=N`` and ``min_open_slots=N``; keep
+``device_manager_config=DeviceManagerConfig(device_reuse=True)``.
 
 This configuration maintains the selection of all N devices, waits for all N devices to report back (become "holes") before new device sampling and model dispatching, and enables ``device_reuse`` because we always use these N devices.
 
