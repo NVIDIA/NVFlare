@@ -15,6 +15,7 @@
 import datetime
 
 import pytest
+from cryptography.hazmat.primitives import hashes
 
 from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
@@ -26,6 +27,8 @@ from nvflare.fuel.hci.server.login import LoginModule, SessionManager
 from nvflare.fuel.utils.admin_name_utils import new_admin_client_name
 from nvflare.lighter.utils import Identity, generate_cert, generate_keys, serialize_cert, sign_content
 from nvflare.private.fed.utils.identity_utils import IdentityVerifier
+from nvflare.security.study_registry import StudyRegistryService
+from tests.admin_session_test_utils import register_admin_transport
 
 
 class _FakeConnection:
@@ -55,6 +58,9 @@ class _FakeVerifier:
 
 class _FakeCert:
     not_valid_after = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+
+    def fingerprint(self, algorithm):
+        return b"admin-cert"
 
 
 class _FakeIdAsserter:
@@ -86,23 +92,6 @@ class _CertlessHciServer:
         return None
 
 
-class _FakeSession:
-    def __init__(self):
-        self.created_args = None
-
-    def make_token(self, id_asserter):
-        return "session-token"
-
-
-class _FakeSessionManager:
-    def __init__(self):
-        self.created = []
-
-    def create_session(self, **kwargs):
-        self.created.append(kwargs)
-        return _FakeSession()
-
-
 class _FakeCell:
     @staticmethod
     def fire_and_forget(*args, **kwargs):
@@ -130,6 +119,11 @@ class _FakeStudyRegistryService:
     @staticmethod
     def get_registry():
         return _FakeStudyRegistryService.registry
+
+
+@pytest.fixture(autouse=True)
+def _stop_monitor_start(monkeypatch):
+    monkeypatch.setattr("nvflare.fuel.hci.server.sess.threading.Thread.start", lambda _: None)
 
 
 def _make_conn(study=None):
@@ -161,6 +155,8 @@ def test_handle_cert_login_rejects_missing_server_identity():
     conn.set_prop(ConnProps.HCI_SERVER, _CertlessHciServer())
 
     try:
+        _, grant = register_admin_transport(session_mgr, user="admin@nvidia.com")
+        conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
         assert conn.strings == [
@@ -175,7 +171,8 @@ def test_handle_cert_login_rejects_missing_server_identity():
 def test_handle_logout_ends_preverified_session_without_decoding_token():
     session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
     login = LoginModule(session_mgr)
-    session = session_mgr.create_session("admin@nvidia.com", "nvidia", "project_admin", "admin-client")
+    _, grant = register_admin_transport(session_mgr, user="admin@nvidia.com")
+    session, _ = session_mgr.create_session(grant, "nvidia", "project_admin")
     conn = _FakeConnection(props={ConnProps.SESSION: session})
 
     try:
@@ -197,7 +194,7 @@ def test_handle_cert_login_rejects_unknown_study_when_registry_exists(monkeypatc
         "nvflare.fuel.hci.server.login.get_identity_info",
         lambda _cert_dict: {IdentityKey.ORG: "nvidia", IdentityKey.ROLE: "project_admin"},
     )
-    monkeypatch.setattr("nvflare.fuel.hci.server.login.StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(StudyRegistryService, "get_registry", _FakeStudyRegistryService.get_registry)
     _FakeStudyRegistryService.registry = _FakeStudyRegistry(studies={"cancer-research": {"site-a"}})
 
     session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
@@ -205,6 +202,8 @@ def test_handle_cert_login_rejects_unknown_study_when_registry_exists(monkeypatc
     conn = _make_conn(study="trial-study")
 
     try:
+        _, grant = register_admin_transport(session_mgr, user="admin@nvidia.com")
+        conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
         assert conn.strings == [("REJECT: AUTH_UNKNOWN_STUDY: unknown study 'trial-study'", None)]
@@ -224,7 +223,7 @@ def test_handle_cert_login_rejects_unmapped_user_when_registry_exists(monkeypatc
         "nvflare.fuel.hci.server.login.get_identity_info",
         lambda _cert_dict: {IdentityKey.ORG: "nvidia", IdentityKey.ROLE: "project_admin"},
     )
-    monkeypatch.setattr("nvflare.fuel.hci.server.login.StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(StudyRegistryService, "get_registry", _FakeStudyRegistryService.get_registry)
     _FakeStudyRegistryService.registry = _FakeStudyRegistry(
         studies={"cancer-research": {"site-a"}},
         users={("other-admin@nvidia.com", "cancer-research"): True},
@@ -235,6 +234,8 @@ def test_handle_cert_login_rejects_unmapped_user_when_registry_exists(monkeypatc
     conn = _make_conn(study="cancer-research")
 
     try:
+        _, grant = register_admin_transport(session_mgr, user="admin@nvidia.com")
+        conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
         assert conn.strings == [
@@ -259,7 +260,7 @@ def test_handle_cert_login_accepts_mapped_user_for_valid_study(monkeypatch):
         "nvflare.fuel.hci.server.login.get_identity_info",
         lambda _cert_dict: {IdentityKey.ORG: "nvidia", IdentityKey.ROLE: "project_admin"},
     )
-    monkeypatch.setattr("nvflare.fuel.hci.server.login.StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(StudyRegistryService, "get_registry", _FakeStudyRegistryService.get_registry)
     _FakeStudyRegistryService.registry = _FakeStudyRegistry(
         studies={"cancer-research": {"site-a"}},
         users={("admin@nvidia.com", "cancer-research"): True},
@@ -270,6 +271,8 @@ def test_handle_cert_login_accepts_mapped_user_for_valid_study(monkeypatch):
     conn = _make_conn(study="cancer-research")
 
     try:
+        _, grant = register_admin_transport(session_mgr, user="admin@nvidia.com")
+        conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
         assert conn.strings == [("OK", None)]
@@ -292,7 +295,7 @@ def test_handle_cert_login_defaults_to_default_study_without_registry(monkeypatc
         "nvflare.fuel.hci.server.login.get_identity_info",
         lambda _cert_dict: {IdentityKey.ORG: "nvidia", IdentityKey.ROLE: "project_admin"},
     )
-    monkeypatch.setattr("nvflare.fuel.hci.server.login.StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(StudyRegistryService, "get_registry", _FakeStudyRegistryService.get_registry)
     _FakeStudyRegistryService.registry = None
 
     session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
@@ -300,6 +303,8 @@ def test_handle_cert_login_defaults_to_default_study_without_registry(monkeypatc
     conn = _make_conn(study=None)
 
     try:
+        _, grant = register_admin_transport(session_mgr, user="admin@nvidia.com")
+        conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
         assert conn.strings == [("OK", None)]
@@ -321,7 +326,7 @@ def test_handle_cert_login_rejects_non_default_study_without_registry(monkeypatc
         "nvflare.fuel.hci.server.login.get_identity_info",
         lambda _cert_dict: {IdentityKey.ORG: "nvidia", IdentityKey.ROLE: "project_admin"},
     )
-    monkeypatch.setattr("nvflare.fuel.hci.server.login.StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(StudyRegistryService, "get_registry", _FakeStudyRegistryService.get_registry)
     _FakeStudyRegistryService.registry = None
 
     session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
@@ -329,6 +334,8 @@ def test_handle_cert_login_rejects_non_default_study_without_registry(monkeypatc
     conn = _make_conn(study="study-a")
 
     try:
+        _, grant = register_admin_transport(session_mgr, user="admin@nvidia.com")
+        conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
         login.handle_cert_login(conn, ["CERT_LOGIN", "admin@nvidia.com"])
 
         assert conn.strings == [
@@ -390,7 +397,7 @@ def test_handle_cert_login_with_real_study_certificate(
     )
     verifier = IdentityVerifier(str(root_path))
     monkeypatch.setattr(conn.get_prop(ConnProps.HCI_SERVER), "get_id_verifier", lambda: verifier)
-    monkeypatch.setattr("nvflare.fuel.hci.server.login.StudyRegistryService", _FakeStudyRegistryService, raising=False)
+    monkeypatch.setattr(StudyRegistryService, "get_registry", _FakeStudyRegistryService.get_registry)
     users = {(user, "study-a"): True} if registry_allowed else {}
     _FakeStudyRegistryService.registry = (
         None if study == DEFAULT_STUDY else _FakeStudyRegistry(studies={"study-a": {"site-a"}}, users=users)
@@ -398,6 +405,8 @@ def test_handle_cert_login_with_real_study_certificate(
     session_mgr = SessionManager(_FakeCell(), idle_timeout=3600, monitor_interval=3600)
 
     try:
+        _, grant = register_admin_transport(session_mgr, user=user, fingerprint=cert.fingerprint(hashes.SHA256()))
+        conn.set_prop(ConnProps.ADMIN_TRANSPORT_GRANT, grant)
         LoginModule(session_mgr).handle_cert_login(conn, ["CERT_LOGIN", user])
         assert conn.strings == [(expected_reply, None)]
         if expected_reply == "OK":

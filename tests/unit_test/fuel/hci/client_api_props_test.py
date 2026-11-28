@@ -21,6 +21,9 @@ from nvflare.apis.job_def import DEFAULT_STUDY
 from nvflare.fuel.hci.client.api import AdminAPI, ResultKey, _AdminCellReconnectMonitor
 from nvflare.fuel.hci.client.api_spec import CommandContext
 from nvflare.fuel.hci.client.api_status import APIStatus
+from nvflare.fuel.hci.proto import InternalCommands
+from nvflare.fuel.hci.reg import CommandRegister
+from nvflare.fuel.hci.table import Table
 
 
 @pytest.mark.parametrize("reconnected", [False, True])
@@ -206,8 +209,6 @@ def test_user_login_parses_structured_reject_code(monkeypatch):
 
 @pytest.mark.parametrize("failure", ["cert-login", "command-list", "exception"])
 def test_ordinary_command_retries_failed_recovery_with_a_new_unset_monitor(monkeypatch, failure):
-    from nvflare.fuel.hci.client import api as api_module
-
     api = AdminAPI.__new__(AdminAPI)
     api.in_logout = False
     api.server_sess_active = True
@@ -220,11 +221,12 @@ def test_ordinary_command_retries_failed_recovery_with_a_new_unset_monitor(monke
     api.ensure_client_cert_valid = lambda: None
     api.client_key, api.client_cert, api.user_name, api.study = "key", "cert", "admin", DEFAULT_STUDY
     api.debug = lambda message: None
-    api._get_command_detail = lambda command: (api_module._CMD_TYPE_SERVER, "check_status", [], [None])
-    api._new_command_context = lambda *args: CommandContext()
-    api.server_cmd_reg = SimpleNamespace(mapped_cmds=[])
-    api.client_cmd_reg = SimpleNamespace(finalize=lambda cb: None)
+    api.server_cmd_reg = initial_registry = CommandRegister(app_ctx=api)
+    initial_registry.add_command("server", "check_status", "", "", None, None, True, "")
+    initial_registry.finalize()
+    api.client_cmd_reg = CommandRegister(app_ctx=api)
     api.cmd_modules = []
+    api.all_cmds = []
     attempts, commands = [], []
 
     def reset():
@@ -246,15 +248,19 @@ def test_ordinary_command_retries_failed_recovery_with_a_new_unset_monitor(monke
             if len(attempts) == 1 and failure == "cert-login":
                 return  # CERT_LOGIN timed out after Cell registration succeeded.
             api.login_result = "OK"
+        elif command == InternalCommands.GET_CMD_LIST:
+            if len(attempts) == 1 and failure == "command-list":
+                return
+            table = Table(["scope", "name", "description", "usage", "confirm"])
+            table.add_row(["server", "check_status", "", "", ""])
+            ctx.get_reply_processor().process_table(ctx, table)
         else:
             commands.append(command)
         ctx.set_command_result({ResultKey.STATUS: APIStatus.SUCCESS})
 
     api._reset_cell, api.connect, api._try_command = reset, connect, send
-    api._get_command_list_from_server = lambda: not (len(attempts) == 1 and failure == "command-list")
     monkeypatch.setattr(
-        api_module,
-        "IdentityAsserter",
+        "nvflare.fuel.hci.client.api.IdentityAsserter",
         lambda **kwargs: SimpleNamespace(cert_data="cert", sign_common_name=lambda nonce: "signature"),
     )
     if failure == "exception":
@@ -266,8 +272,10 @@ def test_ordinary_command_retries_failed_recovery_with_a_new_unset_monitor(monke
     assert not api._cell_auth_monitor.reconnected.is_set()
     assert api._cell_recovery_needed
     assert not commands
+    assert api.server_cmd_reg is initial_registry
 
     assert api.do_command("check_status server")[ResultKey.STATUS] == APIStatus.SUCCESS
+    assert api.server_cmd_reg is not initial_registry
     assert len(attempts) == 2
     assert commands == ["check_status server"]
     assert api.server_sess_active

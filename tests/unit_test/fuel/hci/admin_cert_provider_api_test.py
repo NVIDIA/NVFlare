@@ -18,7 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.hci.client.api import AdminAPI
+from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
 from nvflare.fuel.hci.client.api_spec import AdminConfigKey
 from nvflare.fuel.hci.proto import InternalCommands
 from nvflare.fuel.sec.admin_cert_provider import AdminCertFiles
@@ -150,8 +150,17 @@ def test_admin_api_renews_expiring_provider_cert_and_resets_connection(monkeypat
     api.server_sess_active = True
     api.token = "old-token"
     api.login_result = "old-result"
+    sent = []
+
+    def logout(command):
+        assert api.cell is old_cell
+        assert api.token == "old-token"
+        sent.append(command)
+
+    api.server_execute = logout
 
     assert api.ensure_client_cert_valid()
+    assert sent == [InternalCommands.LOGOUT]
 
     assert api.client_key == str(new_key_file)
     assert api.client_cert == str(new_cert_file)
@@ -259,6 +268,40 @@ def test_user_login_reconnects_when_cell_is_missing_or_registration_was_lost(mon
     api._user_login()
 
     assert connected == [True]
+
+
+def test_explicit_login_registers_again_after_confirmed_session_loss(monkeypatch):
+    api = object.__new__(AdminAPI)
+    api._cell_reconnect_lock = RLock()
+    api._cell_recovery_in_progress = False
+    old_cell = object()
+    new_cell = object()
+    api.cell = old_cell
+    api.ensure_client_cert_valid = lambda: False
+    registrations = []
+    login_cells = []
+
+    def reset():
+        assert api.cell is old_cell
+        api.cell = None
+
+    def register():
+        assert api.cell is None
+        registrations.append(new_cell)
+        api.cell = new_cell
+
+    def login():
+        login_cells.append(api.cell)
+        status = APIStatus.ERROR_INACTIVE_SESSION if api.cell is old_cell else APIStatus.SUCCESS
+        return {ResultKey.STATUS: status}
+
+    monkeypatch.setattr(api, "_reset_cell", reset)
+    monkeypatch.setattr(api, "connect", register)
+    monkeypatch.setattr(api, "_login_on_cell", login)
+
+    assert api._user_login()[ResultKey.STATUS] == APIStatus.SUCCESS
+    assert registrations == [new_cell]
+    assert login_cells == [old_cell, new_cell]
 
 
 def test_connect_cleans_up_partial_cell_after_authentication_failure(monkeypatch):

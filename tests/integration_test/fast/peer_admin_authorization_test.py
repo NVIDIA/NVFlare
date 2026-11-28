@@ -35,10 +35,15 @@ import numpy as np
 import pytest
 
 from nvflare.apis.fl_constant import AdminCommandNames, SiteType, WorkspaceConstants
+from nvflare.apis.shareable import ReturnCode as ShareableReturnCode
 from nvflare.apis.storage import WORKSPACE_ZIP
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.streamers.file_streamer import _ChunkProducer
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
+from nvflare.fuel.flare_api.api_spec import SessionClosed
 from nvflare.fuel.flare_api.flare_api import new_secure_session
+from nvflare.fuel.hci.client.api import APIStatus, ResultKey
+from nvflare.fuel.hci.proto import InternalCommands
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.lighter.constants import CtxKey
@@ -72,6 +77,113 @@ def _one_task_record(records, action, **identity):
     ]
     assert len(matches) == 1, (action, identity, matches)
     return matches[0]
+
+
+@pytest.mark.timeout(90)
+def test_admin_can_reconnect_after_server_restarts_during_upload(tmp_path, monkeypatch):
+    fed_port, admin_port = get_open_ports(2)
+    user = "admin@test.org"
+    project = prepare_project(
+        {
+            "api_version": 3,
+            "name": "admin-restart",
+            "description": "local restart regression",
+            "participants": [
+                {
+                    "name": "localhost",
+                    "type": "server",
+                    "org": "test",
+                    "fed_learn_port": fed_port,
+                    "admin_port": admin_port,
+                },
+                {"name": user, "type": "admin", "org": "test", "role": "project_admin"},
+            ],
+        }
+    )
+    ctx = Provisioner(
+        str(tmp_path / "provision"),
+        [WorkspaceBuilder(), StaticFileBuilder(scheme="stcp"), CertBuilder(), SignatureBuilder()],
+    ).provision(project)
+    assert not ctx.get(CtxKey.BUILD_ERROR)
+    prod = Path(ctx[CtxKey.CURRENT_PROD_DIR])
+    server_root = prod / "localhost"
+    admin_root = str(prod / user)
+    config_path = server_root / "local" / "resources.json"
+    config = json.loads(config_path.with_suffix(".json.default").read_text())
+    config["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"] = str(tmp_path / "snapshots")
+    for component in config["components"]:
+        if component["id"] == "job_manager":
+            component["args"]["uri_root"] = str(tmp_path / "jobs")
+    config_path.write_text(json.dumps(config))
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    job = tmp_path / "job"
+    shutil.copytree(Path(__file__).parents[1] / "data/jobs/hello-numpy-sag", job)
+    (job / "app" / "upload-data").write_bytes(os.urandom(2 * 1024 * 1024))
+
+    def start_server(owner, log):
+        return owner.start(
+            [
+                sys.executable,
+                "-u",
+                "-m",
+                "nvflare.private.fed.app.server.server_train",
+                "-m",
+                str(server_root),
+                "-s",
+                "fed_server.json",
+                "--set",
+                "secure_train=true",
+                "uid=localhost",
+                "org=test",
+                "config_folder=config",
+            ],
+            cwd=server_root,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[3]), "TMPDIR": str(uploads)},
+        )
+
+    with (
+        OwnedProcesses() as original,
+        OwnedProcesses() as restarted,
+        (tmp_path / "server.log").open("w") as original_log,
+        (tmp_path / "restarted.log").open("w") as restarted_log,
+        ExitStack() as stack,
+    ):
+        start_server(original, original_log)
+        admin = new_secure_session(user, admin_root, timeout=15)
+        stack.callback(admin.close)
+        assert not admin.list_jobs()
+        original_cell = admin.api.cell
+        process_replies = _ChunkProducer.process_replies
+        acked_chunks = 0
+
+        def restart_after_first_chunk(producer, replies, stream_ctx, fl_ctx):
+            nonlocal acked_chunks
+            result = process_replies(producer, replies, stream_ctx, fl_ctx)
+            assert replies["server"].get_return_code() == ShareableReturnCode.OK
+            acked_chunks += 1
+            assert acked_chunks == 1 and result is None
+            original.close()
+            server = start_server(restarted, restarted_log)
+            fresh_admin = new_secure_session(user, admin_root, timeout=15)
+            stack.callback(fresh_admin.close)
+            assert not fresh_admin.list_jobs()
+            deadline = time.monotonic() + 10
+            while not original_cell.core_cell.is_cell_connected("server"):
+                assert server.poll() is None
+                assert time.monotonic() < deadline, "original transport did not reconnect to the restarted server"
+                time.sleep(0.1)
+            return result
+
+        monkeypatch.setattr(_ChunkProducer, "process_replies", restart_after_first_chunk)
+        with pytest.raises(SessionClosed):
+            admin.submit_job(str(job))
+        assert acked_chunks == 1
+        admin.try_connect(timeout=10)
+        assert admin.api.cell is not original_cell
+        assert not admin.list_jobs()
 
 
 @pytest.mark.timeout(180)
@@ -199,6 +311,22 @@ def test_enrolled_peer_cannot_read_client_file(tmp_path, with_relay):
         admin = new_secure_session("admin@test.org", str(prod / "admin@test.org"), timeout=10)
         stack.callback(admin.close)
         wait_for(lambda: len(admin.get_system_info().client_info) == 2)
+        if not with_relay:
+            # Two certificate logins for the same user have independent origins.
+            # Exercise rejection over the real streamed HCI command path.
+            peer_admin = new_secure_session("admin@test.org", str(prod / "admin@test.org"), timeout=10)
+            stack.callback(peer_admin.close)
+            caller = peer_admin.api
+            check = InternalCommands.CHECK_SESSION
+            token = caller.token
+            assert caller.server_execute(check)[ResultKey.STATUS] == APIStatus.SUCCESS
+            caller.token = admin.api.token
+            assert caller.server_execute(check)[ResultKey.STATUS] == APIStatus.ERROR_INACTIVE_SESSION
+            caller.token = token
+            assert caller.server_execute(check)[ResultKey.STATUS] == APIStatus.SUCCESS
+            assert caller.server_execute(InternalCommands.LOGOUT)[ResultKey.STATUS] == APIStatus.SUCCESS
+            assert caller.server_execute(check)[ResultKey.STATUS] == APIStatus.ERROR_INACTIVE_SESSION
+            assert admin.api.server_execute(check)[ResultKey.STATUS] == APIStatus.SUCCESS
         marker = json.loads((evidence["site-2"] / "ready.json").read_text())["marker"]
         own_marker = json.loads((evidence["site-1"] / "ready.json").read_text())["marker"]
         assert marker != own_marker

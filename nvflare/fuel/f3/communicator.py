@@ -19,6 +19,7 @@ import weakref
 from typing import Optional
 
 from nvflare.fuel.f3 import drivers
+from nvflare.fuel.f3.cellnet.defs import MessagePropKey
 from nvflare.fuel.f3.cellnet.identity import CellIdentityResolver
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
@@ -139,7 +140,13 @@ class Communicator:
             CommError: If any error happens while sending the data
         """
 
-        self.conn_manager.send_message(endpoint, app_id, message.headers, message.payload)
+        self.conn_manager.send_message(
+            endpoint,
+            app_id,
+            message.headers,
+            message.payload,
+            target_peer=message.get_prop(MessagePropKey.TARGET_AUTH_PEER),
+        )
 
     def register_message_receiver(self, app_id: int, receiver: MessageReceiver):
         """Register a receiver to process FCI message for the app

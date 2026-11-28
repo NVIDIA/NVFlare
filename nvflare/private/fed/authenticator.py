@@ -394,13 +394,13 @@ def validate_auth_headers(
 
     client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
     err_text = f"unauthenticated msg ({channel=} {topic=}) received from {origin}"
-    if not client_name:
+    if not isinstance(client_name, str) or not client_name:
         err = "missing client name"
         logger.error(f"{err_text}: {err}")
         return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)
 
     token = message.get_header(CellMessageHeaderKeys.TOKEN)
-    if not token:
+    if not isinstance(token, str) or not token:
         err = "missing auth token"
         logger.error(f"{err_text}: {err}")
         return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=err)

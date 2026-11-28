@@ -27,6 +27,10 @@ class StreamError(Exception):
     pass
 
 
+class StreamSessionInactive(StreamError):
+    """The server rejected a stream because its admin session is inactive."""
+
+
 class StreamTargetUnreachable(StreamError):
     """A stream cannot be delivered because its target is no longer reachable."""
 
@@ -130,6 +134,8 @@ class StreamFuture:
         self.headers = headers
         # Receiver-owned transport provenance; never populated from wire headers.
         self.receiving_endpoint = None
+        self.receiving_admin_grant = None
+        self.reply_target_peer = None
         self.waiter = threading.Event()
         self.lock = threading.Lock()
         self.error: Optional[StreamError] = None

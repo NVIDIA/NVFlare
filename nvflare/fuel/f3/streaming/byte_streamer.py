@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from nvflare.fuel.f3.cellnet.core_cell import CoreCell
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.defs import CellChannel, MessageHeaderKey, MessagePropKey, MessageType, ReturnCode
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.mpm import MainProcessMonitor
@@ -42,6 +42,7 @@ from nvflare.fuel.f3.streaming.stream_types import (
     Stream,
     StreamError,
     StreamFuture,
+    StreamSessionInactive,
     StreamTargetUnreachable,
     StreamTaskSpec,
 )
@@ -234,6 +235,7 @@ class TxTask(StreamTaskSpec):
         reliable: Optional[bool],
         secure: bool,
         optional: bool,
+        target_peer=None,
     ):
         self.cell = cell
         self.chunk_size = chunk_size
@@ -245,6 +247,7 @@ class TxTask(StreamTaskSpec):
         self.channel = channel
         self.topic = topic
         self.target = target
+        self.target_peer = target_peer
         self.headers = headers
         self.stream = stream
         self.stream_future = None
@@ -398,6 +401,8 @@ class TxTask(StreamTaskSpec):
             payload = _snapshot_payload(payload)
 
         message = Message(None, payload)
+        if self.target_peer is not None:
+            message.set_prop(MessagePropKey.TARGET_AUTH_PEER, self.target_peer)
 
         if self.headers:
             message.add_headers(self.headers)
@@ -566,16 +571,29 @@ class TxTask(StreamTaskSpec):
                 self.pending_message_bytes = 0
             return True
 
-    def handle_ack(self, message: Message):
-
+    def _matches_authenticated_peer(self, message: Message) -> bool:
         origin = message.get_header(MessageHeaderKey.ORIGIN)
+        endpoint = message.get_prop(MessagePropKey.ENDPOINT)
+        peer = message.get_prop(MessagePropKey.PEER_CERT_FINGERPRINT) or message.get_prop(MessagePropKey.CONNECTION)
+        return origin == self.target == getattr(endpoint, "name", None) and self.target_peer == peer
+
+    def handle_ack(self, message: Message):
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        if origin != self.target:
+            return
+        if self.target_peer is not None and not self._matches_authenticated_peer(message):
+            return
+
         ack_seq = message.get_header(StreamHeaderKey.SEQUENCE, None)
         offset = message.get_header(StreamHeaderKey.OFFSET, None)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
 
         if error:
             error_type = message.get_header(StreamHeaderKey.ERROR_TYPE)
-            error_class = BlobSizeError if error_type == BlobSizeError.__name__ else StreamError
+            error_class = {
+                BlobSizeError.__name__: BlobSizeError,
+                StreamSessionInactive.__name__: StreamSessionInactive,
+            }.get(error_type, StreamError)
             self.stop(error_class(f"{self} Received error from {origin}: {error}"), notify=False)
             return
 
@@ -854,9 +872,10 @@ class ByteStreamer:
         secure=False,
         optional=False,
         reliable: Optional[bool] = None,
+        target_peer=None,
     ) -> StreamFuture:
         tx_task = TxTask(
-            self.cell, self.chunk_size, channel, topic, target, headers, stream, reliable, secure, optional
+            self.cell, self.chunk_size, channel, topic, target, headers, stream, reliable, secure, optional, target_peer
         )
         with ByteStreamer.map_lock:
             ByteStreamer.error_context_map.pop(tx_task.sid, None)
@@ -888,12 +907,39 @@ class ByteStreamer:
                 log.error(msg)
             task.stop(StreamError(msg), True)
 
-    @staticmethod
-    def _ack_handler(message: Message):
-
-        sid = message.get_header(StreamHeaderKey.STREAM_ID)
+    def _get_tx_task(self, sid: int):
+        if type(sid) is not int:
+            return None
         with ByteStreamer.map_lock:
-            tx_task = ByteStreamer.tx_task_map.get(sid, None)
+            task = ByteStreamer.tx_task_map.get(sid)
+        return task if task and task.cell is self.cell else None
+
+    def accepts_reply_ack(self, message: Message) -> bool:
+        """Check whether a local ACK belongs to an active reply pinned to this peer."""
+        if (
+            message.get_header(MessageHeaderKey.MSG_TYPE) != MessageType.REQ
+            or message.get_header(MessageHeaderKey.REPLY_EXPECTED)
+            or message.payload
+            or message.get_header(StreamHeaderKey.DATA_TYPE) != StreamDataType.ACK
+            or message.get_header(StreamHeaderKey.ERROR_MSG)
+            or type(message.get_header(StreamHeaderKey.SEQUENCE)) is not int
+            or type(message.get_header(StreamHeaderKey.OFFSET)) is not int
+        ):
+            return False
+
+        task = self._get_tx_task(message.get_header(StreamHeaderKey.STREAM_ID))
+        return (
+            task is not None
+            and task.channel == CellChannel.RETURN_ONLY
+            and task.reliable
+            and not task.stopped
+            and task.target_peer is not None
+            and task._matches_authenticated_peer(message)
+        )
+
+    def _ack_handler(self, message: Message):
+        sid = message.get_header(StreamHeaderKey.STREAM_ID)
+        tx_task = self._get_tx_task(sid)
 
         if not tx_task:
             origin = message.get_header(MessageHeaderKey.ORIGIN)
@@ -915,6 +961,7 @@ class ByteStreamer:
         error_classes = {
             BlobSizeError.__name__: BlobSizeError,
             StreamTargetUnreachable.__name__: StreamTargetUnreachable,
+            StreamSessionInactive.__name__: StreamSessionInactive,
         }
         error_class = error_classes.get(error_type, StreamError)
         sender = self.cell.my_info.fqcn

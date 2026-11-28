@@ -14,7 +14,8 @@
 import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
-from threading import Lock
+from contextlib import nullcontext
+from threading import Lock, RLock
 from typing import Any, List, Tuple
 
 from nvflare.apis.fl_component import FLComponent
@@ -22,11 +23,14 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, ObjectProducer, StreamContext, StreamContextKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.registry import Registry
+from nvflare.fuel.hci.proto import StreamChannel
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_callable, check_object_type, check_str
 from nvflare.private.aux_runner import AuxMsgTarget, AuxRunner
+from nvflare.private.defs import InternalFLContextKey
 from nvflare.security.logging import secure_format_exception
 
 # Topics for streaming messages
@@ -54,6 +58,8 @@ class _ConsumerInfo:
         stream_done_cb,
         consumed_cb,
         cb_kwargs,
+        upload_owner=None,
+        tx_id=None,
     ):
         self.logger = logger
         self.factory = factory
@@ -62,53 +68,73 @@ class _ConsumerInfo:
         self.consumed_cb = consumed_cb
         self.stream_done_cb = stream_done_cb
         self.cb_kwargs = cb_kwargs
+        self.upload_owner = upload_owner
+        self.tx_id = tx_id
+        self._processing = RLock() if upload_owner else nullcontext()
+        self._closed = False
         self.stream_start_time = time.time()
         self.last_msg_start_time = None
         self.last_msg_end_time = None
+
+    def is_owned_by(self, fl_ctx: FLContext) -> bool:
+        if not self.upload_owner:
+            return True
+        owner = fl_ctx.get_prop(InternalFLContextKey.ADMIN_UPLOAD_OWNER)
+        return owner is not None and owner[0] is self.upload_owner[0] and owner[1] is self.upload_owner[1]
 
     def process(
         self,
         msg: Shareable,
         fl_ctx: FLContext,
     ):
-        self.last_msg_start_time = time.time()
-        reply = self.consumer.consume(msg, self.stream_ctx, fl_ctx)
-        self.last_msg_end_time = time.time()
-        if self.consumed_cb:
-            self.consumed_cb(reply, self.stream_ctx, fl_ctx, **self.cb_kwargs)
-        return reply
+        with self._processing:
+            if self._closed:
+                return False, make_reply(CellReturnCode.INVALID_SESSION)
+            self.last_msg_start_time = time.time()
+            reply = self.consumer.consume(msg, self.stream_ctx, fl_ctx)
+            self.last_msg_end_time = time.time()
+            if self.consumed_cb:
+                self.consumed_cb(reply, self.stream_ctx, fl_ctx, **self.cb_kwargs)
+            return reply
 
     def stream_done(self, rc: str, fl_ctx: FLContext):
-        end_result = None
-        self.stream_ctx[StreamContextKey.RC] = rc
-        try:
-            self.consumer.finalize(self.stream_ctx, fl_ctx)
-        except Exception as ex:
-            self.logger.error(
-                f"exception finalizing processor {self.consumer.__class__.__name__}: {secure_format_exception(ex)}"
-            )
-            self.stream_ctx[StreamContextKey.RC] = ReturnCode.EXECUTION_EXCEPTION
-
-        if self.stream_done_cb:
+        with self._processing:
+            if self._closed:
+                return None
+            self._closed = True
+            if self.upload_owner:
+                manager, session = self.upload_owner
+                manager.end_upload(session, self.tx_id, self)
+            end_result = None
+            self.stream_ctx[StreamContextKey.RC] = rc
             try:
-                end_result = self.stream_done_cb(self.stream_ctx, fl_ctx, **self.cb_kwargs)
+                self.consumer.finalize(self.stream_ctx, fl_ctx)
             except Exception as ex:
                 self.logger.error(
-                    f"exception from stream_done_cb {self.stream_done_cb.__name__}: {secure_format_exception(ex)}"
+                    f"exception finalizing processor {self.consumer.__class__.__name__}: {secure_format_exception(ex)}"
                 )
+                self.stream_ctx[StreamContextKey.RC] = ReturnCode.EXECUTION_EXCEPTION
 
-        try:
-            self.factory.return_consumer(
-                consumer=self.consumer,
-                stream_ctx=self.stream_ctx,
-                fl_ctx=fl_ctx,
-            )
-        except Exception as ex:
-            self.logger.error(
-                f"exception returning processor to factory {self.factory.__class__.__name__}: "
-                f"{secure_format_exception(ex)}"
-            )
-        return end_result
+            if self.stream_done_cb:
+                try:
+                    end_result = self.stream_done_cb(self.stream_ctx, fl_ctx, **self.cb_kwargs)
+                except Exception as ex:
+                    self.logger.error(
+                        f"exception from stream_done_cb {self.stream_done_cb.__name__}: {secure_format_exception(ex)}"
+                    )
+
+            try:
+                self.factory.return_consumer(
+                    consumer=self.consumer,
+                    stream_ctx=self.stream_ctx,
+                    fl_ctx=fl_ctx,
+                )
+            except Exception as ex:
+                self.logger.error(
+                    f"exception returning processor to factory {self.factory.__class__.__name__}: "
+                    f"{secure_format_exception(ex)}"
+                )
+            return end_result
 
 
 class ObjectStreamer(FLComponent):
@@ -194,14 +220,13 @@ class ObjectStreamer(FLComponent):
     def debug(self, req: Shareable, msg: str):
         self.logger.debug(self._log_msg(req, msg))
 
-    def _end_tx(self, tx_id: str, rc: str, fl_ctx: FLContext):
+    def _end_tx(self, tx_id: str, rc: str, fl_ctx: FLContext, *, expected=None):
         with self.tx_lock:
-            info = self.tx_table.pop(tx_id, None)
-
-        if info:
-            return info.stream_done(rc, fl_ctx)
-        else:
-            return None
+            info = self.tx_table.get(tx_id)
+            if not info or (expected is not None and info is not expected) or not info.is_owned_by(fl_ctx):
+                return None
+            self.tx_table.pop(tx_id)
+        return info.stream_done(rc, fl_ctx)
 
     def _handle_abort(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.logger.debug("abort received")
@@ -210,7 +235,12 @@ class ObjectStreamer(FLComponent):
             self.logger.error(f"missing header {HeaderKey.TX_ID}")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-        self._end_tx(tx_id, ReturnCode.TASK_ABORTED, fl_ctx)
+        with self.tx_lock:
+            info = self.tx_table.get(tx_id)
+            if info and not info.is_owned_by(fl_ctx):
+                return make_reply(CellReturnCode.UNAUTHENTICATED)
+        if info:
+            self._end_tx(tx_id, ReturnCode.TASK_ABORTED, fl_ctx, expected=info)
         return make_reply(ReturnCode.OK)
 
     def _handle_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
@@ -242,6 +272,11 @@ class ObjectStreamer(FLComponent):
             self._end_tx(tx_id, ReturnCode.TASK_ABORTED, fl_ctx)
             return make_reply(ReturnCode.TASK_ABORTED)
 
+        upload_owner = (
+            fl_ctx.get_prop(InternalFLContextKey.ADMIN_UPLOAD_OWNER) if channel == StreamChannel.UPLOAD else None
+        )
+        if channel == StreamChannel.UPLOAD and not upload_owner:
+            return make_reply(CellReturnCode.INVALID_SESSION)
         factory_info = self.registry.find(channel, topic)
         if not factory_info:
             self.error(request, f"no stream processing info registered for {channel}:{topic}")
@@ -251,9 +286,12 @@ class ObjectStreamer(FLComponent):
 
         self.debug(request, "received stream request")
         restarted = None
+        rejected_upload = None
         with self.tx_lock:
             info = self.tx_table.get(tx_id)
             if info:
+                if not info.is_owned_by(fl_ctx):
+                    return make_reply(CellReturnCode.UNAUTHENTICATED)
                 if seq <= 0:
                     # if we already have processor for this tx_id, then the seq number must be > 0
                     self.error(request, f"sequence error: expect > 0 but got {seq}")
@@ -296,14 +334,29 @@ class ObjectStreamer(FLComponent):
                         consumed_cb=consumed_cb,
                         stream_done_cb=stream_done_cb,
                         cb_kwargs=cb_kwargs,
+                        upload_owner=upload_owner,
+                        tx_id=tx_id,
                     )
-                    self.tx_table[tx_id] = info
+                    if upload_owner:
+                        manager, session = upload_owner
+                        if not manager.bind_upload(
+                            session,
+                            tx_id,
+                            info,
+                            lambda: self._end_tx(tx_id, ReturnCode.TASK_ABORTED, fl_ctx, expected=info),
+                        ):
+                            rejected_upload = info
+                    if not rejected_upload:
+                        self.tx_table[tx_id] = info
                 except Exception as ex:
                     self.error(
                         request, f"factory {type(factory)} failed to produce consumer: {secure_format_exception(ex)}"
                     )
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
+        if rejected_upload:
+            rejected_upload.stream_done(ReturnCode.TASK_ABORTED, fl_ctx)
+            return make_reply(CellReturnCode.INVALID_SESSION)
         if restarted:
             restarted.stream_done(ReturnCode.BAD_REQUEST_DATA, fl_ctx)
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
@@ -327,9 +380,11 @@ class ObjectStreamer(FLComponent):
             end_result = None
         else:
             # remove the tx
-            end_result = self._end_tx(tx_id, rc=reply.get_return_code(), fl_ctx=fl_ctx)
+            end_result = self._end_tx(tx_id, rc=reply.get_return_code(), fl_ctx=fl_ctx, expected=info)
             self.logger.debug(f"got end result: {end_result}")
 
+        if info.upload_owner and not continue_streaming and reply.get_return_code() == ReturnCode.OK and not end_result:
+            return make_reply(CellReturnCode.INVALID_SESSION)
         if end_result:
             # add the end_result to the reply
             reply.set_header(HeaderKey.END_RESULT, end_result)
@@ -463,6 +518,10 @@ class ObjectStreamer(FLComponent):
             )
 
             self.logger.debug("got replies from receivers")
+            if channel == StreamChannel.UPLOAD and any(
+                reply.get_return_code() == CellReturnCode.INVALID_SESSION for reply in replies.values()
+            ):
+                return CellReturnCode.INVALID_SESSION, None
             result = producer.process_replies(replies, stream_ctx, fl_ctx)
             self.logger.debug(f"got processed result from producer: {result}")
             if result is not None:

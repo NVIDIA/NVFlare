@@ -22,6 +22,8 @@ from abc import ABC, abstractmethod
 from threading import Lock
 from typing import Dict, List, Optional
 
+from cryptography.hazmat.primitives import hashes
+
 import nvflare
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -57,7 +59,10 @@ from nvflare.fuel.f3.cellnet.identity import ADMIN_LISTENER_KEY
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
+from nvflare.fuel.f3.streaming.stream_const import STREAM_ACK_TOPIC, STREAM_CHANNEL, STREAM_DATA_TOPIC, StreamHeaderKey
+from nvflare.fuel.sec.admin_cert import admin_cert_expiry
 from nvflare.fuel.sec.authn import add_authentication_headers, is_message_origin_trusted, strip_authentication_headers
+from nvflare.fuel.utils.admin_name_utils import is_valid_admin_client_name
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.private import defs as private_defs
@@ -552,18 +557,46 @@ class FederatedServer(BaseServer):
             return None
 
         token_verifier = TokenVerifier(id_asserter.cert)
+        local_fqcn = self.cell.get_fqcn() if getattr(self, "cell", None) else None
 
-        if not is_message_origin_trusted(message, self.cell.get_fqcn()):
+        if local_fqcn is None or not is_message_origin_trusted(message, local_fqcn):
             self.logger.warning("rejected message: origin does not belong to sending peer")
             return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, error="origin does not belong to sending peer")
 
+        channel = message.get_header(MessageHeaderKey.CHANNEL)
+        topic = message.get_header(MessageHeaderKey.TOPIC)
+        origin = message.get_header(MessageHeaderKey.ORIGIN)
+        peer = message.get_prop(MessagePropKey.ENDPOINT)
+        destination = message.get_header(MessageHeaderKey.DESTINATION)
+        is_local = destination == local_fqcn
+        is_stream_data = channel == STREAM_CHANNEL and topic == STREAM_DATA_TOPIC
+        application_channel = message.get_header(StreamHeaderKey.CHANNEL) if is_stream_data else channel
+        is_registration = channel == CellChannel.SERVER_MAIN and topic in (
+            CellChannelTopic.Register,
+            CellChannelTopic.Challenge,
+        )
+        is_goodbye = channel == CellChannel.CELLNET and topic == CellChannelTopic.Bye and is_local
+        peer_name = getattr(peer, "name", None)
+        direct_admin_origin = origin == peer_name and is_valid_admin_client_name(origin)
+        direct_admin = is_local and direct_admin_origin
+        direct_hci = direct_admin and application_channel == CellChannel.HCI
+        admin_origin = is_valid_admin_client_name(origin) or is_valid_admin_client_name(peer_name)
+        # Legacy signatures authenticate the concatenation. Check that same
+        # string so moving part of a token into the name cannot hide its type.
+        client_name = message.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+        token = message.get_header(CellMessageHeaderKeys.TOKEN)
+        admin_token = (
+            isinstance(client_name, str)
+            and isinstance(token, str)
+            and private_defs.ADMIN_TRANSPORT_TOKEN_PREFIX in client_name + token
+        )
+
         def resolve_origin(name, token):
-            origin = message.get_header(MessageHeaderKey.ORIGIN)
-            result = self._resolve_client_fqcn_for_auth(name, token, origin, message.get_prop(MessagePropKey.ENDPOINT))
+            result = self._resolve_client_fqcn_for_auth(name, token, origin, peer)
             if (
                 not result
-                and message.get_header(MessageHeaderKey.CHANNEL) == CellChannel.SERVER_MAIN
-                and message.get_header(MessageHeaderKey.TOPIC) == CellChannelTopic.HEART_BEAT
+                and channel == CellChannel.SERVER_MAIN
+                and topic == CellChannelTopic.HEART_BEAT
                 and FQCN.split(origin)[-1] == name
                 and name not in (FQCN.ROOT_SERVER, private_defs.AUTH_CLIENT_NAME_FOR_SJ)
             ):
@@ -572,16 +605,55 @@ class FederatedServer(BaseServer):
                 return origin
             return result
 
+        # Direct admin tokens are authenticated by their signature here and
+        # bound to the transport grant or pinned reply peer below.
         reply = validate_auth_headers(
             message=message,
             token_verifier=token_verifier,
             logger=self.logger,
-            client_fqcn_resolver=resolve_origin,
-            local_cell_fqcn=self.cell.get_fqcn() if getattr(self, "cell", None) else None,
+            client_fqcn_resolver=None if direct_admin_origin and admin_token else resolve_origin,
+            local_cell_fqcn=local_fqcn,
         )
-        if not reply:
-            self._strip_peer_transit_headers(message)
-        return reply
+        if reply:
+            return reply
+
+        registered_client = self.client_manager.clients.get(token) if admin_origin and isinstance(token, str) else None
+        regular_origin = registered_client is not None and registered_client.name == client_name
+        if is_goodbye and admin_origin:
+            sess_mgr = getattr(self.admin_server, "sess_mgr", None)
+            if sess_mgr:
+                sess_mgr.close_transport(message)
+        elif not (is_registration or is_goodbye) and (
+            application_channel == CellChannel.HCI or (admin_origin and not regular_origin) or admin_token
+        ):
+            if (
+                is_local
+                and channel == STREAM_CHANNEL
+                and topic == STREAM_ACK_TOPIC
+                and self.cell.byte_streamer.accepts_reply_ack(message)
+            ):
+                self._strip_peer_transit_headers(message)
+                return None
+            sess_mgr = getattr(self.admin_server, "sess_mgr", None)
+            grant = sess_mgr and sess_mgr.get_transport(message, require_session=not direct_hci)
+            if not grant:
+                reply_peer = message.get_prop(MessagePropKey.PEER_CERT_FINGERPRINT) or message.get_prop(
+                    MessagePropKey.CONNECTION
+                )
+                if direct_hci and not is_stream_data:
+                    message.set_prop(MessagePropKey.TARGET_AUTH_PEER, reply_peer)
+                else:
+                    if (
+                        direct_admin
+                        and is_stream_data
+                        and reply_peer is not None
+                        and application_channel in (CellChannel.HCI, CellChannel.AUX_COMMUNICATION)
+                    ):
+                        self.cell.byte_receiver.reject_inactive(message, reply_peer)
+                    return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, error="inactive admin registration")
+            message.set_prop(MessagePropKey.ADMIN_TRANSPORT_GRANT, grant)
+        self._strip_peer_transit_headers(message)
+        return None
 
     def _resolve_client_fqcn_for_auth(self, client_name: str, token: str, origin: str = "", peer=None):
         if origin == FQCN.ROOT_SERVER or client_name == FQCN.ROOT_SERVER:
@@ -921,7 +993,7 @@ class FederatedServer(BaseServer):
 
                 client = self.client_manager.authenticate(request, fl_ctx)
                 if client and client.token:
-                    if client_type != ClientType.REGULAR:
+                    if client_type not in (ClientType.REGULAR, ClientType.ADMIN):
                         client.token = self._non_regular_auth_clients.register(
                             client.name, client.token, client.get_fqcn(), request.get_prop(MessagePropKey.ENDPOINT)
                         )
@@ -940,6 +1012,23 @@ class FederatedServer(BaseServer):
                         if self.admin_server:
                             self.admin_server.client_heartbeat(client.token, client.name, client.get_fqcn())
 
+                    if client_type == ClientType.ADMIN:
+                        cert = fl_ctx.get_prop(InternalFLContextKey.VERIFIED_ADMIN_CERT)
+                        sess_mgr = getattr(self.admin_server, "sess_mgr", None)
+                        if not (
+                            cert
+                            and sess_mgr
+                            and is_valid_admin_client_name(client.get_fqcn())
+                            and sess_mgr.register_transport(
+                                request,
+                                client.name,
+                                client.token,
+                                cert.fingerprint(hashes.SHA256()),
+                                admin_cert_expiry(cert),
+                            )
+                        ):
+                            return make_cellnet_reply(F3ReturnCode.UNAUTHENTICATED, error="invalid admin registration")
+
                     token_signature = self.sign_auth_token(client.name, client.token)
 
                     result = {
@@ -957,7 +1046,13 @@ class FederatedServer(BaseServer):
                 else:
                     result = {}
                 self.engine.fire_event(EventType.CLIENT_REGISTER_PROCESSED, fl_ctx=fl_ctx)
-                return self._generate_reply(headers={}, payload=result, fl_ctx=fl_ctx)
+                reply = self._generate_reply(headers={}, payload=result, fl_ctx=fl_ctx)
+                if result and client_type == ClientType.ADMIN:
+                    peer = request.get_prop(MessagePropKey.PEER_CERT_FINGERPRINT) or request.get_prop(
+                        MessagePropKey.CONNECTION
+                    )
+                    reply.set_prop(MessagePropKey.TARGET_AUTH_PEER, peer)
+                return reply
             except NotAuthenticated as e:
                 self.logger.error(f"Failed to authenticate the register_client: {secure_format_exception(e)}")
                 return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error="register_client unauthenticated")

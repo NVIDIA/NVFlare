@@ -179,8 +179,17 @@ Adding SSO does not by itself move the root key out of the provisioning workspac
 must chain to the same root as the federation’s other certificates, whether that root is federation-managed or
 enterprise-managed.
 
-Admin sessions expire with their certificates; already-running jobs continue with their separate job
-credentials. A queued or resubmitted job may need a fresh signature because the submitter certificate must be
+Admin sessions are bound to the certificate and admin cell that registered with the server. Log in again
+after a server restart or when switching admin cells. When the server receives admin traffic over ``tls`` or
+``clear`` without a client transport certificate, the registration also depends on the live connection.
+A network interruption or connection rotation at a TLS-terminating proxy can require a new login.
+
+An admin API call, including job monitoring, can raise ``SessionClosed`` after such a reconnect. Open a fresh
+admin session and use the existing job ID to resume monitoring. Check the result of any interrupted command
+before retrying it. Jobs already running continue with their separate job credentials.
+
+Logout, inactivity, certificate expiry and removal from the active study revoke the session and cancel its
+downloads. A queued or resubmitted job may need a fresh signature because the submitter certificate must be
 valid when the job is deployed.
 
 For jobs with standing approval that are rerun regularly, IT can instead supply a non-ephemeral certificate to
