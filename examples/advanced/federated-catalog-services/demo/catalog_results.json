@@ -1,0 +1,1137 @@
+{
+  "format_version": 2,
+  "study": "default",
+  "job_id": "ec7e7ebb-bd5a-4514-8477-74e735dc7a45",
+  "completed_at": "2026-11-23T18:16:30Z",
+  "sites": {
+    "site-1": {
+      "status": "OK",
+      "reason_code": null,
+      "unavailable": [],
+      "skipped": []
+    },
+    "site-2": {
+      "status": "OK",
+      "reason_code": null,
+      "unavailable": [],
+      "skipped": []
+    }
+  },
+  "datasets": [
+    {
+      "site": "site-1",
+      "dataset": "clinical_records",
+      "contract": {
+        "apiVersion": "v3.2.0",
+        "kind": "DataContract",
+        "id": "urn:uuid:c53a3ead-bcef-58b2-9a84-80df006711ce",
+        "version": "1.0.0",
+        "status": "draft",
+        "name": "clinical_records",
+        "schema": [
+          {
+            "name": "condition_occurrence",
+            "physicalType": "table",
+            "logicalType": "object",
+            "properties": [
+              {
+                "name": "condition_occurrence_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "person_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "condition_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "condition_start_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "condition_start_datetime",
+                "physicalType": "timestamp",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "condition_end_date",
+                "physicalType": "date",
+                "logicalType": "date"
+              },
+              {
+                "name": "condition_end_datetime",
+                "physicalType": "timestamp",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "condition_type_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "condition_status_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "stop_reason",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "provider_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "visit_occurrence_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "visit_detail_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "condition_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "condition_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "condition_status_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              }
+            ]
+          },
+          {
+            "name": "drug_exposure",
+            "physicalType": "table",
+            "logicalType": "object",
+            "properties": [
+              {
+                "name": "drug_exposure_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "person_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "drug_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "drug_exposure_start_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "drug_exposure_start_datetime",
+                "physicalType": "timestamp",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "drug_exposure_end_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "drug_exposure_end_datetime",
+                "physicalType": "timestamp",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "verbatim_end_date",
+                "physicalType": "date",
+                "logicalType": "date"
+              },
+              {
+                "name": "drug_type_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "stop_reason",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "refills",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "quantity",
+                "physicalType": "double",
+                "logicalType": "number"
+              },
+              {
+                "name": "days_supply",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "sig",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "route_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "lot_number",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "provider_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "visit_occurrence_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "visit_detail_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "drug_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "drug_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "route_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "dose_unit_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              }
+            ]
+          },
+          {
+            "name": "measurement",
+            "physicalType": "table",
+            "logicalType": "object",
+            "properties": [
+              {
+                "name": "measurement_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "person_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "measurement_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "measurement_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "measurement_datetime",
+                "physicalType": "timestamp",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "measurement_time",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "measurement_type_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "operator_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "value_as_number",
+                "physicalType": "double",
+                "logicalType": "number"
+              },
+              {
+                "name": "value_as_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "unit_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "range_low",
+                "physicalType": "double",
+                "logicalType": "number"
+              },
+              {
+                "name": "range_high",
+                "physicalType": "double",
+                "logicalType": "number"
+              },
+              {
+                "name": "provider_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "visit_occurrence_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "visit_detail_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "measurement_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "measurement_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "unit_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "unit_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "value_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "measurement_event_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "meas_event_field_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              }
+            ]
+          },
+          {
+            "name": "observation_period",
+            "physicalType": "table",
+            "logicalType": "object",
+            "properties": [
+              {
+                "name": "observation_period_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "person_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "observation_period_start_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "observation_period_end_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "period_type_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              }
+            ]
+          },
+          {
+            "name": "person",
+            "physicalType": "table",
+            "logicalType": "object",
+            "properties": [
+              {
+                "name": "person_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "gender_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "year_of_birth",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "month_of_birth",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "day_of_birth",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "birth_datetime",
+                "physicalType": "timestamp",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "race_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "ethnicity_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "location_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "provider_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "care_site_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "person_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "gender_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "gender_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "race_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "race_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "ethnicity_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "ethnicity_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              }
+            ]
+          },
+          {
+            "name": "visit_occurrence",
+            "physicalType": "table",
+            "logicalType": "object",
+            "properties": [
+              {
+                "name": "visit_occurrence_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "person_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "visit_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "visit_start_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "visit_start_datetime",
+                "physicalType": "timestamp",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "visit_end_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "visit_end_datetime",
+                "physicalType": "timestamp",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "visit_type_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "provider_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "care_site_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "visit_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "visit_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "admitted_from_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "admitted_from_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "discharged_to_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "discharged_to_source_value",
+                "physicalType": "string",
+                "logicalType": "string"
+              },
+              {
+                "name": "preceding_visit_occurrence_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "site": "site-2",
+      "dataset": "clinical_records",
+      "contract": {
+        "apiVersion": "v3.2.0",
+        "kind": "DataContract",
+        "id": "urn:uuid:001e3e94-4d9e-5fc0-a7f0-b052eb024f82",
+        "version": "1.0.0",
+        "status": "draft",
+        "name": "clinical_records",
+        "schema": [
+          {
+            "name": "condition_occurrence",
+            "physicalType": "table",
+            "logicalType": "object",
+            "properties": [
+              {
+                "name": "condition_occurrence_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true,
+                "primaryKey": true,
+                "primaryKeyPosition": 1
+              },
+              {
+                "name": "person_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true,
+                "relationships": [
+                  {
+                    "type": "foreignKey",
+                    "to": "person.person_id"
+                  }
+                ]
+              },
+              {
+                "name": "condition_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "condition_start_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "condition_start_datetime",
+                "physicalType": "timestamp without time zone",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "condition_end_date",
+                "physicalType": "date",
+                "logicalType": "date"
+              },
+              {
+                "name": "condition_end_datetime",
+                "physicalType": "timestamp without time zone",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "condition_type_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "condition_status_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "stop_reason",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "provider_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "visit_occurrence_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "relationships": [
+                  {
+                    "type": "foreignKey",
+                    "to": "visit_occurrence.visit_occurrence_id"
+                  }
+                ]
+              },
+              {
+                "name": "visit_detail_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "condition_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "condition_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "condition_status_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              }
+            ]
+          },
+          {
+            "name": "drug_exposure",
+            "physicalType": "table",
+            "logicalType": "object",
+            "properties": [
+              {
+                "name": "drug_exposure_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true,
+                "primaryKey": true,
+                "primaryKeyPosition": 1
+              },
+              {
+                "name": "person_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true,
+                "relationships": [
+                  {
+                    "type": "foreignKey",
+                    "to": "person.person_id"
+                  }
+                ]
+              },
+              {
+                "name": "drug_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "drug_exposure_start_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "drug_exposure_start_datetime",
+                "physicalType": "timestamp without time zone",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "drug_exposure_end_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "drug_exposure_end_datetime",
+                "physicalType": "timestamp without time zone",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "verbatim_end_date",
+                "physicalType": "date",
+                "logicalType": "date"
+              },
+              {
+                "name": "drug_type_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "stop_reason",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "refills",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "quantity",
+                "physicalType": "double precision",
+                "logicalType": "number"
+              },
+              {
+                "name": "days_supply",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "sig",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "route_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "lot_number",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "provider_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "visit_occurrence_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "relationships": [
+                  {
+                    "type": "foreignKey",
+                    "to": "visit_occurrence.visit_occurrence_id"
+                  }
+                ]
+              },
+              {
+                "name": "visit_detail_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "drug_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "drug_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "route_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "dose_unit_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              }
+            ]
+          },
+          {
+            "name": "observation_period",
+            "physicalType": "table",
+            "logicalType": "object",
+            "properties": [
+              {
+                "name": "observation_period_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true,
+                "primaryKey": true,
+                "primaryKeyPosition": 1
+              },
+              {
+                "name": "person_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true,
+                "relationships": [
+                  {
+                    "type": "foreignKey",
+                    "to": "person.person_id"
+                  }
+                ]
+              },
+              {
+                "name": "observation_period_start_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "observation_period_end_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "period_type_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              }
+            ]
+          },
+          {
+            "name": "person",
+            "physicalType": "table",
+            "logicalType": "object",
+            "properties": [
+              {
+                "name": "person_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true,
+                "primaryKey": true,
+                "primaryKeyPosition": 1
+              },
+              {
+                "name": "gender_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "year_of_birth",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "month_of_birth",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "day_of_birth",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "birth_datetime",
+                "physicalType": "timestamp without time zone",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "race_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "ethnicity_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "location_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "provider_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "care_site_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "person_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "gender_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "gender_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "race_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "race_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "ethnicity_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "ethnicity_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              }
+            ]
+          },
+          {
+            "name": "visit_occurrence",
+            "physicalType": "table",
+            "logicalType": "object",
+            "properties": [
+              {
+                "name": "visit_occurrence_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true,
+                "primaryKey": true,
+                "primaryKeyPosition": 1
+              },
+              {
+                "name": "person_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true,
+                "relationships": [
+                  {
+                    "type": "foreignKey",
+                    "to": "person.person_id"
+                  }
+                ]
+              },
+              {
+                "name": "visit_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "visit_start_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "visit_start_datetime",
+                "physicalType": "timestamp without time zone",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "visit_end_date",
+                "physicalType": "date",
+                "logicalType": "date",
+                "required": true
+              },
+              {
+                "name": "visit_end_datetime",
+                "physicalType": "timestamp without time zone",
+                "logicalType": "timestamp"
+              },
+              {
+                "name": "visit_type_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer",
+                "required": true
+              },
+              {
+                "name": "provider_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "care_site_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "visit_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "visit_source_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "admitted_from_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "admitted_from_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "discharged_to_concept_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              },
+              {
+                "name": "discharged_to_source_value",
+                "physicalType": "character varying(50)",
+                "logicalType": "string"
+              },
+              {
+                "name": "preceding_visit_occurrence_id",
+                "physicalType": "integer",
+                "logicalType": "integer"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+# site-2 dataset configuration. example_setup.py copies it into the site's startup kit as local/datasets.yaml,
+# where a deployed site keeps it.
+format_version: 1
+studies:
+  default:
+    datasets:
+      clinical_records:            # the omop schema of the site's PostgreSQL database
+        type: sql
+        uri: postgresql://postgres:5432/clinical_warehouse             # no credentials in the uri
+        options:
+          schema: omop
+        secrets: {username: CATALOG_DB_USER, password: CATALOG_DB_PASSWORD}   # environment variable names

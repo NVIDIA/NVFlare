@@ -1,0 +1,3 @@
+jupyterlab
+pandas
+python-dotenv>=1.0
