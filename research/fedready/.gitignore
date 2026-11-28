@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+.idea/
+/data/
+/jobs/
+/runs/
+/workspace/
+/dist/
+/build/
+/task_example/*/
+/task_example/manifest.json
