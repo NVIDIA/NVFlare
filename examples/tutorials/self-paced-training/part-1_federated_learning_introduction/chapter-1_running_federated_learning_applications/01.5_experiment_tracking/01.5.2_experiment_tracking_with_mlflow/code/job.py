@@ -32,9 +32,7 @@ def create_recipe(num_rounds=20):
         train_script="client.py",
     )
     add_final_global_evaluation(recipe)
-    # Keep this lesson's local store beside its job script.
-    tracking_uri = "sqlite:///" + str(Path(__file__).resolve().parent / "mlflow.db")
-    add_experiment_tracking(recipe, "mlflow", {"tracking_uri": tracking_uri})
+    add_experiment_tracking(recipe, "mlflow")
     return recipe
 
 
@@ -42,7 +40,10 @@ def main():
     parser = argparse.ArgumentParser(epilog="Recipe options: --export --export-dir PATH --log_config progress")
     parser.add_argument("--num_rounds", type=int, default=20)
     args = parser.parse_args()
-    run = create_recipe(args.num_rounds).execute(SimEnv(num_clients=2, log_config="progress"))
+    workspace_root = Path(__file__).resolve().parent / "simulation"
+    run = create_recipe(args.num_rounds).execute(
+        SimEnv(num_clients=2, log_config="progress", workspace_root=str(workspace_root))
+    )
     print("Results:", run.get_result())
 
 

@@ -19,17 +19,12 @@ In production federated learning, researchers typically don't have direct access
 
 ## Prerequisites
 
-### 1. Start MLFlow Server
+### Set up the FL workspace
 
-In a separate terminal, start the MLFlow tracking server:
-
-```bash
-mlflow server --host 0.0.0.0 --port 5000
-```
-
-The MLFlow UI will be available at `http://localhost:5000`
-
-### 2. Setup FL Workspace
+The receiver writes to SQLite in the server's job result directory by default.
+To use a shared MLflow server, the site operator sets the study's endpoint in
+`mlflow_study_tracking_uris` in the server's `local/resources.json` and starts the
+tracking service. The same recipe works with either destination.
 
 Ensure you have created and started the secure FL workspace:
 
@@ -51,14 +46,10 @@ cd ..
 Run FedAvg with MLFlow tracking using uniform data distribution (α=1.0):
 
 ```bash
-python job.py --n_clients 8 --num_rounds 50 --alpha 1.0 --tracking_uri http://localhost:5000
+python job.py --n_clients 8 --num_rounds 50 --alpha 1.0
 ```
 
 ### Command-line Arguments
-
-#### Experiment Tracking
-- `--tracking_uri` - MLFlow tracking server URI (default: `http://localhost:5000`)
-  - **Required**: Must match your running MLFlow server address
 
 #### Federated Learning Parameters
 - `--n_clients` - Number of FL clients (default: `8`)
@@ -82,7 +73,7 @@ python job.py --n_clients 8 --num_rounds 50 --alpha 1.0 --tracking_uri http://lo
 ### Standard MLFlow Tracking
 
 ```bash
-python job.py --n_clients 8 --num_rounds 50 --alpha 1.0 --tracking_uri http://localhost:5000
+python job.py --n_clients 8 --num_rounds 50 --alpha 1.0
 ```
 
 **Expected Results:**
@@ -94,28 +85,23 @@ python job.py --n_clients 8 --num_rounds 50 --alpha 1.0 --tracking_uri http://lo
 
 ```bash
 # Moderate heterogeneity
-python job.py --n_clients 8 --num_rounds 50 --alpha 0.5 --tracking_uri http://localhost:5000
+python job.py --n_clients 8 --num_rounds 50 --alpha 0.5
 
 # High heterogeneity
-python job.py --n_clients 8 --num_rounds 50 --alpha 0.1 --tracking_uri http://localhost:5000
+python job.py --n_clients 8 --num_rounds 50 --alpha 0.1
 ```
 
 ### Custom Job Name
 
 ```bash
 python job.py --n_clients 8 --num_rounds 50 --alpha 1.0 \
-  --tracking_uri http://localhost:5000 \
   --name "fedavg_alpha1.0_experiment1"
 ```
 
-### Remote MLFlow Server
+### Remote MLflow Server
 
-If your MLFlow server is running on a different machine:
-
-```bash
-python job.py --n_clients 8 --num_rounds 50 --alpha 1.0 \
-  --tracking_uri http://192.168.1.100:5000
-```
+The operator can assign a remote URL to the study in `local/resources.json`.
+Submit the same job under that study. The receiver uses its configured URL.
 
 ## Implementation Details
 
@@ -127,9 +113,8 @@ The `job.py` script adds MLFlow tracking with a single line:
 from nvflare.recipe.utils import add_experiment_tracking
 
 add_experiment_tracking(
-    recipe, 
-    tracking_type="mlflow", 
-    tracking_config={"tracking_uri": mlflow_tracking_uri}
+    recipe,
+    tracking_type="mlflow",
 )
 ```
 
@@ -174,12 +159,19 @@ Result can be found in: workspaces/secure_workspace/admin@nvidia.com/transfer/<j
 
 ## Viewing Results
 
-### MLFlow UI
+### MLflow UI
 
-1. Open `http://localhost:5000` in your browser
-2. Find your experiment by job ID (displayed in terminal output)
-3. View metrics, parameters, and compare runs
-4. Download trained models from the Artifacts tab
+For the default local backend, the downloaded job result contains
+`workspace/mlflow.db`. Start the UI with the absolute path to the downloaded job
+directory:
+
+```bash
+JOB_RESULT="/absolute/path/to/downloaded/job-id"
+mlflow ui --backend-store-uri "sqlite:///${JOB_RESULT}/workspace/mlflow.db" --host 127.0.0.1 --port 5000
+```
+
+Open `http://localhost:5000` and find the runs for the job ID. For a study with a
+configured external endpoint, open that service's UI.
 
 ### Metrics Available
 
@@ -245,10 +237,7 @@ add_experiment_tracking(
 
 ### MLFlow Server Not Accessible
 
-If clients can't reach the MLFlow server:
-- Verify MLFlow is running: `curl http://localhost:5000`
-- Check firewall settings if using remote server
-- Ensure `--tracking_uri` matches your MLFlow server address
+If the receiver cannot reach the configured MLflow service, verify the study's URL, service status, and network access from the receiving site.
 
 ### Job Submission Fails
 

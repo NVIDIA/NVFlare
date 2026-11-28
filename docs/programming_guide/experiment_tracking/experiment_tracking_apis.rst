@@ -98,11 +98,10 @@ For example, here we add the ``MLflowReceiver`` component to the components conf
 .. code-block:: json
 
   {
-    "id": "mlflow_receiver_with_tracking_uri",
+    "id": "mlflow_receiver",
     "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver",
     "args": {
-      "tracking_uri": "file:///{WORKSPACE}/{JOB_ID}/mlruns",
-      "kwargs": {
+      "kw_args": {
         "experiment_name": "hello-pt-experiment",
         "run_name": "hello-pt-with-mlflow",
         "experiment_tags": {
@@ -118,20 +117,28 @@ For example, here we add the ``MLflowReceiver`` component to the components conf
 
 Notice the ``args`` are user defined, such as tracking_uri, experiment_name, tags etc., and will be specific to which receiver is configured.
 
-The MLflow tracking URL argument ``tracking_uri`` is None by default, which uses the MLflow default URL, ``http://localhost:5000``.
-To make this accessible from another machine, make sure to change it in the receiver ``args`` to the correct URL, or point to to the ``mlruns`` directory in the workspace.
+When a study has a configured endpoint, the receiver uses it automatically.
+For other jobs, ``tracking_uri=None`` creates ``mlflow.db`` in the receiving site's
+job result directory. Explicit job-local SQLite and file stores must resolve
+inside that directory. Artifact paths must stay inside the job run directory.
+
+Site operators configure a single endpoint per study in ``local/resources.json``
+or its ``resources.json.default`` fallback.
 
 .. code-block:: json
 
   {
-    "tracking_uri": "<the Mlflow Server endpoint URL>"
+    "mlflow_study_tracking_uris": {
+      "cardiology": "https://mlflow.example.com:5000"
+    }
   }
 
-.. code-block:: json
+Apply this setting at each site that runs a receiver. Job authors use
+``add_experiment_tracking(recipe, "mlflow")`` and submit the job under the study.
+An explicit job URI must match the study endpoint exactly. Job configuration
+and MLflow environment variables cannot authorize other backends. Configure
+only backends trusted with the site's credentials, tracking data, and artifacts.
 
-  {
-    "tracking_uri": "file:///{WORKSPACE}/{JOB_ID}/mlruns"
-  }
 
 You can change other arguments such as experiments, run_name, tags (using Markdown syntax), and artifact location.
 

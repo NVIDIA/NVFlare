@@ -235,9 +235,12 @@ python job.py
 tensorboard --logdir=/tmp/nvflare/jobs/workdir/server/simulate_job/tb_events
 ```
 
-**MLflow**:
+**MLflow**: Locate `mlflow.db` in the job-result directory of the site
+running the receiver. Use the absolute path printed by `find` to open the UI.
+
 ```bash
-mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/server/simulate_job/mlruns
+find /tmp/nvflare/jobs/workdir -type f -name mlflow.db
+mlflow ui --backend-store-uri sqlite:////absolute/path/to/mlflow.db
 ```
 
 **Weights & Biases**:
@@ -247,6 +250,12 @@ Visit your W&B dashboard at https://wandb.ai
 
 ## Adding Tracking to Your Own Recipe
 
+The receiving site sets one external MLflow endpoint per study in
+`mlflow_study_tracking_uris` in `local/resources.json`. The receiver uses that
+endpoint automatically and otherwise writes to job-local SQLite. See the
+[tracking configuration guide](../../../docs/programming_guide/experiment_tracking/experiment_tracking_apis.rst)
+for deployment and upgrade details.
+
 ### Server-Side Tracking (Centralized)
 
 ```python
@@ -254,7 +263,6 @@ from nvflare.recipe.utils import add_experiment_tracking
 
 # After creating your recipe
 add_experiment_tracking(recipe, "mlflow", tracking_config={
-    "tracking_uri": "file:///tmp/mlruns",
     "kw_args": {
         "experiment_name": "my-experiment",
         "run_name": "my-run",
@@ -266,20 +274,18 @@ add_experiment_tracking(recipe, "mlflow", tracking_config={
 
 ```python
 # Add the receiver to every client, with no server-side receiver.
-# tracking_uri=None creates a local MLflow store in each site's job workspace.
 add_experiment_tracking(
     recipe,
     "mlflow",
     tracking_config={
-        "tracking_uri": None,
-        "kw_args": {"experiment_name": "local-client-experiment"},
+            "kw_args": {"experiment_name": "local-client-experiment"},
     },
     client_side=True,
     server_side=False,
 )
 ```
 
-If sites need different tracking URIs, credentials, or experiment names, call
+If sites need different experiment names, call
 `set_per_site_config(recipe, {"site-1": {}, "site-2": {}})` immediately
 after recipe construction to create per-site client apps, then call
 `add_experiment_tracking()` once per configuration with `clients=[site_name]`.

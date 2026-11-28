@@ -316,8 +316,10 @@ def test_median_aggregator_requires_accuracy_metric(lesson):
 
 @pytest.mark.skipif(importlib.util.find_spec("mlflow") is None, reason="MLflow is not installed")
 @pytest.mark.parametrize("lesson", ["mlflow"], indirect=True)
-def test_mlflow_store_is_beside_job_script(lesson, tmp_path):
-    module = lesson("job")
-    module.create_recipe().export(str(tmp_path / "exported"))
-    text = "".join(path.read_text() for path in (tmp_path / "exported").rglob("*.json"))
-    assert str(Path(module.__file__).resolve().parent / "mlflow.db") in text
+def test_mlflow_lesson_leaves_tracking_uri_to_the_receiver(lesson, tmp_path):
+    lesson("job").create_recipe().export(str(tmp_path / "exported"))
+    server_config = json.loads(next(tmp_path.rglob("config_fed_server.json")).read_text())
+    receiver = next(
+        component for component in server_config["components"] if component["path"].endswith(".MLflowReceiver")
+    )
+    assert receiver["args"].get("tracking_uri") is None

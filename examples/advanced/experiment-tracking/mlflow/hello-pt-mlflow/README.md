@@ -10,10 +10,10 @@ This example demonstrates the **Recipe API** for easily adding MLflow tracking t
 
 ### 1. Install requirements
 
-Install additional requirements (if you already have a specific version of nvflare installed in your environment, you may want to remove nvflare in the requirements to avoid reinstalling nvflare):
+From the example directory, install the requirements:
 
 ```
-python -m pip install -r requirements.txt
+python -m pip install -r ../requirements.txt
 ```
 ### 2. Download Data
 Pre-download the CIFAR-10 dataset to avoid multiple sites downloading simultaneously.
@@ -56,7 +56,6 @@ add_experiment_tracking(
     recipe,
     "mlflow",
     tracking_config={
-        "tracking_uri": "file:///tmp/nvflare/jobs/workdir/server/simulate_job/mlruns",
         "kw_args": {
             "experiment_name": "nvflare-fedavg-experiment",
             "run_name": "nvflare-fedavg-with-mlflow",
@@ -70,20 +69,16 @@ run = recipe.execute(env)
 
 ### 4. Access the logs and results
 
-You can find the running logs and results inside the server's simulator's workspace in a directory named "simulate_job".
-
-```WORKSPACE = "/tmp/nvflare/jobs/workdir"```
-
-By default, MLflow will create an experiment log directory under a directory named "mlruns" in the simulator's workspace.
-If you ran the simulator with "/tmp/nvflare/jobs/workdir" as the workspace, then you can launch the MLflow UI with:
+The receiver creates `mlflow.db` in the server's job-result directory. Under
+the default workspace, locate the database and use its absolute path to launch
+the MLflow UI. If you changed the work directory, search there instead.
 
 ```bash
-$ tree /tmp/nvflare/jobs/workdir/server/simulate_job/mlruns/
+find /tmp/nvflare/jobs/workdir/fedavg_mlflow/server -type f -name mlflow.db
+mlflow ui --backend-store-uri sqlite:////absolute/path/to/mlflow.db
 ```
 
-```
-mlflow ui --backend-store-uri /tmp/nvflare/jobs/workdir/server/simulate_job/mlruns/
-```
+Open `http://localhost:5000` to view the recorded metrics.
 
 ### 5. MLflow Streaming
 

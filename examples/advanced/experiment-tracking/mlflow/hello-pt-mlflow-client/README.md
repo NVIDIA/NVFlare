@@ -63,7 +63,7 @@ add_experiment_tracking(recipe, "mlflow")
 - The default `experiment_name` and configured run-name suffix are
   `fedavg_mlflow_client-experiment` and `fedavg_mlflow_client-Client`; the
   receiver adds site and job identifiers to the final run name.
-- Sites can use explicit local paths or remote MLflow servers when their deployment requires them.
+- Site administrators can configure a remote MLflow backend for a study.
 
 ## Setup
 
@@ -176,22 +176,11 @@ To avoid confusion:
 
 ## Customization
 
-### Change Tracking Location
+### Configure the Tracking Backend
 
-```python
-add_experiment_tracking(
-    recipe,
-    "mlflow",
-    tracking_config={"tracking_uri": "file:///my/custom/path/mlruns"},
-    client_side=True,
-    server_side=False,
-)
-```
-
-In a distributed deployment, the same local path is resolved independently on
-each site. In simulation, all clients share the host filesystem, so use the
-default `tracking_uri=None` behavior or configure distinct paths if the stores
-must remain physically separate.
+Each site's administrator can configure an external MLflow URL for the study in
+`mlflow_study_tracking_uris` in the site's `local/resources.json`. Otherwise,
+each receiver creates its own job-local SQLite database.
 
 For different configuration at each site, create per-site client apps before
 targeting each site explicitly:
@@ -208,7 +197,6 @@ for site in sites:
         recipe,
         "mlflow",
         tracking_config={
-            "tracking_uri": f"file:///my/custom/path/{site}/mlruns",
             "kw_args": {"experiment_name": f"{site}-experiment"},
         },
         client_side=True,
@@ -241,18 +229,14 @@ add_experiment_tracking(
 
 ### Remote MLflow Server
 
+Set the study's endpoint in `mlflow_study_tracking_uris` in each receiving site's
+`local/resources.json`, then enable client-side tracking in the recipe.
+
 ```python
-add_experiment_tracking(
-    recipe,
-    "mlflow",
-    tracking_config={"tracking_uri": "http://mlflow-server.local:5000"},
-    client_side=True,
-    server_side=False,
-)
+add_experiment_tracking(recipe, "mlflow", client_side=True, server_side=False)
 ```
 
-If each site uses a different server or credentials, use the per-site pattern
-above and pass the appropriate configuration with `clients=[site]`.
+Each client uses its own site configuration and MLflow credentials.
 
 ---
 
