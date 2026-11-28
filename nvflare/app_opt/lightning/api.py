@@ -15,10 +15,15 @@
 import copy
 import dataclasses
 import logging
+import random
+import sys
+from collections import defaultdict
 from typing import Dict, Optional
 
+import numpy as np
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import Callback
+import torch
+from pytorch_lightning.callbacks import Callback, Checkpoint, EarlyStopping
 from pytorch_lightning.trainer.states import TrainerFn
 from torch import Tensor
 
@@ -44,6 +49,16 @@ from .algorithm import _AlgorithmHandlerManager
 from .callbacks import RestoreState
 
 FL_META_KEY = "__fl_meta__"
+
+
+def _excluded_global_eval_callbacks():
+    excluded = [Checkpoint, EarlyStopping, getattr(pl.callbacks, "WeightAveraging", None)]
+    lp_callbacks = sys.modules.get("lightning.pytorch.callbacks")
+    if lp_callbacks is not None:
+        excluded.extend(
+            getattr(lp_callbacks, name, None) for name in ("Checkpoint", "EarlyStopping", "WeightAveraging")
+        )
+    return tuple(cls for cls in excluded if cls is not None)
 
 
 def patch(
@@ -74,7 +89,8 @@ def patch(
             and exchanges the model with the server every ``sync_every_n_steps`` optimizer steps. The
             receive, ``trainer.validate()``, ``trainer.fit()`` loop of fit-per-round mode becomes a single ``fit()``.
             In-fit validation then scores the site's local weights, not the new global model, and no per-round
-            global-model evaluation runs; evaluate tasks such as cross-site evaluation are answered by
+            global-model evaluation runs unless ``train_with_evaluation`` is set (see below); evaluate tasks such
+            as cross-site evaluation are answered by
             ``trainer.validate()`` after ``fit()``. The model is sent at the end of the sync batch and the next
             one is received at the start of the next batch (or at epoch end), so validation and other callbacks
             in between run while the server aggregates. A shutdown or a pending evaluate task is therefore found
@@ -86,7 +102,12 @@ def patch(
             ends when the server stops sending training tasks. An LR scheduler sized from the trainer's limits
             (``OneCycleLR``, cosine with ``T_max`` from ``estimated_stepping_batches``) must be sized for
             ``num_rounds * sync_every_n_steps`` instead; step-counting schedulers work unchanged. ``restore_state``
-            and ``update_fit_loop`` have no effect in this mode, and ``train_with_evaluation`` is not supported.
+            and ``update_fit_loop`` have no effect in this mode. With ``train_with_evaluation``, every rank runs the
+            fit validation loop once on the received global model at the start of each round, and its metrics are
+            sent with that round's result for model selection. This costs one validation pass per sync and needs
+            validation batches and at least one epoch-level validation metric. The loggers receive no metrics from
+            that run, and ``ModelCheckpoint``, ``EarlyStopping`` and ``WeightAveraging`` callbacks are left out of
+            it; other callbacks' validation hooks see it.
             Defaults to `None` (one FL round per ``fit()``).
 
     Hooks:
@@ -487,11 +508,6 @@ class _StepSyncFLCallback(_FLCallbackBase):
 
     def __init__(self, sync_every_n_steps: int, rank: int = 0, load_state_dict_strict: bool = True):
         super().__init__(rank=rank, load_state_dict_strict=load_state_dict_strict)
-        if self.train_with_evaluation:
-            raise ValueError(
-                "sync_every_n_steps does not support train_with_evaluation: no global-model validation runs "
-                "between syncs. Disable train_with_evaluation or sync once per fit()."
-            )
         self.sync_every_n_steps = sync_every_n_steps
         self._trainer_step_budget = None
         self._trainer_limits = None
@@ -540,6 +556,8 @@ class _StepSyncFLCallback(_FLCallbackBase):
                 _skip_rest_of_epoch(pl_module)
                 return
             input_model = self._load_received_model(trainer, pl_module, received)
+        if self.train_with_evaluation and self.metrics is None:
+            self.metrics = _extract_metrics(_validate_in_fit(trainer))
         self._start_round(trainer, pl_module, input_model)
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
@@ -610,6 +628,91 @@ class _StepSyncFLCallback(_FLCallbackBase):
             key: value.detach().to("cpu", copy=True) if isinstance(value, Tensor) else copy.deepcopy(value)
             for key, value in pl_module.state_dict().items()
         }
+
+
+def _collect_dataloader_generators(source, states=None):
+    if states is None:
+        states = {}
+    if source is None:
+        return states
+    flattened = getattr(source, "flattened", None)
+    if isinstance(flattened, (list, tuple)):
+        for item in flattened:
+            _collect_dataloader_generators(item, states)
+    elif isinstance(source, (list, tuple)):
+        for item in source:
+            _collect_dataloader_generators(item, states)
+    elif isinstance(source, dict):
+        for item in source.values():
+            _collect_dataloader_generators(item, states)
+    else:
+        batch_sampler = getattr(source, "batch_sampler", None)
+        for owner in (
+            source,
+            getattr(source, "sampler", None),
+            batch_sampler,
+            getattr(batch_sampler, "sampler", None),
+        ):
+            gen = getattr(owner, "generator", None)
+            if isinstance(gen, torch.Generator) and id(gen) not in states:
+                states[id(gen)] = (gen, gen.get_state())
+    return states
+
+
+def _validate_in_fit(trainer) -> Dict[str, Tensor]:
+    """Run the fit validation loop on the current weights and return its metrics, leaving the fit state unchanged."""
+    loop = trainer.fit_loop.epoch_loop.val_loop
+    connector = trainer._logger_connector
+    callbacks = trainer.callbacks
+    callback_metrics = connector._callback_metrics
+    logged_metrics, progress_bar_metrics = dict(connector._logged_metrics), dict(connector._progress_bar_metrics)
+    first_loop_iter, current_fx = connector._first_loop_iter, connector._current_fx
+    last_val_time = vars(trainer).get("_last_val_time")
+    batch_progress = loop.batch_progress.state_dict()
+    has_run, seen_batches = loop._has_run, defaultdict(int, loop._seen_batches_per_dataloader)
+    log_metrics_override = vars(connector).get("log_metrics")
+    python_rng, numpy_rng = random.getstate(), np.random.get_state()
+    dl_generators = _collect_dataloader_generators(trainer.train_dataloader)
+    rng_devices = [torch.cuda.current_device()] if torch.cuda.is_available() and torch.cuda.is_initialized() else []
+    trainer.callbacks = [cb for cb in callbacks if not isinstance(cb, _excluded_global_eval_callbacks())]
+    connector.log_metrics = lambda *args, **kwargs: None
+    connector._callback_metrics = {}
+    trainer.validating = True
+    try:
+        if loop._data_source.is_defined():
+            with torch.random.fork_rng(devices=rng_devices):
+                loop.setup_data()
+                _collect_dataloader_generators(loop._combined_loader, dl_generators)
+                loop.run()
+        metrics = dict(connector.callback_metrics)
+        if not metrics:
+            raise RuntimeError(
+                "train_with_evaluation with sync_every_n_steps validates the received global model at each sync, "
+                "but that validation produced no epoch-level validation metrics. Pass val_dataloaders with at least "
+                "one batch to fit(), keep limit_val_batches above 0, and log a metric with on_epoch=True in "
+                "validation_step, or disable train_with_evaluation."
+            )
+        return metrics
+    finally:
+        trainer.callbacks = callbacks
+        if log_metrics_override is None:
+            del connector.log_metrics
+        else:
+            connector.log_metrics = log_metrics_override
+        trainer.training = True
+        connector._callback_metrics = callback_metrics
+        connector._logged_metrics, connector._progress_bar_metrics = logged_metrics, progress_bar_metrics
+        connector._first_loop_iter, connector._current_fx = first_loop_iter, current_fx
+        if last_val_time is None:
+            vars(trainer).pop("_last_val_time", None)
+        else:
+            trainer._last_val_time = last_val_time
+        loop.batch_progress.load_state_dict(batch_progress)
+        loop._has_run, loop._seen_batches_per_dataloader = has_run, seen_batches
+        random.setstate(python_rng)
+        np.random.set_state(numpy_rng)
+        for gen, state in dl_generators.values():
+            gen.set_state(state)
 
 
 def _skip_rest_of_epoch(pl_module):

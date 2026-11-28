@@ -186,15 +186,27 @@ so the fit-per-round loop, which validates each received global model before tra
 
 The two kinds of validation differ:
 
-* **Per-round global-model evaluation**: ``trainer.validate()`` before ``fit()`` scores the global model
-  received for the round. Only fit-per-round mode does this, and only there can its metrics be sent with
-  ``train_with_evaluation``, which step mode does not support.
+* **Per-round global-model evaluation**: in fit-per-round mode, ``trainer.validate()`` before ``fit()``
+  scores the global model received for the round. In step mode, set ``train_with_evaluation`` in the job
+  config instead (see below).
 * **Local validation**: validation that Lightning runs inside ``fit()`` (``val_check_interval``, epoch
-  end) scores the site's own weights, not the new global model, in both modes. In step mode it is the only
-  validation during training. Its metrics, and ``ModelCheckpoint`` or ``EarlyStopping`` callbacks that
+  end) scores the site's own weights, not the new global model, in both modes. In step mode without
+  ``train_with_evaluation`` it is the only validation during training. Its metrics, and ``ModelCheckpoint`` or ``EarlyStopping`` callbacks that
   monitor them, describe the local model.
 
-The global model can still be evaluated after training: evaluate tasks such as cross-site evaluation are
+With ``train_with_evaluation``, step mode validates each received global model right after loading it,
+on every rank, before training on it. It runs the same validation loop and dataloader as in-fit
+validation, and sends the metrics with that round's result, so the server can select the best global
+model by metric (for example with ``IntimeModelSelector``). This costs one validation pass per sync. The
+trainer needs validation batches (``val_dataloaders`` and ``limit_val_batches`` above 0) and
+``validation_step`` must log at least one metric with ``on_epoch=True``, or ``fit()`` raises at the first
+sync. The loggers and the progress-bar metrics receive nothing from that run, and ``ModelCheckpoint``,
+``EarlyStopping`` and ``WeightAveraging`` callbacks are left out of it, so it scores the received weights
+rather than an average. Other callbacks' validation hooks (``on_validation_end``, for example) see it.
+Under DDP, log validation metrics with ``sync_dist=True`` so the metrics sent by rank 0 cover the whole
+validation set.
+
+The global model can also be evaluated after training: evaluate tasks such as cross-site evaluation are
 answered by ``trainer.validate()`` after ``fit()``, as shown below.
 
 Each received global model is loaded in place, so the optimizer, LR scheduler, AMP scaler and
@@ -236,8 +248,7 @@ A scheduler sized from the trainer's run length, such as ``OneCycleLR`` or ``Cos
 example as a script argument. ``OneCycleLR`` raises once it is stepped past ``total_steps``, and the
 callback logs a warning when training passes the trainer's own limit.
 
-In this mode, ``restore_state`` and ``update_fit_loop`` have no effect, and ``train_with_evaluation``
-is not supported. Optimizer state carries over between rounds only with job lifetime. With task lifetime
+In this mode, ``restore_state`` and ``update_fit_loop`` have no effect. Optimizer state carries over between rounds only with job lifetime. With task lifetime
 (``launch_once=False``) each round starts a fresh optimizer, so step mode gives no benefit over
 ``max_steps=N`` there.
 

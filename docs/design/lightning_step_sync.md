@@ -73,7 +73,6 @@ Step-bounded rounds also hit a round-length bug (#5453), fixed in #5454.
 
 ## Non-Goals
 
-- `train_with_evaluation` in step mode (see [`train_with_evaluation`](#train_with_evaluation)).
 - Step sync across several `fit()` calls.
 - Sharded strategies and strategies that keep a separate master copy of the weights (FSDP, DeepSpeed, Megatron). They
   are not supported by the patched path today either, and step mode adds a risk for them: it loads the global model
@@ -113,7 +112,8 @@ In step mode:
   default `shutdown_timeout=0`, END_RUN terminates the trainer process group without waiting for an orderly exit, so
   DataLoader workers are killed and a traceback is logged. With `shutdown_timeout` set, the SHUTDOWN request makes the
   receive return no task, `fit()` returns and the script ends normally. In-process mode is not affected.
-- `train_with_evaluation=True` in the job config raises `ValueError` when `patch()` runs.
+- `train_with_evaluation=True` in the job config validates each received global model at the start of its round and
+  sends the metrics with the round's result (see [`train_with_evaluation`](#train_with_evaluation)).
 - A site that stops on its own (`EarlyStopping`, `max_time`, `trainer.should_stop`) sends its open round, which may be
   shorter than N steps, and leaves. A round with no optimizer step yet is not sent: it would carry the received model
   unchanged, which FedAvg would skip anyway, and SCAFFOLD cannot compute a control update from zero steps. The
@@ -296,12 +296,46 @@ The hooks expose the same points that `_AlgorithmHandlerManager` already uses in
 ## `train_with_evaluation`
 
 With `train_with_evaluation`, the server expects each update to carry the metrics of the received global model on
-local data and uses them for model selection. In fit-per-round mode they come from `trainer.validate()` before
-`fit()`. Step mode has no such call: in-fit validation evaluates the local model, and `FLCallback` already keeps in-fit
-metrics out of these metrics. Validating the global model after each receive would mean running Lightning's
-validation loop from inside `fit()`, which `trainer.validate()` does not support, and would delay training by one
-validation pass per sync. Step mode therefore raises `ValueError` for `train_with_evaluation=True`; a global-model
-validation per sync can follow if there is demand.
+local data and uses them for model selection (`IntimeModelSelector` reads them as `INITIAL_METRICS`). In fit-per-round
+mode they come from `trainer.validate()` before `fit()`. Step mode has no such call, and in-fit validation scores the
+local model, so with `train_with_evaluation` the step callback runs Lightning's fit validation loop itself
+(`trainer.fit_loop.epoch_loop.val_loop.run()`) in `on_train_batch_start`, right after the received model is loaded and
+before the round starts. `trainer.validate()` cannot run inside `fit()`; `training_epoch_loop.on_advance_end` runs the
+same loop for in-fit validation, which this follows. The metrics are read from `callback_metrics` into
+`self.metrics`, so `_finish_round_and_send` attaches them to that round's result as in fit-per-round mode. A round
+whose global model was already validated by a `trainer.validate()` before `fit()` keeps those metrics.
+
+The run must leave `fit()` as if it had not happened. Around `val_loop.run()` the callback:
+
+| State | Why |
+| --- | --- |
+| CPU and current CUDA RNG (`torch.random.fork_rng`), Python `random`, NumPy RNG state, and explicit DataLoader/sampler `torch.Generator`s | creating the val DataLoader iterator draws from the global torch RNG or an explicit `generator`, and user validation code may draw from the others; without the restore, dropout masks and shuffling (including shared generators) change from the next batch on |
+| `trainer.callbacks` without `Checkpoint`, `EarlyStopping` and `WeightAveraging` | the first two act on every `on_validation_end` during fit (their only guards are `sanity_checking` and `state.fn`); `WeightAveraging` and `EMAWeightAveraging` swap in the averaged weights at `on_validation_epoch_start`, so the run would score them instead of the received model |
+| `_logger_connector.log_metrics` replaced by a no-op | `log_eval_end_metrics` and step-level logging would send the global-model metrics to the loggers under the in-fit names. The loggers themselves stay on the trainer, so `self.logger.experiment` keeps working in validation hooks |
+| `_callback_metrics` (cleared, then restored), `_logged_metrics`, `_progress_bar_metrics` | the result holds only this run's metrics, and the trainer's metrics stay those of the last in-fit validation |
+| `_first_loop_iter`, `_current_fx`, `trainer.training` | as in `on_advance_end`; the loop asserts `_first_loop_iter is None` |
+| `val_loop.batch_progress` | its totals would grow by one validation per sync and be saved in checkpoints |
+| `val_loop._has_run` | `ModelCheckpoint(save_on_train_epoch_end=True)` checks for monitored metrics only when a validation ran in the epoch; left set, it raises in an epoch without in-fit validation (`check_val_every_n_epoch` > 1) |
+| `val_loop._seen_batches_per_dataloader` | step-level validation logging (`on_step=True`) indexes rows by it; left grown, in-fit validation logs at shifted steps |
+| `trainer._last_val_time` | the loop sets it; time-based `val_check_interval` reads it. It does not exist before the first validation |
+
+Other callbacks keep their validation hooks: the progress bar and user callbacks that collect validation outputs
+may be needed to produce the metrics. They see one extra validation per sync, with the global model's metrics in
+`callback_metrics`. The FL callback's own validation hooks ignore the run, since `state.fn` stays `FITTING`.
+
+The loop restores model mode and grad mode itself (`_no_grad_context`), so they are not saved.
+
+When the run produces no metrics (no validation dataloader, `limit_val_batches=0`, an empty unsized
+`IterableDataset`, or only `on_step=True, on_epoch=False` metrics), the round would be sent with empty metrics, so the
+callback raises `RuntimeError` at the first sync.
+
+Under DDP every rank runs the validation at the same point (each rank loads the global model there): with
+`self.log(..., sync_dist=True)` the loop all-reduces, and a rank-0-only run hangs. Rank 0 sends the synced metrics.
+
+Cost: one blocking validation pass per sync, equal to an in-fit validation pass. It relies on private Lightning
+attributes (`_logger_connector._callback_metrics`, `_logged_metrics`, `_progress_bar_metrics`, `_first_loop_iter`,
+`_current_fx`, `log_metrics`, `trainer._last_val_time`, `val_loop._data_source`, `_has_run`,
+`_seen_batches_per_dataloader`); a unit test fails when a Lightning upgrade drops one of them.
 
 ## Code Structure
 
@@ -318,7 +352,8 @@ _StepSyncFLCallback  N steps: on_train_start lifts the trainer's limits, on_trai
 
 1. `FLCallback` keeps its name, export, constructor (`rank`, `load_state_dict_strict`, `update_fit_loop`) and
    fit-per-round behaviour; the shared code moved to the base unchanged. A test pins its constructor and methods.
-2. `_StepSyncFLCallback` takes `sync_every_n_steps` and rejects `train_with_evaluation` in its constructor.
+2. `_StepSyncFLCallback` takes `sync_every_n_steps`; with `train_with_evaluation` it runs `_validate_in_fit` after each
+   received model is loaded.
 3. `patch()` picks the class from `sync_every_n_steps`, finds an existing callback through the base class, and raises
    when `sync_every_n_steps` is given and the existing callback is not a step callback with the same N. It installs
    `RestoreState` only for `FLCallback`.
@@ -415,17 +450,23 @@ enforces NVFlare's exchange order: a send without a preceding receive fails.
 | A non-train task mid-fit stops training and is handled by a later `trainer.validate()` | evaluate task after a sync |
 | SCAFFOLD and FedProx produce per-sync metadata | existing algorithm fixtures in step mode |
 | Hooks are called in order, once per received model, in both modes; edits take effect | recording callback; a hook that adds to `meta` and one that edits the received params |
-| Invalid `sync_every_n_steps`, `train_with_evaluation` in step mode, and a conflicting existing callback are rejected | `ValueError` from `patch()` |
+| Invalid `sync_every_n_steps` and a conflicting existing callback are rejected | `ValueError` from `patch()` |
+| With `train_with_evaluation`, each result carries the metrics of the global model it started from | metrics equal a direct evaluation of each round's weights |
+| The global-model validation leaves training, in-fit metrics, loggers, `ModelCheckpoint`, `EarlyStopping` and val progress unchanged | the same fit with and without it: dropout, a shuffled train loader, Python and NumPy draws, `CSVLogger` with `self.logger.experiment` in validation, step- and epoch-level validation logging |
+| Under `WeightAveraging`, the run scores the received weights | metrics equal a direct evaluation of each round's weights |
+| Epoch-end checkpointing in an epoch without in-fit validation still works | `ModelCheckpoint(save_on_train_epoch_end=True)`, `check_val_every_n_epoch=2` |
+| `train_with_evaluation` without epoch-level validation metrics fails at the first sync | `RuntimeError`: no val loader, `limit_val_batches=0`, empty `IterableDataset`, step-only metrics |
+| The private Lightning attributes the validation relies on still exist | attribute test |
 | Fit-per-round mode is unchanged | the existing tests; a test pins `FLCallback`'s constructor and methods |
 | Under DDP, all ranks pause at the same step, hold identical weights after each sync, only rank 0 sends, no hang | 2-rank test in `tests/integration_test/fast/lightning_step_sync_ddp_test.py`, run serially by `ci/run_process_contracts.py`: CPU with gloo, and GPU with NCCL when two GPUs are available |
 | Under DDP, the evaluate loop after `fit()` validates on all ranks and leaves on any other task | the same test, with a pending evaluate task and then a `submit_model` task |
 | Under DDP, the batch-start and epoch-end receives keep ranks aligned, with no extra optimizer step on any rank | the same test with `val_check_interval`, sync at epoch end and mid-epoch |
+| Under DDP, `train_with_evaluation` validates each global model on all ranks without a hang, and rank 0 sends the synced metrics | the same test with `train_with_evaluation`; the ranks see different losses, so the sent value matches only when synced |
 
 ## Follow-ups
 
 - A `--sync_every_n_steps` flag in `examples/advanced/multi-gpu/lightning/client.py`, and a simulator run that records
   peak GPU memory per sync.
-- Global-model validation per sync, to support `train_with_evaluation` in step mode, if there is demand.
 - A warning in the fit-per-round docs that `max_steps` rounds without per-epoch reshuffling train on the same first
   N batches every round.
 - Fit-per-round sends a round without optimizer steps, which FedAvg weights as 1 (#5748).

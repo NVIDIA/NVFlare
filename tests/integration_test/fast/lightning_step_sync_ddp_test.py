@@ -39,6 +39,7 @@ class _FakeFlare:
         self._current = None
         self.events = []
         self.sent_steps = []
+        self.sent_metrics = []
 
     def receive(self, *args, **kwargs):
         if self._current is None:
@@ -69,7 +70,9 @@ class _FakeFlare:
     def send(self, model, clear_cache=True):
         from nvflare.app_common.abstract.fl_model import MetaKey
 
-        self.sent_steps.append(model.meta.get(MetaKey.NUM_STEPS_CURRENT_ROUND) if model.metrics is None else "metrics")
+        self.sent_steps.append(model.meta[MetaKey.NUM_STEPS_CURRENT_ROUND] if model.params else "metrics")
+        if model.params:
+            self.sent_metrics.append(model.metrics)
         self.events.append("send")
         if clear_cache:
             self.clear()
@@ -78,7 +81,21 @@ class _FakeFlare:
         self._current = None
 
 
-def _worker(rank, port, result_queue, accelerator, num_samples):
+def _round_weights(round_idx):
+    return {
+        "fc.weight": torch.tensor([[float(round_idx), 0.0], [0.0, -float(round_idx)]]),
+        "fc.bias": torch.tensor([0.5, -0.5]),
+    }
+
+
+def _val_loss_over_all_samples(round_idx, num_samples):
+    weights = _round_weights(round_idx)
+    inputs = torch.arange(num_samples, dtype=torch.float32).unsqueeze(1).repeat(1, 2)
+    logits = inputs @ weights["fc.weight"].T + weights["fc.bias"]
+    return torch.nn.functional.cross_entropy(logits, torch.arange(num_samples) % 2).item()
+
+
+def _worker(rank, port, result_queue, accelerator, num_samples, train_with_evaluation=False):
     import torch.nn.functional as F
     from pytorch_lightning.plugins.environments import LightningEnvironment
     from pytorch_lightning.strategies import DDPStrategy
@@ -86,6 +103,7 @@ def _worker(rank, port, result_queue, accelerator, num_samples):
 
     from nvflare.app_common.abstract.fl_model import FLModel
     from nvflare.app_opt.lightning.api import patch as lightning_patch
+    from nvflare.client.config import ConfigKey
 
     class Net(pl.LightningModule):
         def __init__(self):
@@ -113,14 +131,15 @@ def _worker(rank, port, result_queue, accelerator, num_samples):
         os.environ.update(
             MASTER_ADDR="127.0.0.1", MASTER_PORT=str(port), WORLD_SIZE="2", NODE_RANK="0", LOCAL_RANK=str(rank)
         )
-        weights = [{"fc.weight": torch.full((2, 2), float(r)), "fc.bias": torch.zeros(2)} for r in range(3)]
+        weights = [_round_weights(r) for r in range(3)]
         tasks = [("train", FLModel(params=weights[r], current_round=r)) for r in range(2)]
         tasks += [("evaluate", FLModel(params=weights[2])), ("submit_model", FLModel(params={}))]
         fake = _FakeFlare(tasks if rank == 0 else [], rank)
         api = "nvflare.app_opt.lightning.api"
         with ExitStack() as stack:
             stack.enter_context(patch(f"{api}.init"))
-            stack.enter_context(patch(f"{api}.get_config", return_value={}))
+            config = {ConfigKey.TASK_EXCHANGE: {ConfigKey.TRAIN_WITH_EVAL: train_with_evaluation}}
+            stack.enter_context(patch(f"{api}.get_config", return_value=config))
             for name in ("receive", "is_train", "is_evaluate", "is_submit_model", "send", "clear"):
                 stack.enter_context(patch(f"{api}.{name}", new=getattr(fake, name)))
 
@@ -155,6 +174,7 @@ def _worker(rank, port, result_queue, accelerator, num_samples):
                 "ok": True,
                 "global_step": trainer.global_step,
                 "sent_steps": fake.sent_steps,
+                "sent_metrics": fake.sent_metrics,
                 "events": fake.events,
                 "seen": module.seen,
                 "validated": net.validated,
@@ -165,19 +185,7 @@ def _worker(rank, port, result_queue, accelerator, num_samples):
         result_queue.put({"rank": rank, "ok": False, "error": repr(e)})
 
 
-@pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing DDP tests are unstable under xdist")
-@pytest.mark.parametrize(
-    "accelerator",
-    [
-        pytest.param("cpu", marks=pytest.mark.skipif(not gloo_available, reason="torch.distributed gloo is required")),
-        pytest.param(
-            "gpu",
-            marks=pytest.mark.skipif(not (nccl_available and two_gpus), reason="NCCL and two GPUs are required"),
-        ),
-    ],
-)
-@pytest.mark.parametrize("num_samples", [8, 12], ids=["sync-at-epoch-end", "sync-mid-epoch"])
-def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchanges(accelerator, num_samples):
+def _run_workers(accelerator, num_samples, train_with_evaluation=False):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -185,7 +193,8 @@ def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchan
     ctx = torch.multiprocessing.get_context("spawn")
     result_queue = ctx.Queue()
     procs = [
-        ctx.Process(target=_worker, args=(rank, port, result_queue, accelerator, num_samples)) for rank in range(2)
+        ctx.Process(target=_worker, args=(rank, port, result_queue, accelerator, num_samples, train_with_evaluation))
+        for rank in range(2)
     ]
     try:
         for proc in procs:
@@ -202,13 +211,45 @@ def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchan
             pytest.fail("timed out waiting for a DDP step-sync worker result")
     rank0, rank1 = sorted(results, key=lambda result: result["rank"])
     assert rank0["ok"] and rank1["ok"], results
+    return rank0, rank1
+
+
+_ACCELERATORS = [
+    pytest.param("cpu", marks=pytest.mark.skipif(not gloo_available, reason="torch.distributed gloo is required")),
+    pytest.param(
+        "gpu",
+        marks=pytest.mark.skipif(not (nccl_available and two_gpus), reason="NCCL and two GPUs are required"),
+    ),
+]
+
+
+@pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing DDP tests are unstable under xdist")
+@pytest.mark.parametrize("accelerator", _ACCELERATORS)
+@pytest.mark.parametrize("num_samples", [8, 12], ids=["sync-at-epoch-end", "sync-mid-epoch"])
+def test_step_sync_under_ddp_pauses_all_ranks_together_and_only_rank_zero_exchanges(accelerator, num_samples):
+    rank0, rank1 = _run_workers(accelerator, num_samples)
 
     assert rank0["global_step"] == rank1["global_step"] == 4
     assert rank0["sent_steps"] == [2, 2, "metrics"]
+    assert rank0["sent_metrics"] == [None, None]
     assert rank0["validated"] == rank1["validated"] == 3
     assert rank0["pending_task"] == "submit_model"
     assert rank1["events"] == []
     assert rank0["seen"] == rank1["seen"]
     assert len(rank0["seen"]) == 4
     assert {device for device, _ in rank0["seen"]} == {"cuda" if accelerator == "gpu" else "cpu"}
+    assert [rank0["seen"][0][1], rank0["seen"][2][1]] == [0.0, 1.0]
+
+
+@pytest.mark.skipif(running_under_xdist, reason="nested torch.multiprocessing DDP tests are unstable under xdist")
+@pytest.mark.parametrize("accelerator", _ACCELERATORS)
+def test_step_sync_under_ddp_validates_each_global_model_on_all_ranks(accelerator):
+    rank0, rank1 = _run_workers(accelerator, num_samples=8, train_with_evaluation=True)
+
+    assert rank0["global_step"] == rank1["global_step"] == 4
+    assert rank0["sent_steps"] == [2, 2, "metrics"]
+    expected = [_val_loss_over_all_samples(round_idx, num_samples=8) for round_idx in range(2)]
+    assert [metrics["val_loss"] for metrics in rank0["sent_metrics"]] == pytest.approx(expected)
+    assert rank0["validated"] == rank1["validated"] == 5
+    assert rank0["seen"] == rank1["seen"]
     assert [rank0["seen"][0][1], rank0["seen"][2][1]] == [0.0, 1.0]
