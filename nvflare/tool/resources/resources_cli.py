@@ -18,6 +18,7 @@ import sys
 from contextlib import contextmanager
 
 from nvflare.fuel.flare_api import api_spec
+from nvflare.fuel.utils.time_utils import job_start_bounds
 from nvflare.tool import cli_output, cli_schema, cli_session
 from nvflare.tool.resources import resources_output
 
@@ -48,6 +49,7 @@ def handle_resources_cmd(cmd_args):
             "nvflare resources --job JOB_ID",
             "nvflare resources --job JOB_ID --study STUDY_NAME --site SITE_NAME",
             "nvflare resources --study STUDY_NAME",
+            "nvflare resources --study STUDY_NAME --since 2026-10-01 --until 2026-11-01",
         ],
         sys.argv[1:],
         output_modes=["json"],
@@ -60,6 +62,13 @@ def handle_resources_cmd(cmd_args):
     job_id = getattr(cmd_args, "job_id", None)
     requested_study = getattr(cmd_args, "study", None)
     site = getattr(cmd_args, "site", None)
+    try:
+        bounds = job_start_bounds(getattr(cmd_args, "since", None), getattr(cmd_args, "until", None))
+        if bounds and (job_id or not requested_study):
+            raise ValueError("--since and --until require a study query without --job")
+    except ValueError as e:
+        cli_output.output_error("INVALID_ARGS", exit_code=4, detail=str(e))
+        return
     if site and not job_id:
         cli_output.output_error("INVALID_ARGS", exit_code=4, detail="--site requires --job")
         return
@@ -76,7 +85,7 @@ def handle_resources_cmd(cmd_args):
             if job_id:
                 result = sess.get_job_resources(job_id, site=site)
             else:
-                result = sess.get_study_resources()
+                result = sess.get_study_resources(**bounds)
     except api_spec.JobNotFound:
         cli_output.output_error(
             "JOB_NOT_FOUND",
@@ -113,7 +122,10 @@ def handle_resources_cmd(cmd_args):
                 resources_output.render_job_resources(summary, participant, job_name=result.get("job_name"))
             )
     else:
-        data = {"selection": {"study": study}, "summary": result}
+        selection = {"study": study, **bounds}
+        if bounds:
+            selection["time_scope"] = result["selection"]["time_scope"]
+        data = {"selection": selection, "summary": result}
         if cli_output.is_json_mode():
             cli_output.output_ok(data)
         else:
@@ -131,6 +143,14 @@ def def_resources_cli_parser(sub_cmd):
     p.add_argument("--job", dest="job_id", type=str, help="job ID; uses the default study unless --study is set")
     p.add_argument("--study", type=str, help="study containing the job, or study to summarize (accessible jobs only)")
     p.add_argument("--site", type=str, help="show one participant's measurements and startup capacity")
+    p.add_argument(
+        "--since",
+        metavar="DATE_OR_TIME",
+        help="include jobs started at or after this date or ISO time (UTC by default)",
+    )
+    p.add_argument(
+        "--until", metavar="DATE_OR_TIME", help="include jobs started before this date or ISO time (UTC by default)"
+    )
     cli_session.add_startup_kit_selection_args(p)
     p.add_argument("--schema", action="store_true", help="print command schema as JSON and exit")
     _resources_parser = p

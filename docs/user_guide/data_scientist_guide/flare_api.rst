@@ -102,7 +102,8 @@ Job Resources
 Use ``Session.get_job_resources()`` to read a finalized job's
 ``resource_summary``. Selecting a site also returns its ``participant_summary``.
 Use ``Session.get_study_resources()`` for job rows, coverage and totals across
-accessible jobs in the active study.
+accessible jobs in the active study. Use the optional ``since`` and ``until`` keyword
+arguments to filter by job start time.
 
 .. code-block:: python
 
@@ -117,9 +118,8 @@ accessible jobs in the active study.
 
 The study query applies the same per-job permission as ``get_job_resources``.
 Restricted jobs are absent from the rows, totals, and coverage counts. The
-server checks permission before reading a job's archive. An empty study result
-means the caller has no accessible retained jobs, whether the study is empty
-or contains only restricted jobs.
+server checks permission before reading a job's archive. An empty result means
+no accessible retained jobs match the query.
 
 See :ref:`resource_statistics` for the feature overview and measurement
 details, :ref:`resource_statistics_reports` for report fields and storage,

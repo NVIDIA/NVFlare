@@ -148,6 +148,7 @@ def test_resources_authorization_denial_uses_existing_cli_exit_and_envelope(monk
     args.sub_command = "resources"
     args.version = False
     args.job_id, args.study, args.site = job_id, study, None
+    args.since = args.until = None
     monkeypatch.setattr(resources_cli, "_resources_session", lambda *args, **kwargs: nullcontext(Session()))
     monkeypatch.setattr(cli_schema, "handle_schema_flag", lambda *args, **kwargs: None)
     monkeypatch.setattr(cli_mod, "parse_args", lambda *_args, **_kwargs: (parser, args, {}))

@@ -278,6 +278,16 @@ def test_job_renderer_sorts_participants_with_numeric_counters():
     assert render_job_resources(alternate) == render_job_resources(summary)
 
 
+def test_study_renders_whole_job_bounds_only_for_filtered_results():
+    summary = _study_summary()
+    assert "Whole-job" not in render_study_resources(summary)
+    summary["selection"].update(since="2026-10-01T00:00:00+00:00", until="2026-11-01T00:00:00+00:00")
+    assert (
+        "Whole-job totals for jobs started at or after 2026-10-01T00:00:00+00:00 "
+        "and before 2026-11-01T00:00:00+00:00."
+    ) in render_study_resources(summary)
+
+
 def test_study_capacity_and_optional_traffic_columns():
     study = _study_summary(_job_summary(_participant()))
     job_totals = study["jobs"][0]["totals"]

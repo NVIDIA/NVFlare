@@ -36,6 +36,10 @@ Arguments
 - ``--job``: job ID to inspect, in the default study unless ``--study`` is given.
 - ``--study``: select the study containing ``--job``, or query the study when
   ``--job`` is omitted.
+- ``--since DATE_OR_TIME`` and ``--until DATE_OR_TIME`` select jobs starting at
+  or after ``--since`` and before ``--until``. Use either or both with a study
+  query (without ``--job``). Dates mean midnight UTC. ISO timestamps use UTC
+  unless an offset is given.
 - ``--site``: include one participant's report and startup capacity. Requires ``--job``.
 - ``--format json``: return structured output for automation.
 - ``--schema``: print the command schema without connecting to a server.

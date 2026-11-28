@@ -106,10 +106,22 @@ def test_top_level_schema_needs_no_session(monkeypatch, capsys, prefix):
     assert schema["idempotent"] is True
     assert schema["streaming"] is False
     assert schema["output_modes"] == ["json"]
-    assert {"--job", "--study", "--site", "--kit-id", "--startup-kit"} <= {a["name"] for a in schema["args"]}
+    assert {"--job", "--study", "--site", "--since", "--until", "--kit-id", "--startup-kit"} <= {
+        a["name"] for a in schema["args"]
+    }
 
 
-@pytest.mark.parametrize("selection", [[], ["--site", "site-1"], ["--study", "s", "--site", "site-1"]])
+@pytest.mark.parametrize(
+    "selection",
+    [
+        [],
+        ["--site", "site-1"],
+        ["--study", "s", "--site", "site-1"],
+        ["--job", "job-1", "--study", "s", "--since", "2026-01-01"],
+        ["--until", "2026-01-01"],
+        ["--study", "s", "--until", "2026-02-30"],
+    ],
+)
 def test_top_level_json_selection_errors_are_envelopes(monkeypatch, capsys, selection):
 
     monkeypatch.setenv("NVFLARE_DEV", "1")
@@ -150,6 +162,20 @@ def test_top_level_json_result_keeps_precision_and_selection(monkeypatch, capsys
         assert result["data"]["selection"] == {"job_id": "job-1", "site": "site-1"}
     else:
         assert result["data"]["selection"] == {"study": "study-1"}
+
+
+def test_filtered_study_cli_forwards_bounds_and_labels_selection(monkeypatch, capsys):
+    start = "2026-10-01T00:00:00+00:00"
+    session = Mock()
+    selection = {"since": start, "time_scope": "whole_jobs_by_start_time"}
+    session.get_study_resources.return_value = {"selection": {"study_name": "s", **selection}}
+    monkeypatch.setattr(resources_cli, "_resources_session", lambda *a, **kw: nullcontext(session))
+    monkeypatch.setattr(
+        sys, "argv", ["nvflare", "resources", "--study", "s", "--since", "2026-10-01", "--format", "json"]
+    )
+    cli.run("nvflare")
+    session.get_study_resources.assert_called_once_with(since=start)
+    assert json.loads(capsys.readouterr().out)["data"]["selection"] == {"study": "s", **selection}
 
 
 def test_session_uses_shared_kit_timeout_study_and_closes(monkeypatch):

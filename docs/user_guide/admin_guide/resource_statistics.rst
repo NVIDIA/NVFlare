@@ -116,6 +116,16 @@ each row.
 .. literalinclude:: resource_statistics/examples/study_resources.out
    :language: text
 
+This command selects jobs that started in October 2026 (UTC).
+
+.. code-block:: shell
+
+   nvflare resources --study cancer-research --since 2026-10-01 --until 2026-11-01
+
+A job that starts in October and finishes in November contributes its full
+recorded usage to this report. When you specify either bound, the report skips
+jobs whose recorded start time is missing, invalid, or lacks a time zone.
+
 Collection and availability
 ===========================
 
