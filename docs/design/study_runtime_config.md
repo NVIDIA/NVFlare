@@ -5,8 +5,12 @@ FLARE-2972
 ## Overview
 
 A single site-owned file, `local/study_runtime.yaml`, defines everything a study gets at runtime: data mounts, env
-vars, secret-backed env vars and file mounts, an optional pod template, Slurm execution-policy overrides, and
-(reserved) provider-prepared datasets such as Databricks.
+vars, secret-backed env vars and file mounts, an optional pod template, and Slurm execution-policy overrides.
+
+It owns the access half of a Study's data sources: which volumes are mounted and which credentials are delivered,
+which is also how Studies are isolated. What each source is and how FLARE components may use it is described in the
+site's dataset configuration, `local/datasets.yaml`; the boundary between the two files is in
+[Site Dataset Configuration, Section 2.4](dataset_configuration_design.md).
 
 Trust boundary:
 
@@ -17,10 +21,10 @@ Trust boundary:
 
 Goals: secrets as references only (never values in `local/` files); zero-configuration discovery (no launcher
 arguments, no `resources.json` edits); Docker, Kubernetes, and Slurm conceptually aligned; FLARE-owned launch
-behavior untouchable; datasets extensible by `type` so new providers need no format change.
+behavior untouchable; dataset types can support new placement mechanisms without changing the format.
 
 Non-goals: job-requested Secrets; job-side runtime wiring; replacing `launcher_spec`/`resource_spec`; changing the
-pod template merge machinery; implementing the Databricks provider (schema shape only).
+pod template merge machinery; describing data sources (that is `local/datasets.yaml`).
 
 ## v1 Schema (shipped in 2.8 — removed in 2.10)
 
@@ -56,17 +60,15 @@ studies:
         mode: ro
 
     env:
-      DB_HOST: postgres.svc
-      DB_NAME: lung_cancer
+      HF_HOME: /tmp/hf_cache
 
     secret_env:
-      DB_USER: {source: study-db, key: username}
-      DB_PASSWORD: {source: study-db, key: password}
+      HF_TOKEN: {source: study-hf, key: token}
 
     secret_mounts:
-      db-ca:
-        source: study-db-ca
-        mount_path: /var/run/nvflare/secrets/db-ca
+      service-ca:
+        source: study-service-ca
+        mount_path: /var/run/nvflare/secrets/service-ca
         mode: ro
         items:                           # optional; omitted = full Secret projection
           ca.crt: ca.crt
@@ -103,37 +105,16 @@ studies:
           - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
 ```
 
-## Future Schema (reserved — rejected by the FLARE-2972 parser)
-
-```yaml
-studies:
-  lung-cancer:
-    datasets:
-      training:
-        type: databricks
-        workspace: hospital-databricks
-        manifest: medical.lung_cancer.approved_dicom_manifest
-        volume: medical.lung_cancer.dicom
-        auth:
-          method: k8s_service_account   # or site_signed
-          service_account: sa-lung-cancer
-          audience: databricks
-        mode: ro
-        delivery: mount                 # vended cloud credentials; materialize is a future mode
-```
-
-No indirection layer: provider fields live inline on the dataset entry, repeated where needed, and contain no
-secret values. `type: databricks` fails today with "not yet supported".
-
 ## Dataset Types
 
 | Type | Status | Meaning |
 | --- | --- | --- |
 | `mount` (default) | FLARE-2972 | Mount an existing PVC (K8s) or host path (Docker). v1 semantics. |
-| `databricks` | Future | Launcher acquires a study credential, vends downscoped storage credentials, mounts the approved volume via CSI. |
 
 Every dataset type surfaces at `/data/<study>/<dataset>`; trainer code is identical regardless of source. The
-discriminator is the single `type` field; provider-specific fields are validated per type.
+discriminator is the single `type` field, so a new placement mechanism can be added without changing the format.
+Sources reached over the network, such as a database, need no `datasets` entry: their access is the credential
+`secret_env` delivers.
 
 ## Runtime Interpretation
 
@@ -193,7 +174,6 @@ Docker:
 - `secret_mounts.*.source`: host path bind-mounted read-only at `mount_path`. `items` is a hard error
   (Kubernetes-only Secret projection) — point `source` at a directory containing only the intended files.
 - `container.image`: site default job image, same resolution as Kubernetes. `pod_template`: hard error (K8s-only).
-  `type: databricks`: deferred.
 - `docker_kwargs`: extra Docker SDK `containers.run` kwargs — the Docker escape hatch, symmetric to `pod_template`
   (and a hard error on Kubernetes). Merge precedence: site `default_job_container_kwargs` → study `docker_kwargs`
   → job `launcher_spec[site][docker]` (job wins, including GPU requests). Launcher-owned keys are parse-time hard
@@ -240,8 +220,7 @@ Merge order (later wins):
   never calls the K8s API (CP↔CJ traffic is cellnet; Secrets and volumes are mounted by the kubelet; image pulls
   use the launcher's explicit `imagePullSecrets`). Caveats: the SA must pre-exist (pod creation fails fast
   otherwise); do not rely on SA-attached imagePullSecrets — only the launcher-configured ones are carried; job pods
-  should set `automountServiceAccountToken: false`, since the token is never used and the Databricks design mints
-  tokens launcher-side via TokenRequest instead.
+  should set `automountServiceAccountToken: false`, since the token is never used.
 
 ## Future: Image Enforce Mode
 
@@ -275,60 +254,12 @@ local/study_data.yaml present (alone or with v2) → hard error
   Docker provisioning writes its data mapping into `study_runtime.yaml`. The file travels with the startup kit's
   `local/`.
 
-## Future: Databricks Provider
-
-Identity: one Kubernetes service account per study is the study identity; the Databricks federation policy pins it
-as subject. The launcher mints a short-lived, audience-bound SA token via the TokenRequest API and performs the
-workload-identity exchange itself — no token enters the job pod. The SA needs zero RBAC; the launcher needs
-`serviceaccounts/token` create. Alternative `auth.method: site_signed`: the FLARE client signs a short-lived JWT
-with a hospital-held key (on-prem issuers, future Docker); federation policies can embed a static JWKS.
-
-Delivery `mount`: a Unity Catalog volume is a governed object-storage prefix. Before pod creation the launcher
-queries the approved manifest and calls the Temporary Volume Credentials API for a downscoped cloud credential
-(read-only, path-scoped, ~1h), writes it into a per-job Secret, and emits a CSI volume (`nodePublishSecretRef`).
-Renewal: the launcher re-vends and updates the Secret; the CSI driver must accept vended session credentials from a
-Secret and support rotation, or job duration must fit the credential TTL. Requires the hospital's
-`EXTERNAL USE SCHEMA` grant (vending is Public Preview today). The manifest result (labels, splits, cohort) is
-delivered as a small file next to the mounted data. Mount granularity is the volume, so volume boundary = study
-boundary is a hard rule. `delivery: materialize` (Files API download via init container; enables Docker) is
-reserved for workspaces where vending or a qualifying CSI driver is unavailable.
-
-Security invariants: the Databricks OAuth token and study assertion exist only in the launcher process. The only
-pod-visible credential is the vended storage credential — read-only, path-scoped, short-lived, unable to call SQL
-or workspace APIs, consumed by the CSI driver rather than the training container. FLARE records audit events for
-resolution, token acquisition, manifest query, vend, renewal, and cleanup; per-object audit lives in cloud-storage
-access logs (hospital-enabled prerequisite).
-
-Interfaces: `StudyCredentialProvider` (study assertion → provider OAuth token) and `StudyDataProvider` (manifest
-query + credential vending/mount config, or future materialization), shipped as an optional plugin package.
-
-## Future: Database Sources (Postgres)
-
-Live SQL sources are connections, not datasets — no provider seam:
-
-- Already covered by v2: `env` (DB_HOST, DB_NAME) + `secret_env` (DB_USER, DB_PASSWORD) + `secret_mounts` (CA).
-- Downscoping is native: a per-study Postgres role with `SELECT` on approved views bounds what SQL can touch.
-- Credential-in-trainer is acceptable: the database is hospital-internal and network-scoped, unlike a SaaS token.
-- RDS/Cloud SQL IAM auth can later replace static passwords — same `auth` slot, no schema change.
-
-```text
-Trainer queries at training time → connection config + per-study DB role
-Trainer reads a fixed cohort     → dataset provider (future; requires materialize)
-```
-
 ## Implementation Order
 
 1. FLARE-2972: strict v2 parser; `env`, `secret_env`, `secret_mounts`, `container.image`, `pod_template`
    (inline + path); auto-discovery + v1-coexistence hard error; remove `study_job_spec_file_path`, its map file,
    and the `resources.json`-scraping transfer excludes; Docker + K8s emission; merge order + main-container
    guardrail.
-2. `StudyCredentialProvider` / `StudyDataProvider` interfaces.
-3. K8s mount wiring: per-job vended-credential Secret, CSI volume emission, per-cloud driver qualification,
-   manifest delivery.
-4. Databricks provider plugin with `delivery: mount`: federation exchange, manifest query, vending, renewal, audit,
-   cleanup on completion/cancel/pod failure.
-5. Future: `delivery: materialize` + init-container hook (enables Docker), SQL snapshot providers
-   (`type: postgres`).
 
 The Slurm extension adds launcher-gated `slurm` parsing, source-only `secret_env`, empty environment values,
 host-path validation, and hot-reloaded study policy without changing the v2 format number.

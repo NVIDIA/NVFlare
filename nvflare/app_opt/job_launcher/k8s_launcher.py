@@ -30,7 +30,7 @@ from enum import Enum
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import JobMetaKey, get_job_meta_study
 from nvflare.apis.job_launcher_spec import (
     JobHandleSpec,
     JobLauncherSpec,
@@ -1102,7 +1102,7 @@ class K8sJobLauncher(JobLauncherSpec):
             raise RuntimeError("missing parent CellNet cell for workspace transfer")
 
         workspace_transfer = WorkspaceTransferManager.get_or_create(owner_cell)
-        workspace_transfer_token = workspace_transfer.add_job(raw_job_id, workspace_root)
+        workspace_transfer_token = workspace_transfer.add_job(raw_job_id, workspace_root, get_job_meta_study(job_meta))
         credential_secret_name = None
         created_pod = None
         pod_create_attempted = False
