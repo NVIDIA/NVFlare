@@ -15,15 +15,12 @@
 import unittest
 
 import numpy as np
-import pytest
 import torch
 
-pytest.importorskip("bitsandbytes")
-
-from nvflare.apis.dxo import DXO, DataKind, MetaKey  # noqa: E402
-from nvflare.apis.fl_context import FLContext  # noqa: E402
-from nvflare.apis.shareable import Shareable  # noqa: E402
-from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer  # noqa: E402
+from nvflare.apis.dxo import DXO, DataKind, MetaKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
+from nvflare.app_opt.pt.quantization.quantizer import ModelQuantizer
 
 
 class TestModelQuantizer(unittest.TestCase):
@@ -311,6 +308,84 @@ class TestModelQuantizer(unittest.TestCase):
         quantized_size = quantized_params["large_layer"].nbytes
         self.assertLess(quantized_size, original_size)
         self.assertEqual(quantized_size, original_size // 2)
+
+    def test_initialization_int4_and_invalid_block_size(self):
+        """Test ModelQuantizer initialization with int4 and invalid block sizes."""
+        quantizer = ModelQuantizer(quantization_type="int4", block_size=64)
+        self.assertEqual(quantizer.quantization_type, "int4")
+        self.assertEqual(quantizer.block_size, 64)
+
+        for bad_block_size in (63, 0, -2, 64.0, True, False):
+            with self.assertRaises(ValueError):
+                ModelQuantizer(quantization_type="int4", block_size=bad_block_size)
+
+    def test_quantization_int4_numpy(self):
+        """Test CPU block-wise int4 quantization with numpy arrays."""
+        quantizer = ModelQuantizer(quantization_type="int4", block_size=64)
+        rng = np.random.default_rng(42)
+        orig_w = rng.standard_normal((10, 20)).astype(np.float32)  # 200 elements -> 256 padded -> 128 packed bytes
+        orig_b = rng.standard_normal(64).astype(np.float16)  # 64 elements -> 32 packed bytes
+        params = {
+            "layer1.weight": orig_w.copy(),
+            "layer1.bias": orig_b.copy(),
+        }
+
+        quantized_params, quant_state, source_datatype = quantizer.quantization(params, self.fl_ctx)
+
+        self.assertEqual(quantized_params["layer1.weight"].dtype, np.uint8)
+        self.assertEqual(quantized_params["layer1.weight"].nbytes, 128)
+        self.assertEqual(quant_state["layer1.weight"]["scales"].shape, (4,))
+        self.assertEqual(quant_state["layer1.weight"]["scales"].dtype, np.float32)
+        self.assertEqual(quant_state["layer1.weight"]["pad_len"], 56)
+        self.assertEqual(source_datatype["layer1.weight"], "float32")
+
+        self.assertEqual(quantized_params["layer1.bias"].dtype, np.uint8)
+        self.assertEqual(quantized_params["layer1.bias"].nbytes, 32)
+        self.assertEqual(quant_state["layer1.bias"]["scales"].shape, (1,))
+        self.assertEqual(source_datatype["layer1.bias"], "float16")
+
+    def test_quantization_int4_torch_cpu(self):
+        """Test CPU block-wise int4 quantization with torch float32, float16, and bfloat16 tensors."""
+        quantizer = ModelQuantizer(quantization_type="int4", block_size=64)
+        params = {
+            "w_fp32": torch.randn(8, 16, dtype=torch.float32),
+            "w_fp16": torch.randn(8, 16, dtype=torch.float16),
+            "w_bf16": torch.randn(8, 16, dtype=torch.bfloat16),
+        }
+
+        quantized_params, quant_state, source_datatype = quantizer.quantization(params, self.fl_ctx)
+
+        for key, expected_dtype in (("w_fp32", "float32"), ("w_fp16", "float16"), ("w_bf16", "bfloat16")):
+            self.assertIsInstance(quantized_params[key], torch.Tensor)
+            self.assertEqual(quantized_params[key].dtype, torch.uint8)
+            self.assertEqual(quantized_params[key].numel(), 64)
+            self.assertIsInstance(quant_state[key]["scales"], torch.Tensor)
+            self.assertEqual(quant_state[key]["scales"].numel(), 2)
+            self.assertEqual(source_datatype[key], expected_dtype)
+
+    def test_quantization_int4_float64_extreme_ranges(self):
+        """Test int4 quantization preserves float64 dynamic range without turning into zeros or NaNs."""
+        quantizer = ModelQuantizer(quantization_type="int4", block_size=64)
+        params = {
+            "tiny_fp64": np.full((8, 8), 1e-100, dtype=np.float64),
+            "huge_fp64": np.full((8, 8), 1e100, dtype=np.float64),
+        }
+
+        quantized_params, quant_state, source_datatype = quantizer.quantization(params, self.fl_ctx)
+
+        self.assertEqual(quant_state["tiny_fp64"]["scales"].dtype, np.float64)
+        self.assertTrue(np.all(quant_state["tiny_fp64"]["scales"] > 0.0))
+        self.assertTrue(np.all(np.isfinite(quant_state["huge_fp64"]["scales"])))
+        self.assertEqual(source_datatype["tiny_fp64"], "float64")
+
+    def test_quantization_int4_rejects_non_finite(self):
+        """Test int4 quantization explicitly rejects NaN and Inf inputs."""
+        quantizer = ModelQuantizer(quantization_type="int4", block_size=64)
+        for bad_val in (np.nan, np.inf, -np.inf):
+            arr = np.zeros(64, dtype=np.float32)
+            arr[0] = bad_val
+            with self.assertRaises(ValueError):
+                quantizer.quantization({"w": arr}, self.fl_ctx)
 
 
 if __name__ == "__main__":

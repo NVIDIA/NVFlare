@@ -17,7 +17,13 @@ from typing import Union
 
 import numpy as np
 import torch
-from bitsandbytes.functional import QuantState, dequantize_4bit, dequantize_blockwise
+
+try:
+    from bitsandbytes.functional import QuantState, dequantize_4bit, dequantize_blockwise
+except ImportError:
+    QuantState = None
+    dequantize_4bit = None
+    dequantize_blockwise = None
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
@@ -26,6 +32,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.pt.quantization.constant import QUANTIZATION_TYPE
 
 from .ada_quant import AdaQuantizer
+from .int4_block import Int4BlockQuantizer
 
 
 class ModelDequantizer(DXOFilter):
@@ -60,6 +67,8 @@ class ModelDequantizer(DXOFilter):
             source_data_type = source_datatype[param_name]
             if source_data_type == "bool":
                 continue
+            if quantization_type == "int4" and not quant_state.get(param_name):
+                continue
 
             if quantization_type != "adaquant":
                 # get the bits information
@@ -93,6 +102,8 @@ class ModelDequantizer(DXOFilter):
                 # direct assign and convert back to higher precision
                 params[param_name] = values
             elif quantization_type in ["blockwise8", "float4", "normfloat4"]:
+                if dequantize_blockwise is None or dequantize_4bit is None or QuantState is None:
+                    raise ImportError(f"bitsandbytes is required for {quantization_type} dequantization")
                 # use bitsandbytes to dequantize the values
                 # need GPU for general support
                 # extract quantization state
@@ -155,17 +166,39 @@ class ModelDequantizer(DXOFilter):
                     params[param_name] = dequantized.cpu().numpy()
                 elif source_data_format == "torch":
                     params[param_name] = dequantized.cpu()
+            elif quantization_type == "int4":
+                param_quant_state = quant_state.get(param_name)
+                if param_quant_state is None or not param_quant_state:
+                    if source_data_format == "numpy":
+                        params[param_name] = values
+                    elif source_data_format == "torch":
+                        params[param_name] = values.cpu()
+                else:
+                    values_np = values.detach().cpu().numpy() if isinstance(values, torch.Tensor) else values
+                    state_np = {
+                        k: (v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else v)
+                        for k, v in param_quant_state.items()
+                    }
+                    dequantized_np = Int4BlockQuantizer().dequantize(values_np, state_np)
+                    if source_data_format == "numpy":
+                        params[param_name] = dequantized_np
+                    elif source_data_format == "torch":
+                        params[param_name] = torch.from_numpy(dequantized_np)
 
             # assign back
-            if source_data_format == "numpy":
+            if source_data_format == "numpy" and quantization_type != "int4":
                 # convert back to original data type
-                if source_data_type == "float32":
+                if source_data_type == "float64":
+                    params[param_name] = params[param_name].astype(np.float64)
+                elif source_data_type == "float32":
                     params[param_name] = params[param_name].astype(np.float32)
                 elif source_data_type == "float16":
                     params[param_name] = params[param_name].astype(np.float16)
             elif source_data_format == "torch":
                 # convert back to original data type
-                if source_data_type == "float32":
+                if source_data_type == "float64":
+                    params[param_name] = params[param_name].double()
+                elif source_data_type == "float32":
                     params[param_name] = params[param_name].float()
                 elif source_data_type == "float16":
                     params[param_name] = params[param_name].half()

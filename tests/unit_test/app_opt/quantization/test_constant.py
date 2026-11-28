@@ -45,7 +45,7 @@ class TestConstants(unittest.TestCase):
 
     def test_quantization_type_contains_expected_types(self):
         """Test that QUANTIZATION_TYPE contains expected quantization types."""
-        expected_types = ["FLOAT16", "BLOCKWISE8", "FLOAT4", "NORMFLOAT4", "ADAQUANT"]
+        expected_types = ["FLOAT16", "BLOCKWISE8", "FLOAT4", "NORMFLOAT4", "ADAQUANT", "INT4"]
         for qtype in expected_types:
             self.assertIn(qtype, QUANTIZATION_TYPE)
 
@@ -88,8 +88,8 @@ class TestConstants(unittest.TestCase):
 
     def test_quantization_type_count(self):
         """Test that QUANTIZATION_TYPE has expected number of entries."""
-        # As of the current implementation, there should be 5 quantization types
-        self.assertEqual(len(QUANTIZATION_TYPE), 5)
+        # As of the current implementation, there should be 6 quantization types
+        self.assertEqual(len(QUANTIZATION_TYPE), 6)
 
     def test_data_type_format(self):
         """Test that DATA_TYPE entries follow expected naming convention."""
