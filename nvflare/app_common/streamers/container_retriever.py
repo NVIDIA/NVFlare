@@ -16,9 +16,10 @@ from typing import Any
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable
 from nvflare.apis.streaming import StreamContext
+from nvflare.private.defs import InternalFLContextKey
 
-from .container_streamer import ContainerStreamer
-from .object_retriever import ObjectRetriever
+from .container_streamer import ContainerStreamer, _get_container_type
+from .object_retriever import RETRIEVER_TX_ID, ObjectRetriever
 
 
 class ContainerRetriever(ObjectRetriever):
@@ -40,8 +41,9 @@ class ContainerRetriever(ObjectRetriever):
 
         Args:
             name: name for the container.
-            container: The container to be streamed
+            container: The dict, list, set, or collections.OrderedDict to be streamed
         """
+        _get_container_type(container)
         self.containers[name] = container
 
     def register_stream_processing(
@@ -69,8 +71,18 @@ class ContainerRetriever(ObjectRetriever):
             topic=topic,
             fl_ctx=fl_ctx,
             stream_done_cb=stream_done_cb,
+            on_unsupported_type=self._handle_unsupported_type,
             **cb_kwargs,
         )
+
+    def _handle_unsupported_type(self, stream_ctx: StreamContext, fl_ctx: FLContext):
+        tx_id = stream_ctx.get(RETRIEVER_TX_ID)
+        if type(tx_id) is not str:
+            return
+        waiter = self.tx_table.get(tx_id)
+        origin = fl_ctx.get_prop(InternalFLContextKey.AUX_MESSAGE_ORIGIN)
+        if waiter and origin and origin == waiter.expected_origin:
+            waiter.set_result((ReturnCode.UNSUPPORTED_CONTAINER_TYPE, None))
 
     def validate_request(self, request: Shareable, fl_ctx: FLContext) -> (str, Any):
         name = request.get("name")
@@ -95,7 +107,8 @@ class ContainerRetriever(ObjectRetriever):
             timeout: how long to wait for the file
             name: name of the container
 
-        Returns: a tuple of (ReturnCode, container)
+        Returns: a tuple of (ReturnCode, container). An unsupported remote container
+        is reported as UNSUPPORTED_CONTAINER_TYPE with no container.
 
         """
         return self.retrieve(from_site=from_site, fl_ctx=fl_ctx, timeout=timeout, name=name)

@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections import OrderedDict
 from typing import Any, Dict, List, Tuple
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.apis.streaming import ConsumerFactory, ObjectConsumer, ObjectProducer, StreamableEngine, StreamContext
 from nvflare.app_common.streamers.streamer_base import StreamerBase
-from nvflare.fuel.utils.class_loader import get_class_name, load_class
+from nvflare.fuel.utils.class_loader import get_class_name
 from nvflare.fuel.utils.log_utils import get_obj_logger
 from nvflare.fuel.utils.validation_utils import check_positive_number
 
@@ -33,12 +34,25 @@ _CTX_RESULT = _PREFIX + "result"
 _KEY_ENTRY = _PREFIX + "entry"
 _KEY_LAST = _PREFIX + "last"
 
+# Use the existing wire names to select only container constructors held locally.
+_CONTAINER_TYPES = {get_class_name(cls): cls for cls in (dict, list, set, OrderedDict)}
+
+
+def _get_container_type(container: Any) -> str:
+    container_class = type(container)
+    container_type = get_class_name(container_class)
+    if _CONTAINER_TYPES.get(container_type) is not container_class:
+        supported_types = ", ".join(_CONTAINER_TYPES)
+        raise ValueError(
+            f"Unsupported container type for streaming: {container_type}. Supported types: {supported_types}. "
+            "To stream the entries of a dictionary subclass, pass dict(value) explicitly."
+        )
+    return container_type
+
 
 class _EntryConsumer(ObjectConsumer):
-    def __init__(self, stream_ctx: StreamContext):
+    def __init__(self, stream_ctx: StreamContext, container_class):
         self.logger = get_obj_logger(self)
-        container_type = stream_ctx.get(_CTX_TYPE)
-        container_class = load_class(container_type)
         self.container = container_class()
         self.size = stream_ctx.get(_CTX_SIZE)
 
@@ -82,8 +96,16 @@ class _EntryConsumer(ObjectConsumer):
 
 
 class _EntryConsumerFactory(ConsumerFactory):
+    def __init__(self, on_unsupported_type=None):
+        self.on_unsupported_type = on_unsupported_type
+
     def get_consumer(self, stream_ctx: StreamContext, fl_ctx: FLContext) -> ObjectConsumer:
-        return _EntryConsumer(stream_ctx)
+        container_type = stream_ctx.get(_CTX_TYPE)
+        if type(container_type) is not str or container_type not in _CONTAINER_TYPES:
+            if self.on_unsupported_type:
+                self.on_unsupported_type(stream_ctx, fl_ctx)
+            raise ValueError("Unsupported container type for streaming")
+        return _EntryConsumer(stream_ctx, _CONTAINER_TYPES[container_type])
 
 
 class _EntryProducer(ObjectProducer):
@@ -155,6 +177,8 @@ class ContainerStreamer(StreamerBase):
         channel: str,
         topic: str,
         stream_done_cb=None,
+        *,
+        on_unsupported_type=None,
         **cb_kwargs,
     ):
         """Register for stream processing on the receiving side.
@@ -164,6 +188,7 @@ class ContainerStreamer(StreamerBase):
             channel: the app channel
             topic: the app topic
             stream_done_cb: if specified, the callback to be called when the file is completely received
+            on_unsupported_type: callback receiving the stream context and FLContext when type validation fails
             **cb_kwargs: the kwargs for the stream_done_cb
 
         Returns: None
@@ -179,7 +204,7 @@ class ContainerStreamer(StreamerBase):
         engine.register_stream_processing(
             channel=channel,
             topic=topic,
-            factory=_EntryConsumerFactory(),
+            factory=_EntryConsumerFactory(on_unsupported_type),
             stream_done_cb=stream_done_cb,
             **cb_kwargs,
         )
@@ -196,7 +221,7 @@ class ContainerStreamer(StreamerBase):
         optional=False,
         secure=False,
     ) -> bool:
-        """Stream a file to one or more targets.
+        """Stream a dict, list, set, or collections.OrderedDict to one or more targets.
 
         Args:
             channel: the app channel
@@ -217,6 +242,7 @@ class ContainerStreamer(StreamerBase):
             entry_timeout = 60.0
         check_positive_number("entry_timeout", entry_timeout)
 
+        container_type = _get_container_type(container)
         producer = _EntryProducer(container, entry_timeout)
         engine = fl_ctx.get_engine()
 
@@ -226,7 +252,7 @@ class ContainerStreamer(StreamerBase):
         if not stream_ctx:
             stream_ctx = {}
 
-        stream_ctx[_CTX_TYPE] = get_class_name(type(container))
+        stream_ctx[_CTX_TYPE] = container_type
         stream_ctx[_CTX_SIZE] = len(container)
 
         return engine.stream_objects(

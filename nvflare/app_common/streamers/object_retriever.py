@@ -33,9 +33,14 @@ class _Waiter(threading.Event):
     def __init__(self):
         super().__init__()
         self.result = None
+        self.expected_origin = None
+        self._result_lock = threading.Lock()
 
-    def set_result(self, rc: str, data: Any):
-        self.result = (rc, data)
+    def set_result(self, result):
+        with self._result_lock:
+            if self.result is None:
+                self.result = result
+                self.set()
 
 
 class ObjectRetriever(FLComponent, ABC):
@@ -165,6 +170,15 @@ class ObjectRetriever(FLComponent, ABC):
         self.log_debug(fl_ctx, f"set waiter for Rtr {tx_id}")
 
         try:
+            get_origin = getattr(engine, "get_stream_peer_origin", None)
+            if callable(get_origin):
+                try:
+                    waiter.expected_origin = get_origin(from_site, fl_ctx)
+                except Exception as ex:
+                    self.log_debug(
+                        fl_ctx, f"Could not resolve stream origin for {from_site}: {secure_format_exception(ex)}"
+                    )
+
             request = Shareable({RETRIEVER_TX_ID: tx_id})
             if obj_attrs:
                 request.update(obj_attrs)
@@ -209,9 +223,9 @@ class ObjectRetriever(FLComponent, ABC):
         except Exception as ex:
             self.log_error(fl_ctx, f"exception occurred during retrieval: {secure_format_exception(ex)}")
             rc = ReturnCode.EXECUTION_EXCEPTION
-
-        self.tx_table.pop(tx_id, None)
-        self.log_debug(fl_ctx, f"popped waiter for RTR {tx_id}")
+        finally:
+            self.tx_table.pop(tx_id, None)
+            self.log_debug(fl_ctx, f"popped waiter for RTR {tx_id}")
 
         if waiter.result:
             # If the waiter already got result, we return it.
@@ -235,8 +249,7 @@ class ObjectRetriever(FLComponent, ABC):
             self.log_error(fl_ctx, f"Exception when get_result: {secure_format_exception(ex)}")
             result = (ReturnCode.EXECUTION_EXCEPTION, None)
 
-        waiter.result = result
-        waiter.set()
+        waiter.set_result(result)
         self.log_info(fl_ctx, f"got result for RTR {tx_id}: {type(waiter.result)}")
 
     def _handle_request(self, topic, request: Shareable, fl_ctx: FLContext) -> Shareable:
