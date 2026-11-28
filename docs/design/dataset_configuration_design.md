@@ -1,0 +1,411 @@
+# Site Dataset Configuration: Read-Only Access API
+
+**Status:** Proposed design
+**Date:** November 9, 2026
+
+## 1. Purpose
+
+A site describes the datasets it offers to each Study in one site-owned configuration. Components running inside a job read that configuration through one read-only API instead of opening and parsing their own files. Examples of such components are a federated data catalog, cohort counting and training data loaders.
+
+Goals:
+
+- One place where a site declares, per Study, which datasets exist, where a job finds them, how to connect to them, and how each component may use them.
+- One read-only API, bound to the job's Study, that every component uses. Components never learn the file's location or format.
+- Component-specific usage settings may live next to the dataset and are interpreted only by their component. A catalog request can select datasets by name. By default it includes every dataset configured for the Study at each participating site. Sites determine what is published through the configured sources, metadata scope and source permissions.
+
+Non-goals:
+
+- Writing, registering or discovering datasets through the API. The API has no write methods; the site operator edits the configuration.
+- Placing data. How a source reaches the job (Docker or Kubernetes mounts, secret projection, the container image) stays in the launcher's [study runtime configuration](study_runtime_config.md). This configuration describes datasets as the job sees them.
+- Per-user access rules. Visibility follows the job's Study and the existing FLARE authorization.
+
+## 2. Configuration structure
+
+### 2.1 Location and ownership
+
+The configuration is the site-owned file `<workspace>/local/datasets.yaml`, next to `study_runtime.yaml`. Like that file, it covers every Study at the site and belongs to the site. Jobs cannot supply or replace it: it is never part of a job package, and the API ignores any copy inside the job's app directory. In Kubernetes the file can come from a ConfigMap mounted into the parent pod's `local/` folder and edited with `kubectl`.
+
+A site's per-Study configuration is two files in `local/`:
+
+| File | Read by | Holds | Since |
+| --- | --- | --- | --- |
+| `study_runtime.yaml` | The launcher | How each Study's jobs are run: image, mounts, environment, secret sources, launcher settings | FLARE 2.9 (process mode: 2.10) |
+| `datasets.yaml` | Components, through this API | What each Study's datasets are and how components may use them | FLARE 2.10 (this design) |
+
+`study_data.yaml`, the 2.8 mount-only file that `study_runtime.yaml` replaces, was removed in 2.10. Sites use `study_runtime.yaml` for mounts and credential delivery.
+
+A job loads the configuration once, when a component first asks for it, and keeps it for the job's life, so an edit applies from the next job, without a restart of the site. Section 3.4 gives the details for each deployment mode, including the one exception: task workers of a task-scoped job on Slurm read the file when they start.
+
+### 2.2 Format
+
+The dataset key is the name researchers pass to `get_catalog`. Each dataset's `uri` identifies its source. On each catalog request the site reads metadata from that source and generates an Open Data Contract Standard (ODCS) document in memory.
+
+```yaml
+format_version: 1
+studies:
+  oncology:
+    datasets:
+      registry:
+        type: sql
+        uri: file:///data/oncology/registry/registry.sqlite
+      clinical_records:
+        type: sql
+        uri: postgresql://ehr-db.oncology.example:5432/clinical_warehouse
+        options: {schema: omop, tables: [person, visit_occurrence]}
+        secrets: {username: EHR_DB_USER, password: EHR_DB_PASSWORD}
+      warehouse:
+        type: unity-catalog
+        uri: https://uc.oncology.example/api/2.1/unity-catalog
+        options: {catalog: main, schema: oncology}
+        secrets: {token: UC_TOKEN}
+
+usage:
+  catalog:
+    limits: {max_duration_s: 60, max_calls: 1000, max_records: 10000}
+```
+
+For `registry`, the catalog job opens the SQLite database read-only and passes its table definitions to Data Contract CLI’s SQL importer. For `clinical_records`, the site passes the PostgreSQL host, database, schema, table selection, and resolved credentials to Data Contract CLI's `postgres` importer. For `warehouse`, the site lists tables in the configured Unity Catalog schema and passes their fully qualified names to the `unity` importer. [Catalog design](https://github.com/NVIDIA/NVFlare/pull/5741)
+
+| Key | Required / default | Meaning |
+| --- | --- | --- |
+| `format_version` | Required; integer `1` | Booleans and other versions are rejected. |
+| `studies` | Optional; `{}` | Maps a Study name to the data this site offers that Study. Each entry holds only `datasets`; it is not the Study's own configuration (Section 2.4). A Study that is absent offers no datasets. |
+| `studies.<study>.datasets` | Optional; `{}` | Maps a dataset name to its definition. Study and dataset names follow the Study runtime naming rule: 1 to 63 characters of lowercase letters, digits, `-` and `_`, starting and ending with a letter or digit. |
+| `<dataset>.type` | Required | What kind of source the dataset is: `parquet`, `csv`, `sql`, `duckdb`, `unity-catalog`, or a type a site-installed component understands. One value per kind of source, whether it is a file or a service: a SQLite file and a PostgreSQL server are both `sql`. The API does not interpret the type. |
+| `<dataset>.uri` | Required | Where the dataset is, as an absolute URI. There is no default. Section 2.3 gives the forms, the mount convention and the validation rules. |
+| `<dataset>.options` | Optional; `{}` | Non-secret, type-specific settings, such as a database schema or table list. |
+| `<dataset>.secrets` | Optional; `{}` | Maps a logical key to the **name** of an environment variable that holds the secret. Never a value. The variable reaches the job through the Study runtime `secret_env` (containers) or the site's process environment. |
+| `<dataset>.usage` | Optional; `{}` | How the dataset may be used, per FLARE component: maps a component name, such as `training`, to that component's settings for this dataset. It never lists tables; a source's tables are discovered when it is read. A component absent from the map has no rules, and each component decides what that means. |
+| `usage` | Optional; `{}` | Site-wide settings per component, such as the catalog's read limits. |
+
+Unknown keys outside `usage` sections, wrong value types, a missing `type` or `uri`, a `uri` that breaks the rules of Section 2.3, and a secret value given where a variable name is expected are rejected; the whole file is then invalid. At both scopes, `usage` maps each component name to a settings mapping. The component validates the contents of that mapping.
+
+**Format version.** Every file states `format_version`, as `study_runtime.yaml` does; it is the gate for changing the format later. This design is version 1.
+
+- The API reads the versions this FLARE release supports and rejects any other value, including a boolean, so a file written for a newer format fails closed on an older FLARE instead of being half-read.
+- The version changes only for an incompatible change: removing or renaming a key, or changing what a key means. A new optional format key can keep the version, but a file using that key requires a parser that recognizes it. Sites can already declare new source types as strings. The consuming component supplies support for the type.
+- `usage` sections are versioned by their components, not by this number: each component validates its own section.
+- The file is versioned on its own, independently of `study_runtime.yaml`'s `format_version`. In Kubernetes, the part the parent sends a job keeps the site file's version.
+
+### 2.3 Dataset URI
+
+`uri` says where a dataset is. It has two forms:
+
+| Form | Example | Meaning |
+| --- | --- | --- |
+| `file` URI | `file:///data/oncology/registry/registry.sqlite` | A path in the job's filesystem: a Parquet directory, a CSV file, or a SQLite or DuckDB database file. |
+| Network URL | `postgresql://ehr-db.oncology.example:5432/clinical_warehouse`, `https://uc.oncology.example/api/2.1/unity-catalog` | Any other scheme: an address the job connects to, such as a PostgreSQL database address or the HTTPS root of a catalog service. |
+
+**Required, with no default.** Every dataset states its `uri`. A missing `uri` makes the file invalid, so a network dataset or a process-launched site can never fall back to a mount path by mistake.
+
+**Mounted files.** The `registry` runtime mount makes the database available at `/data/oncology/registry/registry.sqlite` inside the job. For a process-launched site, use paths already accessible to the job. [Kubernetes mount example](#24-boundary-with-study-runtime-configuration)
+
+**File URI syntax.** In `file:///data/oncology/registry/registry.sqlite`, the host is empty and the absolute path starts at `/data`. Writing `file://data/oncology/registry/registry.sqlite` puts `data` in the host field and fails dataset URI validation.
+
+**Rules.** The API rejects the whole file when a `uri`:
+
+- is missing;
+- is not absolute (it has no scheme);
+- is a `file` URI with a host, a query or a fragment, or a path that is not absolute;
+- contains a password (`user:password@`), or a query parameter that carries a credential, by name and case-insensitively: `password`, `pwd`, `secret`, `token`, `api_key`, `sig`, `signature`, `X-Amz-Signature`, `X-Goog-Signature` and similar (signed and SAS URLs, connection strings with passwords). A URI is not secret; credentials go in `secrets`.
+
+**Other consumers of the Config API.** For ODBC authentication using a database account, declare a DSN such as `mssql+pyodbc://study_dsn`
+and map `secrets.username` and `secrets.password` to the site's environment variable names. At connection
+time an ODBC-aware consumer can resolve these through `get_secret(dataset, key)` and pass them to its driver. The federated catalog’s live SQL importer currently supports PostgreSQL.
+A credential-free `odbc_connect` string also works for driver-managed authentication, such as an integrated
+connection. Embedded password attributes (including `PWD` and `Password`) are rejected.
+
+Single-host SQL and HTTP addresses are checked for malformed ports. Other drivers can use host lists, such as a MongoDB replica set. For any non-file scheme, a raw `/`, `?` or `#` in a password can split the credentials across URI components. The parser rejects such ambiguous addresses. Percent-encode a literal `@` as `%40` in a path, query or fragment when it could be mistaken for the end of credentials. The credential check is best-effort: it cannot recognize a token used as a user name (`https://TOKEN@host`) or one hidden in a path. Sites must still keep credentials out of `uri`. Error messages name the offending parameter, never its value.
+
+The API does not check that a `file` path exists or that a network address answers; the component that reads the dataset reports that. Percent-encoding follows RFC 3986, so a space in a path is written `%20`. `DatasetConfig.path` returns the decoded local path of a `file` URI.
+
+### 2.4 Boundary with Study runtime configuration
+
+For the `oncology` Study in [Section 2.2](#22-format), the site administrator configures the launcher's mounts and credential delivery in `local/study_runtime.yaml`. The catalog executor reads the source addresses and metadata selections from `local/datasets.yaml`.
+
+This is the companion `study_runtime.yaml` for a Kubernetes site using job-scoped execution. The `oncology-registry` persistent volume claim contains the SQLite database `registry.sqlite` at its root. The two Kubernetes Secrets hold the site's PostgreSQL and Unity Catalog credentials.
+
+```yaml
+# local/study_runtime.yaml
+format_version: 2
+studies:
+  oncology:
+    datasets:
+      registry: {source: oncology-registry, mode: ro}
+    secret_env:
+      EHR_DB_USER: {source: ehr-db, key: username}
+      EHR_DB_PASSWORD: {source: ehr-db, key: password}
+      UC_TOKEN: {source: unity-catalog, key: token}
+```
+
+| Dataset in `datasets.yaml` | How the catalog job uses the runtime configuration |
+| --- | --- |
+| `registry` | The launcher mounts the registry volume read-only at `/data/oncology/registry`. The executor reads the SQLite table definitions from `registry.sqlite` in that directory. |
+| `clinical_records` | The executor resolves the dataset's `username` and `password` bindings from `EHR_DB_USER` and `EHR_DB_PASSWORD`. The upstream PostgreSQL importer connects to `clinical_warehouse` and reads catalog metadata for `omop.person` and `omop.visit_occurrence`. FLARE builds and publishes the ODCS document. |
+| `warehouse` | The executor resolves the dataset's `token` binding from `UC_TOKEN`. FLARE lists tables in `main.oncology` with the Databricks SDK. The upstream Unity importer retrieves each table’s metadata, which FLARE uses to build the published ODCS document. |
+
+The site controls disclosure through dataset selection, source permissions and the configured metadata scope. For live services, the job also needs network access to the configured endpoint.
+
+| Concern | Owner |
+| --- | --- |
+| The Study itself: its definition, description and membership | The federation's Study registry on the server |
+| Mounts, images, launcher settings, secret sources | Study runtime configuration of the launcher |
+| Secret values | The site's secret store, delivered as environment variables |
+| Catalog metadata (tables, columns, types) | The source metadata visible to the configured identity |
+
+**A Study entry is this site's data for that Study, not the Study's configuration.** `studies.<study>` holds only `datasets`. The Study's own description and settings live on the server, once for the whole federation; a copy here would drift from it at every site. For the same reason there is no Study-level `description`, `notes` or `options`:
+
+- **Notes.** Use YAML comments. Parsing drops them, so they stay with the site operator and never reach a job; in Kubernetes the parent sends the job only the parsed Study part.
+- **Settings shared by several datasets.** Sites can reuse dataset settings with ordinary YAML anchors and merge keys. The API validates the resulting entries.
+
+**Changes to the Study runtime configuration.** This design narrows what `study_runtime.yaml` is for. Its format and parser do not change (`format_version` stays 2), and existing files keep working.
+
+| Area | Before | With this design |
+| --- | --- | --- |
+| Responsibility | How a Study's jobs run, including describing data sources | How a Study's jobs run, and access only: mounts and credential delivery |
+| Database connections | Suggested as plain `env` (`DB_HOST`, `DB_NAME`) plus `secret_env` | Address in `datasets.yaml` (`uri`, `options`); credentials still from `secret_env`. `env` stays a generic feature |
+| Databricks | A reserved `datasets` type `databricks` (rejected as "not yet supported") and a planned provider | Removed from the Study runtime design; the parser still rejects `type: databricks`. A Unity Catalog is described in `datasets.yaml`, its credentials delivered by `secret_env` |
+| Kubernetes workspace transfer | Leaves `study_runtime.yaml` and `study_data.yaml` out of the job pod | Unchanged for those files; also sends the job's Study part of `datasets.yaml` (Section 3.4) |
+| Documentation | `study_runtime_config.md`, the `deploy prepare` template and the multi-Study guide used database examples | Database and Databricks examples removed; they point to this boundary |
+
+### 2.5 Why a separate file instead of `study_runtime.yaml`
+
+**1. Different reader, different trust level.**
+
+- `study_runtime.yaml` is read only by the launcher on the site's main process, before the job starts. It holds what the job must never see: host paths and storage-volume names, container images, Kubernetes pod templates, Docker settings, Slurm accounts, and which secret store each credential comes from.
+- `datasets.yaml` exists to be read by the job, through the API.
+- Merging them would mean the job gets the launcher's file, so every container launcher would need to strip those fields before handing it over. A new launcher field added later would leak until someone remembered to strip it too. With two files, the trust boundary sits at the file boundary: the launcher keeps one file and gives the job the other, filtered to its Study.
+
+**2. They describe different things.**
+
+- In Section 2.4, Study runtime mounts the registry database directory read-only and delivers the three named credential variables.
+- In Section 2.2, the registry entry names its SQLite database file. The live PostgreSQL and Unity Catalog entries name the source, metadata scope and credential bindings.
+- Some datasets exist in only one of the two. A network database needs no mount, so it has no Study runtime entry, only secret variables. A process-launched site has no mounts at all. Study runtime in process mode allows only environment settings (`env` and `secret_env`), and its parser rejects a `datasets` section. So a process site couldn't describe its datasets in `study_runtime.yaml` at all.
+
+**3. Different validation and change rules.**
+
+- `study_runtime.yaml` is checked strictly for each launcher type. The same entry is valid for Kubernetes and rejected for Slurm.
+- The dataset configuration is the same for every launcher, and its `usage` sections are deliberately left unchecked by the API, because each component checks its own.
+- One file would tie both sets of rules and versions together. An invalid catalog read-limit setting would then fail every job launch for the Study, not just the catalog read.
+- A YAML mistake while editing a dataset entry would make the whole file unreadable, so every job launch at the site would fail, not just the components that read datasets.
+
+**4. They're edited by different people, at different times.**
+
+- Infrastructure owners change mounts, images and secret sources.
+- Data stewards change which datasets exist; source administrators control credentials and metadata visibility.
+- Separate files keep those edits apart, which also helps file permissions and change review.
+
+For mounted files, the URI must point inside a directory the job can read. Section 2.4 illustrates this with the dataset `registry` and the runtime mount `registry`. For live services, the environment variable names in `datasets.yaml` must match those delivered to the job.
+
+Secrets are not entered in two places. A secret is configured once, in Study runtime `secret_env` (or, for a process-launched site, the site's environment), which puts its value in an environment variable. `datasets.yaml` holds only that variable's name, such as `secrets: {password: EHR_DB_PASSWORD}`, so a component can ask for "the database password" without knowing where it comes from. Neither file holds a secret value.
+
+### 2.6 Examples
+
+**A process-launched site.** Nothing is mounted, so each `file` URI is where the data already is. A job submitted without a Study is in the `default` Study.
+
+```yaml
+# <workspace>/local/datasets.yaml
+format_version: 1
+studies:
+  default:
+    datasets:
+      patients:
+        type: csv
+        uri: file:///home/site-1/data/patients.csv
+```
+
+For this CSV dataset, the catalog publishes the header names. A training component can open the same dataset URI to read rows.
+
+**A job-scoped Kubernetes site.** Use the [oncology dataset definitions](#22-format) together with the [matching mounts and credentials](#24-boundary-with-study-runtime-configuration).
+
+**Several Studies at one site.** To add a second Study to the Section 2.2 example, insert the following entry under `studies` in `datasets.yaml`. The site makes the CSV file readable to cardiology jobs.
+
+```yaml
+cardiology:
+  datasets:
+    echo: {type: csv, uri: file:///data/cardiology/echo_files/echo.csv}
+```
+
+| Job's Study | `list_datasets()` | Example lookup |
+| --- | --- | --- |
+| `oncology` | `["registry", "clinical_records", "warehouse"]` | `get_dataset("echo")` raises `UnknownDatasetError`. |
+| `cardiology` | `["echo"]` | `get_dataset("echo").type` returns `"csv"`. |
+| `default` | `[]` | The combined configuration has no entry for this Study. |
+
+With a deployed environment `env` for the oncology Study and the example configuration at `site-1`, a researcher requests the SQLite and PostgreSQL catalogs by dataset name:
+
+```python
+from nvflare.recipe.catalog import get_catalog
+
+result = get_catalog(env, sites=["site-1"], datasets={"site-1": ["registry", "clinical_records"]})
+for entry in result["datasets"]:
+    print(entry["site"], entry["dataset"], entry["contract"]["id"])
+```
+
+## 3. API
+
+### 3.1 Specification
+
+The public module defines `DatasetConfig`, the `StudyDatasetConfig` interface, the job-context accessor, and the `DatasetConfigError` and `UnknownDatasetError` exceptions. [Public API specification](../../nvflare/apis/dataset_config_spec.py)
+
+The interface below summarizes the public signatures.
+
+```python
+from abc import ABC, abstractmethod
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any
+
+from nvflare.apis.fl_context import FLContext
+
+
+class DatasetConfigError(Exception):
+    """The configuration is missing, unreadable or invalid, or a secret is unset."""
+
+
+class UnknownDatasetError(DatasetConfigError):
+    """The job's Study has no dataset with this name."""
+
+
+@dataclass(frozen=True)
+class DatasetConfig:
+    """One dataset of the job's Study: studies.<study>.datasets.<name> in the file."""
+
+    study: str                         # the job's Study
+    name: str                          # the dataset name: the key in the file
+    type: str                          # source type, e.g. "parquet", "sql", "unity-catalog"
+    uri: str                           # absolute URI, required in the file, e.g. file:///data/oncology/registry/registry.sqlite
+    path: str | None                   # decoded local path of a file URI, e.g. /data/oncology/registry/registry.sqlite;
+                                       # None for a network URL
+    options: Mapping[str, Any] = field(default_factory=dict)  # read-only, non-secret, type-specific; {} when omitted
+    secret_keys: tuple[str, ...] = ()  # keys of `secrets`, e.g. ("username", "password"); never values
+    usage: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)  # read-only: component name -> that component's rules;
+                                            # {} when omitted
+
+    def usage_rules(self, component: str) -> Mapping[str, Any] | None:
+        """This dataset's rules for one component, e.g. "catalog"; None when it has none."""
+
+
+class StudyDatasetConfig(ABC):
+    """Read-only snapshot of the job's Study in the site's dataset configuration."""
+
+    @property
+    @abstractmethod
+    def study(self) -> str:
+        """The job's Study."""
+
+    @property
+    @abstractmethod
+    def revision(self) -> str:
+        """Opaque identifier of the snapshot; changes whenever the configuration changes."""
+
+    @abstractmethod
+    def list_datasets(self) -> list[str]:
+        """The Study's dataset names, in file order; [] when the Study has none."""
+
+    @abstractmethod
+    def get_dataset(self, name: str) -> DatasetConfig:
+        """One dataset. Raises UnknownDatasetError when the Study has no such dataset."""
+
+    @abstractmethod
+    def site_usage(self, component: str) -> Mapping[str, Any] | None:
+        """Site-wide settings for one component (top-level usage.<component>); None when absent."""
+
+    @abstractmethod
+    def get_secret(self, name: str, key: str) -> str:
+        """Value of one of the dataset's secrets, read from its environment variable at call time.
+
+        Raises UnknownDatasetError for an unknown dataset, and DatasetConfigError when the key is
+        not configured or the variable is unset. Never logs or returns the value in an error.
+        """
+
+
+def get_study_dataset_config(fl_ctx: FLContext) -> StudyDatasetConfig:
+    """The configuration of the job's Study.
+
+    The Study comes from the job metadata in fl_ctx ("default" when the job names none). The
+    configuration is loaded on the first successful call in the job and kept for the job's life (Section 3.4).
+    Raises DatasetConfigError when it is unreadable or invalid. A site with no configuration
+    yields a snapshot with no datasets.
+    """
+```
+
+| File | API |
+| --- | --- |
+| `studies.<study>` (the job's Study) | `get_study_dataset_config(fl_ctx)` returns `StudyDatasetConfig` |
+| `studies.<study>.datasets` keys | `list_datasets()` |
+| `studies.<study>.datasets.<name>` | `get_dataset(name)` returns `DatasetConfig` |
+| `<name>.type`, `uri`, `options` | `DatasetConfig.type`, `.uri` (with `.path`), `.options` |
+| `<name>.secrets` | `DatasetConfig.secret_keys` for the keys; `get_secret(name, key)` for a value |
+| `<name>.usage.<component>` | `DatasetConfig.usage_rules(component)` |
+| Top-level `usage.<component>` | `site_usage(component)` |
+
+Inside a site component, `fl_ctx` is the job's FLARE context. With the Section 2.2 configuration, these calls show the metadata available to the catalog executor before it reads either source.
+
+```python
+from nvflare.apis.dataset_config_spec import get_study_dataset_config
+
+config = get_study_dataset_config(fl_ctx)
+registry = config.get_dataset("registry")
+registry_path = registry.path                  # /data/oncology/registry/registry.sqlite
+
+records = config.get_dataset("clinical_records")
+source_uri = records.uri                       # PostgreSQL database clinical_warehouse
+schema = records.options["schema"]             # omop
+tables = records.options["tables"]             # ("person", "visit_occurrence")
+limits = config.site_usage("catalog")["limits"]
+```
+
+The executor supplies a dataset-scoped secret lookup to the reader. For the PostgreSQL importer, `config.get_secret("clinical_records", "username")` resolves the value of `EHR_DB_USER` at read time. For `registry`, the reader opens the mounted database at `registry.path`.
+
+### 3.2 Contract
+
+- **Study-bound.** `get_study_dataset_config(fl_ctx)` returns the job's Study only; a job without an explicit Study is in the `default` Study, as everywhere in FLARE. No method accepts a Study name.
+- **Read-only and immutable.** There are no write methods. `DatasetConfig` is frozen, its mappings are read-only views and its tuples are copies, so one component cannot change what another sees.
+- **Snapshot.** The configuration is validated as a whole when it is loaded. Every method answers from that content, and `revision` identifies it. Each job process keeps its first successfully loaded snapshot, so components in that process see the same configuration; Section 3.4 notes the Slurm task-scoped exception.
+- **Fail closed.** An unreadable or invalid configuration raises `DatasetConfigError` from `get_study_dataset_config`; a snapshot is never partly loaded. A site with no configuration is not an error: the snapshot has no datasets.
+- **Secrets stay out of the model.** `DatasetConfig` lists which secret keys exist but carries no values. `get_secret` reads the environment variable at call time. Error messages name the dataset and key, never the value.
+- **No interpretation.** The API applies the rules and defaults of Section 2 and nothing else. Each component interprets its own `usage` settings and handles source access and reachability.
+
+### 3.3 Implementation
+
+`DatasetConfigAPI` in `nvflare/app_common/dataset_config/api.py` implements the spec. It is built from a configuration dictionary, the content Section 2 describes, and does not depend on where that dictionary came from. Validation, defaults and the frozen objects work on the dictionary; `revision` is a hash of what the job sees, its Study's part, so the site file and the Kubernetes copy of the same Study give the same revision.
+
+A loader produces the dictionary. In every deployment mode it reads `local/datasets.yaml` as the job sees it (Section 3.4); only it decodes the file format (YAML, with `yaml.safe_load`). Components depend on `StudyDatasetConfig`, so another source, such as a site service, can be added as a loader without changing them.
+
+### 3.4 Loading in each deployment mode
+
+In every case the job reads `local/datasets.yaml` from its own workspace. What differs is how `local/` reaches it, which the launcher already decides. A site runs jobs in one deployment mode, and on Kubernetes and Slurm a job can be job-scoped (the job runs its tasks itself) or task-scoped (tasks run in separate task workers).
+
+| Deployment mode | Execution scope | How the job accesses the dataset configuration | When it is loaded |
+| --- | --- | --- | --- |
+| Process | Job-scoped | Reads the site file, `local/datasets.yaml`, in the site workspace | First use in the job |
+| Docker | Job-scoped | Reads the site file through the `local/` folder the launcher mounts read-only | First use in the job |
+| Slurm | Job-scoped | Reads the site file on the site's shared storage (bound read-only in a sandbox) | First use in the job |
+| Slurm | Task-scoped | The job and each task worker read the site file on the same shared storage | First use in each process, so a task worker started after an edit sees it |
+| Kubernetes | Job-scoped | Reads `local/datasets.yaml` holding only its Study, written by the parent into the job pod's workspace transfer | The copy is made at launch; the job reads it on first use |
+| Kubernetes | Task-scoped | The job pod and its task worker pods read that same copy: it sits on the jobs PVC, and task workers mount its `local/` read-only | The copy is made at launch, so every task worker of the job sees the same configuration |
+
+Process and Docker do not support task-scoped execution.
+
+**Kubernetes.** A job pod does not see the parent's workspace. The parent sends the job its workspace (`local/` and the job folder) through the workspace transfer, which already leaves out the site files the job must not have, `study_runtime.yaml` and `study_data.yaml`. For `datasets.yaml` the transfer sends the job's part instead of the whole file: the parent loads the site file, validates all of it, and writes a `local/datasets.yaml` with the job's Study entry and the site-wide `usage` settings. For a task-scoped job the transferred `local/` sits on the jobs PVC, and task worker pods mount it read-only, so they read the same part. The shared file carries dataset descriptions to task workers. The Study volume mounts and secret environment variables in the job-scoped Section 2.4 example are applied to the job pod; task workers need their own access to use those sources.
+
+- The transfer skips a ConfigMap's or Secret's hidden backing folders (`..<timestamp>/`, `..data`) and sends only the visible files, so a site file mounted from a ConfigMap cannot reach the job through its backing copy.
+- No site file: the transfer sends none, and the job sees no datasets.
+- An invalid site file: the transfer sends a `local/datasets.yaml` that the API rejects, so components fail as they would on a broken file instead of seeing no datasets. It states only that the site configuration is invalid; the parent logs the reason at the site, because it can name another Study's datasets.
+
+The part is written when the job pod downloads its workspace, at launch. The pod and its workers never receive another Study's entries.
+
+**Process, Docker and Slurm.** The job, and on Slurm its task workers, read the site file, as it can reach the rest of `local/`, and the API returns only the job's Study. As with `study_runtime.yaml` in these modes, the file itself is readable by job code; the API's Study binding is not a security boundary there.
+
+**Fixed for the job's life.** A job loads the configuration once, on first use, and keeps it, so an edit to the site file applies from the next job. The one exception is a task-scoped job on Slurm: each task worker is its own process that reads the site file, so a worker started after an edit sees the edit.
+
+## 4. Design decisions
+
+| Choice | Set aside | Reason |
+| --- | --- | --- |
+| One file per site with a `usage` section per component | A separate configuration file for each component | A dataset is described once. Each new component would otherwise add its own file, its own loader and its own copy of the dataset list. |
+| A separate file from Study runtime configuration | Adding these fields to `study_runtime.yaml` | Different readers, content, validation and owners; see Section 2.5. |
+| Explicit dataset list | Listing the directories under `/data/<study>` | A mount alone does not say what type of source it is or whether any component may use it, and process-launched sites have no mounts. |
+| Secret variable names in the configuration | Secret values, or a secret-store reference scheme | Reuses how Study runtime already delivers secrets. The file never holds a secret, so it can be read and reviewed freely. |
+| In Kubernetes, the workspace transfer sends the job only its Study's part of the file | Leaving the file out, or passing the part in the job's environment | The transfer already decides what a job pod gets of `local/`, and task worker pods read the job's transferred `local/` but not its environment. Every mode then loads the same file the same way. |
