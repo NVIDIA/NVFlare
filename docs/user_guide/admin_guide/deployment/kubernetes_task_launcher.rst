@@ -2,7 +2,8 @@ Kubernetes task execution: deployment and operations
 ====================================================
 
 This guide configures a Kubernetes site to run each assignment in a fresh CPU or
-GPU worker Pod. The Client Parent (CP) starts and monitors Client Jobs (CJs).
+GPU worker Pod. For the researcher workflow, see :ref:`task_execution`.
+The Client Parent (CP) starts and monitors Client Jobs (CJs).
 Each task-mode CJ keeps federation communication, filters and result submission
 resident; CP creates and cleans up its compute workers. Existing job mode keeps
 compute inside CJ and remains the default.
