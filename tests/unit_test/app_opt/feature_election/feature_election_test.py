@@ -23,7 +23,6 @@ Covers:
 
 import json
 import sys
-from importlib.util import find_spec
 from pathlib import Path
 from unittest import mock
 
@@ -33,9 +32,7 @@ import pytest
 from sklearn.datasets import make_classification
 
 from nvflare.app_opt.feature_election import FeatureElection, quick_election
-from nvflare.app_opt.feature_election.executor import FeatureElectionExecutor
-
-PYIMPETUS_AVAILABLE = find_spec("PyImpetus") is not None
+from nvflare.app_opt.feature_election.executor import PYIMPETUS_AVAILABLE, FeatureElectionExecutor
 
 
 @pytest.fixture
@@ -329,6 +326,33 @@ class TestAdvancedFeatures:
 
         assert stats["fs_method"] == "pyimpetus"
         assert fe.global_mask is not None
+
+    @staticmethod
+    def _select(**fs_params):
+        X, y = make_classification(n_samples=200, n_features=12, n_informative=4, n_redundant=2, random_state=1)
+        params = {"verbose": 0, "random_state": 0, "n_jobs": 1, **fs_params}
+        executor = FeatureElectionExecutor(fs_method="pyimpetus", fs_params=params)
+        executor.set_data(X, y)
+        return executor.perform_feature_selection()
+
+    def test_pyimpetus_selects_subset_with_importance_scores(self):
+        """The mask is PyImpetus's selection, not every feature, and scores are its importances."""
+        mask, scores = self._select()
+
+        assert 1 < mask.sum() < mask.size
+        assert np.all(np.isfinite(scores))
+        assert np.all(scores[mask] > 0)
+        assert not scores[~mask].any()
+        assert len(set(scores[mask])) > 1
+
+    def test_pyimpetus_k_caps_selection(self):
+        """``k`` keeps only the k most important of the selected features."""
+        full_mask, full_scores = self._select()
+        mask, scores = self._select(k=1)
+
+        assert mask.sum() == 1
+        assert np.flatnonzero(mask)[0] == np.argmax(full_scores)
+        assert np.array_equal(scores, full_scores)
 
 
 if __name__ == "__main__":
