@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import _pickle
 import json
 import os
 import time
 
+import _pickle
 import numpy as np
 import tensorflow as tf
 from filelock import FileLock, Timeout
