@@ -26,6 +26,9 @@ from nvflare.edge.updater import Updater
 
 class AggregatorFactory(ABC):
 
+    # Opt in only for workflows allowing one contribution per device per model.
+    unique_devices_per_model = False
+
     @abstractmethod
     def get_aggregator(self) -> Aggregator:
         pass
@@ -69,6 +72,9 @@ class EdgeModelUpdater(Updater):
         self.max_model_versions = max_model_versions
         self.aggr_factory = None
         self.aggr_states: Dict[int, ModelAggrState] = {}  # model_version => ModelAggrState
+        # Keep identity history for the task, independently of pending reports and
+        # aggregator pruning: late results can recreate a pruned model bucket.
+        self._seen_devices: Dict[int, set] = {}
         self.available_devices: Dict[str, Device] = {}  # device_id => Device
         self._update_lock = threading.Lock()
         self.register_event_handler(EventType.START_RUN, self._emu_handle_start_run)
@@ -180,15 +186,28 @@ class EdgeModelUpdater(Updater):
                 self.log_info(fl_ctx, f"current total number of active aggregator versions: {len(self.aggr_states)}")
 
     def _update_one_model(self, mu: ModelUpdate, fl_ctx: FLContext):
+        assert isinstance(self.aggr_factory, AggregatorFactory)
+        if self.aggr_factory.unique_devices_per_model:
+            seen = self._seen_devices.get(mu.model_version, set())
+            overlap = seen.intersection(mu.devices)
+            if overlap:
+                if overlap != mu.devices.keys():
+                    raise ValueError(
+                        f"partial overlap in model V{mu.model_version}: "
+                        "cannot separate already accepted devices from a preaggregated update"
+                    )
+                return False
+
         mas = self.aggr_states.get(mu.model_version)
 
         if not mas:
-            assert isinstance(self.aggr_factory, AggregatorFactory)
             aggr = self.aggr_factory.get_aggregator()
             mas = ModelAggrState(aggr, mu.model_version)
             self.aggr_states[mu.model_version] = mas
 
         accepted = mas.accept(mu.update, mu.devices, fl_ctx)
+        if accepted and self.aggr_factory.unique_devices_per_model:
+            self._seen_devices.setdefault(mu.model_version, set()).update(mu.devices)
         self.log_info(fl_ctx, f"updated one model V{mu.model_version} with {len(mu.devices)} devices: {accepted=}")
         return accepted
 
@@ -198,20 +217,22 @@ class EdgeModelUpdater(Updater):
             if report.available_devices:
                 self.available_devices.update(report.available_devices)
 
+            accepted = True
             if report.model_updates:
                 for mu in report.model_updates.values():
-                    self._update_one_model(mu, fl_ctx)
+                    update_accepted = self._update_one_model(mu, fl_ctx)
+                    accepted = update_accepted and accepted
 
             if report.current_model_version is None:
                 # local report
-                return True, None
+                return accepted, None
 
             # send base state back
             state = self.current_state
 
             if not state:
                 # no current state data
-                return True, None
+                return accepted, None
 
             assert isinstance(state, BaseState)
             model = state.model if state.model_version != report.current_model_version else None
@@ -232,10 +253,11 @@ class EdgeModelUpdater(Updater):
                 f"total available devices is now {len(self.available_devices)}",
             )
 
-            return True, reply.to_shareable()
+            return accepted, reply.to_shareable()
 
     def end_task(self, fl_ctx: FLContext):
         super().end_task(fl_ctx)
         for a in self.aggr_states.values():
             a.reset(fl_ctx)
         self.aggr_states = {}
+        self._seen_devices = {}
