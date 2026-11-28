@@ -53,7 +53,7 @@ azure_start_svr_header_sh: |
     useDefault=true
   else
     useDefault=false
-    . $config_file
+    . "$config_file"
     report_status "$?" "Loading config file"
     if [ $self_dns == false ] && [ $DERIVED_LOCATION != $LOCATION ]
     then
@@ -213,7 +213,7 @@ azure_start_cln_header_sh: |
       useDefault=true
   else
       useDefault=false
-      . $config_file
+      . "$config_file"
       report_status "$?" "Loading config file"
   fi
 

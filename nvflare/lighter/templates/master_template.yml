@@ -505,7 +505,7 @@ log_config: |
 start_cln_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  all_arguments="${@}"
+  all_arguments=("$@")
   doCloud=false
   # parse arguments
   while [[ $# -gt 0 ]]
@@ -525,10 +525,10 @@ start_cln_sh: |
   then
     case $csp in
       azure)
-        $DIR/azure_start.sh ${all_arguments}
+        "$DIR/azure_start.sh" "${all_arguments[@]}"
         ;;
       aws)
-        $DIR/aws_start.sh ${all_arguments}
+        "$DIR/aws_start.sh" "${all_arguments[@]}"
         ;;
       *)
         echo "Only on-prem or azure or aws is currently supported."
@@ -540,7 +540,7 @@ start_cln_sh: |
 start_svr_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  all_arguments="${@}"
+  all_arguments=("$@")
   doCloud=false
   # parse arguments
   while [[ $# -gt 0 ]]
@@ -560,10 +560,10 @@ start_svr_sh: |
   then
     case $csp in
       azure)
-        $DIR/azure_start.sh ${all_arguments}
+        "$DIR/azure_start.sh" "${all_arguments[@]}"
         ;;
       aws)
-        $DIR/aws_start.sh ${all_arguments}
+        "$DIR/aws_start.sh" "${all_arguments[@]}"
         ;;
       *)
         echo "Only on-prem or azure or aws is currently supported."

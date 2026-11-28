@@ -27,6 +27,7 @@ TESTS = (
     "tests/integration_test/fast/autofl_process_lifecycle_test.py",
     "tests/integration_test/fast/cell_reconnect_test.py",
     "tests/integration_test/fast/cell_session_mtls_test.py",
+    "tests/integration_test/fast/cloud_start_config_test.py",
     "tests/integration_test/fast/concurrent_cleanup_test.py",
     "tests/integration_test/fast/cvm_runtime_process_test.py",
     "tests/integration_test/fast/dashboard_kit_test.py",
