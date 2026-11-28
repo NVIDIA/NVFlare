@@ -17,6 +17,7 @@ import datetime
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from typing import Dict, List, Optional, Tuple
 
 from cryptography import x509
@@ -34,6 +35,7 @@ from nvflare.fuel.sec.cert_uri import (
     cert_uri,
     cert_uri_values,
 )
+from nvflare.fuel.utils.archive_source import open_archive_entry
 from nvflare.lighter.constants import ProvFileName
 from nvflare.lighter.utils import (
     Identity,
@@ -123,12 +125,19 @@ def write_job_cert(run_dir: str, cert_chain_pem: bytes, key_pem: bytes):
 
 def remove_job_cert(run_dir: str) -> None:
     """Destroy a job's credential; it is dead once the job process has exited and must never be archived."""
-    cert_path, key_path = job_cert_paths(run_dir)
-    for path in (cert_path, key_path):
-        with contextlib.suppress(FileNotFoundError):
-            os.remove(path)
-    with contextlib.suppress(OSError):
-        os.rmdir(os.path.dirname(cert_path))
+    with ExitStack() as stack:
+        try:
+            run_fd, _ = stack.enter_context(open_archive_entry(run_dir, directory=True))
+            cert_fd, _ = stack.enter_context(open_archive_entry(JOB_CERT_DIR_NAME, dir_fd=run_fd, directory=True))
+        except FileNotFoundError:
+            return
+        # Any other open failure prevents safe removal. In particular, the
+        # target of a linked credential directory could also be an archive input.
+        for name in (JOB_CERT_FILE_NAME, JOB_KEY_FILE_NAME):
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(name, dir_fd=cert_fd)
+        with contextlib.suppress(OSError):
+            os.rmdir(JOB_CERT_DIR_NAME, dir_fd=run_fd)
 
 
 def find_job_cert(run_dir: str) -> Optional[Tuple[str, str]]:
